@@ -23,7 +23,7 @@ export function cloudTarget(team: TeamConfig, personal: PersonalConfig): CloudTa
 export const analyticsOn = (p: PersonalConfig) => !!p.analytics?.enabled;
 
 /** Shown before analytics start and by `pmx analytics` (PRIV-5). Plain words, matching the event schema. */
-export const ANALYTICS_DISCLOSURE = `Product Git analytics send content-free events to your hosted org:
+export const ANALYTICS_DISCLOSURE = `ProductMaxxing analytics send content-free events to your hosted org:
   · each agent run: task ID, category, size, skill version, outcome, duration, tokens, cost
   · each review: task ID, category, size, accepted / rejected / redo, minutes to review
   · each digest or task suggestion: how many sources were found, used and cut, how many tasks, cost
@@ -50,7 +50,7 @@ export async function connect(o: { cloud: Cloud; team: TeamConfig; personal: Per
     if (me.orgs.length === 1) orgId = me.orgs[0]!.orgId;
     else if (me.orgs.length > 1) {
       const list = me.orgs.map((x, i) => `  ${i + 1}. ${x.name} (${x.plan})`).join("\n");
-      const pick = Number(await o.ask.text(`You belong to several Product Git orgs:\n${list}\nWhich one is this team's?`, "1"));
+      const pick = Number(await o.ask.text(`You belong to several ProductMaxxing orgs:\n${list}\nWhich one is this team's?`, "1"));
       orgId = me.orgs[Math.max(0, Math.min(me.orgs.length - 1, pick - 1))]!.orgId;
     } else {
       orgId = (await o.cloud.call<{ orgId: string }>("POST", "/orgs", { name: o.team.team })).orgId;

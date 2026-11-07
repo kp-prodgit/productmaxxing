@@ -11,7 +11,7 @@ export const flowPage = (nonce: string) => `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>PMX flow · Product Git</title>
+<title>PMX flow · ProductMaxxing</title>
 <style nonce="${nonce}">
 body { margin: 0; background: #f6f7f9; padding: 16px max(16px, env(safe-area-inset-left)) 48px; }
 @media (prefers-color-scheme: dark) { body { background: #12161c; } }

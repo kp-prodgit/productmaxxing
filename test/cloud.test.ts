@@ -70,7 +70,7 @@ describe("free sign-in (PLAN-1, PRIV-5)", () => {
   it("prefers the team's org over the PM's own", () => {
     const p = personal("/r", { cloud: { url: "https://api.test/v1", orgId: "org_mine" } });
     expect(cloudTarget(team(), p)?.orgId).toBe("org_mine");
-    expect(cloudTarget(team({ controlPlane: { url: "", orgId: "org_team" } }), p)).toEqual({ url: "https://api.productgit.com/v1", orgId: "org_team" });
+    expect(cloudTarget(team({ controlPlane: { url: "", orgId: "org_team" } }), p)).toEqual({ url: "https://api.productmaxxing.com/v1", orgId: "org_team" });
   });
 });
 

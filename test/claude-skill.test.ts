@@ -21,7 +21,7 @@ describe("/pmx-schedule skill (CLAUDE-2)", () => {
     expect(await readFile(appSkillTarget(), "utf8")).toBe(await readFile(appSkillSource(), "utf8"));
     expect(await installAppSkill()).toBe("current");
 
-    await writeFile(appSkillTarget(), "<!-- Installed by Product Git -->\nname: pmx-schedule\nold version");
+    await writeFile(appSkillTarget(), "<!-- Installed by ProductMaxxing -->\nname: pmx-schedule\nold version");
     expect(await installAppSkill()).toBe("updated");
 
     await writeFile(appSkillTarget(), "---\nname: pmx-schedule\n---\nmy own version");

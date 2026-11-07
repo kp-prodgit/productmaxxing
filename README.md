@@ -1,24 +1,24 @@
-# Product Git
+# ProductMaxxing
 
-**Max out your product team's performance.** Product Git turns every customer call, Slack thread and ticket into sized work in Linear and puts each PM's AI agent on the highest-value task it can finish. You review. *PMX (product maxxing)* is the practice: keep your team's agent budget working on the backlog, paced by human review.
+**Max out your product team's performance.** ProductMaxxing turns every customer call, Slack thread and ticket into sized work in Linear and puts each PM's AI agent on the highest-value task it can finish. You review. *PMX (product maxxing)* is the practice: keep your team's agent budget working on the backlog, paced by human review.
 
-This repo is the product: the `pmx` CLI and engine, the skills and the PMX repo conventions. The website lives in `productgit-website`, and the hosted app is a separate, closed-source service.
+This repo is the product: the `pmx` CLI and engine, the skills and the PMX repo conventions. The website lives in `productmaxxing-website`, and the hosted app is a separate, closed-source service.
 
 ## Install (macOS)
 
-The easy way: open Claude Code and say *"Install PMX following https://github.com/kp-prodgit/productgit/blob/main/INSTALL.md"*. Claude checks your Mac, installs the release package, walks you through `pmx init` and checks the result. Switch auto mode off first; the guide asks you to.
+The easy way: open Claude Code and say *"Install PMX following https://github.com/kp-prodgit/productmaxxing/blob/main/INSTALL.md"*. Claude checks your Mac, installs the release package, walks you through `pmx init` and checks the result. Switch auto mode off first; the guide asks you to.
 
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productgit/releases/download/v0.14.0/productgit-0.14.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productgit/releases/download/v0.14.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/productmaxxing-0.14.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS
-npm install -g ./productgit-0.14.0.tgz
+npm install -g ./productmaxxing-0.14.0.tgz
 pmx init
 ```
 
-The release package is prebuilt and has no dependencies, so installing it downloads and builds nothing. Joining a team that already uses PMX? Clone its PMX repo and install the team's copy instead: `npm install -g <repo>/.pmx/cli/productgit.tgz`. Use Homebrew's Node rather than nvm: the background job remembers Node's path, and nvm switching or removing a version breaks it.
+The release package is prebuilt and has no dependencies, so installing it downloads and builds nothing. Joining a team that already uses PMX? Clone its PMX repo and install the team's copy instead: `npm install -g <repo>/.pmx/cli/productmaxxing.tgz`. Use Homebrew's Node rather than nvm: the background job remembers Node's path, and nvm switching or removing a version breaks it.
 
 `pmx init` doesn't ask for working hours: PMX works whenever this Mac is on and awake. It asks for your company's email domain, so it can tell colleagues from customers (without one it holds every meeting). On a Claude plan it sets no dollar cap of your own, because the dollars are only an estimate; your plan's own limits and your team's cap still apply. It explains the PMX repo, checks every answer (and asks again if one is wrong), shows a summary, and saves nothing until you confirm. Then it sets up or joins your team's PMX repo, stores tokens in the keychain, writes a clean run profile and registers one background job. Then:
 
@@ -28,7 +28,7 @@ pmx claude login  # sign in PMX's own Claude profile, which agent runs use
 pmx digest        # this week's digest from your transcripts, approved before it's committed
 ```
 
-The skills also install as a Claude Code plugin: `/plugin marketplace add kp-prodgit/productgit`.
+The skills also install as a Claude Code plugin: `/plugin marketplace add kp-prodgit/productmaxxing`.
 
 ## Commands
 
@@ -99,7 +99,7 @@ Share it from the artifact's Share menu, then add `"board": { "url": "<link>" }`
 
 ## Updating
 
-Your team's PMX repo holds the CLI package everyone installs (`.pmx/cli/productgit.tgz`), so a team moves to a new version together. After any update, the first `pmx` command says what's new, once; `pmx whats-new` shows it again.
+Your team's PMX repo holds the CLI package everyone installs (`.pmx/cli/productmaxxing.tgz`), so a team moves to a new version together. After any update, the first `pmx` command says what's new, once; `pmx whats-new` shows it again.
 
 **Existing machines: what to do**
 
@@ -114,10 +114,10 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productgit/releases/download/v0.14.0/productgit-0.14.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productgit/releases/download/v0.14.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/productmaxxing-0.14.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS
-npm install -g ./productgit-0.14.0.tgz
+npm install -g ./productmaxxing-0.14.0.tgz
 pmx whats-new --since <the version you had>
 ```
 
@@ -137,7 +137,7 @@ Then run `pmx doctor`. It names anything left to do: for example, `pmx claude lo
 | The hosted board, invites, admin policy and the Linear broker | The brain: suggests, queues or (on autopilot, within the admin's limits) takes the next actions on the board |
 | Content-free analytics events, after you sign in and see what's sent | Cloud leases and the signed license |
 
-The brain runs on one of your team's machines on your own Claude plan, so task text never reaches Product Git. Fixed rules decide what it may do, every action gets a tracker comment saying why, and it can never approve an agent's draft.
+The brain runs on one of your team's machines on your own Claude plan, so task text never reaches ProductMaxxing. Fixed rules decide what it may do, every action gets a tracker comment saying why, and it can never approve an agent's draft.
 
 ## How it keeps work neutral and personal data out
 
@@ -158,7 +158,7 @@ The brain runs on one of your team's machines on your own Claude plan, so task t
 Node 24 (`.nvmrc`); CI also checks the oldest supported Node, 22.12.
 
 ```bash
-git clone https://github.com/kp-prodgit/productgit.git && cd productgit
+git clone https://github.com/kp-prodgit/productmaxxing.git && cd productmaxxing
 npm ci            # npm ci, not npm install, so package-lock.json never changes under you
 npm test
 npm run build && node dist/src/cli.js --help
@@ -176,4 +176,4 @@ The CLI ↔ hosted app contract is in [docs/control-plane-api.md](docs/control-p
 ## License
 
 Everything outside `ee/` is [Apache-2.0](LICENSE). `ee/` is source-visible under the
-[Product Git Commercial License](ee/LICENSE) and needs a Team plan to use.
+[ProductMaxxing Commercial License](ee/LICENSE) and needs a Team plan to use.

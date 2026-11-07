@@ -12,7 +12,7 @@ import { paths, pmxHome } from "../core/paths.js";
  * personal config and keychain items. The PMX repo and its shared skills are team assets and stay.
  */
 export async function runUninstall(d: { ask: Asker; keychain: Keychain; launchd: Launchd; exec: Exec; out: Out; yes?: boolean }): Promise<void> {
-  if (!d.yes && !(await d.ask.confirm(`Remove Product Git from this Mac (${pmxHome()}, the background job and keychain items)?`, false))) {
+  if (!d.yes && !(await d.ask.confirm(`Remove ProductMaxxing from this Mac (${pmxHome()}, the background job and keychain items)?`, false))) {
     d.out.info("Nothing removed.");
     return;
   }

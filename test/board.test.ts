@@ -85,7 +85,7 @@ describe("the Claude board (BOARD-1)", () => {
     expect(skill).toContain("pmx board --json");
     expect(skill).toMatch(/Never create a second board/);
 
-    await writeFile(appSkillTarget(BOARD_SKILL), "<!-- Installed by Product Git -->\nname: pmx-board\nold");
+    await writeFile(appSkillTarget(BOARD_SKILL), "<!-- Installed by ProductMaxxing -->\nname: pmx-board\nold");
     await mkdir(join(appSkillTarget(), ".."), { recursive: true });
     await writeFile(appSkillTarget(), "---\nname: pmx-schedule\n---\nmy own version");
     expect(await refreshAppSkills()).toEqual(["pmx-board"]);

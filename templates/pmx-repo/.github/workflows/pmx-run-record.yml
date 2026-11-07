@@ -21,10 +21,10 @@ jobs:
       # review, so a PR must not be able to swap in a CLI that passes its own check.
       - name: Install the PMX CLI from the base branch
         run: |
-          if git cat-file -e "origin/$BASE:.pmx/cli/productgit.tgz" 2>/dev/null; then
-            git show "origin/$BASE:.pmx/cli/productgit.tgz" > "$RUNNER_TEMP/productgit.tgz"
-            npm install -g "$RUNNER_TEMP/productgit.tgz"
+          if git cat-file -e "origin/$BASE:.pmx/cli/productmaxxing.tgz" 2>/dev/null; then
+            git show "origin/$BASE:.pmx/cli/productmaxxing.tgz" > "$RUNNER_TEMP/productmaxxing.tgz"
+            npm install -g "$RUNNER_TEMP/productmaxxing.tgz"
           else
-            npm install -g "https://github.com/kp-prodgit/productgit/releases/download/v{{PMX_VERSION}}/productgit-{{PMX_VERSION}}.tgz"
+            npm install -g "https://github.com/kp-prodgit/productmaxxing/releases/download/v{{PMX_VERSION}}/productmaxxing-{{PMX_VERSION}}.tgz"
           fi
       - run: pmx verify-record --base "origin/$BASE"

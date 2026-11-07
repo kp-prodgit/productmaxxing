@@ -21,7 +21,7 @@ export async function publishDigest(ctx: Ctx, week: string, markdown: string): P
       branch,
       base,
       title: `Digest ${week} (${ctx.personal.handle})`,
-      body: `Weekly signal digest, approved by ${ctx.personal.handle} before commit.\n\n_Opened by Product Git._`,
+      body: `Weekly signal digest, approved by ${ctx.personal.handle} before commit.\n\n_Opened by ProductMaxxing._`,
       labels: ["pmx", "pmx-digest"],
     });
     return { url: pr.url };

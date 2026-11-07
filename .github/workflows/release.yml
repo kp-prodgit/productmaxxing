@@ -8,7 +8,7 @@ permissions:
   contents: write
 jobs:
   release:
-    if: github.repository == 'kp-prodgit/productgit'
+    if: github.repository == 'kp-prodgit/productmaxxing'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,10 +22,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm pack
-      - run: shasum -a 256 productgit-*.tgz > SHA256SUMS && cat SHA256SUMS
+      - run: shasum -a 256 productmaxxing-*.tgz > SHA256SUMS && cat SHA256SUMS
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" productgit-*.tgz SHA256SUMS --title "pmx ${GITHUB_REF_NAME#v}" \
+          gh release create "$GITHUB_REF_NAME" productmaxxing-*.tgz SHA256SUMS --title "pmx ${GITHUB_REF_NAME#v}" \
             --notes "Install: follow INSTALL.md (https://github.com/${{ github.repository }}/blob/main/INSTALL.md). Changes: CHANGELOG.md."

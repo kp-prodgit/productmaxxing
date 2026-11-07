@@ -62,7 +62,7 @@
     "autoUpdate": true
   },
   "controlPlane": {
-    "url": "https://api.productgit.com/v1",
+    "url": "https://api.productmaxxing.com/v1",
     "orgId": "org_abc"
   },
   "company": null

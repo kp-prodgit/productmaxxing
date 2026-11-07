@@ -1,9 +1,9 @@
 ---
 name: pmx-schedule
-description: Sets up Product Git's (PMX) scheduled tasks in this Claude app. Asks pmx which tasks this machine is missing or has with an older prompt (meeting collection, the Linear sync) and creates or updates each one with the scheduled-tasks tool. Use when the user types /pmx-schedule or asks to set up or fix PMX's Claude tasks.
+description: Sets up ProductMaxxing's (PMX) scheduled tasks in this Claude app. Asks pmx which tasks this machine is missing or has with an older prompt (meeting collection, the Linear sync) and creates or updates each one with the scheduled-tasks tool. Use when the user types /pmx-schedule or asks to set up or fix PMX's Claude tasks.
 ---
 
-<!-- Installed by Product Git (pmx init / pmx schedule --install-skill), which keeps it up to date. Your edits are overwritten on the next update. -->
+<!-- Installed by ProductMaxxing (pmx init / pmx schedule --install-skill), which keeps it up to date. Your edits are overwritten on the next update. -->
 
 # Set up PMX's scheduled tasks
 

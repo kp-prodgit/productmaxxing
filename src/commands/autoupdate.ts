@@ -30,12 +30,12 @@ export const updateStep: TickStep = async (ctx: Ctx) => {
   if (r.result === "updated") {
     const notes = await newVersionNotes(ctx.exec, currentVersion()).catch(() => null);
     const headline = notes?.split("\n")[0]?.replace(/^What's new in pmx [\d.]+: /, "") ?? null;
-    await notify("Product Git updated", `pmx ${r.version} is installed${headline ? `: ${headline}` : ""}. See what's new: pmx whats-new`).catch(() => {});
+    await notify("ProductMaxxing updated", `pmx ${r.version} is installed${headline ? `: ${headline}` : ""}. See what's new: pmx whats-new`).catch(() => {});
     return `auto-update: installed pmx ${r.version}`;
   }
   if (tellOnce) {
     const how = r.result === "needs-sudo" ? `Run: ${r.command}` : r.error;
-    await notify("Product Git update waiting", `Your team is on pmx ${version}. ${r.result === "needs-sudo" ? "It needs your password: run pmx update in Terminal." : "The install failed: run pmx update."}`).catch(() => {});
+    await notify("ProductMaxxing update waiting", `Your team is on pmx ${version}. ${r.result === "needs-sudo" ? "It needs your password: run pmx update in Terminal." : "The install failed: run pmx update."}`).catch(() => {});
     return `auto-update: pmx ${version} is waiting (${how})`;
   }
   return null;

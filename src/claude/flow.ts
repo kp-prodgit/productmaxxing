@@ -19,7 +19,7 @@ export const flowCapabilities = () => ({ mcp: { servers: [{ server: "host:pmx", 
 export function flowArtifact(cfg: { team: string; version: string; boardUrl: string | null }): string {
   const json = JSON.stringify(cfg).replace(/</g, "\\u003c");
   return `<title>PMX Flow</title>
-<!-- Installed by Product Git. \`pmx flow --html\` writes this page; /pmx-flow publishes it as a Claude artifact (FLOW-5). -->
+<!-- Installed by ProductMaxxing. \`pmx flow --html\` writes this page; /pmx-flow publishes it as a Claude artifact (FLOW-5). -->
 <script type="application/json" id="pmx-config">${json}</script>
 <style>
 :root { --page-bg: #f6f7f9; --page-ink: #18202c; --page-muted: #5f6878; --page-warn-bg: #fff4e2; --page-warn: #7a4a08; }
@@ -31,7 +31,7 @@ body { margin: 0; background: var(--page-bg); color: var(--page-ink); padding: 1
 .warn code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; }
 ${FLOW_CSS}
 </style>
-<p class="note">This page reads Product Git on the Mac that opens it, through the Claude desktop app. Held meetings appear by rule only; to see their titles, run <code>pmx flow --web</code> on that Mac.</p>
+<p class="note">This page reads ProductMaxxing on the Mac that opens it, through the Claude desktop app. Held meetings appear by rule only; to see their titles, run <code>pmx flow --web</code> on that Mac.</p>
 <div id="banner" class="warn" hidden></div>
 <div id="flow"></div>
 <script>
@@ -88,7 +88,7 @@ export async function flowJson(team: TeamConfig | null, personal: PersonalConfig
     ready: true,
     html: await renderFlow(team, personal),
     title: "PMX Flow",
-    description: "Where Product Git's data went: meetings read and held, tasks, Linear issues, agent runs, skills and spend, read from this Mac.",
+    description: "Where ProductMaxxing's data went: meetings read and held, tasks, Linear issues, agent runs, skills and spend, read from this Mac.",
     icon: "flow",
     capabilities: flowCapabilities(),
     url: personal?.flow?.url ?? null,

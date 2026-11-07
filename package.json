@@ -1,12 +1,12 @@
 {
-  "name": "productgit",
+  "name": "productmaxxing",
   "version": "0.14.0",
-  "description": "Product Git: synthesize product signals into sized work and let each PM's agent draft it, paced by human review.",
+  "description": "ProductMaxxing: synthesize product signals into sized work and let each PM's agent draft it, paced by human review.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "pmx": "dist/src/cli.js",
-    "productgit": "dist/src/cli.js"
+    "productmaxxing": "dist/src/cli.js"
   },
   "files": [
     "dist",
@@ -31,9 +31,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/kp-prodgit/productgit.git"
+    "url": "https://github.com/kp-prodgit/productmaxxing.git"
   },
-  "homepage": "https://productgit.com",
+  "homepage": "https://productmaxxing.com",
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^5.9.3",

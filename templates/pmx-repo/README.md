@@ -1,6 +1,6 @@
 # PMX repo
 
-The team's shared PMX repo, managed by [Product Git](https://productgit.com).
+The team's shared PMX repo, managed by [ProductMaxxing](https://productmaxxing.com).
 
 | Path | What |
 |---|---|
@@ -11,7 +11,7 @@ The team's shared PMX repo, managed by [Product Git](https://productgit.com).
 | `digests/` | Approved weekly digests. |
 | `ideation/` | Ideation canvases (JSON). |
 | `pmx.stop` | Kill switch. If this file exists on main, no agent pulls. |
-| `.pmx/cli/productgit.tgz` | The CLI package this team and CI install. Update with `pmx vendor`, in a PR of its own. |
+| `.pmx/cli/productmaxxing.tgz` | The CLI package this team and CI install. Update with `pmx vendor`, in a PR of its own. |
 | `.pmx/runs/` | Run records, one per agent output (checked in CI). |
 
 ## Join the team (macOS)
@@ -20,7 +20,7 @@ The team's shared PMX repo, managed by [Product Git](https://productgit.com).
 2. Clone this repo, then install the CLI from it:
 
    ```bash
-   npm install -g ./.pmx/cli/productgit.tgz
+   npm install -g ./.pmx/cli/productmaxxing.tgz
    ```
 
    If npm says you lack permission, your Node was installed system-wide. Run

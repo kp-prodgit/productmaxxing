@@ -79,9 +79,9 @@ export async function collectPrompt(ctx: Ctx, o: { scope: "mine" | "team" }): Pr
   const since = s.lastCollectAt ? new Date(Date.parse(s.lastCollectAt) - 2 * 3600000) : startOfDay(ctx.now(), 1);
   const have = (await scan()).filter((c) => c.source && c.sourceId).map((c) => `${c.source}:${c.sourceId}`);
   const ni = ctx.personal.neverIngest;
-  return `# Collect meeting transcripts for Product Git (PMX)
+  return `# Collect meeting transcripts for ProductMaxxing (PMX)
 
-You are collecting meeting transcripts into PMX's folder. Product Git filters and processes them afterwards; you only copy them.
+You are collecting meeting transcripts into PMX's folder. ProductMaxxing filters and processes them afterwards; you only copy them.
 
 1. Find a meeting-notes connector among your tools, in this order: ${MEETING_CONNECTORS.join(", ")}. Use the first one that works. If none is connected, stop and say: "No meeting connector is connected to Claude. Add Granola or Fireflies in Settings → Connectors."
 2. List meetings that ended after ${since.toISOString()} ${o.scope === "team" ? "and are shared with my team or workspace" : "that I attended"}, and that have a transcript.

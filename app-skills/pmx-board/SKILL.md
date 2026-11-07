@@ -1,9 +1,9 @@
 ---
 name: pmx-board
-description: Publishes Product Git's (PMX) team board as a live Claude artifact that reads the team's Linear project through the viewer's own Linear connector, or updates the board this Mac already published. Use when the user types /pmx-board or asks to set up, open or update the PMX board in Claude.
+description: Publishes ProductMaxxing's (PMX) team board as a live Claude artifact that reads the team's Linear project through the viewer's own Linear connector, or updates the board this Mac already published. Use when the user types /pmx-board or asks to set up, open or update the PMX board in Claude.
 ---
 
-<!-- Installed by Product Git (pmx init / pmx board --install-skill), which keeps it up to date. Your edits are overwritten on the next update. -->
+<!-- Installed by ProductMaxxing (pmx init / pmx board --install-skill), which keeps it up to date. Your edits are overwritten on the next update. -->
 
 # Publish the PMX board
 

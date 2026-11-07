@@ -6,7 +6,7 @@ import { readJson, writeJson } from "./fsutil.js";
 import { paths } from "./paths.js";
 
 /**
- * The clean run profile (B1). Every Claude Code run Product Git starts goes through
+ * The clean run profile (B1). Every Claude Code run ProductMaxxing starts goes through
  * `cleanInvocation`, so personal memory, instructions, skills, plugins, hooks, MCP servers
  * and claude.ai connectors never load (PRIV-1, NEUT-1).
  */

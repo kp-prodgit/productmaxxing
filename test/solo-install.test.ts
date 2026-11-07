@@ -165,24 +165,24 @@ describe("0.10.0: a solo install that works", () => {
     const installs: string[][] = [];
     const npm: Exec = async (cmd, args) => (installs.push([cmd, ...args]), { stdout: "", stderr: "", code: 0 });
 
-    expect(await installLatestRelease(npm, { fetch: fakeFetch(`${"0".repeat(64)}  productgit-${v}.tgz\n`) })).toMatchObject({ result: "failed", error: expect.stringContaining("doesn't match") });
+    expect(await installLatestRelease(npm, { fetch: fakeFetch(`${"0".repeat(64)}  productmaxxing-${v}.tgz\n`) })).toMatchObject({ result: "failed", error: expect.stringContaining("doesn't match") });
     expect(installs).toEqual([]);
-    expect(await installLatestRelease(npm, { fetch: fakeFetch(`${sum}  productgit-${v}.tgz\n`) })).toEqual({ result: "updated", version: v });
+    expect(await installLatestRelease(npm, { fetch: fakeFetch(`${sum}  productmaxxing-${v}.tgz\n`) })).toEqual({ result: "updated", version: v });
     expect(installs[0]!.slice(0, 3)).toEqual(["npm", "install", "-g"]);
-    expect(installs[0]![3]).toMatch(new RegExp(`productgit-${v}\\.tgz$`));
+    expect(installs[0]![3]).toMatch(new RegExp(`productmaxxing-${v}\\.tgz$`));
     delete process.env.PMX_INSTALL_ROOT_FOR_TESTS;
   });
 
   it("INSTALL.md pins this release, starts with auto mode off, and the export publishes it", async () => {
     const guide = await readFile(join(root, "INSTALL.md"), "utf8");
     const v = currentVersion();
-    expect(guide).toContain(`releases/download/v${v}/productgit-${v}.tgz`);
+    expect(guide).toContain(`releases/download/v${v}/productmaxxing-${v}.tgz`);
     expect(guide).toContain(`releases/download/v${v}/SHA256SUMS`);
     expect(guide.indexOf("auto mode off")).toBeLessThan(guide.indexOf("Step 1"));
     expect(guide).toContain("pmx doctor --json");
     // The README's manual install and its update steps name this release too.
     const readme = await readFile(join(root, "README.md"), "utf8");
-    expect(readme).toContain(`releases/download/v${v}/productgit-${v}.tgz`);
+    expect(readme).toContain(`releases/download/v${v}/productmaxxing-${v}.tgz`);
     expect(readme).not.toMatch(new RegExp(`releases/download/v(?!${v.replace(/\./g, "\\.")}/)`));
     // The export script stays in the private repo, so the public repo's tests skip this part.
     const exporter = await readFile(join(root, "scripts/export-public.sh"), "utf8").catch(() => null);

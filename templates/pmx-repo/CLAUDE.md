@@ -1,6 +1,6 @@
 # PMX repo
 
-This is the team's shared PMX repo, managed by Product Git. Agent runs start here, in a clean profile
+This is the team's shared PMX repo, managed by ProductMaxxing. Agent runs start here, in a clean profile
 that loads no personal memory, instructions, skills or tools (PRIV-1, NEUT-1).
 
 ## Team memory

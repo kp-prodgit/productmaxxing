@@ -20,14 +20,14 @@ import { registerEe } from "../ee/src/index.js";
 
 const commands = [...core, ...registerEe()];
 
-const HELP = `pmx: Product Git
+const HELP = `pmx: ProductMaxxing
 
 Usage: pmx <command> [options]
 
 Commands:
 ${commands.map((c) => `  ${c.name.padEnd(14)} ${c.summary}`).join("\n")}
 
-Run \`pmx <command> --help\` for options. Docs: https://productgit.com`;
+Run \`pmx <command> --help\` for options. Docs: https://productmaxxing.com`;
 
 export async function realCtx(): Promise<Ctx> {
   const personal: PersonalConfig = await loadPersonalConfig();

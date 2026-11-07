@@ -13,7 +13,7 @@ export const APP_SKILL = "pmx-schedule";
 export const BOARD_SKILL = "pmx-board";
 export const FLOW_SKILL = "pmx-flow";
 export type AppSkill = typeof APP_SKILL | typeof BOARD_SKILL | typeof FLOW_SKILL;
-const MARKER = "Installed by Product Git";
+const MARKER = "Installed by ProductMaxxing";
 
 export const appSkillSource = (name: AppSkill = APP_SKILL) => join(packageRoot(), "app-skills", name, "SKILL.md");
 /** The PM's Claude app folder. Tests point PMX_CLAUDE_HOME elsewhere so they never touch the real one. */

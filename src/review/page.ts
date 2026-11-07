@@ -4,7 +4,7 @@ export const PAGE = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Review queue · Product Git</title>
+<title>Review queue · ProductMaxxing</title>
 <style>
 :root {
   --bg: #f7f7f5; --panel: #ffffff; --ink: #1b1b1a; --muted: #6b6a66; --line: #e4e2dc;

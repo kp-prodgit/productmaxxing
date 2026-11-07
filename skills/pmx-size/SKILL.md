@@ -29,6 +29,6 @@ When unsure between two sizes, pick the larger one.
 ## Explain every size
 
 For each task, quote the cell from the per-category table that you matched, word for word, and say in
-one sentence why the task fits it, for example "Five calls on one theme". Product Git checks the cell
+one sentence why the task fits it, for example "Five calls on one theme". ProductMaxxing checks the cell
 against this table and, for research synthesis, the number of cited sources against the ranges above.
 A disagreement is shown to the PM at triage; it doesn't block the task.

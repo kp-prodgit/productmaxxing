@@ -1,9 +1,9 @@
 ---
 name: pmx-flow
-description: Publishes Product Git's (PMX) flow view as a live Claude artifact that shows where PMX's data went (meetings read and held, tasks, Linear issues, agent runs, skills, spend), read from PMX on this Mac, or updates the one this Mac already published. Use when the user types /pmx-flow or asks to set up, open or update the PMX flow view in Claude.
+description: Publishes ProductMaxxing's (PMX) flow view as a live Claude artifact that shows where PMX's data went (meetings read and held, tasks, Linear issues, agent runs, skills, spend), read from PMX on this Mac, or updates the one this Mac already published. Use when the user types /pmx-flow or asks to set up, open or update the PMX flow view in Claude.
 ---
 
-<!-- Installed by Product Git (pmx flow --install-skill), which keeps it up to date. Your edits are overwritten on the next update. -->
+<!-- Installed by ProductMaxxing (pmx flow --install-skill), which keeps it up to date. Your edits are overwritten on the next update. -->
 
 # Publish the PMX flow view
 

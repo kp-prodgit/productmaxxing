@@ -26,7 +26,7 @@ describe("installing the team's version (COMPAT-2, COMPAT-6)", () => {
   it("installs only a newer package, never downgrades, and never replaces a source checkout", async () => {
     const newer = fakeExec({ vendored: "0.15.0" });
     expect(await installTeamVersion("/repo", newer.exec)).toEqual({ result: "updated", version: "0.15.0" });
-    expect(newer.npmCalls()[0]).toEqual(["npm", "install", "-g", "/repo/.pmx/cli/productgit.tgz"]);
+    expect(newer.npmCalls()[0]).toEqual(["npm", "install", "-g", "/repo/.pmx/cli/productmaxxing.tgz"]);
 
     const older = fakeExec({ vendored: "0.4.0" });
     expect(await installTeamVersion("/repo", older.exec)).toEqual({ result: "current", version: "0.4.0" });
@@ -42,7 +42,7 @@ describe("installing the team's version (COMPAT-2, COMPAT-6)", () => {
 
   it("explains a global folder that needs sudo", async () => {
     const r = await installTeamVersion("/repo", fakeExec({ vendored: "0.15.0", npm: { code: 243, stderr: "npm ERR! code EACCES" } }).exec);
-    expect(r).toEqual({ result: "needs-sudo", version: "0.15.0", command: 'sudo npm install -g "/repo/.pmx/cli/productgit.tgz"' });
+    expect(r).toEqual({ result: "needs-sudo", version: "0.15.0", command: 'sudo npm install -g "/repo/.pmx/cli/productmaxxing.tgz"' });
   });
 });
 

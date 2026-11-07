@@ -4,7 +4,7 @@ import type { Exec } from "./exec.js";
 import { packageRoot } from "./skills.js";
 
 /** Where a PMX repo keeps the CLI package its PMs and its CI install. */
-export const VENDORED_CLI = ".pmx/cli/productgit.tgz";
+export const VENDORED_CLI = ".pmx/cli/productmaxxing.tgz";
 
 export async function cliVersion(): Promise<string> {
   return JSON.parse(await readFile(join(packageRoot(), "package.json"), "utf8")).version;
@@ -12,7 +12,7 @@ export async function cliVersion(): Promise<string> {
 
 /**
  * Packs the running CLI into the PMX repo. Teammates install that exact build with
- * `npm install -g .pmx/cli/productgit.tgz`, and the run-record CI check installs it from the
+ * `npm install -g .pmx/cli/productmaxxing.tgz`, and the run-record CI check installs it from the
  * base branch, so every machine and CI compute fingerprints with the same version.
  * Works from an installed copy too: it packs the package's own files, without build scripts.
  */

@@ -1,10 +1,10 @@
-# Install Product Git (pmx) on a Mac
+# Install ProductMaxxing (pmx) on a Mac
 
 This guide is written for **Claude Code** to follow on a PM's Mac. To use it, open Claude Code (the Claude desktop app's Code tab, or `claude` in Terminal) and say:
 
-> Install PMX following https://github.com/kp-prodgit/productgit/blob/main/INSTALL.md
+> Install PMX following https://github.com/kp-prodgit/productmaxxing/blob/main/INSTALL.md
 
-Version: **0.14.0**. Package: `productgit-0.14.0.tgz` from the [v0.14.0 release](https://github.com/kp-prodgit/productgit/releases/tag/v0.14.0).
+Version: **0.14.0**. Package: `productmaxxing-0.14.0.tgz` from the [v0.14.0 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.14.0).
 
 ---
 
@@ -43,7 +43,7 @@ Fixes:
 If `pmx --version` printed a version, this is an upgrade. Note that version. Follow the same steps, with these differences:
 - **Tell the user what's new.** After step 3, run `pmx whats-new --since <the version you noted>` and summarize it for the user in a few lines, with the commands it suggests trying.
 - **Never run `pmx uninstall`.** It deletes `~/.pmx` (the user's settings, to-dos, collected transcripts, drafts and run receipts), PMX's keychain items and the background job. Installing over the old version keeps all of them.
-- **An old copy on a different Node:** if the old `pmx` lives outside the folder `npm prefix -g` prints after any Node change (for example under `~/.nvm/`), it can stay first on PATH. Remove it with the Node it was installed with: `npm uninstall -g productgit`.
+- **An old copy on a different Node:** if the old `pmx` lives outside the folder `npm prefix -g` prints after any Node change (for example under `~/.nvm/`), it can stay first on PATH. Remove it with the Node it was installed with: `npm uninstall -g productmaxxing`.
 - **A folder the old version was built from** (a clone with `npm pack`) isn't used any more. The user can delete it.
 - **Step 4 still matters.** `pmx init` offers the saved answers as defaults, so it's quick. It asks again for any saved answer that's now invalid, offers to sign in PMX's Claude profile if it isn't, and registers the background job with the new Node's path and Claude Code's full path. A job from an older version may not find Claude Code at all.
 - **Step 6 updates older tasks.** `/pmx-schedule` updates each task whose prompt changed, creates missing ones and offers the always-allow rules.
@@ -54,15 +54,15 @@ Download the package and its checksum file into a new empty folder, check the ch
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productgit/releases/download/v0.14.0/productgit-0.14.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productgit/releases/download/v0.14.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/productmaxxing-0.14.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS
-npm install -g ./productgit-0.14.0.tgz
+npm install -g ./productmaxxing-0.14.0.tgz
 ```
 
-If `shasum` doesn't print `productgit-0.14.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
+If `shasum` doesn't print `productmaxxing-0.14.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
 
-**Joining a team that already uses PMX?** Install your team's version instead. Clone the team's PMX repo (ask the team lead for its URL), then run `npm install -g <repo>/.pmx/cli/productgit.tgz`.
+**Joining a team that already uses PMX?** Install your team's version instead. Clone the team's PMX repo (ask the team lead for its URL), then run `npm install -g <repo>/.pmx/cli/productmaxxing.tgz`.
 
 ### Step 3: verify
 
@@ -115,5 +115,5 @@ Tell the user:
   - `~/.pmx`: settings, logs, drafts and receipts, private to the user;
   - your PMX repo: shared with the team;
   - the macOS keychain: tokens;
-  - one launchd job, `com.productgit.pmx`.
-- **Uninstall:** `pmx uninstall`, then `npm uninstall -g productgit`.
+  - one launchd job, `com.productmaxxing.pmx`.
+- **Uninstall:** `pmx uninstall`, then `npm uninstall -g productmaxxing`.

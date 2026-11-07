@@ -1,4 +1,4 @@
-// Product Git Commercial License. See ee/LICENSE.
+// ProductMaxxing Commercial License. See ee/LICENSE.
 import type { Command } from "../../src/commands/index.js";
 import { setHooks, tickSteps } from "../../src/commands/index.js";
 import { setUnpauseHandler } from "../../src/commands/review.js";
@@ -98,7 +98,7 @@ export function registerEe(): Command[] {
   setHooks({
     invite: async (invite) => {
       await login({ keychain: macKeychain(), label: machineId(), inviteCode: invite.inviteCode, open: openUrl });
-      console.log("Joined the team and signed in to Product Git.");
+      console.log("Joined the team and signed in to ProductMaxxing.");
     },
     doctor: async () => {
       const p = await loadPersonalConfig().catch(() => null);
@@ -108,7 +108,7 @@ export function registerEe(): Command[] {
       const signedIn = !!(await kc.get("machine-token"));
       const lic = await currentLicense(new Date(), team.controlPlane.orgId);
       return [
-        { id: "ee.signed-in", ok: signedIn, detail: signedIn ? "signed in to the Product Git control plane" : "not signed in: run `pmx login`", level: "fail" as const },
+        { id: "ee.signed-in", ok: signedIn, detail: signedIn ? "signed in to the ProductMaxxing control plane" : "not signed in: run `pmx login`", level: "fail" as const },
         { id: "ee.license", ok: !!lic.claims, detail: lic.claims ? `${lic.claims.plan} license, ${lic.claims.seats} seats, valid to ${new Date(lic.claims.exp * 1000).toISOString().slice(0, 10)}` : `license: ${lic.problem}`, level: team.lease === "cloud" ? ("fail" as const) : ("warn" as const) },
       ];
     },

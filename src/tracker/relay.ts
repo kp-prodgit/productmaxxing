@@ -222,7 +222,7 @@ export async function relayPrompt(team: TeamConfig): Promise<string> {
   const { teamKey, projectId } = team.tracker;
   const byGroup = new Map<string, string[]>();
   for (const l of pmxLabels(team)) { const [g, n] = l.split("/") as [string, string]; byGroup.set(g, [...(byGroup.get(g) ?? []), n]); }
-  return `# Sync Product Git (PMX) with Linear
+  return `# Sync ProductMaxxing (PMX) with Linear
 
 Use the Linear connector. Work only in Linear team ${teamKey}, project ${projectId}. Never change any other issue, project or team, and never delete anything.
 

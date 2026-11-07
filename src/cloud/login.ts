@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Keychain } from "../core/keychain.js";
 
-const APP = "https://app.productgit.com";
+const APP = "https://app.productmaxxing.com";
 
 export interface LoginOpts {
   keychain: Keychain;
@@ -41,7 +41,7 @@ export async function login(o: LoginOpts): Promise<void> {
     }
     try {
       await o.keychain.set("machine-token", token);
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>Signed in</title><body style=\"font:16px system-ui;padding:48px\">Signed in to Product Git. You can close this tab.</body>");
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<!doctype html><title>Signed in</title><body style=\"font:16px system-ui;padding:48px\">Signed in to ProductMaxxing. You can close this tab.</body>");
       finish();
     } catch (e: any) {
       res.writeHead(500).end();

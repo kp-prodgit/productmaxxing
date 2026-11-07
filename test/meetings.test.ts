@@ -81,23 +81,36 @@ describe("team meeting ledger in the tracker (MEET-2)", () => {
   }
   const opts = { days: 3, since: startOfDay(NOW) };
 
-  it("lodges each new meeting under an opaque title, marks it done, and never processes it twice", async () => {
+  it("records each processed meeting in the PMX repo under salted keys, puts nothing in Linear, and never processes it twice", async () => {
     const { ctx, svc, tracker, runtime } = await setup();
     const r = await synthesize(ctx, svc, opts);
     expect(r.staged.map((p) => p.title)).toEqual(["Draft a one-pager for SCIM sync"]);
-    const [entry] = [...tracker.meetings.values()];
-    // PRIV-6: the shared tracker never gets the meeting's title, attendees or source.
-    expect(entry).toMatchObject({ title: expect.stringMatching(/^Processed meeting m[0-9a-f]{8}$/), status: "done", tasks: [], agent: "ana@m1" });
-    expect(JSON.stringify(entry)).not.toMatch(/Acme|fireflies|jane/i);
-    expect(tracker.comments.get(entry!.id)![0]).toMatch(/proposed 1 task\(s\) to ana@m1, who approves them/);
-    expect(r.meetings).toMatchObject({ already: 0, before: 1 });
-    expect((await tracker.list()).some((t) => t.title.startsWith("Meeting"))).toBe(false); // ledger entries are not tasks
+    // PRIV-7: no marker in Linear at all.
+    expect(tracker.meetings.size).toBe(0);
+    expect(tracker.tasks.size).toBe(0);
+    const [entry, ...rest] = await svc.meetings.list();
+    expect(rest).toEqual([]);
+    expect(entry).toMatchObject({ status: "done", agent: "ana@m1" });
+    // Salted with the team's PMX repo: not the hash anyone could compute from a guessed day, title and attendees.
+    const plain = meetingKeys({ at: `${today}T14:00:00Z`, title: "Acme renewal", participants: ["jane@acme.com", "ana@us.com"], text: "", origin: { source: "fireflies", sourceId: "ff-1" } });
+    expect(entry!.keys.some((k) => plain.includes(k))).toBe(false);
+    const refs = await ctx.repo.ok(["for-each-ref", "--format=%(refname) %(contents)", "refs/pmx/meetings"]);
+    expect(refs).not.toMatch(/Acme|jane|fireflies/i);
 
-    // The next poll: nothing new, so no model call and no second entry.
+    // The next poll: nothing new, so no model call.
     const again = await synthesize(ctx, svc, { ...opts, skipIfNothingNew: true });
     expect(again.meetings.already).toBe(1);
     expect(runtime.calls).toHaveLength(1);
-    expect(tracker.meetings.size).toBe(1);
+  });
+
+  it("still recognises a meeting an older version marked in Linear", async () => {
+    const { ctx, svc, tracker, runtime } = await setup();
+    const plain = meetingKeys({ at: `${today}T14:00:00Z`, title: "Acme renewal", participants: ["jane@acme.com", "ana@us.com"], text: "", origin: { source: "fireflies", sourceId: "ff-1" } });
+    const m = await tracker.lodgeMeeting({ keys: plain, at: today, agent: "bo@m2" });
+    await tracker.finishMeeting(m.id, { status: "done", tasks: [], note: "" });
+    const r = await synthesize(ctx, svc, { ...opts, skipIfNothingNew: true });
+    expect(r.meetings.already).toBe(1);
+    expect(runtime.calls).toHaveLength(0);
   });
 
   it("skips a meeting another machine has claimed", async () => {
@@ -105,34 +118,32 @@ describe("team meeting ledger in the tracker (MEET-2)", () => {
       kind: "git", acquire: async () => ({ ok: false, holder: "bo@m2", expiresAt: "" }) as any,
       release: async () => true, forceRelease: async () => true, list: async () => [],
     };
-    const { ctx, svc, tracker, runtime } = await setup(busy);
+    const { ctx, svc, runtime } = await setup(busy);
     const r = await synthesize(ctx, svc, { ...opts, skipIfNothingNew: true });
     expect(r.meetings.busy).toBe(1);
-    expect(tracker.meetings.size).toBe(0);
+    expect(await svc.meetings.list()).toEqual([]);
     expect(runtime.calls).toHaveLength(0);
   });
 
-  it("marks a meeting blocked when the run fails, then retries it on the same entry", async () => {
-    const { ctx, tracker, svc, runtime } = await setup();
+  it("records nothing when the run fails, so the next pass retries the meeting", async () => {
+    const { ctx, svc, runtime } = await setup();
     const failing = { ...ctx, runtime: mockRuntime(() => ({ ok: false, error: "rate limited" })) };
     await expect(synthesize(failing, svc, opts)).rejects.toThrow(/rate limited/);
-    const [entry] = [...tracker.meetings.values()];
-    expect(entry!.status).toBe("blocked");
+    expect(await svc.meetings.list()).toEqual([]);
     await synthesize(ctx, svc, opts);
-    expect(tracker.meetings.size).toBe(1);
-    expect([...tracker.meetings.values()][0]!.status).toBe("done");
+    expect(await svc.meetings.list()).toHaveLength(1);
     expect(runtime.calls).toHaveLength(1);
   });
 
   it("records each meeting's ledger state in the receipt", async () => {
-    const { ctx, svc, tracker } = await setup();
+    const { ctx, svc } = await setup();
     await synthesize(ctx, svc, opts);
-    const entry = [...tracker.meetings.values()][0]!.identifier;
+    const [entry] = await svc.meetings.list();
     const second = await synthesize(ctx, svc, { ...opts, dryRun: true });
     expect(second.meetings.already).toBe(1);
     const ids = (await import("../src/core/receipt.js")).listReceipts;
     const r = await readReceipt((await ids())[0]!);
-    expect(r!.sources.find((s) => s.title === "Acme renewal")!.ledger).toEqual({ state: "already-processed", entry });
+    expect(r!.sources.find((s) => s.title === "Acme renewal")!.ledger).toEqual({ state: "already-processed", entry: entry!.identifier });
   });
 });
 

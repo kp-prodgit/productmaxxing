@@ -18,6 +18,7 @@ export type HoldReason =
   | "never-ingest"
   | "no-external-participant"
   | "no-company-domain"
+  | "source-off"
   | "unknown-participants";
 
 type Topic = "performance" | "compensation" | "health" | "hiring" | "one-on-one";
@@ -78,6 +79,7 @@ export const HOLD_LABELS: Record<HoldReason | "all-passages-held", string> = {
   "never-ingest": "Your do-not-read list",
   "no-external-participant": "No one from outside the company",
   "no-company-domain": "Company email domain not set",
+  "source-off": "A source you turned off for this",
   "unknown-participants": "No participant list",
   "all-passages-held": "Every passage was cut",
 };
@@ -97,7 +99,12 @@ export interface FilterRules {
    * just cut, so what's left of it never reaches the team's tracker.
    */
   wholeMeeting?: boolean;
+  /** Sources (connector names, "file", "slack") this run may not read, from the PM's routes (BOARD-3). */
+  blockedSources?: string[];
 }
+
+/** Which source an item came from, as routes name it. */
+export const sourceOf = (item: Pick<SignalItem, "kind" | "origin">) => (item.kind === "slack" ? "slack" : item.origin?.source ?? "file");
 
 /** Mail providers anyone can sign up with: never a company's own domain. */
 const PUBLIC_MAIL = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "fastmail.com"]);
@@ -138,7 +145,7 @@ export interface FilterResult {
 
 const emptyCounts = (): Record<HoldReason, number> => ({
   "one-on-one": 0, performance: 0, compensation: 0, health: 0, hiring: 0, "never-ingest": 0,
-  "no-external-participant": 0, "no-company-domain": 0, "unknown-participants": 0,
+  "no-external-participant": 0, "no-company-domain": 0, "source-off": 0, "unknown-participants": 0,
 });
 
 /** "Sam / Priya", "Ana <> Raj", "Lee & Kim": two people's names, the shape of a 1:1's calendar title. */
@@ -169,6 +176,7 @@ export function itemHoldReason(item: SignalItem, r: FilterRules): HoldReason | n
 
 export function itemDecision(item: SignalItem, r: FilterRules): { reason: HoldReason | null; detail: string } {
   const ni = r.neverIngest;
+  if (r.blockedSources?.includes(sourceOf(item))) return { reason: "source-off", detail: `you set ${sourceOf(item)} not to feed this` };
   // A meeting's title names what it's about: any sensitive topic there holds the whole meeting.
   for (const [topic, re] of Object.entries(TOPICS) as [Topic, RegExp][]) {
     if (topic === "one-on-one" && r.allowOneOnOne) continue;

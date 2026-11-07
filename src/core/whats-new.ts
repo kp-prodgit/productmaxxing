@@ -19,6 +19,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.16.0", date: "2026-11-07", headline: "The pipeline board",
+    items: [
+      { what: "One board for your skills, scheduled tasks, a live map of what travels from your meetings to Linear and back, and every rule. Approve proposed tasks and change rules right there.", try: "pmx flow --web" },
+      { what: "Choose what each source may feed: nothing, only your to-dos, or to-dos and Linear tasks.", try: "pmx sources" },
+      { what: "Nothing about your meetings goes to Linear any more: processed meetings are recorded in your PMX repo under keyed IDs. If you published /pmx-flow before, type /pmx-flow in the Claude app to update it." },
+    ],
+  },
+  {
     version: "0.15.0", date: "2026-11-07", headline: "Product Git is now ProductMaxxing",
     items: [
       { what: "New name: the repo is kp-prodgit/productmaxxing and the npm package is productmaxxing. The pmx command, ~/.pmx, your PMX repo and your settings are unchanged." },

@@ -1,0 +1,925 @@
+<title>PMX Pipeline</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script type="application/json" id="pmx-config">{"mode":"artifact","version":"0.0.0"}</script>
+<style>
+/* Installed by ProductMaxxing. `pmx flow --web` serves this page on this Mac; /pmx-flow publishes it as a Claude artifact (BOARD-3).
+   Layout: "Needs you" first, then a map coloured by where data goes (this Mac, Claude, Linear, the PMX repo).
+   Top band runs left to right to Linear; the bottom band turns back for agent work. Rules say what works today. */
+:root {
+  --bg: #f4f5f3;
+  --panel: #ffffff;
+  --panel-2: #eceee9;
+  --line: #cfd4cb;
+  --ink: #1b211e;
+  --ink-2: #48524c;
+  --ink-3: #6b766f;
+  --chrome: #1b211e;
+  --mac: #2f5f86;
+  --mac-soft: #e1ebf4;
+  --claude: #7a3fc4;
+  --claude-soft: #efe6fa;
+  --linear: #0e6b5b;
+  --linear-soft: #dcefe9;
+  --repo: #6d5a2e;
+  --repo-soft: #f1ecdf;
+  --held: #9a5a06;
+  --held-soft: #f7ead6;
+  --ok: #2c7a4b;
+  --bad: #b13a3a;
+  --font-ui: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111513; --panel: #191e1b; --panel-2: #222824; --line: #39423c; --ink: #e9ede9; --ink-2: #b5beb8; --ink-3: #8e9992; --chrome: #e9ede9;
+    --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d;
+    --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17; --ok: #6cc690; --bad: #ec8a8a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111513; --panel: #191e1b; --panel-2: #222824; --line: #39423c; --ink: #e9ede9; --ink-2: #b5beb8; --ink-3: #8e9992; --chrome: #e9ede9;
+  --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d;
+  --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17; --ok: #6cc690; --bad: #ec8a8a; color-scheme: dark;
+}
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.45 }
+.wrap { max-width: 1600px; margin: 0 auto; padding-block: 20px 110px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+h1, h2, h3 { margin: 0; text-wrap: balance }
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.01em }
+h2 { font-size: 16.5px; font-weight: 600 }
+h3 { font-size: 14px; font-weight: 600 }
+p { margin: 0 }
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums }
+.muted { color: var(--ink-2) }
+.faint { color: var(--ink-3) }
+.small { font-size: 12.5px }
+button { font: inherit; color: inherit }
+:focus-visible { outline: 2px solid var(--chrome); outline-offset: 2px }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 11px; cursor: pointer; font-size: 13px; line-height: 1.2 }
+.btn:hover { border-color: var(--ink-3) }
+.btn.primary { background: var(--chrome); border-color: var(--chrome); color: var(--bg) }
+.btn:disabled { opacity: 0.5; cursor: not-allowed }
+
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; margin-bottom: 12px }
+.sub { color: var(--ink-2); margin-top: 4px; max-width: 72ch }
+.example { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px dashed var(--ink-3); color: var(--ink-2) }
+
+/* Needs you */
+.needs { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin-bottom: 14px }
+.need { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; text-align: left }
+.need:hover { border-color: var(--ink-3) }
+.need .big { font-family: var(--font-data); font-size: 20px; font-weight: 500 }
+.need.todo { border-color: var(--chrome) }
+.need.calm { cursor: default }
+.health { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); flex: 1 1 280px; min-width: 0 }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none }
+.dot.bad { background: var(--bad) }
+
+nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto }
+nav.tabs a { text-decoration: none; color: var(--ink-2); padding: 9px 12px; border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 500 }
+nav.tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--chrome) }
+nav.tabs .n { font-family: var(--font-data); font-size: 11.5px; color: var(--ink-3); margin-left: 4px }
+
+/* Connections */
+.bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin-bottom: 10px }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel) }
+.seg button { border: 0; background: none; padding: 6px 11px; cursor: pointer; font-size: 13px; border-right: 1px solid var(--line) }
+.seg button:last-child { border-right: 0 }
+.seg button[aria-pressed="true"] { background: var(--chrome); color: var(--bg) }
+.seg button:disabled { cursor: not-allowed; color: var(--ink-3) }
+.asof { font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.conn { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px }
+@media (min-width: 1560px) { .conn { grid-template-columns: minmax(0, 1fr) 340px; align-items: start } }
+@media (min-width: 900px) and (max-width: 1559px) { aside.detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 28px; align-content: start; grid-auto-flow: dense } aside.detail > * { grid-column: 1 } aside.detail > .prop, aside.detail > dl, aside.detail > h3, aside.detail > .links, aside.detail > .cmdline, aside.detail > .carry { grid-column: 2 } }
+.mapbox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; overflow-x: auto }
+svg.map { display: block; width: 100%; min-width: 900px; height: auto; font-family: var(--font-ui) }
+.map .band { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; fill: var(--ink-3); font-weight: 600 }
+.map .divider { stroke: var(--line); stroke-dasharray: 4 4 }
+.map .node rect.box { stroke-width: 1.5 }
+.map .node .t { font-size: 13.5px; font-weight: 600; fill: var(--ink) }
+.map .node .s { font-size: 11.5px; fill: var(--ink-2) }
+.map .node .c { font-family: var(--font-data); font-size: 14px; font-weight: 500; fill: var(--ink) }
+.map .node .tag { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em }
+.map .node { cursor: pointer }
+.map .node.sel rect.box { stroke: var(--ink); stroke-width: 2.5 }
+.k-app rect.box { fill: var(--panel); stroke: var(--ink-3) } .k-app .tag { fill: var(--ink-3) }
+.k-mac rect.box { fill: var(--mac-soft); stroke: var(--mac) } .k-mac .tag { fill: var(--mac) }
+.k-claude rect.box { fill: var(--claude-soft); stroke: var(--claude) } .k-claude .tag { fill: var(--claude) }
+.k-linear rect.box { fill: var(--linear-soft); stroke: var(--linear) } .k-linear .tag { fill: var(--linear) }
+.k-repo rect.box { fill: var(--repo-soft); stroke: var(--repo) } .k-repo .tag { fill: var(--repo) }
+.k-held rect.box { fill: var(--held-soft); stroke: var(--held); stroke-dasharray: 5 3 } .k-held .tag { fill: var(--held) }
+.k-off rect.box { fill: var(--panel); stroke: var(--ink-3); stroke-dasharray: 3 3 } .k-off .t, .k-off .s { fill: var(--ink-3) }
+.map .edge path.l { fill: none; stroke-width: 2.2 }
+.map .edge .hit { stroke: transparent; stroke-width: 16; fill: none }
+.map .edge { cursor: pointer }
+.e-full path.l { stroke: var(--mac) }
+.e-model path.l { stroke: var(--claude); stroke-width: 3 }
+.e-linear path.l { stroke: var(--linear); stroke-width: 3 }
+.e-status path.l { stroke: var(--ink-3) }
+.e-held path.l { stroke: var(--held); stroke-dasharray: 6 4 }
+.e-off path.l { stroke: var(--ink-3); stroke-dasharray: 3 4 }
+.map .edge.sel path.l { stroke-width: 4.5 }
+.map .badge rect { fill: var(--panel); stroke: var(--line) }
+.map .badge text { font-family: var(--font-data); font-size: 12px; fill: var(--ink); font-weight: 500 }
+.map .badge.new rect { stroke: var(--ink); stroke-width: 2 }
+.map .pulse { fill: var(--ink) }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); padding: 10px 4px 0 }
+.legend span { display: inline-flex; align-items: center; gap: 7px }
+.legend i { display: inline-block; width: 24px; border-top: 3px solid var(--ink-3) }
+.legend i.full { border-top: 2px solid var(--mac) } .legend i.model { border-color: var(--claude) } .legend i.linear { border-color: var(--linear) }
+.legend i.status { border-top: 2px solid var(--ink-3) } .legend i.held { border-top: 2px dashed var(--held) }
+
+table.list { width: 100%; border-collapse: collapse; font-size: 13px }
+table.list th, table.list td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top }
+table.list th { font-size: 12px; color: var(--ink-2); font-weight: 600 }
+table.list td.n { font-family: var(--font-data); text-align: right; white-space: nowrap }
+table.list tr.grp td { background: var(--panel-2); font-weight: 600; font-size: 12px; color: var(--ink-2) }
+.kindchip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; white-space: nowrap }
+.kindchip.full { background: var(--mac-soft); color: var(--mac) } .kindchip.model { background: var(--claude-soft); color: var(--claude) }
+.kindchip.linear { background: var(--linear-soft); color: var(--linear) } .kindchip.status { background: var(--panel-2); color: var(--ink-2) }
+.kindchip.held { background: var(--held-soft); color: var(--held) } .kindchip.off { background: var(--panel-2); color: var(--ink-3) }
+
+aside.detail { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0 }
+.eyebrow { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); font-weight: 600 }
+aside.detail h2 { margin: 3px 0 6px }
+dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; margin: 10px 0 }
+dl.kv dt { color: var(--ink-2); font-size: 12.5px }
+dl.kv dd { margin: 0; font-family: var(--font-data); font-size: 12.5px; text-align: right }
+.carry { border-radius: 8px; padding: 9px 11px; font-size: 13px; margin: 10px 0; background: var(--panel-2) }
+.carry.full { background: var(--mac-soft) } .carry.model { background: var(--claude-soft) } .carry.linear { background: var(--linear-soft) } .carry.held { background: var(--held-soft) }
+.links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px }
+.prop { display: grid; gap: 4px; padding: 9px 0; border-top: 1px solid var(--line) }
+.prop .acts { display: flex; gap: 6px; flex-wrap: wrap }
+.prop .from { font-size: 12px; color: var(--ink-3) }
+.cmdline { font-family: var(--font-data); font-size: 12px; background: var(--panel-2); border-radius: 6px; padding: 6px 8px; overflow-x: auto; white-space: nowrap }
+
+.checks { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px }
+.checks ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 7px }
+.checks li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13px }
+.checks li .ic { font-weight: 700 }
+.checks li.ok .ic { color: var(--ok) } .checks li.info .ic { color: var(--ink-3) } .checks li.bad .ic { color: var(--bad) }
+details summary { cursor: pointer; color: var(--ink-2) }
+
+/* Skills and schedules */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; align-items: start }
+.group-h { display: flex; align-items: baseline; gap: 10px; margin: 20px 0 8px }
+.group-h:first-child { margin-top: 0 }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 6px; min-width: 0 }
+.card.idle { background: transparent }
+.card.idle .what { color: var(--ink-2) }
+.row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: baseline }
+code { font-family: var(--font-data); font-size: 12.5px; overflow-wrap: anywhere }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--ink-2); white-space: nowrap }
+.textlink { border: 0; background: none; padding: 0; color: var(--ink); text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; cursor: pointer; font-size: inherit }
+.banner { display: flex; gap: 10px; align-items: flex-start; background: var(--held-soft); color: var(--ink); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px }
+.tl { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; overflow-x: auto }
+.tl svg { display: block; min-width: 640px; width: 100% }
+.tl .tick { font-size: 10.5px; fill: var(--ink-3); font-family: var(--font-data) }
+.tl .rowlabel { font-size: 12px; fill: var(--ink-2) }
+.tablebox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto }
+.tablebox table.list { min-width: 720px }
+
+/* Rules */
+.rules { display: grid; gap: 14px }
+.rb { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; scroll-margin-top: 16px }
+.rb > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; align-items: baseline; margin-bottom: 10px }
+.rb > header .muted { margin-top: 3px; max-width: 72ch; font-size: 13px }
+.ctl { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 8px 14px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line) }
+.ctl:first-of-type { border-top: 0 }
+.ctl .lab { display: grid; gap: 2px }
+.tags { display: flex; flex-wrap: wrap; gap: 5px }
+.scope { font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; font-weight: 500 }
+.scope.me { background: var(--mac-soft); color: var(--mac) }
+.scope.team { background: var(--linear-soft); color: var(--linear) }
+.scope.fixed { background: var(--panel-2); color: var(--ink-2) }
+.scope.new { border: 1px dashed var(--claude); color: var(--claude) }
+.scope.loosen { background: var(--held-soft); color: var(--held) }
+.fixed-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px }
+.fx { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px }
+.fx .row b { font-weight: 600 }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px }
+.chip.pending { border-style: dashed; border-color: var(--ink-2) }
+.chip button { border: 0; background: none; cursor: pointer; color: var(--ink-3); padding: 0 2px; font-size: 14px; line-height: 1 }
+.addrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px }
+input.in, select.in, textarea.in { font: inherit; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); min-width: 0 }
+input.in.bad { border-color: var(--bad) }
+.err { color: var(--bad); font-size: 12.5px }
+.hint { font-size: 12.5px; color: var(--ink-2); margin-top: 6px }
+table.sizes { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13px }
+table.sizes th, table.sizes td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top }
+table.sizes thead th { font-size: 12px; color: var(--ink-2); font-weight: 600 }
+table.sizes thead .meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-weight: 400 }
+table.sizes thead input { width: 56px }
+table.sizes td button.cell { border: 1px solid transparent; background: none; text-align: left; padding: 3px 5px; border-radius: 6px; cursor: pointer; width: 100%; display: flex; justify-content: space-between; gap: 6px }
+table.sizes td button.cell:hover, table.sizes td button.cell:focus-visible { border-color: var(--line); background: var(--panel-2) }
+table.sizes td button.cell .pen { color: var(--ink-3); font-size: 12px }
+table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: dashed }
+.gets { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px }
+.gets ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; display: grid; gap: 3px }
+
+/* Tray and review */
+.tray { position: fixed; left: 0; right: 0; bottom: 0; background: var(--chrome); color: var(--bg); padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px)); padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); z-index: 5 }
+.tray .in { max-width: 1600px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between }
+.tray-actions { display: flex; gap: 8px; flex-wrap: wrap }
+.tray .btn { background: transparent; color: var(--bg); border-color: var(--bg) }
+.tray .btn.primary { background: var(--bg); color: var(--chrome) }
+#review { margin-top: 16px }
+.sheet { background: var(--panel); border: 2px solid var(--chrome); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px }
+.chg { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--line); align-items: start }
+.chg .when { font-size: 12px; color: var(--ink-3) }
+
+@media (max-width: 640px) { .ctl { grid-template-columns: 1fr } }
+@media (prefers-reduced-motion: reduce) { .map .pulse { display: none } }
+</style>
+
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 id="h-title">PMX Pipeline</h1>
+      <p class="sub">What PMX read, what it held back, what reached Linear and what happened next. And the rules that decide each step.</p>
+    </div>
+    <span class="example" id="mode-note"></span>
+  </header>
+
+  <div class="banner" id="banner" role="alert" hidden></div>
+  <div class="needs" id="needs"></div>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#skills" data-tab="skills">Skills <span class="n" id="n-skills"></span></a>
+    <a href="#schedules" data-tab="schedules">Scheduled tasks <span class="n" id="n-sched"></span></a>
+    <a href="#connections" data-tab="connections">Connections</a>
+    <a href="#rules" data-tab="rules">Rules</a>
+  </nav>
+
+  <section id="v-skills" hidden></section>
+  <section id="v-schedules" hidden></section>
+  <section id="v-connections">
+    <div class="bar">
+      <div class="seg" role="group" aria-label="Time window">
+        <button type="button" data-win="24" aria-pressed="false">Today</button>
+        <button type="button" data-win="168" aria-pressed="true">Last 7 days</button>
+        <button type="button" data-win="336" aria-pressed="false">Last 14 days</button>
+      </div>
+      <div class="asof"><span class="dot" id="live-dot"></span><span id="asof">Loading from PMX…</span><button type="button" class="btn" id="live-btn" aria-pressed="true">Pause updates</button>
+        <div class="seg" role="group" aria-label="View"><button type="button" data-view="map" aria-pressed="true">Map</button><button type="button" data-view="list" aria-pressed="false">List</button></div>
+      </div>
+    </div>
+    <div class="conn">
+      <div>
+        <div class="mapbox" id="mapbox"><svg class="map" id="map" viewBox="0 0 1160 600" role="group" aria-label="Connections map. Use Tab to move between steps and connections."></svg></div>
+        <div class="mapbox" id="listbox" hidden></div>
+        <div class="legend">
+          <span><i class="full"></i>Full transcript, stays on this Mac</span>
+          <span><i class="model"></i>Redacted text sent to Claude</span>
+          <span><i class="linear"></i>Task summaries sent to Linear</span>
+          <span><i class="status"></i>Status and IDs only</span>
+          <span><i class="held"></i>Held: never sent anywhere</span>
+        </div>
+      </div>
+      <aside class="detail" id="detail"></aside>
+    </div>
+    <section class="checks" aria-label="Checks">
+      <h2>Checks</h2>
+      <ul id="checks"></ul>
+    </section>
+  </section>
+  <section id="v-rules" hidden></section>
+  <div id="review"></div>
+</div>
+
+<div class="tray" id="tray" hidden>
+  <div class="in">
+    <span id="tray-text"></span>
+    <span class="tray-actions">
+      <button type="button" class="btn" id="tray-discard">Discard all</button>
+      <button type="button" class="btn primary" id="tray-review">Review changes</button>
+    </span>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  // ================= mode and data =================
+  // "local": this Mac's page from `pmx flow --web`, which reads and writes through PMX's loopback server.
+  // "artifact": the /pmx-flow Claude artifact, which reads PMX on the viewer's Mac through host:pmx at the shared level
+  // and can only add to the do-not-read list.
+  const CFG = JSON.parse(document.getElementById("pmx-config").textContent || "{}");
+  const LOCAL = CFG.mode === "local";
+  const TOKEN = LOCAL ? new URLSearchParams(location.hash.slice(1)).get("t") || "" : "";
+  if (LOCAL && TOKEN) { try { history.replaceState(null, "", location.pathname); } catch {} }
+  let D = null;           // the latest PipelineData
+  let first = null;       // edge counts when the page opened, for "since you opened"
+  let hours = 168;
+  let mcpP = null;
+
+  const HELP = {
+    server_not_connected: "This page reads PMX on your Mac. Open it in the Claude desktop app on the Mac where PMX runs. If PMX is there, run pmx mcp --install once in Terminal and restart the Claude app.",
+    not_granted: "Allow this page to use PMX on your Mac when Claude asks. It only reads PMX's records, and adds to your do-not-read list when you click to.",
+    approval_required: "Allow this page to use PMX on your Mac when Claude asks.",
+  };
+  async function mcp() {
+    if (!mcpP) mcpP = window.claude && window.claude.use ? window.claude.use("mcp") : Promise.resolve(null);
+    const m = await mcpP;
+    if (!m) { const e = new Error(HELP.server_not_connected); e.code = "server_not_connected"; throw e; }
+    return m;
+  }
+  async function call(tool, args) {
+    if (LOCAL) throw new Error("local");
+    const r = await (await mcp()).callTool("host:pmx", tool, args);
+    const p = r && r.payload;
+    if (p && p.error) throw new Error(p.error);
+    return p;
+  }
+  async function api(path, body) {
+    const res = await fetch(path, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${TOKEN}`, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(j.error || `PMX answered ${res.status}`); e.status = res.status; e.body = j; throw e; }
+    return j;
+  }
+  async function load() {
+    try {
+      D = LOCAL ? (await api(`/api/pipeline?hours=${hours}`)).pipeline : await call("pipeline", { hours });
+      if (!first) first = edgeTotal();
+      showBanner("");
+      render();
+    } catch (e) {
+      showBanner(LOCAL ? `Couldn't read PMX on this Mac (${e.message}). If you closed Terminal, run pmx flow --web again.` : HELP[e && e.code] || `Couldn't reach PMX on this Mac${e && e.code ? ` (${e.code})` : ""}: ${e.message || ""}`);
+      $("asof").textContent = D ? `Updated ${hm(D.at)} · couldn't refresh` : "Not connected";
+      $("live-dot").className = "dot bad";
+    }
+  }
+  const edgeTotal = () => (D ? Object.values(D.edges).reduce((a, e) => a + e.n, 0) + D.sources.reduce((a, s) => a + s.n, 0) : 0);
+
+  // ================= helpers =================
+  const $ = (id) => document.getElementById(id);
+  const h = (tag, attrs, ...kids) => {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === "class") el.className = v; else if (k === "style") el.style.cssText = v; else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else if (v !== false && v != null) el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const c of kids.flat(3)) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c)));
+    return el;
+  };
+  const SVG = "http://www.w3.org/2000/svg";
+  const s = (tag, attrs, ...kids) => {
+    const el = document.createElementNS(SVG, tag);
+    // Styles go through the CSSOM: the local page's policy refuses style attributes.
+    for (const [k, v] of Object.entries(attrs || {})) if (k === "style") el.style.cssText = v; else if (k.startsWith("on")) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v);
+    for (const c of kids) if (c != null) el.append(c.nodeType ? c : document.createTextNode(String(c)));
+    return el;
+  };
+  const fmt = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(Math.round(n)));
+  const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—");
+  const when = (iso) => {
+    if (!iso) return "never";
+    const d = new Date(iso), now = new Date();
+    const day = d.toDateString() === now.toDateString() ? "Today" : d.toDateString() === new Date(now.getTime() - 86400000).toDateString() ? "Yesterday" : d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    return `${day} ${hm(iso)}`;
+  };
+  const winText = () => (hours <= 24 ? "today" : `in the last ${Math.round(hours / 24)} days`);
+  const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+  const activate = (fn) => ({ onclick: fn, onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(); } } });
+  const showBanner = (t) => { $("banner").textContent = t; $("banner").hidden = !t; };
+  async function copy(text, btn) {
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; } catch { btn.textContent = "Select and copy the command"; }
+    setTimeout(() => (btn.textContent = "Copy"), 1600);
+  }
+
+  // ================= tabs =================
+  const TABS = ["skills", "schedules", "connections", "rules"];
+  function show(tab, focusId) {
+    if (!TABS.includes(tab)) tab = "connections";
+    for (const t of TABS) $(`v-${t}`).hidden = t !== tab;
+    document.querySelectorAll("nav.tabs a").forEach((a) => (a.dataset.tab === tab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+    store.set("pmx-pipeline-tab", tab);
+    try { history.replaceState(null, "", `#${tab}`); } catch {}
+    if (focusId) requestAnimationFrame(() => { const el = $(focusId); if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.querySelector("h2")?.focus({ preventScroll: true }); } });
+  }
+  document.querySelectorAll("nav.tabs a").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); show(a.dataset.tab); }));
+  const goRule = (id) => show("rules", `r-${id}`);
+  const goNode = (id) => { show("connections"); select("node", id); requestAnimationFrame(() => $("mapbox").scrollIntoView({ behavior: "smooth", block: "center" })); };
+
+  // ================= the map's shape =================
+  const COLX = [20, 210, 400, 590, 780, 970], NW = 150, NH = 58;
+  const FIXED_NODES = {
+    collect:  { col: 1, y: 110, kind: "claude", tag: "CLAUDE", title: "Collect meetings", sub: "copies transcripts" },
+    filter:   { col: 2, y: 190, kind: "mac", tag: "MAC", title: "Privacy filter", sub: "fixed rules + yours" },
+    held:     { col: 2, y: 320, kind: "held", tag: "HELD", title: "Held back", sub: "not used, not sent" },
+    findtodo: { col: 3, y: 70, kind: "claude", tag: "CLAUDE", title: "Finds to-dos", sub: "in your meetings" },
+    draft:    { col: 3, y: 190, kind: "claude", tag: "CLAUDE", title: "Drafts tasks", sub: "from customer calls" },
+    todos:    { col: 4, y: 70, kind: "mac", tag: "MAC", title: "My to-dos", sub: "never leave this Mac" },
+    approve:  { col: 4, y: 190, kind: "mac", tag: "MAC", title: "You approve", sub: "pmx proposals" },
+    dropped:  { col: 4, y: 320, kind: "mac", tag: "MAC", title: "Dropped", sub: "you said no" },
+    inbox:    { col: 5, y: 190, kind: "linear", tag: "LINEAR", title: "Linear inbox", sub: "PMX project" },
+    ready:    { col: 5, y: 320, kind: "linear", tag: "LINEAR", title: "Ready", sub: "triaged, now" },
+    agent:    { col: 4, y: 470, kind: "claude", tag: "CLAUDE", title: "Agent works", sub: "clean PMX profile" },
+    review:   { col: 3, y: 470, kind: "repo", tag: "PMX REPO", title: "Draft PR", sub: "waiting for review" },
+    done:     { col: 2, y: 470, kind: "repo", tag: "PMX REPO", title: "Accepted", sub: "merged" },
+  };
+  const FIXED_EDGES = [
+    ["c-f", "collect", "filter", "full", "Transcript files on this Mac. Nothing has left it at this point."],
+    ["s-f", "slack", "filter", "status", "Messages from the Slack channels your team approved, read every 6 hours on the team's synthesis Mac. Never DMs."],
+    ["f-h", "filter", "held", "held", "Held meetings aren't sent to Claude or Linear. The transcript file stays on this Mac; receipts keep only the rule and a hash."],
+    ["f-t", "filter", "findtodo", "model", "Your own meetings, 1:1s included, redacted (emails, phone numbers, names on your CRM list) and with pay, performance and health passages cut. Sent to Claude with no tools; the to-dos it finds stay on this Mac."],
+    ["f-d", "filter", "draft", "model", "Customer calls and approved Slack threads, redacted, sent to Claude with no tools. 1:1s, hiring, internal-only meetings and anything on your do-not-read list never get here."],
+    ["t-t", "findtodo", "todos", "status", "To-dos saved on this Mac only."],
+    ["d-a", "draft", "approve", "status", "Proposed tasks wait on this Mac, exactly as Linear would get them. Linear has none of them yet."],
+    ["a-x", "approve", "dropped", "status", "Tasks you dropped. Nothing about them reaches Linear."],
+    ["a-i", "approve", "inbox", "linear", "Title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes."],
+    ["i-r", "inbox", "ready", "status", "Tasks a person moved to Ready, now. Only Ready tasks can be picked up."],
+    ["r-g", "ready", "agent", "model", "Your agent claimed a ready task that fits your budget and review cap, and ran its category's skill in PMX's clean Claude profile with the task text and team memory.", "uturn"],
+    ["g-v", "agent", "review", "status", "A draft pull request in the PMX repo, with its run record."],
+    ["v-d", "review", "done", "status", "A person accepted it. Rejected drafts lower the category's accept rate."],
+  ];
+  let nodes = {}, edges = [];
+  function shape() {
+    nodes = {};
+    const srcs = [...D.sources.map((x) => ({ id: `src-${x.id}`, title: x.label, sub: !x.connected ? "not connected" : x.id === "file" ? "files you add" : "via Claude connector", kind: x.connected ? "app" : "off", tag: x.connected ? (x.id === "file" ? "FOLDER" : "APP") : "", n: x.n, last: x.last }))];
+    if (D.rules.allowedSources.includes("slack")) srcs.push({ id: "slack", title: "Slack", sub: D.rules.slackChannels.length ? plural(D.rules.slackChannels.length, "approved channel") : "no channel approved", kind: D.rules.slackChannels.length ? "app" : "off", tag: "APP" });
+    srcs.push({ id: "email", title: "Email", sub: "PMX can't read email", kind: "off", tag: "" });
+    const step = Math.min(80, 300 / Math.max(1, srcs.length - 1));
+    srcs.slice(0, 5).forEach((x, i) => (nodes[x.id] = { ...x, col: 0, y: 60 + i * step }));
+    Object.assign(nodes, JSON.parse(JSON.stringify(FIXED_NODES)));
+    for (const n of Object.values(nodes)) n.x = COLX[n.col];
+    edges = [];
+    for (const x of D.sources) if (nodes[`src-${x.id}`]) edges.push({ id: `src-${x.id}`, from: `src-${x.id}`, to: "collect", kind: x.connected ? "full" : "off", n: x.n, unit: "meetings", last: x.last, carries: `Claude's collection task reads ${x.label} through your connector and saves each transcript word for word in ~/.pmx/transcripts on this Mac. It copies every meeting you attended, 1:1s included; the privacy filter decides what's used.` });
+    edges.push({ id: "e-c", from: "email", to: "collect", kind: "off", n: 0, unit: "emails", last: null, carries: "PMX doesn't read email. Forward customer emails to an approved Slack channel instead." });
+    for (const [id, from, to, kind, carries, route] of FIXED_EDGES) {
+      if (!nodes[from] || !nodes[to]) continue;
+      const e = D.edges[id];
+      edges.push({ id, from, to, kind: id === "s-f" && nodes.slack.kind === "off" ? "off" : kind, n: e.n, unit: e.unit, tokens: e.tokens, last: e.last, carries, route });
+    }
+  }
+
+  // ================= needs you =================
+  function drawNeeds() {
+    const p = D.needs.proposals, d = D.needs.drafts, ok = D.health.ok;
+    $("needs").replaceChildren(
+      h("button", { type: "button", class: `need${p ? " todo" : " calm"}`, onclick: () => goNode("approve") }, h("span", { class: "big" }, p), h("span", null, h("strong", null, p === 1 ? "proposed task to approve" : "proposed tasks to approve"), h("br"), h("span", { class: "faint small" }, "Nothing reaches Linear until you do"))),
+      h("button", { type: "button", class: `need${d ? " todo" : " calm"}`, onclick: () => goNode("review") }, h("span", { class: "big" }, d), h("span", null, h("strong", null, d === 1 ? "draft to review" : "drafts to review"), h("br"), h("span", { class: "faint small" }, "Agent work waiting for you"))),
+      h("div", { class: "health" }, h("span", { class: ok ? "dot" : "dot bad" }), h("span", null,
+        h("strong", null, ok ? "Everything ran on time. " : `${plural(D.health.problems.length, "thing needs", "things need")} you: `),
+        h("span", { class: "muted small" }, ok ? D.health.facts.join(" · ") || "Nothing has run yet." : D.health.problems[0]),
+        !ok && D.health.problems.length > 1 ? h("details", { class: "small" }, h("summary", null, `${D.health.problems.length - 1} more`), h("ul", null, D.health.problems.slice(1).map((p) => h("li", null, p)))) : null)),
+    );
+  }
+
+  // ================= map =================
+  let sel = { type: "node", id: "approve" };
+  let view = "map";
+  const P = (n, side) => side === "r" ? { x: n.x + NW, y: n.y + NH / 2 } : side === "l" ? { x: n.x, y: n.y + NH / 2 } : side === "t" ? { x: n.x + NW / 2, y: n.y } : { x: n.x + NW / 2, y: n.y + NH };
+  function geom(e) {
+    const a = nodes[e.from], b = nodes[e.to];
+    if (e.route === "uturn") { const p1 = P(a, "b"), p2 = P(b, "r"); return { d: `M${p1.x},${p1.y} V${p2.y} H${p2.x}`, lx: p1.x, ly: (p1.y + p2.y) / 2 + 10 }; }
+    if (a.col === b.col) { const down = b.y > a.y; const p1 = P(a, down ? "b" : "t"), p2 = P(b, down ? "t" : "b"); return { d: `M${p1.x},${p1.y} V${p2.y}`, lx: p1.x, ly: (p1.y + p2.y) / 2 }; }
+    const right = b.col > a.col; const p1 = P(a, right ? "r" : "l"), p2 = P(b, right ? "l" : "r");
+    const dx = (p2.x - p1.x) / 2;
+    return { d: `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${p2.x - dx},${p2.y} ${p2.x},${p2.y}`, lx: (p1.x + p2.x) / 2, ly: (p1.y + p2.y) / 2 };
+  }
+  function nodeTotal(id) {
+    if (id === "approve") return D.needs.proposals;
+    if (id === "review") return D.needs.drafts;
+    const n = nodes[id];
+    const list = n.kind === "app" ? edges.filter((e) => e.from === id && e.kind !== "off") : edges.filter((e) => e.to === id && e.kind !== "off");
+    return list.reduce((a, e) => a + e.n, 0);
+  }
+  const refs = { badges: {}, counts: {} };
+  function buildMap() {
+    const svg = $("map");
+    svg.replaceChildren();
+    refs.badges = {}; refs.counts = {};
+    const defs = s("defs");
+    for (const [k, v] of [["full", "--mac"], ["model", "--claude"], ["linear", "--linear"], ["status", "--ink-3"], ["held", "--held"], ["off", "--ink-3"]])
+      defs.append(s("marker", { id: `ar-${k}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, s("path", { d: "M0,0 L10,5 L0,10 z", style: `fill: var(${v})` })));
+    svg.append(defs);
+    for (const [t, c] of [["Sources", 0], ["Collect", 1], ["Privacy", 2], ["Claude reads", 3], ["You", 4], ["Linear", 5]]) svg.append(s("text", { class: "band", x: COLX[c], y: 34 }, t));
+    svg.append(s("line", { class: "divider", x1: 10, x2: 1150, y1: 420, y2: 420 }), s("text", { class: "band", x: 20, y: 446 }, "After Linear: agent work"));
+    const eg = s("g"), ng = s("g"), bg = s("g");
+    for (const e of edges) {
+      const g = geom(e);
+      eg.append(s("g", { class: `edge e-${e.kind}`, id: `edge-${e.id}`, tabindex: 0, role: "button", "aria-label": `${nodes[e.from].title} to ${nodes[e.to].title}`, ...activate(() => select("edge", e.id)) },
+        s("path", { class: "l", d: g.d, id: `path-${e.id}`, "marker-end": `url(#ar-${e.kind})` }), s("path", { class: "hit", d: g.d })));
+      if (e.kind !== "off") {
+        const t = s("text", { x: 0, y: 14, "text-anchor": "middle" }, "");
+        const r = s("rect", { width: 34, height: 20, rx: 10, x: -17 });
+        const b = s("g", { class: "badge", transform: `translate(${g.lx},${g.ly - 10})`, "aria-hidden": "true", onclick: () => select("edge", e.id) }, r, t);
+        refs.badges[e.id] = { g: b, t, r };
+        bg.append(b);
+      }
+    }
+    for (const [id, n] of Object.entries(nodes)) {
+      const c = s("text", { class: "c", x: NW - 10, y: 22, "text-anchor": "end" }, "");
+      const sub = s("text", { class: "s", x: 10, y: 48 }, n.sub);
+      refs.counts[id] = { c, sub };
+      ng.append(s("g", { class: `node k-${n.kind}`, id: `node-${id}`, transform: `translate(${n.x},${n.y})`, tabindex: 0, role: "button", "aria-label": `${n.title}. ${n.sub}`, ...activate(() => select("node", id)) },
+        s("rect", { class: "box", width: NW, height: NH, rx: 9 }), s("text", { class: "tag", x: 10, y: 14 }, n.tag), s("text", { class: "t", x: 10, y: 31 }, n.title), sub, c));
+    }
+    svg.append(eg, ng, bg);
+    markSelection();
+  }
+  // Numbers are patched in place, so keyboard focus and hover survive every refresh.
+  function refreshNumbers(prev) {
+    for (const e of edges) {
+      const r = refs.badges[e.id]; if (!r) continue;
+      const v = String(e.n); r.t.textContent = v;
+      const w = Math.max(26, 12 + v.length * 8); r.r.setAttribute("width", w); r.r.setAttribute("x", -w / 2);
+      $(`edge-${e.id}`).setAttribute("aria-label", `${nodes[e.from].title} to ${nodes[e.to].title}: ${e.n} ${e.unit} ${winText()}`);
+      if (prev && prev[e.id] !== undefined && e.n > prev[e.id]) pulse(e.id);
+    }
+    for (const id of Object.keys(nodes)) { const n = nodes[id]; refs.counts[id].c.textContent = n.kind === "off" ? "" : fmt(nodeTotal(id)); }
+    if (view === "list") drawList();
+  }
+  function markSelection() {
+    document.querySelectorAll(".map .sel").forEach((x) => x.classList.remove("sel"));
+    $(`${sel.type}-${sel.id}`)?.classList.add("sel");
+  }
+  function select(type, id) { sel = { type, id }; markSelection(); drawDetail(); }
+  function pulse(id) {
+    const r = refs.badges[id]; if (r) { r.g.classList.add("new"); setTimeout(() => r.g.classList.remove("new"), 1600); }
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches || view !== "map") return;
+    const p = $(`path-${id}`); if (!p) return;
+    const dot = s("circle", { r: 4.5, class: "pulse" }); $("map").append(dot);
+    const len = p.getTotalLength(), t0 = performance.now();
+    const step = (t) => { const k = Math.min(1, (t - t0) / 1200), ease = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; const pt = p.getPointAtLength(len * ease); dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); if (k < 1) requestAnimationFrame(step); else dot.remove(); };
+    requestAnimationFrame(step);
+  }
+  const KINDNAME = { full: "Full text, this Mac", model: "Redacted text to Claude", linear: "Summaries to Linear", status: "Status and IDs", held: "Held", off: "Not connected" };
+  function drawList() {
+    $("listbox").replaceChildren(h("table", { class: "list" },
+      h("thead", null, h("tr", null, h("th", null, "From → to"), h("th", null, "What travels"), h("th", { style: "text-align:right" }, winText()), h("th", null, "Last"))),
+      h("tbody", null, edges.map((e) => h("tr", null,
+        h("td", null, h("button", { type: "button", class: "textlink", onclick: () => select("edge", e.id) }, `${nodes[e.from].title} → ${nodes[e.to].title}`)),
+        h("td", null, h("span", { class: `kindchip ${e.kind}` }, KINDNAME[e.kind])),
+        h("td", { class: "n" }, e.kind === "off" ? "—" : `${e.n} ${e.unit}`), h("td", { class: "faint" }, e.kind === "off" ? "—" : when(e.last)))))));
+  }
+  function setView(v) {
+    view = v;
+    $("mapbox").hidden = v !== "map"; $("listbox").hidden = v !== "list";
+    document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.view === v ? "true" : "false"));
+    if (v === "list") drawList();
+  }
+  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+  document.querySelectorAll("[data-win]").forEach((b) => b.addEventListener("click", () => {
+    hours = Number(b.dataset.win);
+    document.querySelectorAll("[data-win]").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    first = null; load();
+  }));
+
+  // ================= detail =================
+  const KINDTEXT = { full: ["full", "Full transcript text, on this Mac only."], model: ["model", "Redacted text, sent to Claude."], linear: ["linear", "Sent to Linear: task summaries, never meeting text."], status: ["", "No meeting text: counts, status and IDs."], held: ["held", "Nothing is sent anywhere."], off: ["", "Nothing: not connected."] };
+  const NODE_INFO = {
+    collect: ["A scheduled task in your Claude app. Claude copies each new transcript word for word into ~/.pmx/transcripts. It's told to skip your do-not-read list and sources you turned off, but that's an instruction to Claude, not a check: the privacy filter is the check.", ["dnr", "routes"]],
+    filter: ["Code on this Mac, not Claude. It decides what Claude may read for your to-dos and for team tasks, before anything is sent.", ["fixed", "domains", "dnr"]],
+    held: ["Held meetings are never sent to Claude or Linear. Their transcript files stay in ~/.pmx/transcripts; receipts keep only the rule and a hash.", ["fixed", "dnr"]],
+    findtodo: ["Claude reads your own meetings with no tools and lists your action items.", ["routes"]],
+    draft: ["Claude reads redacted customer calls and Slack threads with no tools and drafts sized tasks, with a reason each source supports it. PMX drops any task that quotes a meeting.", ["sizes", "gets"]],
+    todos: ["Your to-dos. `pmx todo` lists them; they never leave this Mac.", []],
+    approve: ["Every drafted task waits here until you approve or drop it.", ["gets"]],
+    dropped: ["Tasks you dropped. Each run's receipt says so, for `pmx explain`.", []],
+    inbox: ["Approved tasks land in the PMX project with pmx-status: inbox. A person triages them.", ["gets"]],
+    ready: ["Tasks a person moved to Ready. Agents pick up only these.", ["agent"]],
+    agent: ["Your agent claims one ready task per pass, if it fits your budget and fewer than your review cap of drafts are waiting.", ["agent", "budget"]],
+    review: ["Draft pull requests in the PMX repo. Accept, reject or ask for a redo with `pmx review`.", ["agent"]],
+    done: ["Accepted drafts. Each one's run record shows the skill, model and cost.", []],
+    slack: ["Only channels your team approved in pmx.config.json, never DMs. Read every 6 hours on the team's synthesis Mac.", ["routes", "dnr"]],
+    email: ["PMX doesn't read email.", []],
+  };
+  const RULELABEL = { routes: "What each source may feed", fixed: "Always held", domains: "Who counts as a customer", dnr: "Never read", sizes: "T-shirt sizes", gets: "What Linear gets", agent: "Your agent's work", budget: "Budget" };
+  const ruleButtons = (ids) => (ids.length ? h("div", { class: "links" }, ids.map((r) => h("button", { type: "button", class: "btn", onclick: () => goRule(r) }, `${RULELABEL[r]} →`))) : null);
+  function drawDetail() {
+    if (!D) return;
+    const box = $("detail");
+    if (sel.type === "edge") {
+      const e = edges.find((x) => x.id === sel.id);
+      if (!e) return;
+      const [cls, lead] = KINDTEXT[e.kind];
+      const rules = e.to === "held" || e.from === "filter" ? ["fixed", "dnr"] : e.to === "inbox" ? ["gets"] : nodes[e.from].col === 0 ? ["routes"] : e.to === "agent" ? ["agent", "budget"] : [];
+      box.replaceChildren(h("div", { class: "eyebrow" }, "Connection"), h("h2", null, `${nodes[e.from].title} → ${nodes[e.to].title}`),
+        h("dl", { class: "kv" }, h("dt", null, `Passed ${winText()}`), h("dd", null, e.kind === "off" ? "—" : `${e.n} ${e.unit}`),
+          e.tokens ? [h("dt", null, "Text sent to Claude"), h("dd", null, `${fmt(e.tokens)} tokens`)] : null,
+          h("dt", null, "Last time"), h("dd", null, e.kind === "off" ? "never" : when(e.last))),
+        h("div", { class: `carry ${cls}` }, h("strong", null, `${lead} `), e.carries), ruleButtons(rules));
+      return;
+    }
+    const n = nodes[sel.id];
+    if (!n) return;
+    const [what, rules] = NODE_INFO[sel.id] ?? [n.col === 0 ? "A meeting app. PMX never talks to it directly: the collection task in your Claude app reads it through your connector." : "", n.col === 0 ? ["routes"] : []];
+    const parts = [h("div", { class: "eyebrow" }, { app: "Source", off: "Source", mac: "On this Mac", claude: "Claude", linear: "Linear", repo: "PMX repo", held: "On this Mac" }[n.kind]), h("h2", null, n.title), h("p", { class: "muted small" }, what)];
+    if (sel.id === "approve") {
+      parts.push(h("h3", { style: "margin-top:12px" }, `Waiting for you (${D.needs.proposals})`));
+      if (!LOCAL) parts.push(h("p", { class: "small muted", style: "margin-top:6px" }, D.needs.proposals ? "Their titles stay on your Mac until you approve them. Approve or drop them in Terminal with pmx proposals, or on this Mac's own page: pmx flow --web." : "Nothing waiting."));
+      else if (!D.proposals.length) parts.push(h("p", { class: "faint small", style: "margin-top:6px" }, "Nothing waiting. New customer calls are drafted at the next collection."));
+      for (const p of D.proposals) parts.push(h("div", { class: "prop" }, h("strong", null, p.title), h("span", { class: "from" }, `${p.category} · size ${p.size} · from ${p.from}`),
+        h("details", null, h("summary", { class: "small" }, "What Linear would get"), h("div", { class: "cmdline", style: "white-space:pre-wrap" }, p.description)),
+        h("div", { class: "acts" }, h("button", { type: "button", class: "btn primary", onclick: () => decide(p, "approve") }, "Approve"), h("button", { type: "button", class: "btn", onclick: () => decide(p, "drop") }, "Drop"))));
+      if (lastMsg) parts.push(h("p", { class: "small", style: "margin-top:8px" }, lastMsg));
+    } else if (sel.id === "review") {
+      if (!D.drafts.length) parts.push(h("p", { class: "faint small" }, "No drafts waiting."));
+      for (const d of D.drafts) parts.push(h("div", { class: "prop" }, h("strong", null, `${d.identifier} · ${d.title}`), h("span", { class: "from" }, d.since ? `since ${when(d.since)}` : ""), h("div", { class: "cmdline" }, "pmx review")));
+    } else if (sel.id === "filter" || sel.id === "held") {
+      parts.push(D.held.length ? h("dl", { class: "kv" }, D.held.flatMap((x) => [h("dt", null, x.label), h("dd", null, x.n)])) : h("p", { class: "faint small" }, `Nothing held ${winText()}.`));
+    } else if (n.kind !== "off") {
+      const ins = edges.filter((e) => e.to === sel.id && e.kind !== "off"), outs = edges.filter((e) => e.from === sel.id && e.kind !== "off");
+      parts.push(h("dl", { class: "kv" }, ins.map((e) => [h("dt", null, `From ${nodes[e.from].title}`), h("dd", null, `${e.n} ${e.unit}`)]), outs.map((e) => [h("dt", null, `To ${nodes[e.to].title}`), h("dd", null, `${e.n} ${e.unit}`)])));
+    }
+    const sched = D.schedules.find((x) => x.node === sel.id);
+    if (sched) parts.push(h("p", { class: "small muted" }, `${sched.name}: last ${when(sched.last)}, next ${when(sched.next)}.`));
+    parts.push(ruleButtons(rules));
+    box.replaceChildren(...parts);
+  }
+  let lastMsg = "";
+  async function decide(p, action) {
+    try {
+      const r = await api("/api/pipeline/proposals", { action, ids: [p.id] });
+      lastMsg = r.message;
+    } catch (e) { lastMsg = `Couldn't ${action} it: ${e.message}`; }
+    await load();
+  }
+
+  // ================= live =================
+  let live = true;
+  function asof() {
+    const since = first !== null ? edgeTotal() - first : 0;
+    $("asof").textContent = `Updated ${hm(D.at)}${since > 0 ? ` · ${plural(since, "new item")} since you opened` : ""}${live ? "" : " · paused"}`;
+    $("live-dot").className = live ? "dot" : "dot bad";
+  }
+  $("live-btn").addEventListener("click", () => { live = !live; $("live-btn").textContent = live ? "Pause updates" : "Resume updates"; $("live-btn").setAttribute("aria-pressed", String(live)); if (D) asof(); });
+  // PMX's records change in batches (collection twice a day, the background job every 30 minutes, the Linear sync
+  // hourly), so the page asks once a minute and moves only when a batch landed.
+  setInterval(() => { if (live && !document.hidden) load(); }, 60000);
+
+  // ================= checks =================
+  function drawChecks() {
+    const items = D.checks.map((c) => [c.status === "ok" ? "ok" : c.status === "violated" ? "bad" : "info", c.label, c.detail]);
+    items.push(["info", "Processed meetings are recorded in your PMX repo, not Linear.", "Under keyed IDs only your team's repo can match to a meeting. Linear gets only the tasks you approve."]);
+    $("checks").replaceChildren(...items.map(([k, t, d]) => h("li", { class: k }, h("span", { class: "ic", "aria-hidden": "true" }, k === "ok" ? "✓" : k === "bad" ? "!" : "i"), h("span", null, h("strong", null, t), " ", h("span", { class: "muted" }, d)))));
+  }
+
+  // ================= skills =================
+  function drawSkills() {
+    $("n-skills").textContent = D.skills.length;
+    const groups = [
+      ["Turn meetings into work", D.skills.filter((k) => k.node === "draft" || k.node === "findtodo" || k.name === "pmx-digest")],
+      ["Do the work: one skill per task category", D.skills.filter((k) => k.node === "agent")],
+      ["Not part of this pipeline", D.skills.filter((k) => !k.node && k.name !== "pmx-digest")],
+    ].filter(([, l]) => l.length);
+    $("v-skills").replaceChildren(
+      h("p", { class: "muted", style: "margin:0 0 14px;max-width:72ch" }, `Skills are the written instructions Claude follows at each step. Your team's copies live in the PMX repo and change only by reviewed pull request. Run counts are ${winText()}.`),
+      ...groups.map(([g, list]) => [
+        h("div", { class: "group-h" }, h("h2", null, g), h("span", { class: "faint small" }, plural(list.length, "skill"))),
+        h("div", { class: "grid2" }, list.map((k) => h("article", { class: `card${k.runs ? "" : " idle"}` },
+          h("div", { class: "row" }, h("code", null, k.name), h("span", { class: "pill" }, k.copy)),
+          h("p", { class: "what" }, k.what),
+          h("div", { class: "row small" },
+            k.node ? h("button", { type: "button", class: "textlink", onclick: () => goNode(k.node) }, `Step: ${k.where}`) : h("span", { class: "muted" }, k.where),
+            h("span", { class: "num faint" }, k.runs ? plural(k.runs, "run") : "not run"))))),
+      ]),
+    );
+  }
+
+  // ================= schedules =================
+  function drawSchedules() {
+    $("n-sched").textContent = D.schedules.length;
+    const W = 1000, L = 170, R = 20, x = (hr) => L + ((W - L - R) * hr) / 24;
+    const now = new Date(), nowH = now.getHours() + now.getMinutes() / 60;
+    const tl = s("svg", { viewBox: `0 0 ${W} ${36 + D.schedules.length * 28}`, role: "img", "aria-label": "Today's run times" });
+    const bottom = 18 + D.schedules.length * 28;
+    for (let hr = 0; hr <= 24; hr += 3) tl.append(s("line", { x1: x(hr), x2: x(hr), y1: 8, y2: bottom, style: "stroke: var(--line)" }), s("text", { class: "tick", x: x(hr), y: bottom + 14, "text-anchor": "middle" }, `${String(hr % 24).padStart(2, "0")}:00`));
+    D.schedules.forEach((t, i) => {
+      const y = 22 + i * 28;
+      tl.append(s("text", { class: "rowlabel", x: 0, y: y + 4 }, t.name));
+      for (const hr of t.hours) tl.append(s("rect", { x: x(hr) - 1.5, y: y - 7, width: 3, height: 14, rx: 1, style: `fill: var(${t.where === "This Mac" ? "--mac" : "--claude"}); opacity: ${hr <= nowH ? 1 : 0.35}` }));
+    });
+    tl.append(s("line", { x1: x(nowH), x2: x(nowH), y1: 4, y2: bottom, style: "stroke: var(--ink); stroke-width: 1.5" }), s("text", { class: "tick", x: x(nowH) + 4, y: 10 }, "now"));
+    $("v-schedules").replaceChildren(
+      h("div", { class: "banner", role: "note" }, h("strong", null, "Everything runs only while this Mac is awake."), h("span", null, " The Claude tasks also need the Claude app open. A missed run happens once when the Mac wakes or the app opens.")),
+      h("div", { class: "tl" }, tl),
+      h("div", { class: "tablebox" }, h("table", { class: "list" }, h("thead", null, h("tr", null, ["What", "Where", "When", "Last run", "Next run", "Status"].map((t) => h("th", null, t)))),
+        h("tbody", null, D.schedules.map((t) => h("tr", null, h("td", null, h("strong", null, t.name)), h("td", null, h("span", { class: `kindchip ${t.where === "This Mac" ? "full" : "model"}` }, t.where)), h("td", null, t.when), h("td", null, when(t.last)), h("td", null, when(t.next)),
+          h("td", null, h("span", { class: "pill" }, h("span", { class: t.ok ? "dot" : "dot bad" }), t.ok ? "on time" : t.detail))))))),
+    );
+  }
+
+  // ================= rules =================
+  const ROUTE_OPTS = [["off", "Off"], ["mine", "My to-dos only"], ["linear", "My to-dos + Linear tasks"]];
+  const RANK = { off: 0, mine: 1, linear: 2 };
+  const SZ = ["S", "M", "L", "XL"];
+  let original = null, state = null, cellEdit = null;
+  const clone = (x) => JSON.parse(JSON.stringify(x));
+  function initRules() {
+    const r = D.rules;
+    const base = {
+      routes: Object.fromEntries([...D.sources.map((x) => x.id), ...(r.allowedSources.includes("slack") ? ["slack"] : [])].map((k) => [k, r.routes[k] || "linear"])),
+      teamDomains: r.teamDomains, myDomains: r.myDomains,
+      people: Array.isArray(r.neverIngest.people) ? r.neverIngest.people : [], titles: Array.isArray(r.neverIngest.titles) ? r.neverIngest.titles : [], channels: Array.isArray(r.neverIngest.channels) ? r.neverIngest.channels : [],
+      budget: r.budget.dailyUsd, accept: Object.fromEntries(r.categories.map((c) => [c.name, c.accepted])), reviewCap: r.reviewCap,
+      minutes: Object.fromEntries(SZ.map((z) => [z, r.sizes[z].minutes])), usd: Object.fromEntries(SZ.map((z) => [z, r.sizes[z].usd])), rubric: clone(r.rubric),
+    };
+    if (!original || JSON.stringify(original) === JSON.stringify(state)) { original = base; state = clone(base); }
+    else original = base; // keep the PM's unsaved edits across refreshes
+  }
+  const scopeTag = (k) => h("span", { class: `scope ${k}` }, { me: "This Mac", team: "Team · reviewed PR", fixed: "Fixed in PMX" }[k]);
+  function rb(id, title, tags, desc, ...body) {
+    return h("section", { class: "rb", id: `r-${id}` }, h("header", null, h("div", null, h("h2", { tabindex: "-1" }, title), desc ? h("p", { class: "muted" }, desc) : null), h("div", { class: "tags" }, tags.map(scopeTag))), ...body);
+  }
+  function seg(opts, val, pick, label, disabled) {
+    return h("div", { class: "seg", role: "radiogroup", "aria-label": label }, opts.map(([v, l]) => h("button", { type: "button", role: "radio", "aria-checked": v === val ? "true" : "false", "aria-pressed": v === val ? "true" : "false", disabled: !!disabled, onclick: () => pick(v) }, l)));
+  }
+  const invalid = {};
+  function numIn(id, val, min, max, set, unit, step = 1) {
+    const inp = h("input", { class: "in", id, type: "number", min, max, step, value: val, style: "width:72px", "aria-label": id, disabled: !LOCAL });
+    const err = h("span", { class: "err" });
+    inp.addEventListener("input", () => {
+      const v = Number(inp.value), bad = inp.value === "" || !Number.isFinite(v) || v < min || v > max;
+      inp.classList.toggle("bad", bad); err.textContent = bad ? `${min}–${max}` : "";
+      invalid[id] = bad; if (!bad) set(v); else drawTray();
+    });
+    return h("span", { class: "addrow", style: "margin:0;gap:4px" }, unit === "$" ? "$" : null, inp, unit && unit !== "$" ? unit : null, err);
+  }
+  function addForm(id, ph, add, preview) {
+    const inp = h("input", { class: "in", id, placeholder: ph, "aria-label": ph, style: "flex:1 1 200px" });
+    const msg = h("div", { class: "hint" });
+    let t = 0;
+    inp.addEventListener("input", () => { msg.className = "hint"; clearTimeout(t); const v = inp.value.trim(); msg.textContent = ""; if (v.length >= 3 && preview) t = setTimeout(() => preview(v).then((p) => { if (inp.value.trim() === v) msg.textContent = p; }, () => {}), 400); });
+    return h("div", null, h("form", { class: "addrow", onsubmit: (ev) => { ev.preventDefault(); const e = add(inp.value.trim()); if (e) { msg.className = "err"; msg.textContent = e; } else requestAnimationFrame(() => $(id)?.focus()); } }, inp, h("button", { type: "submit", class: "btn" }, "Add")), msg);
+  }
+  const whatIf = (kind) => async (v) => {
+    const r = LOCAL ? (await api(`/api/pipeline/what-if?kind=${kind}&value=${encodeURIComponent(v)}`)).whatIf : await call("flow_what_if", { kind, value: v });
+    return kind === "title" ? `Would have held ${plural(r.meetings, "meeting")} and ${plural(r.tasks, "task")} in the last 14 days. ${r.note}` : r.note;
+  };
+  function drawRules() {
+    if (!state) return;
+    const focusedId = document.activeElement?.id;
+    const domainList = (key) => h("div", null,
+      h("div", { class: "chips" }, state[key].map((d) => h("span", { class: `chip${original[key].includes(d) ? "" : " pending"}` }, d,
+        LOCAL ? h("button", { type: "button", "aria-label": `Remove ${d}`, onclick: () => { state[key] = state[key].filter((x) => x !== d); update(); } }, "×") : null)),
+        state[key].length ? null : h("span", { class: "faint small" }, "None")),
+      LOCAL ? addForm(`add-${key}`, "Add a domain, like acme.com", (v) => { const d = v.toLowerCase().replace(/^.*@/, ""); if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return "That isn't a domain like acme.com"; if (state[key].includes(d)) return "Already listed"; state[key].push(d); update(); return null; }) : null);
+    const dnr = (key, list, label, ph) => h("div", { class: "ctl" },
+      h("div", { class: "lab" }, h("strong", null, label)),
+      h("div", null,
+        LOCAL ? h("div", { class: "chips" }, state[key].map((v) => h("span", { class: `chip${original[key].includes(v) ? "" : " pending"}` }, v, h("button", { type: "button", "aria-label": `Remove ${v}`, onclick: () => { state[key] = state[key].filter((x) => x !== v); update(); } }, "×"))), state[key].length ? null : h("span", { class: "faint small" }, "None"))
+          : h("p", { class: "faint small" }, `${plural(D.rules.neverIngest[key] || 0, "entry", "entries")}. Only this Mac's page shows them.`),
+        addForm(`add-${key}`, ph, (v) => {
+          if (v.length < 3) return "Give at least 3 characters";
+          if (state[key].some((x) => x.toLowerCase() === v.toLowerCase())) return "Already listed";
+          if (!LOCAL) { call("never_ingest_add", { kind: list, value: v }).then((r) => { showBanner(r.message); load(); }, (e) => showBanner(e.message)); return null; }
+          state[key].push(v); update(); return null;
+        }, whatIf(list))));
+    const sizeHead = SZ.map((z) => h("th", null, `Size ${z}`, h("div", { class: "meta" },
+      numIn(`min-${z}`, state.minutes[z], 5, 480, (v) => { state.minutes[z] = v; update(false); }, "min"), numIn(`usd-${z}`, state.usd[z], 0, 50, (v) => { state.usd[z] = v; update(false); }, "$", 0.5))));
+    const sizeRows = Object.keys(state.rubric).map((c) => h("tr", null, h("th", { scope: "row" }, c), SZ.map((z) => {
+      const changed = state.rubric[c][z] !== original.rubric[c][z];
+      if (cellEdit && cellEdit.cat === c && cellEdit.z === z) {
+        const ta = h("textarea", { class: "in", id: `cell-${c}-${z}`, rows: 3, style: "width:100%" }); ta.value = state.rubric[c][z];
+        const save = () => { const v = ta.value.replace(/[|\s]+/g, " ").trim(); if (v.length < 3 || v.length > 120) { ta.classList.add("bad"); return; } state.rubric[c][z] = v; cellEdit = null; update(); requestAnimationFrame(() => $(`cellbtn-${c}-${z}`)?.focus()); };
+        ta.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); save(); } if (ev.key === "Escape") { cellEdit = null; drawRules(); requestAnimationFrame(() => $(`cellbtn-${c}-${z}`)?.focus()); } });
+        requestAnimationFrame(() => ta.focus());
+        return h("td", null, ta, h("div", { class: "addrow" }, h("button", { type: "button", class: "btn primary", onclick: save }, "Save"), h("button", { type: "button", class: "btn", onclick: () => { cellEdit = null; drawRules(); } }, "Cancel")));
+      }
+      return h("td", { class: changed ? "changed" : "" }, h("button", { type: "button", class: "cell", id: `cellbtn-${c}-${z}`, disabled: !LOCAL, "aria-label": `${c}, size ${z}: ${state.rubric[c][z]}. Edit`, onclick: () => { cellEdit = { cat: c, z }; drawRules(); } }, h("span", null, state.rubric[c][z] || "—"), LOCAL ? h("span", { class: "pen", "aria-hidden": "true" }, "✎") : null));
+    })));
+    const heldBy = Object.fromEntries(D.held.map((x) => [x.rule, x.n]));
+    const FIXED = [["one-on-one", "1:1s and career talks", "a 1:1 title, or two people with a title naming two people"], ["hiring", "Hiring and interviews", "an interview, debrief, recruiter or offer in the title, or twice in the text"],
+      ["no-external-participant", "Internal-only meetings", "nobody from outside your company's domains"], ["no-company-domain", "Company domain not set", "PMX can't tell colleagues from customers, so it holds everything"],
+      ["unknown-participants", "No participant list", "PMX can't tell who was there"], ["performance", "Performance and HR", "in the title, or in two or more passages; one passage is cut"],
+      ["compensation", "Pay and compensation", "in the title, or in two or more passages; one passage is cut"], ["health", "Health and leave", "in the title, or in two or more passages; one passage is cut"],
+      ["never-ingest", "Your do-not-read list", "a person, title or channel you listed"], ["source-off", "Sources you turned off", "a source set to Off, or to My to-dos only for team tasks"]];
+    const readOnly = LOCAL ? null : h("p", { class: "banner", role: "note" }, "This shared page shows your rules and can add to your do-not-read list. To change anything else, open this Mac's own page with pmx flow --web, or use the commands in Review changes.");
+    $("v-rules").replaceChildren(h("div", { class: "rules" },
+      readOnly,
+      rb("routes", "What each source may feed", ["me"], "Off reads nothing from a source. My to-dos only keeps it out of team tasks. Team tasks reach Linear only after you approve them.",
+        ...Object.keys(state.routes).map((k) => h("div", { class: "ctl" },
+          h("div", { class: "lab" }, h("strong", null, k === "slack" ? "Slack" : (D.sources.find((x) => x.id === k) || { label: k }).label), RANK[state.routes[k]] > RANK[original.routes[k]] ? h("span", { class: "scope loosen", style: "justify-self:start" }, "Loosens privacy") : null),
+          seg(k === "slack" ? [["off", "Off"], ["linear", "Digest + Linear tasks"]] : ROUTE_OPTS, state.routes[k], (v) => { state.routes[k] = v; update(); }, `${k} feeds`, !LOCAL))),
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Email")), h("span", { class: "faint small" }, "PMX can't read email. Forward customer emails to an approved Slack channel."))),
+      rb("domains", "Who counts as a customer", ["team", "me"], "A meeting reaches team tasks only if someone outside these domains was in it. Removing a domain loosens privacy: its people start to count as customers.",
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Team's domains"), h("span", { class: "faint small" }, "for everyone, by pull request")), domainList("teamDomains")),
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Your domains"), h("span", { class: "faint small" }, "added on this Mac")), domainList("myDomains"))),
+      rb("fixed", "Always held", ["fixed"], "Code decides these, before Claude reads anything. Nobody can switch them off here; changing one takes a new PMX release.",
+        h("div", { class: "fixed-list" }, FIXED.map(([rule, name, how]) => h("div", { class: "fx" }, h("div", { class: "row" }, h("b", null, name), h("span", { class: "num faint small" }, `${heldBy[rule] || 0} held ${winText()}`)), h("span", { class: "faint small" }, how))))),
+      rb("dnr", "Never read", ["me"], "Only you see this list, and only on this Mac. Removing an entry loosens privacy.",
+        dnr("people", "person", "People", "Name or email"), dnr("titles", "title", "Meeting titles containing", "Title text, like Board prep"), dnr("channels", "channel", "Slack channels", "#channel")),
+      rb("gets", "What Linear gets", ["fixed"], "Every task waits for your approval first. This is always on.",
+        h("div", { class: "gets" },
+          h("div", null, h("strong", null, "A task in Linear has"), h("ul", null, h("li", null, "A title and labels: inbox, category, size"), h("li", null, "A 2–4 sentence summary in Claude's words"), h("li", null, "Why it got its size"), h("li", null, "How many sources and their dates"))),
+          h("div", null, h("strong", null, "It never has"), h("ul", null, h("li", null, "Transcript text or quotes (PMX drops a task that repeats 8 words of a meeting)"), h("li", null, "Meeting titles or attendees"), h("li", null, "Speaker labels like \"Microphone:\""))),
+          h("div", null, h("strong", null, "Not in Linear at all"), h("ul", null, h("li", null, "Which meetings were processed: that's recorded in your PMX repo under keyed IDs"))))),
+      rb("sizes", "T-shirt sizes", ["team"], "How long each size takes an agent, its estimated cost, and the rubric Claude matches when it sizes a task. Click a cell to change its wording.",
+        h("div", { style: "overflow-x:auto" }, h("table", { class: "sizes" }, h("thead", null, h("tr", null, h("th", null, "Category"), sizeHead)), h("tbody", null, sizeRows))),
+        h("p", { class: "hint" }, "Run time and cost live in pmx.config.json; the wording lives in your team's pmx-size skill. Both change through one pull request.")),
+      rb("budget", "Budget", ["me"], `On a Claude plan the dollars are an estimate at API list prices, not a bill. Your team's cap of $${D.rules.budget.teamCap} a day always applies. Today: ${fmt(D.rules.budget.tokens)} tokens, ~$${D.rules.budget.spentUsd.toFixed(2)}.`,
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Your daily cap")),
+          h("div", { class: "addrow", style: "margin:0" }, seg([["off", "None of my own"], ["set", "Cap per day"], ["pause", "Pause PMX"]], state.budget === null ? "off" : state.budget === 0 ? "pause" : "set", (v) => { state.budget = v === "off" ? null : v === "pause" ? 0 : (original.budget || 10); update(); }, "Budget", !LOCAL),
+            state.budget ? numIn("cap", state.budget, 1, D.rules.budget.teamCap, (v) => { state.budget = v; update(false); }, "$") : null))),
+      rb("agent", "Your agent's work", ["me", "team"], null,
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Categories you take on"), scopeTag("me")),
+          h("div", { class: "chips" }, Object.keys(state.accept).map((c) => h("label", { class: "chip" }, h("input", { type: "checkbox", id: `cat-${c}`, checked: state.accept[c], disabled: !LOCAL, onchange: (ev) => { state.accept[c] = ev.target.checked; update(); } }), c)))),
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Stop pulling when"), scopeTag("team")),
+          h("div", { class: "addrow", style: "margin:0" }, numIn("revcap", state.reviewCap, 1, 10, (v) => { state.reviewCap = v; update(false); }), h("span", null, "drafts wait for review")))),
+    ));
+    if (focusedId) requestAnimationFrame(() => $(focusedId)?.focus());
+  }
+
+  // ================= changes =================
+  // Worked out from the rules as loaded vs as edited, every time, so the tray can never disagree with the screen.
+  function diff() {
+    if (!state) return [];
+    const out = [];
+    const add = (change, label, scope, cmd, loosens = false) => out.push({ change, label, scope, cmd, loosens });
+    for (const k of Object.keys(state.routes)) if (state.routes[k] !== original.routes[k]) add({ kind: "route", source: k, value: state.routes[k] }, `${k}: ${(ROUTE_OPTS.find((o) => o[0] === state.routes[k]) || ["", "Digest + Linear tasks"])[1]}`, "me", `pmx sources set ${k} ${state.routes[k]}`, RANK[state.routes[k]] > RANK[original.routes[k]]);
+    for (const [key, kind, scope] of [["teamDomains", "team-domain", "team"], ["myDomains", "my-domain", "me"]]) {
+      for (const d of state[key]) if (!original[key].includes(d)) add({ kind, op: "add", value: d }, `Add company domain ${d}`, scope, scope === "me" ? `pmx domains add ${d}` : `pmx.config.json internalDomains + "${d}"`);
+      for (const d of original[key]) if (!state[key].includes(d)) add({ kind, op: "remove", value: d }, `Remove company domain ${d}`, scope, scope === "me" ? `pmx domains remove ${d}` : `pmx.config.json internalDomains − "${d}"`, true);
+    }
+    for (const [key, list] of [["people", "person"], ["titles", "title"], ["channels", "channel"]]) {
+      for (const v of state[key]) if (!original[key].includes(v)) add({ kind: "never", list, op: "add", value: v }, `Never read ${list} "${v}"`, "me", `pmx never-ingest add --${list} "${v}"`);
+      for (const v of original[key]) if (!state[key].includes(v)) add({ kind: "never", list, op: "remove", value: v }, `Read ${list} "${v}" again`, "me", `pmx never-ingest remove --${list} "${v}"`, true);
+    }
+    for (const z of SZ) if (state.minutes[z] !== original.minutes[z] || state.usd[z] !== original.usd[z])
+      add({ kind: "size", size: z, ...(state.minutes[z] !== original.minutes[z] ? { minutes: state.minutes[z] } : {}), ...(state.usd[z] !== original.usd[z] ? { usd: state.usd[z] } : {}) }, `Size ${z}: ${state.minutes[z]} min, ~$${state.usd[z]}`, "team", `pmx.config.json sizes.${z}`);
+    for (const c of Object.keys(state.rubric)) for (const z of SZ) if (state.rubric[c][z] !== original.rubric[c][z]) add({ kind: "rubric", category: c, size: z, text: state.rubric[c][z] }, `${c} ${z}: "${state.rubric[c][z]}"`, "team", `.claude/skills/pmx-size/SKILL.md (${c}, ${z})`);
+    if (state.budget !== original.budget) add({ kind: "budget", value: state.budget }, state.budget === null ? "No cap of your own" : state.budget === 0 ? "Pause PMX" : `Cap $${state.budget} a day`, "me", state.budget === null ? "pmx budget off" : `pmx budget set ${state.budget}`);
+    for (const c of Object.keys(state.accept)) if (state.accept[c] !== original.accept[c]) add({ kind: "category", name: c, accepted: state.accept[c] }, `${state.accept[c] ? "Take on" : "Stop taking"} ${c}`, "me", `pmx categories ${state.accept[c] ? "add" : "remove"} ${c}`);
+    if (state.reviewCap !== original.reviewCap) add({ kind: "review-cap", value: state.reviewCap }, `Stop pulling at ${state.reviewCap} drafts`, "team", `pmx.config.json reviewQueueCap`);
+    return out;
+  }
+  function update(redraw = true) { if (redraw) drawRules(); drawTray(); if ($("review").childElementCount) drawReview(); }
+  function drawTray() {
+    const ch = diff(), bad = Object.values(invalid).some(Boolean);
+    $("tray").hidden = !ch.length && !bad;
+    const me = ch.filter((c) => c.scope === "me").length, team = ch.length - me, loose = ch.filter((c) => c.loosens).length;
+    $("tray-text").textContent = bad ? "Fix the highlighted value first." : `${plural(ch.length, "change")}: ${me} on this Mac${team ? `, ${team} in a team pull request` : ""}${loose ? ` · ${loose} loosen${loose === 1 ? "s" : ""} privacy` : ""}`;
+    $("tray-review").disabled = bad;
+  }
+  let applied = null;
+  function drawReview() {
+    const ch = diff();
+    if (!ch.length && !applied) { $("review").replaceChildren(); return; }
+    const row = (c) => h("div", { class: "chg" },
+      h("div", null, h("div", null, c.label, c.loosens ? [" ", h("span", { class: "scope loosen" }, "Loosens privacy")] : null), h("div", { class: "cmdline", style: "margin-top:4px" }, c.cmd)),
+      h("button", { type: "button", class: "btn", onclick: () => { revert(c.change); } }, "Undo"));
+    const me = ch.filter((c) => c.scope === "me"), team = ch.filter((c) => c.scope === "team"), loose = ch.some((c) => c.loosens);
+    const confirm = h("input", { type: "checkbox", id: "confirm-loosen" });
+    const go = h("button", { type: "button", class: "btn primary", onclick: () => apply(confirm.checked) }, team.length ? "Apply and open the pull request" : "Apply");
+    $("review").replaceChildren(h("section", { class: "sheet", "aria-label": "Review changes" },
+      h("div", { class: "row" }, h("h2", { tabindex: "-1", id: "review-h" }, "Review changes"), h("button", { type: "button", class: "btn", onclick: () => { applied = null; $("review").replaceChildren(); } }, "Close")),
+      applied ? h("div", { class: "carry full" }, applied) : null,
+      me.length ? [h("h3", null, "On this Mac"), h("p", { class: "small muted" }, LOCAL ? "Applied right away; each takes effect from the next run." : "Run these in Terminal on your Mac:"), me.map(row)] : null,
+      team.length ? [h("h3", null, "For the team: one pull request to the PMX repo"), h("p", { class: "small muted" }, "A code owner reviews it. Until it merges, nothing changes for anyone."), team.map(row)] : null,
+      LOCAL && loose ? h("label", { class: "addrow" }, confirm, h("span", { class: "err" }, "I understand some of these let more of my meetings through.")) : null,
+      LOCAL && ch.length ? h("div", { class: "addrow" }, go) : null,
+      !LOCAL && ch.length ? h("div", { class: "addrow" }, h("button", { type: "button", class: "btn", onclick: (ev) => copy(me.map((c) => c.cmd).join("\n"), ev.target) }, "Copy")) : null));
+    requestAnimationFrame(() => $("review-h")?.focus());
+  }
+  function revert(c) {
+    const k = { route: () => (state.routes[c.source] = original.routes[c.source]), "team-domain": () => togg("teamDomains"), "my-domain": () => togg("myDomains"), never: () => togg({ person: "people", title: "titles", channel: "channels" }[c.list]),
+      size: () => { state.minutes[c.size] = original.minutes[c.size]; state.usd[c.size] = original.usd[c.size]; }, rubric: () => (state.rubric[c.category][c.size] = original.rubric[c.category][c.size]),
+      budget: () => (state.budget = original.budget), category: () => (state.accept[c.name] = original.accept[c.name]), "review-cap": () => (state.reviewCap = original.reviewCap) }[c.kind];
+    function togg(key) { state[key] = c.op === "add" ? state[key].filter((x) => x !== c.value) : [...state[key], c.value]; }
+    k(); update();
+  }
+  async function apply(confirmed) {
+    const ch = diff();
+    try {
+      const r = await api("/api/pipeline/changes", { changes: ch.map((c) => c.change), confirmLoosening: confirmed });
+      applied = [...r.applied, r.pr ? `Pull request: ${r.pr.url}` : null].filter(Boolean).join(" · ") || "Nothing changed.";
+      original = null; state = null;
+      await load();
+    } catch (e) {
+      applied = e.status === 409 ? "Tick the box first: some changes let more of your meetings through." : `Couldn't apply: ${e.message}`;
+    }
+    drawReview();
+  }
+  $("tray-review").addEventListener("click", () => { applied = null; drawReview(); $("review").scrollIntoView({ behavior: "smooth" }); });
+  $("tray-discard").addEventListener("click", () => { state = clone(original); cellEdit = null; for (const k in invalid) delete invalid[k]; applied = null; $("review").replaceChildren(); update(); });
+
+  // ================= render =================
+  let built = false;
+  function render() {
+    const prev = edges.length ? Object.fromEntries(edges.map((e) => [e.id, e.n])) : null;
+    const sameShape = built && D.sources.map((x) => x.id).join() === Object.keys(nodes).filter((k) => k.startsWith("src-")).map((k) => k.slice(4)).join();
+    shape();
+    if (!sameShape) { buildMap(); built = true; }
+    refreshNumbers(sameShape ? prev : null);
+    $("mode-note").textContent = LOCAL ? "This Mac only" : "Shared view: counts only";
+    drawNeeds(); drawDetail(); drawChecks(); drawSkills(); drawSchedules();
+    initRules(); if (!cellEdit) drawRules(); drawTray();
+    asof();
+  }
+
+  if (matchMedia("(max-width: 700px)").matches) setView("list");
+  const tab = location.hash.slice(1);
+  show(TABS.includes(tab) ? tab : store.get("pmx-pipeline-tab") || "connections");
+  load();
+})();
+</script>

@@ -10,6 +10,8 @@ import { startOfDay } from "../meetings/ledger.js";
 
 /** Meeting-notes connectors the collector looks for, in order (COLLECT-1). */
 export const MEETING_CONNECTORS = ["Granola", "Fireflies", "Otter", "Fathom", "tl;dv", "Zoom", "Google Drive (Google Meet transcripts)"];
+/** A connector's name as transcripts' `source:` and the PM's routes spell it. */
+export const connectorId = (c: string) => ({ "tl;dv": "tldv", "Google Drive (Google Meet transcripts)": "google-meet" } as Record<string, string>)[c] ?? c.toLowerCase();
 
 /** Where collected transcripts land: PMX's own transcripts folder, owner-only. */
 export const collectFolder = () => paths.transcripts();
@@ -79,11 +81,14 @@ export async function collectPrompt(ctx: Ctx, o: { scope: "mine" | "team" }): Pr
   const since = s.lastCollectAt ? new Date(Date.parse(s.lastCollectAt) - 2 * 3600000) : startOfDay(ctx.now(), 1);
   const have = (await scan()).filter((c) => c.source && c.sourceId).map((c) => `${c.source}:${c.sourceId}`);
   const ni = ctx.personal.neverIngest;
+  // Connectors the PM turned off (BOARD-3) aren't used at all, so their meetings never reach this Mac.
+  const off = new Set(Object.entries(ctx.personal.sources.routes ?? {}).filter(([, v]) => v === "off").map(([k]) => k));
+  const connectors = MEETING_CONNECTORS.filter((c) => !off.has(connectorId(c)));
   return `# Collect meeting transcripts for ProductMaxxing (PMX)
 
 You are collecting meeting transcripts into PMX's folder. ProductMaxxing filters and processes them afterwards; you only copy them.
 
-1. Find a meeting-notes connector among your tools, in this order: ${MEETING_CONNECTORS.join(", ")}. Use the first one that works. If none is connected, stop and say: "No meeting connector is connected to Claude. Add Granola or Fireflies in Settings → Connectors."
+1. Find a meeting-notes connector among your tools, in this order: ${connectors.join(", ")}.${off.size ? ` Never use ${[...off].join(", ")}: the user turned ${off.size === 1 ? "it" : "them"} off for PMX.` : ""} Use the first one that works. If none is connected, stop and say: "No meeting connector is connected to Claude. Add Granola or Fireflies in Settings → Connectors."
 2. List meetings that ended after ${since.toISOString()} ${o.scope === "team" ? "and are shared with my team or workspace" : "that I attended"}, and that have a transcript.
 3. Skip any meeting whose connector ID is already collected: ${have.length ? have.join(", ") : "(none yet)"}.
 4. Skip any meeting whose title contains one of these: ${ni.meetingTitles.length ? ni.meetingTitles.map((t) => JSON.stringify(t)).join(", ") : "(none)"}. Skip any meeting attended by: ${ni.people.length ? ni.people.join(", ") : "(none)"}.

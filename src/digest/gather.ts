@@ -6,7 +6,7 @@ import { sourceReceipts, topicRulesHash, type RunReceipt } from "../core/receipt
 import type { SignalItem } from "../core/types.js";
 import { readSlack } from "../sources/slack.js";
 import { readTranscripts } from "../sources/transcripts.js";
-import { meetingKeys } from "../meetings/ledger.js";
+import { meetingKeys, teamSalt } from "../meetings/ledger.js";
 import { runCanaries } from "../core/canary.js";
 
 /**
@@ -18,6 +18,8 @@ export function privacyRules(ctx: Pick<Ctx, "team" | "personal">, individual = f
   return {
     internalDomains: companyDomains(team.internalDomains, { companyDomains: personal.companyDomains, emails: personal.identity?.emails }),
     requireExternalParticipant: !individual, neverIngest: personal.neverIngest, allowOneOnOne: individual, wholeMeeting: !individual,
+    // "off" blocks a source everywhere; "mine" lets it feed only the PM's own to-dos.
+    blockedSources: Object.entries(personal.sources?.routes ?? {}).filter(([, v]) => v === "off" || (v === "mine" && !individual)).map(([k]) => k),
   };
 }
 
@@ -68,7 +70,8 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
   }
 
   // Meeting identities come from participants and IDs, so they're worked out before redaction (MEET-1).
-  for (const it of raw) if (it.kind === "transcript") it.keys = meetingKeys(it);
+  const salt = await teamSalt(ctx.repo);
+  for (const it of raw) if (it.kind === "transcript") { it.keys = meetingKeys(it, salt); it.legacyKeys = meetingKeys(it); }
   const individual = o.scope === "individual";
   const rules = privacyRules(ctx, individual);
   const filtered = filterItems(raw, rules);

@@ -1,4 +1,5 @@
 import { gitRefLease } from "../lease/git-ref.js";
+import { gitMeetingLedger, type MeetingLedger } from "../meetings/git-ledger.js";
 import type { LeaseProvider } from "../lease/types.js";
 import { linearTracker } from "../tracker/linear.js";
 import { relayTracker } from "../tracker/relay.js";
@@ -11,6 +12,8 @@ import { assertTeamVersion } from "./version.js";
 export interface Services {
   tracker: Tracker;
   lease: LeaseProvider;
+  /** The team's record of processed meetings, in the PMX repo (MEET-2, PRIV-7). */
+  meetings: MeetingLedger;
   /** Categories blocked by admin policy or auto-paused, with the reason. */
   paused(): Promise<Map<string, string>>;
 }
@@ -57,6 +60,7 @@ export async function services(ctx: Ctx, test?: Partial<Services>): Promise<Serv
   return {
     tracker,
     lease,
+    meetings: test?.meetings ?? gitMeetingLedger(ctx.repo),
     paused:
       test?.paused ??
       (async () => {

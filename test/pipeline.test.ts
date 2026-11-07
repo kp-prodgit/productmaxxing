@@ -1,0 +1,180 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { beforeEach, describe, expect, it } from "vitest";
+import { collectPrompt } from "../src/collect/collect.js";
+import { filterItems } from "../src/core/filter.js";
+import type { RunReceipt } from "../src/core/receipt.js";
+import { privacyRules } from "../src/digest/gather.js";
+import { startExplainServer } from "../src/explain/server.js";
+import { applyPersonal, checkChange, loosens, proposeTeamChanges, setRubricCell } from "../src/flow/actions.js";
+import { buildFlowGraph } from "../src/flow/graph.js";
+import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
+import { buildPipeline, type PipelineInputs } from "../src/flow/pipeline.js";
+import { handleMcp } from "../src/mcp/server.js";
+import { stageProposals } from "../src/synth/proposals.js";
+import { freshHome, pmxRepo, testCtx, tmp } from "./helpers.js";
+
+const NOW = new Date("2026-11-07T15:00:00Z");
+const src = (over: Partial<RunReceipt["sources"][number]>): RunReceipt["sources"][number] => ({ kind: "transcript", refHash: "h1", decision: "used", detail: "", passagesCut: [], passagesUsed: 3, origin: "granola", title: "Acme renewal", ...over });
+const receipt = (over: Partial<RunReceipt>): RunReceipt => ({
+  v: 1, id: "synthesize-20261107T120000Z", type: "synthesize", at: "2026-11-07T12:00:00Z", agent: "ana@m1", outcome: "staged",
+  window: { days: 1, since: "", scope: "team" }, rules: { internalDomains: [], requireExternalParticipant: true, topicRulesHash: "", neverIngest: { people: 0, channels: 0, meetingTitles: 0 }, folders: [] },
+  skippedSources: [], sources: [], masked: { email: 0, phone: 0, card: 0, id: 0, person: 0 }, skills: [], model: { name: "m", runtime: "r", tools: "", costUsd: 0.1, tokens: 4000, durationMs: 1, promptSha256: "" }, ...over,
+});
+const rules = { routes: {}, teamDomains: ["us.com"], myDomains: [], neverIngest: { people: ["Dana Reyes"], titles: ["Board prep"], channels: [] }, budget: { dailyUsd: null, teamCap: 20, spentUsd: 0, tokens: 0 },
+  categories: [{ name: "spec", accepted: true }], reviewCap: 3, sizes: { S: { minutes: 15, usd: 0.5 }, M: { minutes: 30, usd: 1.5 }, L: { minutes: 60, usd: 4 }, XL: { minutes: 120, usd: 8 } },
+  rubric: { spec: { S: "a", M: "b", L: "c", XL: "d" } }, slackChannels: ["C1"], allowedSources: ["transcripts", "slack"] } as PipelineInputs["rules"];
+
+function inputs(level: "local" | "shared"): PipelineInputs {
+  return {
+    level, now: NOW, hours: 168, agent: "ana@m1", linearSyncedAt: "2026-11-07T14:00:00Z", collectReports: [{ at: "2026-11-07T12:30:00Z", connector: "granola", saved: 3 }],
+    receipts: [
+      receipt({ sources: [src({}), src({ refHash: "h2", decision: "left-out", rule: "one-on-one", title: undefined }), src({ refHash: "h3", kind: "slack", origin: "slack" })],
+        synth: { skipped: [], tasks: [
+          { title: "Draft SSO one-pager", category: "spec", size: "M", sources: ["T1"], posted: { identifier: "PMX-5" } } as any,
+          { title: "Private idea", category: "spec", size: "S", sources: ["T1"], posted: { staged: "p1" } } as any,
+          { title: "Dropped idea", category: "spec", size: "S", sources: ["T1"], posted: { dropped: true } } as any,
+        ] } }),
+      receipt({ id: "todo-20261107T123000Z", type: "todo", sources: [src({}), src({ refHash: "h2" })], model: { name: "m", runtime: "r", tools: "", costUsd: 0, tokens: 2500, durationMs: 1, promptSha256: "" } }),
+      receipt({ id: "synthesize-20261020T120000Z", at: "2026-10-20T12:00:00Z", sources: [src({ refHash: "old" })] }),
+    ],
+    runlog: [
+      { type: "run", ts: "2026-11-07T13:00:00Z", agent: "ana@m1", machine: "m1", taskId: "PMX-4", category: "spec", size: "M", skill: "pmx-spec", skillVersion: "1", outcome: "ok", durationMs: 1, tokens: 90000, costUsd: 1, runtime: "claude-code", prev: null, hash: "x" } as any,
+      { type: "verdict", ts: "2026-11-07T14:00:00Z", agent: "bo@m2", machine: "m2", taskId: "PMX-3", category: "spec", size: "S", verdict: "accepted", reviewMinutes: 5, editSize: 1, prev: null, hash: "y" } as any,
+    ],
+    issues: [
+      { identifier: "PMX-5", title: "Draft SSO one-pager", status: "inbox", meeting: false },
+      { identifier: "PMX-4", title: "Spec audit logs", status: "review", meeting: false, createdAt: "2026-11-07T13:00:00Z" },
+      { identifier: "PMX-2", title: "Ready one", status: "ready", meeting: false },
+    ],
+    todosCreated: ["2026-11-07T12:31:00Z", "2026-11-07T12:31:00Z"],
+    proposals: [{ id: "p1", at: "2026-11-07T12:00:00Z", receipt: "x", title: "Private idea", description: "d", category: "spec", size: "S", sources: ["T1"], from: [{ id: "T1", title: "Acme renewal", at: "2026-11-07T10:00:00Z", why: "w" }] }],
+    checks: [], health: { problems: [], facts: ["collection 12:30"] }, lastTick: "2026-11-07T14:30:00Z", skills: [], schedules: [], rules,
+  };
+}
+
+describe("0.16.0: the pipeline board (BOARD-3)", () => {
+  beforeEach(freshHome);
+
+  it("counts what travelled on each connection from PMX's own records, in the window only", () => {
+    const d = buildPipeline(inputs("local"));
+    expect(d.sources).toEqual([{ id: "granola", label: "Granola", connected: true, n: 3, last: "2026-11-07T12:30:00Z" }]);
+    expect(d.edges["c-f"].n).toBe(2);
+    expect(d.edges["s-f"].n).toBe(1);
+    expect(d.edges["f-h"]).toMatchObject({ n: 1, unit: "held" });
+    expect(d.edges["f-d"]).toMatchObject({ n: 2, tokens: 4000 });
+    expect(d.edges["f-t"]).toMatchObject({ n: 2, tokens: 2500 });
+    expect(d.edges["t-t"].n).toBe(2);
+    expect([d.edges["d-a"].n, d.edges["a-i"].n, d.edges["a-x"].n]).toEqual([3, 1, 1]);
+    expect([d.edges["i-r"].n, d.edges["r-g"].n, d.edges["g-v"].n, d.edges["v-d"].n]).toEqual([1, 1, 1, 1]);
+    expect(d.needs).toEqual({ proposals: 1, drafts: 1 });
+    expect(d.held).toEqual([{ rule: "one-on-one", label: "1:1s and career talks", n: 1 }]);
+    expect(d.proposals[0]).toMatchObject({ id: "p1", title: "Private idea", from: "1 source (2026-11-07)" });
+    expect(d.rules.neverIngest.people).toEqual(["Dana Reyes"]);
+  });
+
+  it("the shared level (the Claude artifact) keeps proposals and the do-not-read list off the page", () => {
+    const d = buildPipeline(inputs("shared"));
+    expect(d.needs.proposals).toBe(1);
+    expect(d.proposals).toEqual([]);
+    expect(d.rules.neverIngest).toEqual({ people: 1, titles: 1, channels: 0 });
+    expect(JSON.stringify(d)).not.toMatch(/Private idea|Acme renewal|Dana Reyes|Board prep/);
+  });
+
+  it("PRIV-7: the shared flow graph names no meeting and no unapproved task", () => {
+    const i = inputs("shared");
+    const g = (level: "local" | "shared") => buildFlowGraph({ level, now: NOW, hours: 168, agent: "ana@m1", receipts: i.receipts, runlog: null, chain: null, issues: null, linearSyncedAt: null, outbox: [], resolved: {},
+      state: { ledger: {}, caps: {}, collectReports: [] }, caps: { personalUsd: 20, teamUsd: 20, resetHour: 0 } });
+    const shared = JSON.stringify(g("shared").nodes.map((n) => n.label));
+    expect(shared).not.toMatch(/Acme renewal|Private idea|Dropped idea/);
+    expect(shared).toMatch(/Meeting 1/);
+    expect(shared).toMatch(/Draft SSO one-pager/);
+    expect(JSON.stringify(g("local").nodes.map((n) => n.label))).toMatch(/Acme renewal/);
+  });
+
+  it("routes: off holds a source everywhere; my to-dos only keeps it out of team runs; collection skips an off connector", async () => {
+    const item = { id: "T1", kind: "transcript" as const, ref: "/x", title: "Acme renewal", at: "2026-11-07", participants: ["jane@acme.com", "ana@us.com"], text: "Jane: SSO is slow.", origin: { source: "granola", sourceId: "g1" } };
+    const p = (routes: Record<string, "off" | "mine" | "linear">) => ({ team: { internalDomains: ["us.com"] } as any, personal: { neverIngest: { people: [], channels: [], meetingTitles: [] }, sources: { transcriptDirs: [], slackChannel: null, routes } } as any });
+    expect(filterItems([item], privacyRules(p({ granola: "mine" }))).decisions[0]).toMatchObject({ decision: "held", rule: "source-off" });
+    expect(filterItems([item], privacyRules(p({ granola: "mine" }), true)).decisions[0]!.decision).toBe("kept");
+    expect(filterItems([item], privacyRules(p({ granola: "off" }), true)).decisions[0]!.rule).toBe("source-off");
+    expect(filterItems([item], privacyRules(p({ fireflies: "off" }))).decisions[0]!.decision).toBe("kept");
+    const { repo } = await pmxRepo();
+    const ctx = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [await tmp("t-")], slackChannel: null, routes: { granola: "off" } } } });
+    const prompt = await collectPrompt(ctx, { scope: "mine" });
+    expect(prompt).toMatch(/in this order: Fireflies, Otter/);
+    expect(prompt).toMatch(/Never use granola/);
+  });
+
+  it("checks every change, says which ones loosen privacy, and applies personal ones on this Mac", async () => {
+    const { repo } = await pmxRepo();
+    const ctx = await testCtx({ repo, now: NOW, personal: { companyDomains: ["us.com"], neverIngest: { people: ["Dana"], channels: [], meetingTitles: [] } } });
+    expect(() => checkChange({ kind: "route", source: "granola", value: "everything" }, ctx.team)).toThrow(/off, mine or linear/);
+    expect(() => checkChange({ kind: "my-domain", op: "add", value: "not a domain" }, ctx.team)).toThrow(/isn't an email domain/);
+    expect(() => checkChange({ kind: "budget", value: 500 }, ctx.team)).toThrow(/0 to 20 dollars/);
+    expect(() => checkChange({ kind: "rubric", category: "spec", size: "M", text: "x" }, ctx.team)).toThrow(/3 to 120/);
+    expect(checkChange({ kind: "rubric", category: "spec", size: "M", text: "A one | pager\n" }, ctx.team)).toMatchObject({ text: "A one pager" });
+    const changes = [
+      checkChange({ kind: "route", source: "granola", value: "mine" }, ctx.team),
+      checkChange({ kind: "my-domain", op: "remove", value: "us.com" }, ctx.team),
+      checkChange({ kind: "never", list: "person", op: "remove", value: "Dana" }, ctx.team),
+      checkChange({ kind: "budget", value: 0 }, ctx.team),
+      checkChange({ kind: "category", name: "spec", accepted: false }, ctx.team),
+    ];
+    expect(changes.map((c) => loosens(c, ctx.personal))).toEqual([false, true, true, false, false]);
+    expect(await applyPersonal(ctx.personal, changes)).toHaveLength(5);
+    expect(ctx.personal).toMatchObject({ sources: { routes: { granola: "mine" } }, companyDomains: [], neverIngest: { people: [] }, budget: { dailyUsd: 0 } });
+    expect(ctx.personal.categories).not.toContain("spec");
+  });
+
+  it("team changes become one pull request on a new branch, and the PM's own checkout is untouched", async () => {
+    const { repo } = await pmxRepo({ internalDomains: ["us.com"] });
+    const ctx = await testCtx({ repo, now: NOW, team: { internalDomains: ["us.com"] } });
+    const before = await ctx.repo.head();
+    const r = await proposeTeamChanges(ctx, [
+      checkChange({ kind: "size", size: "M", minutes: 45 }, ctx.team), checkChange({ kind: "review-cap", value: 5 }, ctx.team),
+      checkChange({ kind: "team-domain", op: "add", value: "us.example.com" }, ctx.team), checkChange({ kind: "rubric", category: "spec", size: "S", text: "Problem statement and goals" }, ctx.team),
+    ]);
+    expect(r).toMatchObject({ branch: expect.stringMatching(/^pmx\/settings-\d{14}$/), url: `branch:${r.branch}` });
+    expect(await ctx.repo.head()).toBe(before);
+    const cfg = JSON.parse(await ctx.repo.ok(["show", `${r.branch}:pmx.config.json`]));
+    expect(cfg).toMatchObject({ reviewQueueCap: 5, internalDomains: ["us.com", "us.example.com"], sizes: { M: { minutes: 45 } } });
+    expect(await ctx.repo.ok(["show", `${r.branch}:.claude/skills/pmx-size/SKILL.md`])).toMatch(/\| spec \| Problem statement and goals \| One-pager \|/);
+    expect(() => setRubricCell("no table", "spec", "S", "x")).toThrow(/no spec row/);
+  });
+
+  it("the local page's writes need the token and JSON; loosening needs a confirmation; the artifact's tool gets the shared level", async () => {
+    process.env.PMX_CLAUDE_HOME = await tmp("claude-home-");
+    const { repo } = await pmxRepo();
+    const ctx = await testCtx({ repo, now: NOW, personal: { companyDomains: ["us.com"] } });
+    await stageProposals([{ at: NOW.toISOString(), receipt: "x", title: "Private idea", description: "d", category: "spec", size: "S", sources: [], from: [] }]);
+    const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, pipeline: pipelineHandlers(ctx) });
+    const token = new URL(s.flowUrl).hash.slice(3);
+    const base = s.flowUrl.split("#")[0]!.replace(/\/flow$/, "");
+    const post = (path: string, body: unknown, headers: Record<string, string> = { authorization: `Bearer ${token}`, "content-type": "application/json" }) =>
+      fetch(`${base}${path}`, { method: "POST", headers, body: JSON.stringify(body) });
+    try {
+      const page = await (await fetch(`${base}/flow`)).text();
+      expect(page).toMatch(/"mode":"local"/);
+      expect(page).not.toMatch(/fonts\.googleapis/);
+      expect(page).toMatch(/<script nonce="/);
+      const data = await (await fetch(`${base}/api/pipeline?hours=24`, { headers: { authorization: `Bearer ${token}` } })).json();
+      expect(data.pipeline.proposals.map((p: any) => p.title)).toEqual(["Private idea"]);
+      expect((await post("/api/pipeline/changes", { changes: [] }, { "content-type": "application/json" })).status).toBe(403);
+      expect((await post("/api/pipeline/changes", { changes: [] }, { authorization: `Bearer ${token}`, "content-type": "text/plain" })).status).toBe(405);
+      const loose = await post("/api/pipeline/changes", { changes: [{ kind: "my-domain", op: "remove", value: "us.com" }] });
+      expect(loose.status).toBe(409);
+      expect(ctx.personal.companyDomains).toEqual(["us.com"]);
+      expect((await post("/api/pipeline/changes", { changes: [{ kind: "my-domain", op: "remove", value: "us.com" }], confirmLoosening: true })).status).toBe(200);
+      expect(ctx.personal.companyDomains).toEqual([]);
+      expect(await (await post("/api/pipeline/proposals", { action: "drop", ids: ["1"] })).json()).toEqual({ message: 'Dropped "Private idea".' });
+    } finally {
+      await s.close();
+    }
+    await stageProposals([{ at: NOW.toISOString(), receipt: "x", title: "Another private idea", description: "d", category: "spec", size: "S", sources: [], from: [] }]);
+    const r: any = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "pipeline", arguments: { hours: 24 } } }, async () => ctx);
+    expect(r.result.structuredContent).toMatchObject({ level: "shared", needs: { proposals: 1 }, proposals: [] });
+    expect(JSON.stringify(r.result)).not.toContain("Another private idea");
+    expect(await readFile(join(process.env.PMX_HOME!, "staging", "proposals.json"), "utf8")).toContain("Another private idea");
+  });
+});

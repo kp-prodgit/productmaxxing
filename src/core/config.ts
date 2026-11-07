@@ -62,7 +62,11 @@ export interface PersonalConfig {
    * Code's estimate at API list prices, not a bill; 0 pauses every run.
    */
   budget: { dailyUsd: number | null; resetHour: number; overrideUsd?: number | null };
-  sources: { transcriptDirs: string[]; slackChannel: string | null };
+  /**
+   * `routes` (BOARD-3): what each source may feed, by connector (granola, fireflies…, "file" for the folder, "slack").
+   * "off" reads nothing from it, "mine" only your own to-dos, "linear" (the default) to-dos and team tasks too.
+   */
+  sources: { transcriptDirs: string[]; slackChannel: string | null; routes?: Record<string, "off" | "mine" | "linear"> };
   /** The personal never-ingest list (B2). Sensitive in itself, so it stays here. */
   neverIngest: { people: string[]; channels: string[]; meetingTitles: string[] };
   crmNamesFile: string | null;

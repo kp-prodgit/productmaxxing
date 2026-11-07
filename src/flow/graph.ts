@@ -208,7 +208,8 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
         const cut: Record<string, number> = {};
         for (const p of s.passagesCut) cut[p.rule] = (cut[p.rule] ?? 0) + 1;
         add({
-          id, kind: "source", stage: 0, label: s.title ?? s.file ?? "Source", at: s.at ?? null, status: "used",
+          // PRIV-7: a meeting's title can be private on its own, so only this Mac's page shows it.
+          id, kind: "source", stage: 0, label: local ? s.title ?? s.file ?? "Source" : `${s.kind === "slack" ? "Slack thread" : "Meeting"} ${usedSeq.get(s.refHash)}`, at: s.at ?? null, status: "used",
           meta: {
             origin: s.origin ?? (s.kind === "slack" ? "slack" : "file"), channel: s.channel ?? null, passagesUsed: s.passagesUsed,
             passagesCut: s.passagesCut.length, cutRules: Object.keys(cut).map(label).join(", ") || null,
@@ -240,7 +241,8 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
       const id = `task:${r.id}:${idx}`;
       const st = t.posted;
       add({
-        id, kind: "task", stage: 3, run: r.id, label: t.title, at: r.at,
+        // A task the PM hasn't approved stays theirs: shared views show its title only once it's in Linear.
+        id, kind: "task", stage: 3, run: r.id, label: local || (st && ("identifier" in st || "duplicateOf" in st)) ? t.title : `Proposed task ${idx + 1}`, at: r.at,
         status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : "proposed",
         meta: { category: t.category, size: t.size, why: t.sizing?.why ?? null, flags: t.sizing?.flags.join(", ") || null, sources: t.sources.length },
       });

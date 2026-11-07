@@ -7,6 +7,7 @@ import type { Ctx } from "../core/context.js";
 import { currentVersion } from "../core/version.js";
 import { addNeverIngest, checkNeverIngest, whatIf } from "../flow/edit.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
+import { loadPipeline } from "../flow/pipeline-load.js";
 
 /**
  * `pmx mcp` (FLOW-4): a local MCP server on stdio, so the /pmx-flow artifact can read the flow graph through the
@@ -17,6 +18,12 @@ import { loadFlowGraph } from "../flow/graph-load.js";
  * do-not-read list. PMX's own agent runs use `--strict-mcp-config` with no servers, so they never see it.
  */
 export const MCP_TOOLS = [
+  {
+    name: "pipeline",
+    description: "ProductMaxxing (PMX) pipeline board: counts of meetings and Slack threads read, held and sent to Claude, tasks proposed and sent to Linear, agent runs and reviews in a time window, plus the skills, scheduled tasks, rules and privacy checks. Counts only: no meeting or proposal titles, no do-not-read entries.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { hours: { type: "integer", minimum: 1, maximum: 336, description: "How far back to look (default 168, a week)." } } },
+    annotations: { title: "PMX pipeline", readOnlyHint: true, openWorldHint: false },
+  },
   {
     name: "flow_graph",
     description: "ProductMaxxing (PMX) flow: the meetings and Slack threads PMX read or held (held ones by rule only), the runs, skills, proposed tasks, Linear issues, agent runs, reviews and spend in a time window, plus the privacy checks. Metadata only.",
@@ -64,6 +71,12 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>): Promise<obje
       const args = msg.params?.arguments ?? {};
       const result = (data: object, isError = false) => reply({ content: [{ type: "text", text: JSON.stringify(data) }], structuredContent: data, isError });
       try {
+        if (name === "pipeline") {
+          const hours = args.hours === undefined ? 168 : Number(args.hours);
+          if (!Number.isInteger(hours) || hours < 1 || hours > 336) return result({ error: "hours must be a whole number from 1 to 336" }, true);
+          const c = await ctx();
+          return result(await loadPipeline(c, { level: "shared", hours, keychain: c.keychain }));
+        }
         if (name === "flow_graph") {
           const hours = args.hours === undefined ? 24 : Number(args.hours);
           if (!Number.isInteger(hours) || hours < 1 || hours > 336) return result({ error: "hours must be a whole number from 1 to 336" }, true);

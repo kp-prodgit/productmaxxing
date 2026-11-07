@@ -1,3 +1,5 @@
+import { removeNeverIngest } from "./settings.js";
+import { pipelineHandlers } from "../flow/pipeline-handlers.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
 import { trustClaims } from "../flow/graph.js";
 import { addNeverIngest, checkNeverIngest, whatIf, type NeverIngestKind } from "../flow/edit.js";
@@ -20,7 +22,7 @@ const hoursOf = (v: string | undefined) => {
 export const flowCommands: Command[] = [
   {
     name: "flow",
-    summary: "See where data went: meetings read and held, tasks, Linear issues, agent runs, skills and spend (FLOW-1)",
+    summary: "The pipeline board: skills, scheduled tasks, what travels from your meetings to Linear and back, and the rules behind it. --web opens it on this Mac",
     usage: "pmx flow [--web [--no-open]] [--window 24h|7d] [--team] [--json] | pmx flow --install-skill | --publish-json | --html | --set-url <link>",
     options: {
       web: { type: "boolean" }, "no-open": { type: "boolean" }, "install-skill": { type: "boolean" }, "publish-json": { type: "boolean" }, html: { type: "boolean" }, "set-url": { type: "string" }, window: { type: "string" }, team: { type: "boolean" }, json: { type: "boolean" } },
@@ -47,9 +49,9 @@ export const flowCommands: Command[] = [
         return 0;
       }
       if (a.values.web) {
-        const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, flow: (hours, scope) => loadFlowGraph(ctx, { level: scope === "team" ? "team" : "local", hours }) });
+        const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, flow: (hours, scope) => loadFlowGraph(ctx, { level: scope === "team" ? "team" : "local", hours }), pipeline: pipelineHandlers(ctx) });
         if (!a.values["no-open"]) await exec("open", [s.flowUrl]);
-        console.log(`PMX flow: ${s.flowUrl}\nOnly this Mac can open it. Press Ctrl+C to stop.`);
+        console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve proposals and change your settings. Press Ctrl+C to stop.`);
         await new Promise<void>((resolve) => process.on("SIGINT", () => s.close().then(resolve)));
         return 0;
       }
@@ -64,15 +66,16 @@ export const flowCommands: Command[] = [
   },
   {
     name: "never-ingest",
-    summary: "Your do-not-read list: meeting titles, people and channels PMX never reads. `add` only adds (FLOW-6)",
-    usage: "pmx never-ingest | pmx never-ingest add --title <text> | --person <name or email> | --channel <name or ID>",
+    summary: "Your do-not-read list: meeting titles, people and channels PMX never reads",
+    usage: "pmx never-ingest | pmx never-ingest add --title <text> | --person <name or email> | --channel <name or ID> | pmx never-ingest remove --title <text> | …",
     options: { title: { type: "string" }, person: { type: "string" }, channel: { type: "string" } },
     async run(a) {
       const ctx = await a.ctx();
       const ni = ctx.personal.neverIngest;
+      if (a.positionals[0] === "remove") return removeNeverIngest(a);
       if (a.positionals[0] !== "add") {
         console.log([`Titles: ${ni.meetingTitles.join(", ") || "(none)"}`, `People: ${ni.people.join(", ") || "(none)"}`, `Channels: ${ni.channels.join(", ") || "(none)"}`,
-          "Only you see this list; run records keep only how many entries it has. To remove an entry, edit ~/.pmx/config.json."].join("\n"));
+          "Only you see this list; run records keep only how many entries it has. Remove an entry with `pmx never-ingest remove`."].join("\n"));
         return 0;
       }
       const given = (["title", "person", "channel"] as NeverIngestKind[]).filter((k) => a.values[k] !== undefined);

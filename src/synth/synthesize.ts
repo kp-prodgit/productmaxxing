@@ -158,8 +158,9 @@ export async function synthesize(
   };
   const result0: SynthResult = { posted: [], staged: [], skipped: [], held: totalHeld(g.held), meetings: { processed: [], already: 0, busy: 0, before: 0 } };
 
-  // The team's meeting ledger (MEET-2): skip meetings someone already processed, claim the rest.
-  const plan = planMeetings(g.items, await svc.tracker.listMeetings(), since);
+  // The team's meeting ledger (MEET-2) lives in the PMX repo (PRIV-7). Markers older versions put in Linear still count.
+  const legacy = await svc.tracker.listMeetings().catch(() => [] as MeetingEntry[]);
+  const plan = planMeetings(g.items, [...(await svc.meetings.list()), ...legacy.filter((e) => e.status === "done")], since);
   const mark = (item: SignalItem, state: NonNullable<RunReceipt["sources"][number]["ledger"]>["state"], entry: string | null) => {
     const src = receipt.sources.find((x) => x.id === item.id);
     if (src) src.ledger = { state, entry };
@@ -171,27 +172,25 @@ export async function synthesize(
 
   // Before anything is claimed or lodged, so a paused budget leaves no meeting half-processed (BUDGET-2).
   if (plan.fresh.length || (!o.skipIfNothingNew && plan.other.length)) await checkBudget(ctx);
-  const lodged: { item: SignalItem; entry: MeetingEntry; lease: string }[] = [];
-  if (o.dryRun) for (const f of plan.fresh) mark(f.item, "would-process", f.entry?.identifier ?? null);
+  // Nothing about a meeting goes to Linear: it's claimed with the lease while it's processed, and recorded in the
+  // PMX repo once done (PRIV-7).
+  const lodged: { item: SignalItem; lease: string }[] = [];
+  if (o.dryRun) for (const f of plan.fresh) mark(f.item, "would-process", null);
   else {
     for (const f of plan.fresh) {
       const lease = `meeting-${f.item.keys![0]}`;
-      // Through the Claude relay the ledger entry reaches Linear only at the next sync, so the claim is
-      // held for a day instead of released, and other machines still skip the meeting meanwhile (MEET-2).
-      const got = await svc.lease.acquire(lease, ctx.agent, svc.tracker.kind === "claude-relay" ? 26 * 3600 : 1800);
+      const got = await svc.lease.acquire(lease, ctx.agent, 1800);
       if (!got.ok) {
-        mark(f.item, "in-progress-elsewhere", f.entry?.identifier ?? null);
+        mark(f.item, "in-progress-elsewhere", null);
         result0.meetings.busy++;
         continue;
       }
-      const entry = f.entry ?? (await svc.tracker.lodgeMeeting({ keys: f.item.keys!, at: f.item.at.slice(0, 10), agent: ctx.agent }));
-      mark(f.item, "processed-now", entry.identifier);
-      lodged.push({ item: f.item, entry, lease });
+      mark(f.item, "processed-now", null);
+      lodged.push({ item: f.item, lease });
     }
   }
   const work = [...plan.other, ...(o.dryRun ? plan.fresh.map((f) => f.item) : lodged.map((l) => l.item))];
   const release = async () => {
-    if (svc.tracker.kind === "claude-relay") return;
     for (const l of lodged) await svc.lease.release(l.lease, ctx.agent).catch(() => false);
   };
   // Polling (MEET-3): with nothing new, no model call and no receipt.
@@ -231,7 +230,7 @@ export async function synthesize(
   };
   if (!result.ok) {
     await writeReceipt({ ...receipt, outcome: "failed", error: result.error ?? "unknown" }, ctx.now());
-    for (const l of lodged) await svc.tracker.finishMeeting(l.entry.id, { status: "blocked", tasks: [], note: `PMX couldn't process this meeting (${result.error ?? "the run failed"}). The next pass retries it.` }).catch(() => {});
+    // Not recorded as done, so the next pass retries these meetings.
     await release();
     throw new Error(`Synthesis run failed: ${result.error ?? "unknown"}`);
   }
@@ -261,14 +260,11 @@ export async function synthesize(
     went.set(c, { staged: s.id });
     for (const id of c.sources) bySource.set(id, (bySource.get(id) ?? 0) + 1);
   }
-  // Mark each lodged meeting processed in the tracker (MEET-2). The tasks it led to aren't named: they aren't in the tracker yet.
+  // Record each meeting as done in the team's ledger (MEET-2), with only how many tasks it led to.
   for (const l of lodged) {
     const made = bySource.get(l.item.id) ?? 0;
-    await svc.tracker.finishMeeting(l.entry.id, {
-      status: "done", tasks: [],
-      note: made ? `PMX processed this meeting and proposed ${made} task(s) to ${ctx.agent}, who approves them before any reaches the tracker.` : "PMX processed this meeting: nothing in it fits a PMX task.",
-    });
-    result0.meetings.processed.push({ entry: l.entry.identifier, tasks: [] });
+    await svc.meetings.done({ keys: l.item.keys!, at: l.item.at.slice(0, 10), agent: ctx.agent, tasks: made });
+    result0.meetings.processed.push({ entry: l.item.keys![0]!, tasks: [] });
   }
   await release();
 

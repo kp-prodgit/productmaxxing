@@ -1,3 +1,4 @@
+import { allKeys } from "../meetings/ledger.js";
 import { createHash } from "node:crypto";
 import { checkBudget, recordSpend } from "../budget/provider.js";
 import type { Ctx } from "../core/context.js";
@@ -92,8 +93,8 @@ export async function refreshTodos(ctx: Ctx, o: { since?: Date; dryRun?: boolean
   const cutoff = localDay(since);
   const meetings = g.items.filter((i) => i.kind === "transcript");
   const before = meetings.filter((i) => i.at.slice(0, 10) < cutoff);
-  const alreadyRead = meetings.filter((i) => i.at.slice(0, 10) >= cutoff && i.keys?.some((k) => store.processed[k]));
-  const work = meetings.filter((i) => i.at.slice(0, 10) >= cutoff && !i.keys?.some((k) => store.processed[k]));
+  const alreadyRead = meetings.filter((i) => i.at.slice(0, 10) >= cutoff && allKeys(i).some((k) => store.processed[k]));
+  const work = meetings.filter((i) => i.at.slice(0, 10) >= cutoff && !allKeys(i).some((k) => store.processed[k]));
   const result: TodoResult = { added: [], meetings: { read: work.length, alreadyRead: alreadyRead.length, before: before.length }, receiptId: null };
   if (!work.length && o.skipIfNothingNew) return result;
 

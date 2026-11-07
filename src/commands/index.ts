@@ -37,6 +37,7 @@ import { companyStep, meetingCommands, todoStep } from "./meetings.js";
 import { updateStep } from "./autoupdate.js";
 import { linearCommands } from "./linear.js";
 import { flowCommands } from "./flow.js";
+import { settingsCommands } from "./settings.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
 import { syncAnalytics } from "../cloud/account.js";
 
@@ -309,6 +310,7 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
   ...linearCommands,
   ...teamCommands,
   ...flowCommands,
+  ...settingsCommands,
   {
     name: "whats-new",
     summary: "What's new in this pmx, or in every version after one you name; --json for Claude and scripts (NEW-1)",

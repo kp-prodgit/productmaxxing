@@ -116,7 +116,7 @@ export function sourceReceipts(decisions: ItemDecision[], titleOf: (t: string) =
       kind: d.item.kind, refHash: refHash(d.item.ref), detail: d.detail, passagesCut: d.passages, passagesUsed: d.passagesKept,
       origin: d.item.kind === "slack" ? "slack" : d.item.origin?.source ?? "file", ...(channel ? { channel } : {}),
     };
-    if (d.decision === "held") return { ...base, decision: "left-out", rule: d.rule, ...(d.item.keys?.length ? { keys: d.item.keys } : {}) };
+    if (d.decision === "held") return { ...base, decision: "left-out", rule: d.rule, ...(d.item.keys?.length ? { keys: [...d.item.keys, ...(d.item.legacyKeys ?? [])] } : {}) };
     return { ...base, decision: "used", id: d.item.id, file: d.item.kind === "slack" ? d.item.ref : basename(d.item.ref), title: titleOf(d.item.title), at: d.item.at };
   });
 }

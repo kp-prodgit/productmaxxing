@@ -37,7 +37,7 @@ export const teamCommands: Command[] = [
       for (const p of r.staged) console.log(`? [${p.id}] ${p.title}`);
       for (const s of r.skipped) console.log(`· skipped ${s}`);
       const m = r.meetings;
-      console.log(`Meetings since ${since.toDateString()}: ${m.processed.length} processed now${m.processed.length ? ` (${m.processed.map((x) => x.entry).join(", ")} marked done in the tracker)` : ""}, ${m.already} already processed by the team, ${m.busy} being processed on another machine.`);
+      console.log(`Meetings since ${since.toDateString()}: ${m.processed.length} processed now (recorded in your PMX repo, not Linear), ${m.already} already processed by the team, ${m.busy} being processed on another machine.`);
       console.log(a.values["dry-run"]
         ? `Dry run: ${r.posted.length} task(s) would be proposed; nothing was. ${r.held} item(s) or passage(s) left out or cut.`
         : `${r.staged.length} task(s) proposed and waiting for you; nothing was written to Linear. ${r.held} item(s) or passage(s) left out or cut.\nSee exactly what Linear would get, then approve or drop each: pmx proposals`);

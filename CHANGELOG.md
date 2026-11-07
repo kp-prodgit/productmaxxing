@@ -2,6 +2,25 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.16.0: the pipeline board
+
+The flow view is replaced by a board built from five critic agents' reviews of a prototype.
+
+- **`pmx flow --web` is the pipeline board (BOARD-3).** Four tabs:
+  - Skills: what each does, which step uses it, how often it ran.
+  - Scheduled tasks: today's run times, last and next run, and whether each ran on time.
+  - Connections: a map from your meeting apps and Slack, through the privacy filter, Claude and your approval, into Linear and on to agent work, with a count on every connection. Colours say what travels: full text on this Mac, redacted text to Claude, summaries to Linear, or nothing. Click any step or connection for what it carries and the rules that govern it. A list view replaces the map on a phone.
+  - Rules: what each source may feed, who counts as a customer, what's always held, your never-read list, what Linear gets, t-shirt sizes, budget and your agent's work.
+- **"Needs you" first.** Proposed tasks to approve (approve or drop them right there), drafts to review, and anything that didn't run on time.
+- **Change rules from the board.** Your own settings apply on this Mac at once. Team settings (company domains, sizes, the size rubric, the review cap) become one pull request to the PMX repo. Anything that lets more of your meetings through asks you to confirm.
+- **Live, honestly.** The board refreshes every minute and moves only when a batch of work landed (collection, the background job, the Linear sync), with "updated at" and "since you opened".
+- **`/pmx-flow` publishes the same board** as a Claude artifact. It shows counts only (no meeting or proposal titles, no do-not-read entries) and can only add to your never-read list.
+- **New commands:** `pmx sources set <source> off|mine|linear` (a source can feed nothing, only your to-dos, or to-dos and team tasks; collection skips connectors you turn off), `pmx domains add|remove`, `pmx categories add|remove`, `pmx never-ingest remove`.
+- **Privacy (PRIV-7).**
+  - Nothing about meetings goes to Linear any more. The record of processed meetings moves to your PMX repo (`refs/pmx/meetings`), so it no longer reaches Linear before you approve anything. Markers older versions put in Linear still count, and `pmx linear withdraw` cancels them.
+  - Meeting IDs are keyed with your PMX repo, so someone who can see the record but not the repo can't confirm a meeting happened by hashing a guessed date, title and attendee list. Older IDs still match.
+  - The shared view (the Claude artifact) shows no meeting titles and no titles of tasks you haven't approved.
+
 ## 0.15.0: Product Git is now ProductMaxxing
 
 - **New name.** The public repo is `kp-prodgit/productmaxxing`, the npm package is `productmaxxing` and the site is productmaxxing.com. The `pmx` command, `~/.pmx`, your PMX repo, your settings and your data don't change. Old GitHub links redirect.

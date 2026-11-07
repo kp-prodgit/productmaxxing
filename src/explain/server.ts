@@ -11,6 +11,9 @@ import { loadSkill, skillInventory, SKILL_USES } from "../core/skills.js";
 import { FLAG_TEXT } from "../synth/synthesize.js";
 import { page } from "./page.js";
 import { flowPage } from "../flow/page.js";
+import { localPipelinePage } from "../flow/pipeline-page.js";
+import type { PipelineData } from "../flow/pipeline.js";
+import { currentVersion } from "../core/version.js";
 import type { FlowGraph } from "../flow/graph.js";
 import { resolveLive } from "./resolve.js";
 
@@ -32,6 +35,16 @@ export async function startExplainServer(o: {
   team: TeamConfig; personal: PersonalConfig; port?: number;
   /** The flow view's graph (FLOW-2): "mine" is this Mac at the local level, "team" the shared run log. */
   flow?: (hours: number, scope: "mine" | "team") => Promise<FlowGraph>;
+  /**
+   * The pipeline board (BOARD-3), served at /flow. Its writes are POSTs with the same token: approving or dropping
+   * proposals, and settings changes, which only this Mac's page may send.
+   */
+  pipeline?: {
+    data(hours: number): Promise<PipelineData>;
+    proposals(action: "approve" | "drop", ids: string[]): Promise<string>;
+    changes(changes: unknown[], confirmLoosening: boolean): Promise<{ status: number; body: unknown }>;
+    whatIf(kind: string, value: string): Promise<unknown>;
+  };
 }): Promise<ExplainServer> {
   const token = randomBytes(24).toString("base64url");
   const want = Buffer.from(`Bearer ${token}`);
@@ -46,7 +59,23 @@ export async function startExplainServer(o: {
   };
   const json = (res: ServerResponse, status: number, body: unknown) => send(res, status, "application/json; charset=utf-8", JSON.stringify(body));
 
-  const api = async (path: string, query: URLSearchParams): Promise<[number, unknown]> => {
+  const api = async (path: string, query: URLSearchParams, body: any): Promise<[number, unknown]> => {
+    if (o.pipeline && path === "/api/pipeline") {
+      const hours = Number(query.get("hours") ?? 168);
+      if (!Number.isInteger(hours) || hours < 1 || hours > 336) return [400, { error: "hours must be 1 to 336" }];
+      return [200, { pipeline: await o.pipeline.data(hours) }];
+    }
+    if (o.pipeline && path === "/api/pipeline/what-if") return [200, { whatIf: await o.pipeline.whatIf(query.get("kind") ?? "", query.get("value") ?? "") }];
+    if (o.pipeline && path === "/api/pipeline/proposals" && body) {
+      if (body.action !== "approve" && body.action !== "drop") return [400, { error: "action must be approve or drop" }];
+      if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((x: unknown) => typeof x !== "string")) return [400, { error: "ids must be proposal IDs" }];
+      return [200, { message: await o.pipeline.proposals(body.action, body.ids) }];
+    }
+    if (o.pipeline && path === "/api/pipeline/changes" && body) {
+      if (!Array.isArray(body.changes) || body.changes.length > 100) return [400, { error: "changes must be a list" }];
+      const r = await o.pipeline.changes(body.changes, body.confirmLoosening === true);
+      return [r.status, r.body];
+    }
     if (path === "/api/flow") {
       if (!o.flow) return [404, { error: "not found" }];
       const hours = Number(query.get("hours") ?? 24);
@@ -95,20 +124,30 @@ export async function startExplainServer(o: {
     try {
       const host = req.headers.host ?? "";
       if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) return send(res, 403, "text/plain", "Forbidden");
-      if (req.method !== "GET") return send(res, 405, "text/plain", "Method not allowed", { allow: "GET" });
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       const path = url.pathname;
-      if (path === "/" || (path === "/flow" && o.flow)) {
+      // Only the board's own writes are POSTs, as JSON with the token, so a page elsewhere can't send them.
+      const post = req.method === "POST" && path.startsWith("/api/pipeline/") && (req.headers["content-type"] ?? "").startsWith("application/json");
+      if (req.method !== "GET" && !post) return send(res, 405, "text/plain", "Method not allowed", { allow: "GET" });
+      if (path === "/" || (path === "/flow" && (o.flow || o.pipeline))) {
         const nonce = randomBytes(16).toString("base64");
-        return send(res, 200, "text/html; charset=utf-8", path === "/flow" ? flowPage(nonce) : page(nonce), {
+        const html = path === "/flow" ? (o.pipeline ? localPipelinePage(nonce, { version: currentVersion(), team: o.team.team }) : flowPage(nonce)) : page(nonce);
+        return send(res, 200, "text/html; charset=utf-8", html, {
           "content-security-policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
         });
       }
       if (!path.startsWith("/api/")) return send(res, 404, "text/plain", "Not found");
       const given = Buffer.from(req.headers.authorization ?? "");
       if (given.length !== want.length || !timingSafeEqual(given, want)) return json(res, 403, { error: "missing or wrong token: run `pmx explain --web` again" });
-      const [status, body] = await api(path, url.searchParams);
-      return json(res, status, body);
+      let body: unknown = null;
+      if (post) {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const c of req) { size += (c as Buffer).length; if (size > 65536) return json(res, 413, { error: "too large" }); chunks.push(c as Buffer); }
+        try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { return json(res, 400, { error: "not JSON" }); }
+      }
+      const [status, out] = await api(path, url.searchParams, body);
+      return json(res, status, out);
     } catch (e: any) {
       return json(res, 500, { error: String(e?.message ?? e) });
     }

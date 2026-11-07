@@ -35,6 +35,8 @@ export interface SignalItem {
   text: string;
   /** Meeting identity hashes (MEET-1), worked out before redaction. Only hashes, never names. */
   keys?: string[];
+  /** The same meeting's keys as versions before 0.16.0 computed them, unsalted (PRIV-7). Never written anywhere new. */
+  legacyKeys?: string[];
   /** Where a connector-collected transcript came from (COLLECT-1), e.g. granola + its note ID. */
   origin?: { source: string; sourceId: string | null };
 }

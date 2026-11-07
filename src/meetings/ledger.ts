@@ -1,8 +1,9 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import type { Git } from "../core/git.js";
 import type { SignalItem } from "../core/types.js";
 import type { MeetingEntry } from "../tracker/types.js";
 
-const h = (s: string) => `m${createHash("sha256").update(s).digest("hex").slice(0, 16)}`;
+const h = (s: string, salt?: string) => `m${(salt ? createHmac("sha256", salt) : createHash("sha256")).update(s).digest("hex").slice(0, 16)}`;
 const normTitle = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /**
@@ -11,16 +12,34 @@ const normTitle = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " "
  *  - the connector's own ID (same Fireflies meeting, same key);
  *  - the calendar identity: day, title and everyone's email address.
  * Without either, the transcript's opening text stands in, so the same file is never processed twice.
+ *
+ * With `salt` (the team's, PRIV-7) the hashes are keyed, so someone who can see the ledger but not the PMX repo can't
+ * confirm a meeting happened by hashing a guessed day, title and attendee list. Without it they're the keys
+ * versions before 0.16.0 wrote, still used to recognise meetings those versions processed.
  */
-export function meetingKeys(item: Pick<SignalItem, "at" | "title" | "participants" | "text" | "origin">): string[] {
+export function meetingKeys(item: Pick<SignalItem, "at" | "title" | "participants" | "text" | "origin">, salt?: string): string[] {
   const keys: string[] = [];
-  if (item.origin?.sourceId) keys.push(h(`src|${item.origin.source}|${item.origin.sourceId}`));
+  if (item.origin?.sourceId) keys.push(h(`src|${item.origin.source}|${item.origin.sourceId}`, salt));
   const emails = item.participants.filter((p) => p.includes("@")).map((p) => p.toLowerCase()).sort();
   const day = item.at.slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(day) && emails.length) keys.push(h(`cal|${day}|${normTitle(item.title)}|${emails.join(",")}`));
-  if (!keys.length) keys.push(h(`txt|${item.text.replace(/\s+/g, " ").trim().slice(0, 2000)}`));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(day) && emails.length) keys.push(h(`cal|${day}|${normTitle(item.title)}|${emails.join(",")}`, salt));
+  if (!keys.length) keys.push(h(`txt|${item.text.replace(/\s+/g, " ").trim().slice(0, 2000)}`, salt));
   return keys;
 }
+
+const salts = new Map<string, Promise<string>>();
+
+/**
+ * The team's salt: the PMX repo's first commit, which every teammate's clone has and nobody outside the repo can see.
+ * Empty when the repo has no commits yet.
+ */
+export function teamSalt(git: Git): Promise<string> {
+  if (!salts.has(git.cwd)) salts.set(git.cwd, git.raw(["rev-list", "--max-parents=0", "HEAD"]).then((r) => (r.code === 0 ? r.stdout.trim().split("\n").sort()[0] ?? "" : ""), () => ""));
+  return salts.get(git.cwd)!;
+}
+
+/** A meeting's keys, salted and from before 0.16.0, for matching records either version wrote. */
+export const allKeys = (i: Pick<SignalItem, "keys" | "legacyKeys">) => [...(i.keys ?? []), ...(i.legacyKeys ?? [])];
 
 /** Local midnight `days` days before `now`: polling picks up today's meetings by default (MEET-3). */
 export function startOfDay(now: Date, daysBack = 0): Date {
@@ -55,10 +74,10 @@ export function planMeetings(items: SignalItem[], entries: MeetingEntry[], since
       plan.other.push(item);
       continue;
     }
-    const hit = item.keys.map((k) => done.get(k)).find(Boolean);
+    const hit = allKeys(item).map((k) => done.get(k)).find(Boolean);
     if (hit) plan.already.push({ item, entry: hit });
     else if (item.at.slice(0, 10) < cutoff) plan.before.push(item);
-    else plan.fresh.push({ item, entry: item.keys.map((k) => open.get(k)).find(Boolean) ?? null });
+    else plan.fresh.push({ item, entry: allKeys(item).map((k) => open.get(k)).find(Boolean) ?? null });
   }
   return plan;
 }

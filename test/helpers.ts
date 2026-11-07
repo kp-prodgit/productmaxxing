@@ -21,6 +21,8 @@ export async function freshHome(): Promise<string> {
   process.env.PMX_HOME = h;
   // Never the real ~/Library/LaunchAgents: the rename check looks for a pre-0.15.0 job there.
   process.env.PMX_OLD_LAUNCH_AGENT_FOR_TESTS = join(h, "com.productgit.pmx.plist");
+  // Never the real Claude desktop app's settings: init offers to register PMX's server there.
+  process.env.PMX_CLAUDE_DESKTOP_CONFIG = join(h, "claude-desktop", "claude_desktop_config.json");
   return h;
 }
 

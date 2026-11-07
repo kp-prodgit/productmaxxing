@@ -2,6 +2,12 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.16.1: setup connects the board in Claude
+
+- **`pmx init` offers PMX's local server to the Claude desktop app** (FLOW-4), so the `/pmx-flow` board reads PMX without a separate `pmx mcp --install`. It asks first, because it changes the Claude app's settings, and only when the app is on the Mac. The server answers with counts only, never meeting or task titles; its one write adds to your do-not-read list. Restart the Claude app once afterwards.
+- **A Mac that said yes before stays current.** Running `pmx init` again updates the registered server to this pmx without asking.
+- **A stable Node path.** The server is registered with Homebrew's stable Node path, like the background job, so `brew upgrade node` doesn't stop it. `pmx doctor` warns when the registered Node or pmx no longer exists, or is a versioned Homebrew folder.
+
 ## 0.16.0: the pipeline board
 
 The flow view is replaced by a board built from five critic agents' reviews of a prototype.

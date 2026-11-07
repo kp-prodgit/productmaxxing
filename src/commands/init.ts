@@ -19,6 +19,7 @@ import { writeProfile } from "../core/profile.js";
 import { scaffoldRepo } from "../core/scaffold.js";
 import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
 import type { Out } from "../core/context.js";
+import { desktopAppPresent, installMcp, mcpInstalled } from "../mcp/server.js";
 import { cleanDomain, companyDomains } from "../core/filter.js";
 import { linearRef } from "../core/config.js";
 
@@ -298,6 +299,19 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     && (await ask.confirm(`Let PMX's scheduled tasks run pmx and use ~/.pmx without asking each time? (adds ${ALLOW_RULES.join(", ")} to your Claude settings)`, true))) {
     const r = await addAllowRules();
     if (r.error) out.warn(r.error);
+  }
+  // FLOW-4: the /pmx-flow board reads PMX through a local server the Claude desktop app starts. Offered, not silent,
+  // because it changes the app's settings; an earlier yes is kept up to date with this pmx's paths.
+  if (await desktopAppPresent()) {
+    const node = await stableNode(process.execPath);
+    if (await mcpInstalled()) {
+      const r = await installMcp(node, d.cliPath);
+      if (r.changed) out.info("Updated PMX's server in the Claude desktop app to this pmx. Restart the Claude app once.");
+    } else if (await ask.confirm("Let your /pmx-flow board in the Claude app read PMX on this Mac? (adds PMX's server to the Claude desktop app. Any Claude chat on this Mac can then read PMX's counts, never meeting or task titles, and add to your do-not-read list)", true)) {
+      const r = await installMcp(node, d.cliPath);
+      if (r.error) out.warn(r.error);
+      else out.info("Added PMX's server to the Claude desktop app. Restart the Claude app once so it starts.");
+    }
   }
   if ((await linearAccess(team, d.keychain)) === "relay") out.info("Linear: PMX reaches it through your Claude app's Linear connector. No key or sign-in needed.");
   out.info("\nSetup done. The first week runs pulls as dry runs, so you can see what your agent would do.");

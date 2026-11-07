@@ -1,4 +1,5 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, rename, stat, writeFile } from "node:fs/promises";
+import { VERSIONED_NODE } from "../core/launchd.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { mkdir } from "node:fs/promises";
@@ -122,6 +123,31 @@ export async function serveMcp(ctx: () => Promise<Ctx>): Promise<void> {
 
 /** The Claude desktop app's MCP config. Tests point PMX_CLAUDE_DESKTOP_CONFIG elsewhere. */
 export const desktopConfig = () => process.env.PMX_CLAUDE_DESKTOP_CONFIG ?? join(homedir(), "Library", "Application Support", "Claude", "claude_desktop_config.json");
+
+/** Whether the Claude desktop app is on this Mac: its settings folder exists. */
+export async function desktopAppPresent(): Promise<boolean> {
+  return stat(dirname(desktopConfig())).then((s) => s.isDirectory(), () => false);
+}
+
+/** The command the Claude app runs for PMX's server, or null when it isn't registered. */
+export async function mcpEntry(): Promise<{ command: string; args: string[] } | null> {
+  const raw = await readFile(desktopConfig(), "utf8").catch(() => null);
+  try { const e = raw ? JSON.parse(raw)?.mcpServers?.pmx : null; return e && typeof e.command === "string" ? { command: e.command, args: Array.isArray(e.args) ? e.args : [] } : null; } catch { return null; }
+}
+
+/**
+ * Whether the registered server can still start: its Node and pmx exist, and its Node isn't a versioned Homebrew folder
+ * that `brew upgrade node` removes. Null when it isn't registered.
+ */
+export async function mcpHealth(): Promise<{ ok: boolean; detail: string } | null> {
+  const e = await mcpEntry();
+  if (!e) return null;
+  const exists = (f: string) => stat(f).then(() => true, () => false);
+  const gone = [e.command, e.args[0] ?? ""].filter(Boolean);
+  for (const f of gone) if (!(await exists(f))) return { ok: false, detail: `the Claude app starts PMX's server with ${f}, which no longer exists, so /pmx-flow can't reach PMX: run \`pmx mcp --install\`, then restart the Claude app` };
+  if (VERSIONED_NODE.test(e.command)) return { ok: false, detail: `the Claude app starts PMX's server with Node from a versioned Homebrew folder (${e.command}); \`brew upgrade node\` will break it: run \`pmx mcp --install\`` };
+  return { ok: true, detail: "the Claude app can start PMX's server" };
+}
 
 export async function mcpInstalled(): Promise<boolean> {
   const raw = await readFile(desktopConfig(), "utf8").catch(() => null);

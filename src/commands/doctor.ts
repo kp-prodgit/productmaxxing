@@ -27,7 +27,7 @@ import { runCanaries } from "../core/canary.js";
 import { privacyRules } from "../digest/gather.js";
 import { OLD, renameLeftovers } from "../core/rename.js";
 import { budget, budgetBlock } from "../budget/provider.js";
-import { mcpInstalled } from "../mcp/server.js";
+import { mcpHealth } from "../mcp/server.js";
 
 export interface DoctorDeps {
   team: TeamConfig | null;
@@ -176,11 +176,10 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
     : "PMX doesn't know your company's email domain, so it holds every meeting from team tasks and your digest. Run `pmx init` and give your work email domain (or add it to internalDomains in pmx.config.json)");
   const can = runCanaries(rules);
   add("privacy.canaries", !can.failed.length, can.failed.length ? `privacy rules let ${can.failed.length} test meeting(s) through (${can.failed.join(", ")}): nothing is sent, but check internalDomains in pmx.config.json and your do-not-read list` : `privacy rules hold all ${can.total} test meetings (1:1s, internal-only, hiring, pay, performance, health${can.total > 8 ? ", do-not-read" : ""})`);
-  // FLOW-5: a published flow page reads this Mac through the local server.
-  if (d.personal.flow?.url) {
-    const on = await mcpInstalled();
-    add("flow.mcp", on, on ? `flow view ${d.personal.flow.url} can reach PMX on this Mac` : "the /pmx-flow page can't reach PMX on this Mac: run `pmx mcp --install`, then restart the Claude app", "warn");
-  }
+  // FLOW-4/5: the /pmx-flow board reads this Mac through a server the Claude app starts.
+  const mh = await mcpHealth();
+  if (mh) add("flow.mcp", mh.ok, mh.detail, "warn");
+  else if (d.personal.flow?.url) add("flow.mcp", false, "the /pmx-flow page can't reach PMX on this Mac: run `pmx mcp --install`, then restart the Claude app", "warn");
 
   const loose: string[] = [];
   for (const dir of [paths.home(), paths.staging(), paths.receipts(), paths.transcripts()]) {

@@ -4,6 +4,7 @@ import { loadFlowGraph } from "../flow/graph-load.js";
 import { trustClaims } from "../flow/graph.js";
 import { addNeverIngest, checkNeverIngest, whatIf, type NeverIngestKind } from "../flow/edit.js";
 import { exec } from "../core/exec.js";
+import { stableNode } from "../core/launchd.js";
 import { flowJson, renderFlow, setFlowUrl } from "../claude/flow.js";
 import { appSkillTarget, FLOW_SKILL, installAppSkill } from "../claude/skill.js";
 import { installMcp, mcpInstalled, serveMcp } from "../mcp/server.js";
@@ -95,7 +96,7 @@ export const flowCommands: Command[] = [
     async run(a) {
       if (a.values.install) {
         if (!a.values.yes && !(await a.ask.confirm("Register PMX's read-only server with the Claude desktop app, so the /pmx-flow page can read PMX on this Mac? Any Claude chat on this Mac can then read PMX's flow metadata (never held meeting titles).", true))) return 1;
-        const r = await installMcp(process.execPath, a.cliPath);
+        const r = await installMcp(await stableNode(process.execPath), a.cliPath);
         if (r.error) throw new Error(r.error);
         console.log(r.changed ? "Registered. Restart the Claude app, then open your /pmx-flow page there." : "Already registered.");
         return 0;

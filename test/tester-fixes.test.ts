@@ -201,3 +201,55 @@ describe("0.14.0: taking back what PMX wrote (TIDY-1)", () => {
     await updateState(() => {});
   });
 });
+
+describe("0.16.1: pmx init offers the /pmx-flow server (FLOW-4)", () => {
+  beforeEach(freshHome);
+  const withClaude = async (cmd: string, args: string[], o?: any) => (cmd === "claude" ? { stdout: "2.1.300 (Claude Code)", stderr: "", code: 0 } : (await import("../src/core/exec.js")).exec(cmd, args, o));
+
+  it("asks only when the Claude desktop app is on this Mac, registers a stable Node, and keeps an earlier yes current", async () => {
+    const { runInit } = await import("../src/commands/init.js");
+    const { scriptedAsker } = await import("../src/core/ask.js");
+    const { mcpEntry } = await import("../src/mcp/server.js");
+    const root = await tmp();
+    const asked: string[] = [];
+    const ask = (answers: Record<string, string | boolean>) => {
+      const a = scriptedAsker(answers);
+      return { ...a, confirm: async (q: string, def?: boolean) => { asked.push(q); return a.confirm(q, def); } };
+    };
+    const init = (answers: Record<string, string | boolean>) => runInit({
+      ask: ask({ "PMX repo checkout": join(root, "pmx"), "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), "email domains": "acme.com", ...answers }),
+      keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude as any, out: { info() {}, warn() {}, error() {} } as any, now: () => new Date("2026-11-07T15:00:00Z"), cliPath: "/x/cli.js",
+    });
+    await init({});
+    expect(asked.some((q) => /pmx-flow board/.test(q))).toBe(false);
+    expect(await mcpEntry()).toBeNull();
+
+    await mkdir(join(process.env.PMX_HOME!, "claude-desktop"), { recursive: true });
+    await writeFile(process.env.PMX_CLAUDE_DESKTOP_CONFIG!, JSON.stringify({ mcpServers: { other: { command: "x" } }, keep: true }));
+    await init({ "pmx-flow board": false });
+    expect(await mcpEntry()).toBeNull();
+    await init({});
+    expect(await mcpEntry()).toEqual({ command: await stableNode(process.execPath), args: ["/x/cli.js", "mcp"] });
+    expect(JSON.parse(await readFile(process.env.PMX_CLAUDE_DESKTOP_CONFIG!, "utf8"))).toMatchObject({ keep: true, mcpServers: { other: { command: "x" } } });
+
+    // Registered before: updated to this pmx without asking again.
+    asked.length = 0;
+    await writeFile(process.env.PMX_CLAUDE_DESKTOP_CONFIG!, JSON.stringify({ mcpServers: { pmx: { command: "/old/node", args: ["/old/cli.js", "mcp"] } } }));
+    await init({});
+    expect(asked.some((q) => /pmx-flow board/.test(q))).toBe(false);
+    expect((await mcpEntry())!.args[0]).toBe("/x/cli.js");
+  });
+
+  it("doctor warns when the registered server's Node is gone or versioned", async () => {
+    const { mcpHealth } = await import("../src/mcp/server.js");
+    expect(await mcpHealth()).toBeNull();
+    await mkdir(join(process.env.PMX_HOME!, "claude-desktop"), { recursive: true });
+    await writeFile(process.env.PMX_CLAUDE_DESKTOP_CONFIG!, JSON.stringify({ mcpServers: { pmx: { command: "/gone/node", args: ["/gone/cli.js", "mcp"] } } }));
+    expect(await mcpHealth()).toMatchObject({ ok: false, detail: expect.stringMatching(/\/gone\/node, which no longer exists/) });
+    const cellar = join(await tmp("brew-"), "Cellar/node/26.13.0_2/bin");
+    await mkdir(cellar, { recursive: true });
+    await writeFile(join(cellar, "node"), "");
+    await writeFile(process.env.PMX_CLAUDE_DESKTOP_CONFIG!, JSON.stringify({ mcpServers: { pmx: { command: join(cellar, "node"), args: [join(cellar, "node"), "mcp"] } } }));
+    expect(await mcpHealth()).toMatchObject({ ok: false, detail: expect.stringMatching(/brew upgrade node/) });
+  });
+});

@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.16.1", date: "2026-11-07", headline: "Setup connects the board in Claude",
+    items: [
+      { what: "`pmx init` now offers to connect the /pmx-flow board in the Claude app to PMX on this Mac, so there's no separate step. Already connected? It's kept up to date with this pmx.", try: "pmx doctor" },
+    ],
+  },
+  {
     version: "0.16.0", date: "2026-11-07", headline: "The pipeline board",
     items: [
       { what: "One board for your skills, scheduled tasks, a live map of what travels from your meetings to Linear and back, and every rule. Approve proposed tasks and change rules right there.", try: "pmx flow --web" },

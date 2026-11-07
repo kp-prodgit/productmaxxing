@@ -246,7 +246,7 @@ export const commands: Command[] = [
         const autoUpdate = a.values["auto-update"] ? true : a.values["no-auto-update"] ? false : prev.autoUpdate;
         await writeJson(file, { ...raw, cli: { min: version, ...(autoUpdate !== undefined ? { autoUpdate } : {}) } }, 0o644);
       }
-      console.log(`Wrote ${VENDORED_CLI} (productgit ${version}) in ${repo}.${a.values.require ? `\nSet cli.min to ${version} in ${TEAM_CONFIG_FILE}: older machines keep personal work but stop shared team work until they run \`pmx update\`.${a.values["auto-update"] ? " Auto-update is on: each machine's background job installs it within the hour." : ""}` : ""}
+      console.log(`Wrote ${VENDORED_CLI} (productmaxxing ${version}) in ${repo}.${a.values.require ? `\nSet cli.min to ${version} in ${TEAM_CONFIG_FILE}: older machines keep personal work but stop shared team work until they run \`pmx update\`.${a.values["auto-update"] ? " Auto-update is on: each machine's background job installs it within the hour." : ""}` : ""}
 Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates update with \`pmx update\`.`);
       return 0;
     },

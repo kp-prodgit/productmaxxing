@@ -1,6 +1,6 @@
 # Managed-settings template (B7, ADMIN-5)
 
-For teams whose IT manages Macs. Deploying this file enforces Product Git's clean run profile (B1) on every
+For teams whose IT manages Macs. Deploying this file enforces ProductMaxxing's clean run profile (B1) on every
 Claude Code session on the device, so a PMX run can't be loosened by a personal setting.
 
 **This applies to all Claude Code use on the machine, not only PMX runs.** Review it with the team first.
@@ -23,7 +23,7 @@ the PMX profile either way.
 | `autoMemoryEnabled: false`, `env.CLAUDE_CODE_DISABLE_AUTO_MEMORY` | No personal memory in runs (PRIV-1) |
 | `disableClaudeAiConnectors`, `syncClaudeAiSkills/Plugins: false`, `ENABLE_CLAUDEAI_MCP_SERVERS=false` | No personal Gmail/Drive connectors or synced skills (PRIV-1) |
 | `availableModels` | The model is fixed by team config (NEUT-1). Match `model` in `pmx.config.json`. |
-| `strictKnownMarketplaces`, `enabledPlugins` | Only the team's Product Git plugin can be installed |
+| `strictKnownMarketplaces`, `enabledPlugins` | Only the team's ProductMaxxing plugin can be installed |
 | `allowManagedHooksOnly` | No personal hooks shape a run (NEUT-1) |
 | `permissions.*`, `sandbox.*` | Permissions never skipped; reads and writes limited to the checkout; sandbox on (SEC-3) |
 

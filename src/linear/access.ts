@@ -4,7 +4,7 @@ import type { Keychain } from "../core/keychain.js";
 /**
  * How this machine reaches Linear, in the order PMX tries them (LINEAR-1, LINEAR-2). The Claude relay is
  * the default: no key or sign-in. A key is an advanced option (the company roll-up needs one); Linear
- * sign-in stays for the few who already signed in, but isn't offered while Product Git's Linear app isn't registered.
+ * sign-in stays for the few who already signed in, but isn't offered while ProductMaxxing's Linear app isn't registered.
  */
 export type LinearAccess = "none" | "key" | "signed-in" | "hosted" | "relay";
 

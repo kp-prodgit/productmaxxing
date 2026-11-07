@@ -8,9 +8,9 @@ The contract between the `pmx` CLI (the free client in `src/cloud/`, Apache-2.0,
 
 | Item | Value |
 |---|---|
-| Base URL | `https://api.productgit.com/v1` (CLI config `controlPlane.url`) |
+| Base URL | `https://api.productmaxxing.com/v1` (CLI config `controlPlane.url`) |
 | Format | JSON, UTF-8. Errors are `{ "error": "<code>", "message": "<text>" }` with a 4xx/5xx status. |
-| Auth (browser) | Cognito user pool JWT (`Authorization: Bearer <id token>`), from the hosted UI at `auth.productgit.com`. |
+| Auth (browser) | Cognito user pool JWT (`Authorization: Bearer <id token>`), from the hosted UI at `auth.productmaxxing.com`. |
 | Auth (CLI) | A **machine token** (`pmxm_` + 40 base62 chars), sent as `Authorization: Bearer pmxm_…`. Stored in the macOS keychain (SEC-10). The server stores only its SHA-256. |
 | Roles | `admin` or `member`, per org. |
 | Clock | All times are ISO-8601 UTC strings. |
@@ -39,7 +39,7 @@ A `402` body is `{ "error": "upgrade_required", "message": "<what needs a paid p
 
 ## CLI sign-in
 
-1. `pmx login` starts a listener on `127.0.0.1:<random port>` and opens `https://app.productgit.com/cli-login?port=<port>&state=<nonce>`.
+1. `pmx login` starts a listener on `127.0.0.1:<random port>` and opens `https://app.productmaxxing.com/cli-login?port=<port>&state=<nonce>`.
 2. The web app signs the user in through Cognito, calls `POST /v1/machine-tokens` with `{ "label": "<hostname hash>" }`, and redirects the browser to `http://127.0.0.1:<port>/callback?state=<nonce>&token=<pmxm_…>`.
 3. The CLI checks `state`, stores the token in the keychain, and stops listening.
 4. If `pmx.config.json` has no `controlPlane`, the CLI calls `GET /me`. With one org it uses that org; with several it asks; with none it calls `POST /orgs { name: <team> }`, which creates a `free` org. The org ID goes in the personal config (`cloud.orgId`), and `pmx login` offers to write `controlPlane` into `pmx.config.json` so teammates join the same org.
@@ -60,12 +60,12 @@ A `402` body is `{ "error": "upgrade_required", "message": "<what needs a paid p
 | POST | `/invites/{code}/accept` | Cognito | — | `200 { orgId, role }` |
 | GET | `/orgs/{orgId}/members` | admin | — | `200 { members: [{ userId, email, role, joinedAt }] }` |
 
-`inviteFile` is the team invite file for CLI-1 (`npx productgit init --invite pmx-invite.json`):
+`inviteFile` is the team invite file for CLI-1 (`npx productmaxxing init --invite pmx-invite.json`):
 
 ```json
 {
   "version": 1,
-  "controlPlaneUrl": "https://api.productgit.com/v1",
+  "controlPlaneUrl": "https://api.productmaxxing.com/v1",
   "orgId": "org_…",
   "inviteCode": "inv_…",
   "team": { "repo": "git@github.com:acme/pmx.git", "linearTeamKey": "PROD", "linearProjectId": "…" }
@@ -147,7 +147,7 @@ The JWT is signed by an AWS KMS asymmetric key (`ECC_NIST_P256`, `ECDSA_SHA_256`
 { "alg": "ES256", "typ": "JWT", "kid": "<KMS key id>" }
 // claims
 {
-  "iss": "https://api.productgit.com",
+  "iss": "https://api.productmaxxing.com",
   "sub": "org_…",
   "aud": "pmx-cli",
   "plan": "team",            // "team" | "enterprise" | "pilot"
@@ -177,7 +177,7 @@ No PM needs a personal Linear API key.
 | Method | Path | Auth | Response |
 |---|---|---|---|
 | GET | `/orgs/{orgId}/linear/authorize` | admin | `302` to Linear's OAuth consent (`scope=read,write,issues:create,comments:create`, `actor=app`) |
-| GET | `/linear/callback` | state cookie | Stores tokens, `302` to `app.productgit.com/admin?linear=connected` |
+| GET | `/linear/callback` | state cookie | Stores tokens, `302` to `app.productmaxxing.com/admin?linear=connected` |
 | POST | `/orgs/{orgId}/linear/token` | member | `200 { accessToken, expiresAt }` |
 | DELETE | `/orgs/{orgId}/linear` | admin | `204` (revokes and deletes) |
 

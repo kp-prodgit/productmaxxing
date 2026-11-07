@@ -1,4 +1,4 @@
-// Product Git Commercial License. See ee/LICENSE.
+// ProductMaxxing Commercial License. See ee/LICENSE.
 import type { TeamConfig } from "../../src/core/config.js";
 import type { Ctx } from "../../src/core/context.js";
 import type { RunLogEntry } from "../../src/core/runlog.js";

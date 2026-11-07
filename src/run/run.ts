@@ -124,7 +124,7 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
 
     if (outcome !== "ok") {
       const why = result.capped ? "hit the per-run cap" : result.error ?? checklist.problems.join("; ");
-      await tracker.comment(task.id, `Product Git run by ${ctx.agent} did not produce a draft: ${why}. Returned to ready.`);
+      await tracker.comment(task.id, `ProductMaxxing run by ${ctx.agent} did not produce a draft: ${why}. Returned to ready.`);
       await tracker.setAgent(task.id, null);
       await tracker.setStatus(task.id, "ready");
       return { outcome, prUrl: null, message: `${task.identifier}: ${outcome} (${why})` };
@@ -133,7 +133,7 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
     await rm(join(wt.cwd, ".pmx", "tmp"), { recursive: true, force: true });
     await writeFileIn(wt.cwd, `.pmx/runs/${task.identifier}.json`, JSON.stringify(record, null, 2) + "\n");
     await wt.ok(["add", "--", "outputs", ".pmx/runs"]);
-    await wt.ok(["-c", "user.name=pmx", "-c", `user.email=${ctx.personal.handle}@pmx.local`, "commit", "-q", "-m", `${task.identifier}: ${task.title}\n\nDrafted by Product Git (${ctx.agent}) with ${skillName}@${skill.version}.`]);
+    await wt.ok(["-c", "user.name=pmx", "-c", `user.email=${ctx.personal.handle}@pmx.local`, "commit", "-q", "-m", `${task.identifier}: ${task.title}\n\nDrafted by ProductMaxxing (${ctx.agent}) with ${skillName}@${skill.version}.`]);
 
     const host = await outputHost(wt, ctx.keychain, ctx.exec, ctx.fetch);
     const summary = result.text.trim().split("\n").filter(Boolean).at(-1)?.slice(0, 300) ?? "";
@@ -155,7 +155,7 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
         `| Checklist | ${checklist.ok ? "✅" : "⚠️ " + checklist.problems.join("; ")} |`,
         `| Run record | \`.pmx/runs/${task.identifier}.json\` |`,
         "",
-        "_Opened by Product Git. A human decides: accept, reject or redo with a note (`pmx review`)._",
+        "_Opened by ProductMaxxing. A human decides: accept, reject or redo with a note (`pmx review`)._",
       ].join("\n"),
       labels: ["pmx", `pmx-${category}`, ...(checklist.ok ? [] : ["pmx-checklist-failed"])],
     });

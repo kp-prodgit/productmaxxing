@@ -3,7 +3,7 @@ import { updateState } from "../core/state.js";
 import { currentVersion, UPDATE_HINT } from "../core/version.js";
 import type { Fetch } from "../sources/slack.js";
 
-export const DEFAULT_CONTROL_PLANE = "https://api.productgit.com/v1";
+export const DEFAULT_CONTROL_PLANE = "https://api.productmaxxing.com/v1";
 
 export class CloudError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly body: any = null) {
@@ -20,7 +20,7 @@ export class Cloud {
     const headers: Record<string, string> = { accept: "application/json", "x-pmx-version": currentVersion() };
     if (auth) {
       const token = await this.keychain.get("machine-token");
-      if (!token) throw new CloudError(401, "unauthorized", "Not signed in to Product Git. Run `pmx login`.");
+      if (!token) throw new CloudError(401, "unauthorized", "Not signed in to ProductMaxxing. Run `pmx login`.");
       headers.authorization = `Bearer ${token}`;
     }
     if (body !== undefined) headers["content-type"] = "application/json";
@@ -31,7 +31,7 @@ export class Cloud {
     const min = res.headers?.get?.("x-pmx-min-version") ?? null;
     if (latest || min) await updateState((st) => (st.cloudVersions = { latest, min, seenAt: new Date().toISOString() })).catch(() => {});
     if (res.status === 426)
-      throw new CloudError(426, "cli_too_old", `Product Git needs pmx ${data?.min ?? "a newer version"} or newer; this is ${currentVersion()}. ${UPDATE_HINT}`, data);
+      throw new CloudError(426, "cli_too_old", `ProductMaxxing needs pmx ${data?.min ?? "a newer version"} or newer; this is ${currentVersion()}. ${UPDATE_HINT}`, data);
     if (!res.ok) throw new CloudError(res.status, data?.error ?? "error", `${method} ${path}: ${data?.message ?? data?.error ?? res.status}`, data);
     return data as T;
   }

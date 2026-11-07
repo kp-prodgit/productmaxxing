@@ -47,9 +47,9 @@ async function npmInstall(tgz: string, version: string, exec: Exec): Promise<Upd
   return { result: "failed", version, error: r.stderr.trim().split("\n").slice(-3).join(" ") || `npm exited ${r.code}` };
 }
 
-/** Product Git's public releases: a prebuilt package plus SHA256SUMS per version, so installing builds nothing. */
-export const RELEASES = "https://github.com/kp-prodgit/productgit/releases";
-export const releaseAsset = (version: string, file = `productgit-${version}.tgz`) => `${RELEASES}/download/v${version}/${file}`;
+/** ProductMaxxing's public releases: a prebuilt package plus SHA256SUMS per version, so installing builds nothing. */
+export const RELEASES = "https://github.com/kp-prodgit/productmaxxing/releases";
+export const releaseAsset = (version: string, file = `productmaxxing-${version}.tgz`) => `${RELEASES}/download/v${version}/${file}`;
 
 /**
  * `pmx update --latest`: installs the newest public release, checked against its SHA256SUMS. For the
@@ -58,7 +58,7 @@ export const releaseAsset = (version: string, file = `productgit-${version}.tgz`
  */
 export async function installLatestRelease(exec: Exec, o: { force?: boolean; fetch?: typeof fetch } = {}): Promise<UpdateOutcome> {
   const get = o.fetch ?? fetch;
-  const res = await get("https://api.github.com/repos/kp-prodgit/productgit/releases/latest", { headers: { accept: "application/vnd.github+json" } }).catch(() => null);
+  const res = await get("https://api.github.com/repos/kp-prodgit/productmaxxing/releases/latest", { headers: { accept: "application/vnd.github+json" } }).catch(() => null);
   if (!res?.ok) return { result: "failed", version: "?", error: `couldn't read the latest release from GitHub${res ? ` (HTTP ${res.status})` : ""}` };
   const version = String(((await res.json()) as { tag_name?: string }).tag_name ?? "").replace(/^v/, "");
   if (!isVersion(version)) return { result: "failed", version: "?", error: `the latest release has no version tag` };
@@ -66,7 +66,7 @@ export async function installLatestRelease(exec: Exec, o: { force?: boolean; fet
   if (await isDevInstall()) return { result: "dev-install", version };
 
   const dir = await mkdtemp(join(tmpdir(), "pmx-release-"));
-  const name = `productgit-${version}.tgz`;
+  const name = `productmaxxing-${version}.tgz`;
   const [pkg, sums] = await Promise.all([get(releaseAsset(version)), get(releaseAsset(version, "SHA256SUMS"))].map((p) => p.catch(() => null)));
   if (!pkg?.ok || !sums?.ok) return { result: "failed", version, error: `couldn't download ${name} and SHA256SUMS from ${RELEASES}/tag/v${version}` };
   const bytes = Buffer.from(await pkg.arrayBuffer());

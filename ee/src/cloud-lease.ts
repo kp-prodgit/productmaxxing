@@ -1,4 +1,4 @@
-// Product Git Commercial License. See ee/LICENSE.
+// ProductMaxxing Commercial License. See ee/LICENSE.
 import type { Acquire, LeaseInfo, LeaseProvider } from "../../src/lease/types.js";
 import { CloudError, type Cloud } from "../../src/cloud/client.js";
 

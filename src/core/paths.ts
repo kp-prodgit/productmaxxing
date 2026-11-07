@@ -29,8 +29,8 @@ export const paths = {
   launchAgent: () => join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
 };
 
-export const LAUNCHD_LABEL = "com.productgit.pmx";
-export const KEYCHAIN_SERVICE = "productgit";
+export const LAUNCHD_LABEL = "com.productmaxxing.pmx";
+export const KEYCHAIN_SERVICE = "productmaxxing";
 export const TEAM_CONFIG_FILE = "pmx.config.json";
 export const KILL_SWITCH_FILE = "pmx.stop";
 export const RUNLOG_BRANCH = "pmx/runlog";

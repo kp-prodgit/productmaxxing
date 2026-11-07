@@ -1,7 +1,7 @@
 import { exec as defaultExec, type Exec } from "./exec.js";
 import { KEYCHAIN_SERVICE } from "./paths.js";
 
-/** Secret names Product Git stores. Values live only in the macOS keychain (SEC-10). */
+/** Secret names ProductMaxxing stores. Values live only in the macOS keychain (SEC-10). */
 export type SecretName = "slack-token" | "linear-token" | "linear-oauth" | "github-token" | "machine-token" | "anthropic-api-key";
 
 export interface Keychain {

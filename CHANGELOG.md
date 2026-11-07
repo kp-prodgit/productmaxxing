@@ -102,7 +102,7 @@ Fixes from a tester's install on Node 22.2 with Claude Code installed by npm und
 
 Fixes from a first-time install, so one PM can install PMX on a fresh Mac without help.
 
-- **A prebuilt release package (INSTALL-1).** Each version tag publishes `productgit-<version>.tgz` and `SHA256SUMS` as a GitHub release on the public repo. The package has no dependencies, so installing it builds and downloads nothing: no `tsc: command not found`, no Node range warnings, no audit warnings.
+- **A prebuilt release package (INSTALL-1).** Each version tag publishes `productmaxxing-<version>.tgz` and `SHA256SUMS` as a GitHub release on the public repo. The package has no dependencies, so installing it builds and downloads nothing: no `tsc: command not found`, no Node range warnings, no audit warnings.
 - **`INSTALL.md`, written for Claude Code (INSTALL-2).** Say "Install PMX following …/INSTALL.md" and Claude asks you to switch auto mode off, checks the Mac, installs the package after checking its checksum, walks you through `pmx init`, reads `pmx doctor --json` and sets up the scheduled tasks.
 - **`pmx init` checks every answer (INIT-1).** It explains what the PMX repo is. A command pasted into the wrong prompt, an invalid folder, URL, handle, category, time or amount is asked again, up to three times. A new working-days question accepts `Mon-Fri` or `Mon,Wed,Fri`. Working hours must be `HH:MM-HH:MM`, and the spend question says that 0 pauses the agent. A summary of every answer comes before anything is saved, and saying no saves nothing.
 - **Security fix:** `pmx init` passes a git URL to `git clone` after `--`, so an answer like `--upload-pack=…` can't run a command.
@@ -119,7 +119,7 @@ Fixes from a first-time install.
 
 - **`pmx doctor` checks Linear the way this Mac reaches it.** Going through Claude (the default) no longer fails "Linear token in the keychain". Doctor instead warns when the Claude sync is stale, is for the wrong project, or has changes failing. A Claude Pro or Max plan no longer warns either: PMX runs on your Claude subscription.
 - **Doctor warns when the team package is older than this Mac.** Teammates who install or update would get the older version, so it tells the team lead to run `pmx vendor --require`.
-- **Linear sign-in is hidden (LINEAR-1 deferred).** Product Git's Linear app isn't registered, so `pmx linear login` couldn't work. PMX reaches Linear through your Claude app by default. `pmx init` no longer asks for a Linear key, and `pmx linear key` stores one for advanced use (the company roll-up needs one). Anyone already signed in keeps working, and `pmx uninstall` now removes that sign-in too.
+- **Linear sign-in is hidden (LINEAR-1 deferred).** ProductMaxxing's Linear app isn't registered, so `pmx linear login` couldn't work. PMX reaches Linear through your Claude app by default. `pmx init` no longer asks for a Linear key, and `pmx linear key` stores one for advanced use (the company roll-up needs one). Anyone already signed in keeps working, and `pmx uninstall` now removes that sign-in too.
 - **Scheduled runs don't stall (CLAUDE-3).** A run waiting on a permission prompt nobody answers blocked every later run. With your OK, `pmx init` and `pmx schedule --allow` add always-allow rules for PMX's own command and folder to your Claude settings. Doctor warns while they're missing.
 - **`/pmx-schedule` updates tasks with an older prompt**, not just missing ones. It stops when run by a schedule, and asks you to turn auto mode off first. Task prompts now say never to create or change scheduled tasks. `pmx schedule` says the tasks run on this Mac only, in local time, while the Claude app is open, and where to see their runs.
 - **`pmx init` ends with one "Next step" block**, printed after the doctor checklist.
@@ -174,7 +174,7 @@ Team-plan features in `ee/` (commercial license), against the API in `docs/contr
 - Cloud lease (`"lease": "cloud"`): DynamoDB conditional writes with fencing tokens.
 - Linear OAuth broker (ADMIN-3): short-lived brokered token, so no personal Linear key.
 - Content-free event sync (P7): run and verdict metadata only, checked against the server's strict schema.
-- `pmx canvas` opens the hosted canvas (CANVAS-1..4, in `productgit-cloud`).
+- `pmx canvas` opens the hosted canvas (CANVAS-1..4, in `productmaxxing-cloud`).
 - Managed-settings template for device management (B7, ADMIN-5).
 
 ## 0.3.0 (M4): design-partner beta

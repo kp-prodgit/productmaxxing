@@ -36,7 +36,7 @@ export async function runDigest(ctx: Ctx, ask: Asker, o: { stage?: boolean; revi
     await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), draft.result.costUsd));
     markdown = draft.markdown;
     if (o.stage) {
-      await notify("Product Git", `Your ${week} digest is ready. Run: pmx digest --review`);
+      await notify("ProductMaxxing", `Your ${week} digest is ready. Run: pmx digest --review`);
       return `Staged at ${stagingPath(week)}. Approve with \`pmx digest --review\`.`;
     }
   }

@@ -96,7 +96,7 @@ export const ALWAYS = { days: [0, 1, 2, 3, 4, 5, 6], start: "00:00", end: "24:00
 
 export async function runInit(d: InitDeps): Promise<PersonalConfig> {
   const { ask, out } = d;
-  if (process.platform !== "darwin") throw new Error("Product Git v1 runs on macOS only (SCOPE-3).");
+  if (process.platform !== "darwin") throw new Error("ProductMaxxing v1 runs on macOS only (SCOPE-3).");
 
   const cc = await resolveClaude(d.exec);
   out.info(cc ? `Found Claude Code ${cc.version}${cc.onPath ? "" : ` at ${cc.cmd}`}.` : "Claude Code was not found. Install it from https://code.claude.com, then run `pmx doctor`.");
@@ -241,7 +241,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     out.info(`Created ${created.length} files in ${repoPath}.`);
     if (created.length && (await ask.confirm("Commit the PMX repo setup now?", true))) {
       await git.ok(["add", "-A"]);
-      await git.ok(["commit", "-q", "-m", "Set up PMX repo with Product Git"]);
+      await git.ok(["commit", "-q", "-m", "Set up PMX repo with ProductMaxxing"]);
       out.info("Committed. Push it and protect main with required code-owner review (see CODEOWNERS).");
     }
     team = await loadTeamConfig(repoPath);
@@ -276,7 +276,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     await mkdir(paths.logs(), { recursive: true });
     const claude = await claudeAbsolutePath(d.exec);
     await d.launchd.install(plist({ node: await stableNode(process.execPath), cli: d.cliPath, pmxHome: pmxHome(), claude }));
-    out.info(`Registered launchd job com.productgit.pmx${claude ? `, using Claude Code at ${claude}` : ""}.`);
+    out.info(`Registered launchd job com.productmaxxing.pmx${claude ? `, using Claude Code at ${claude}` : ""}.`);
   }
   if (d.invite && d.onInvite) await d.onInvite(d.invite);
 

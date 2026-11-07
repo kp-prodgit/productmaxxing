@@ -1,4 +1,4 @@
-// Product Git Commercial License. See ee/LICENSE.
+// ProductMaxxing Commercial License. See ee/LICENSE.
 import { createHash } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";

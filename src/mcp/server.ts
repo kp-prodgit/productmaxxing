@@ -19,7 +19,7 @@ import { loadFlowGraph } from "../flow/graph-load.js";
 export const MCP_TOOLS = [
   {
     name: "flow_graph",
-    description: "Product Git (PMX) flow: the meetings and Slack threads PMX read or held (held ones by rule only), the runs, skills, proposed tasks, Linear issues, agent runs, reviews and spend in a time window, plus the privacy checks. Metadata only.",
+    description: "ProductMaxxing (PMX) flow: the meetings and Slack threads PMX read or held (held ones by rule only), the runs, skills, proposed tasks, Linear issues, agent runs, reviews and spend in a time window, plus the privacy checks. Metadata only.",
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: { hours: { type: "integer", minimum: 1, maximum: 336, description: "How far back to look (default 24)." }, scope: { type: "string", enum: ["mine", "team"], description: "This Mac, or the team's shared run log." } },
@@ -34,7 +34,7 @@ export const MCP_TOOLS = [
   },
   {
     name: "never_ingest_add",
-    description: "Adds a meeting title, person or channel to the PM's Product Git do-not-read list, so PMX never reads matching meetings again. Only adds; removing an entry is done in Terminal.",
+    description: "Adds a meeting title, person or channel to the PM's ProductMaxxing do-not-read list, so PMX never reads matching meetings again. Only adds; removing an entry is done in Terminal.",
     inputSchema: { type: "object", additionalProperties: false, required: ["kind", "value"], properties: { kind: { type: "string", enum: ["title", "person", "channel"] }, value: { type: "string", minLength: 3, maxLength: 120 } } },
     annotations: { title: "Add to the PMX do-not-read list", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -52,8 +52,8 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>): Promise<obje
       return reply({
         protocolVersion: typeof msg.params?.protocolVersion === "string" ? msg.params.protocolVersion : "2025-06-18",
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "pmx", title: "Product Git", version: currentVersion() },
-        instructions: "Product Git (PMX) flow metadata for the /pmx-flow artifact. Held meetings are shown by rule only.",
+        serverInfo: { name: "pmx", title: "ProductMaxxing", version: currentVersion() },
+        instructions: "ProductMaxxing (PMX) flow metadata for the /pmx-flow artifact. Held meetings are shown by rule only.",
       });
     case "ping":
       return reply({});

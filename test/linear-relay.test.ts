@@ -71,7 +71,7 @@ describe("pmx linear login (LINEAR-1)", () => {
     })).rejects.toThrow(/unexpected state/);
   });
 
-  it("explains what to do before Product Git's Linear app exists", async () => {
+  it("explains what to do before ProductMaxxing's Linear app exists", async () => {
     delete process.env.PMX_LINEAR_CLIENT_ID;
     await expect(linearLogin({ keychain: memoryKeychain(), open: async () => {} })).rejects.toThrow(/isn't available.*through your Claude app.*pmx linear key/);
   });

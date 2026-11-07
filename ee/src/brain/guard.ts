@@ -1,4 +1,4 @@
-// Product Git Commercial License. See ee/LICENSE.
+// ProductMaxxing Commercial License. See ee/LICENSE.
 import type { TeamConfig } from "../../../src/core/config.js";
 import { SIZES, type Size, type Task } from "../../../src/core/types.js";
 import { BRAIN_ACTIONS, type BrainAction, type BrainPolicy } from "../policy.js";

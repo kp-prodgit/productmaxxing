@@ -1,4 +1,4 @@
-// Product Git Commercial License. See ee/LICENSE.
+// ProductMaxxing Commercial License. See ee/LICENSE.
 import type { PersonalConfig, TeamConfig } from "../../src/core/config.js";
 import type { Size } from "../../src/core/types.js";
 import { readJson, writeJson } from "../../src/core/fsutil.js";
@@ -64,7 +64,7 @@ export async function getPolicy(cloud: Cloud, orgId: string, now: Date): Promise
     return policy;
   } catch (e: any) {
     if (age < STALE_MS) return cached!.policy;
-    throw new Error(`Can't reach the Product Git control plane and the cached admin policy is missing or over 7 days old, so runs are stopped (fail closed): ${e.message}`);
+    throw new Error(`Can't reach the ProductMaxxing control plane and the cached admin policy is missing or over 7 days old, so runs are stopped (fail closed): ${e.message}`);
   }
 }
 

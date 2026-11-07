@@ -100,7 +100,7 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
 export function formatSkills(skills: SkillInfo[]): string {
   const out = [
     "Claude skills PMX can use. Runs load them from your team folder first, then from the copy built into pmx.",
-    "They run in Product Git's own Claude profile (~/.pmx/claude), never in your personal Claude Code.",
+    "They run in ProductMaxxing's own Claude profile (~/.pmx/claude), never in your personal Claude Code.",
     '"differs from built-in" means your team edited its copy, or this pmx ships a newer one.',
     "",
   ];

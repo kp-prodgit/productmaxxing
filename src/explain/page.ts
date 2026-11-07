@@ -8,7 +8,7 @@ export const page = (nonce: string) => `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>How PMX decided · Product Git</title>
+<title>How PMX decided · ProductMaxxing</title>
 <style nonce="${nonce}">
 :root {
   --bg: #f7f7f5; --panel: #ffffff; --ink: #1b1b1a; --muted: #6b6a66; --line: #e4e2dc;

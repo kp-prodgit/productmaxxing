@@ -61,7 +61,7 @@
     "min": "0.5.0"
   },
   "controlPlane": {
-    "url": "https://api.productgit.com/v1",
+    "url": "https://api.productmaxxing.com/v1",
     "orgId": "org_abc"
   },
   "company": null

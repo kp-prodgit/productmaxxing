@@ -27,7 +27,7 @@ export const COLLECT_TASK: ClaudeTask = {
   schedule: "every weekday at 12:30 and 17:30",
   cron: "30 12,17 * * 1-5",
   why: "copies new meeting transcripts from your meeting connector (Granola, Fireflies…) and refreshes your to-dos",
-  prompt: `You are running Product Git's (PMX) meeting collection on this Mac. Product Git is a command-line tool installed as \`pmx\`.
+  prompt: `You are running ProductMaxxing's (PMX) meeting collection on this Mac. ProductMaxxing is a command-line tool installed as \`pmx\`.
 
 1. Run \`pmx collect --prompt\` in a shell. It prints the exact instructions for this run: which meeting connector to use, which meetings to fetch and skip, and where and how to save each transcript.
 2. Follow those printed instructions exactly. Copy transcripts word for word; never summarize them. Do not send, post, share or change anything in any app or connector.
@@ -46,7 +46,7 @@ export const LINEAR_SYNC_TASK: ClaudeTask = {
   schedule: "every hour from 8:00 to 18:00 on weekdays",
   cron: "0 8-18 * * 1-5",
   why: "carries PMX's changes to Linear and brings back the project, because PMX reaches Linear through your Claude app",
-  prompt: `You are syncing Product Git (PMX) with Linear on this Mac. Product Git is a command-line tool installed as \`pmx\`.
+  prompt: `You are syncing ProductMaxxing (PMX) with Linear on this Mac. ProductMaxxing is a command-line tool installed as \`pmx\`.
 
 1. Run \`pmx linear relay --prompt\` in a shell. It prints this run's exact instructions: which Linear project to use, the changes PMX queued, and how to export the project.
 2. Follow them exactly with the Linear connector. Change only what they list, only in that project, and never delete anything.
@@ -70,7 +70,7 @@ export const taskFile = (id: string) => join(claudeAppHome(), "scheduled-tasks",
 export type TaskState = "missing" | "outdated" | "current";
 
 /** The description PMX gives each task in the Claude app. */
-export const taskDescription = (t: ClaudeTask) => `Product Git: ${t.why}.`;
+export const taskDescription = (t: ClaudeTask) => `ProductMaxxing: ${t.why}.`;
 
 /**
  * Whether the task's file exists and still holds PMX's current prompt and description. An outdated one gets both

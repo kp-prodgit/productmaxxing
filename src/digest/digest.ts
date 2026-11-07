@@ -97,7 +97,7 @@ export async function buildDigest(ctx: Ctx, o: { days?: number } = {}): Promise<
   const markdown = [
     `# Signal digest · ${week}`,
     "",
-    `_Drafted by Product Git for ${ctx.personal.handle}. ${g.items.length} sources; ${totalHeld(g.held)} personal items held back and discarded; ${checked.removed} uncited claims removed._`,
+    `_Drafted by ProductMaxxing for ${ctx.personal.handle}. ${g.items.length} sources; ${totalHeld(g.held)} personal items held back and discarded; ${checked.removed} uncited claims removed._`,
     "",
     checked.text.replace(/^#\s.*\n/, "").trim(),
     "",

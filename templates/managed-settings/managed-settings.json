@@ -6,8 +6,8 @@
   "syncClaudeAiPlugins": false,
   "enableAllProjectMcpServers": false,
   "availableModels": ["claude-sonnet-5-5"],
-  "strictKnownMarketplaces": [{ "source": "github", "repo": "kp-prodgit/productgit" }],
-  "enabledPlugins": { "productgit@productgit": true },
+  "strictKnownMarketplaces": [{ "source": "github", "repo": "kp-prodgit/productmaxxing" }],
+  "enabledPlugins": { "productmaxxing@productmaxxing": true },
   "allowManagedHooksOnly": true,
   "permissions": {
     "disableBypassPermissionsMode": "disable",

@@ -5,7 +5,7 @@ import type { Fetch } from "../sources/slack.js";
 
 /**
  * `pmx linear login` (LINEAR-1): Linear's OAuth with PKCE, as a public client, so there's no API key to
- * create and no client secret to ship. Product Git's Linear app is registered once by Product Git; its
+ * create and no client secret to ship. ProductMaxxing's Linear app is registered once by ProductMaxxing; its
  * client ID is public. A team can use its own app with `PMX_LINEAR_CLIENT_ID`.
  */
 export const LINEAR_CLIENT_ID = "";
@@ -112,7 +112,7 @@ export async function linearLogin(o: LinearLoginOpts): Promise<LinearGrant> {
       res.writeHead(400, { "content-type": "text/plain" }).end("Linear sign-in failed. Run `pmx linear login` again.");
       return finish(new Error(url.searchParams.get("error_description") ?? "Linear sign-in failed: the browser returned an unexpected state."));
     }
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end('<!doctype html><title>Linear connected</title><body style="font:16px system-ui;padding:48px">Product Git can now use Linear. You can close this tab.</body>');
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end('<!doctype html><title>Linear connected</title><body style="font:16px system-ui;padding:48px">ProductMaxxing can now use Linear. You can close this tab.</body>');
     finish({ code });
   });
   const timer = setTimeout(() => finish(new Error("Timed out waiting for the Linear sign-in.")), o.timeoutMs ?? 5 * 60000);

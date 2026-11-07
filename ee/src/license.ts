@@ -1,4 +1,4 @@
-// Product Git Commercial License. See ee/LICENSE.
+// ProductMaxxing Commercial License. See ee/LICENSE.
 import { createPublicKey, verify, type JsonWebKey } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { readJson, writeJson, writeText } from "../../src/core/fsutil.js";
@@ -18,12 +18,12 @@ export interface LicenseClaims {
   exp: number;
 }
 
-export const ISSUER = "https://api.productgit.com";
+export const ISSUER = "https://api.productmaxxing.com";
 const jwksPath = () => join(paths.home(), "jwks.json");
 
 /**
  * The production signing key, pinned in the package at release (`make license-pubkey` in
- * productgit-cloud prints it). When present it is used instead of a fetched JWKS, so a license
+ * productmaxxing-cloud prints it). When present it is used instead of a fetched JWKS, so a license
  * can't be forged by whoever controls the network.
  */
 async function pinnedJwks(): Promise<{ keys: JsonWebKey[] } | null> {

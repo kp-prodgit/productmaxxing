@@ -1,7 +1,7 @@
 ---
 title: Acme onboarding call
 date: 2026-11-02
-participants: jane@acme.com, kp@productgit.com
+participants: jane@acme.com, kp@productmaxxing.com
 ---
 Jane: Our admins spend about two hours wiring up SSO every time we add a workspace.
 KP: What would make that faster?

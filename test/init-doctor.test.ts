@@ -25,7 +25,7 @@ describe("pmx init and doctor (CLI-2, CLI-3)", () => {
     const launchd = fakeLaunchd();
     const out = quietOut();
     const p = await runInit({
-      ask: scriptedAsker({ "PMX repo checkout": repo, "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t") }),
+      ask: scriptedAsker({ "PMX repo checkout": repo, "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), "email domains": "acme.com" }),
       keychain, launchd, exec: withClaude, out, now: () => new Date("2026-11-03T00:00:00Z"), cliPath: "/x/cli.js",
     });
     expect(p.repoPath).toBe(repo);

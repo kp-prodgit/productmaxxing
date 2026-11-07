@@ -1,3 +1,5 @@
+import { approveProposals, dropProposals, readProposals, stageProposals } from "../src/synth/proposals.js";
+import { listReceipts, readReceipt } from "../src/core/receipt.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -169,31 +171,60 @@ describe("synthesis (SIG-2, SIG-4, SEC-1)", () => {
 
   it("validates candidates against team config and real source IDs", () => {
     const r = parseCandidates(
-      'Here you go: {"tasks": [{"title": "A", "category": "spec", "size": "M", "rationale": "r", "sources": ["T1"]}, {"title": "B", "category": "roadmap", "size": "M", "sources": ["T1"]}, {"title": "C", "category": "spec", "size": "XXL", "sources": ["T1"]}, {"title": "D", "category": "spec", "size": "S", "sources": ["T9"]}]}',
+      'Here you go: {"tasks": [{"title": "A", "category": "spec", "size": "M", "rationale": "r", "sources": ["T1"], "support": {"T1": "It asks for exactly this."}}, {"title": "E", "category": "spec", "size": "M", "sources": ["T1"]}, {"title": "B", "category": "roadmap", "size": "M", "sources": ["T1"]}, {"title": "C", "category": "spec", "size": "XXL", "sources": ["T1"]}, {"title": "D", "category": "spec", "size": "S", "sources": ["T9"]}]}',
       ["spec"], new Set(["T1"]),
     );
     expect(r.tasks.map((t) => t.title)).toEqual(["A"]);
-    expect(r.skipped).toHaveLength(3);
+    expect(r.skipped).toHaveLength(4);
+    expect(r.skipped[0]).toMatch(/E: no source has a reason it supports the task/);
   });
 
-  it("posts only to the inbox, with no tools, skipping duplicates", async () => {
-    const { repo } = await pmxRepo();
+  it("stages proposals for the PM, with no tools, and posts only what they approve, to the inbox only", async () => {
+    const { repo } = await pmxRepo({ internalDomains: ["us.com"] });
     const dir = await tmp("t-");
-    await writeTranscript(dir, "acme.md", "---\ntitle: Acme\nparticipants: jane@acme.com\n---\nJane: We export a CSV every Friday; SCIM would fix it.");
+    await writeTranscript(dir, "acme.md", "---\ntitle: Acme\nparticipants: jane@acme.com, kp@us.com\n---\nJane: We export a CSV every Friday; SCIM would fix it.");
     const runtime = mockRuntime(() => JSON.stringify({ tasks: [
-      { title: "Draft a one-pager for SCIM sync", category: "spec", size: "M", rationale: "Manual sync.", sources: ["T1"] },
-      { title: "Synthesize onboarding friction", category: "research-synthesis", size: "S", rationale: "x", sources: ["T1"] },
+      { title: "Draft a one-pager for SCIM sync", category: "spec", size: "M", rationale: "Manual sync.", sources: ["T1"], support: { T1: "The customer exports by hand." } },
+      { title: "Synthesize onboarding friction", category: "research-synthesis", size: "S", rationale: "Admins lose time on setup.", sources: ["T1"], support: { T1: "Setup takes a weekly manual step." } },
+      { title: "Quote the call", category: "spec", size: "S", rationale: "We export a CSV every Friday; SCIM would fix it.", sources: ["T1"], support: { T1: "It says so word for word." } },
     ] }));
     const tracker = memoryTracker([readyTask({ id: "x", status: "ready" })]);
-    const ctx = await testCtx({ repo, runtime, personal: { sources: { transcriptDirs: [dir], slackChannel: null } } });
-    const r = await synthesize(ctx, await services(ctx, { tracker }), { days: 7 });
+    const ctx = await testCtx({ repo, runtime, team: { internalDomains: ["us.com"] }, personal: { sources: { transcriptDirs: [dir], slackChannel: null } } });
+    const svc = await services(ctx, { tracker });
+    const r = await synthesize(ctx, svc, { days: 7 });
     expect(runtime.calls[0]!.tools).toEqual([]);
-    expect(r.posted.map((p) => p.title)).toEqual(["Synthesize onboarding friction"]);
-    expect(r.skipped[0]).toMatch(/already in the PMX project/);
+    expect(runtime.calls[0]!.prompt).toContain("## Rules PMX enforces");
+    // APPROVE-1: nothing reaches the tracker yet.
+    expect(r.staged.map((p) => p.title)).toEqual(["Synthesize onboarding friction"]);
+    expect(r.skipped[0]).toMatch(/Quote the call: its text repeats a meeting word for word/);
+    expect(r.skipped[1]).toMatch(/already in the PMX project/);
+    expect(tracker.tasks.size).toBe(1);
+    const [p] = await readProposals();
+    expect(p!.from).toEqual([{ id: "T1", title: "Acme", at: expect.any(String), why: "Setup takes a weekly manual step." }]);
+    expect(p!.description).not.toMatch(/Acme|CSV|Jane/);
+
+    const a = await approveProposals(ctx, svc, ["1"]);
+    expect(a.posted.map((x) => x.title)).toEqual(["Synthesize onboarding friction"]);
     const created = [...tracker.tasks.values()].find((t) => t.title === "Synthesize onboarding friction")!;
-    expect(created).toMatchObject({ status: "inbox", size: "S", sources: ["T1"] });
-    expect(created.description).toContain("[T1] Acme");
+    expect(created).toMatchObject({ status: "inbox", size: "S", sources: ["T1"], description: p!.description });
     expect(created.description).toContain("pmx:source T1");
+    expect(await readProposals()).toEqual([]);
+    const receipt = (await readReceipt((await listReceipts()).find((id) => id.startsWith("synthesize"))!))!;
+    expect(receipt.synth!.tasks.find((t) => t.title === "Synthesize onboarding friction")!.posted).toEqual({ identifier: created.identifier });
+  });
+
+  it("drops proposals the PM says no to, and approving twice never posts twice", async () => {
+    const now = new Date();
+    const base = { at: now.toISOString(), receipt: "synthesize-none", description: "d", category: "spec", size: "S" as const, sources: ["T1"], from: [] };
+    await stageProposals([{ ...base, title: "Keep me" }, { ...base, title: "Drop me" }, { ...base, title: "Keep me" }]);
+    expect((await readProposals()).map((p) => p.title)).toEqual(["Keep me", "Drop me"]);
+    expect((await dropProposals(["2", "p000000"])).missing).toEqual(["p000000"]);
+    const tracker = memoryTracker();
+    const ctx = await testCtx({ repo: (await pmxRepo()).repo });
+    const svc = await services(ctx, { tracker });
+    await approveProposals(ctx, svc, ["all"]);
+    expect((await approveProposals(ctx, svc, ["all"])).posted).toEqual([]);
+    expect([...tracker.tasks.values()].map((t) => t.title)).toEqual(["Keep me"]);
   });
 });
 

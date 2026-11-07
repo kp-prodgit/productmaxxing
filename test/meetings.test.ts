@@ -72,7 +72,7 @@ describe("team meeting ledger in the tracker (MEET-2)", () => {
     const dir = await tmp("calls-");
     await writeTranscript(dir, "acme.md", `---\ntitle: Acme renewal\ndate: ${today}T14:00:00Z\nparticipants: jane@acme.com, ana@us.com\nsource: fireflies\nsource_id: ff-1\n---\nJane: We export a CSV every Friday; SCIM would fix it.`);
     await writeTranscript(dir, "old.md", `---\ntitle: Beta call\ndate: 2026-11-04\nparticipants: bo@beta.com\n---\nBo: Pricing is confusing.`);
-    let reply = JSON.stringify({ tasks: [{ title: "Draft a one-pager for SCIM sync", category: "spec", size: "M", rationale: "Manual CSV.", sources: ["T1"] }] });
+    let reply = JSON.stringify({ tasks: [{ title: "Draft a one-pager for SCIM sync", category: "spec", size: "M", rationale: "Manual CSV.", sources: ["T1"], support: { T1: "The customer exports a file by hand." } }] });
     const runtime = mockRuntime(() => reply);
     const tracker = memoryTracker();
     const ctx = await testCtx({ repo, runtime, now: NOW, team: { internalDomains: ["us.com"] }, personal: { sources: { transcriptDirs: [dir], slackChannel: null } } });
@@ -81,13 +81,15 @@ describe("team meeting ledger in the tracker (MEET-2)", () => {
   }
   const opts = { days: 3, since: startOfDay(NOW) };
 
-  it("lodges each new meeting, marks it done with its tasks, and never processes it twice", async () => {
+  it("lodges each new meeting under an opaque title, marks it done, and never processes it twice", async () => {
     const { ctx, svc, tracker, runtime } = await setup();
     const r = await synthesize(ctx, svc, opts);
-    expect(r.posted.map((p) => p.title)).toEqual(["Draft a one-pager for SCIM sync"]);
+    expect(r.staged.map((p) => p.title)).toEqual(["Draft a one-pager for SCIM sync"]);
     const [entry] = [...tracker.meetings.values()];
-    expect(entry).toMatchObject({ title: "Acme renewal", status: "done", tasks: [r.posted[0]!.identifier], agent: "ana@m1" });
-    expect(tracker.comments.get(entry!.id)![0]).toMatch(/processed this meeting: 1 suggested task/);
+    // PRIV-6: the shared tracker never gets the meeting's title, attendees or source.
+    expect(entry).toMatchObject({ title: expect.stringMatching(/^Processed meeting m[0-9a-f]{8}$/), status: "done", tasks: [], agent: "ana@m1" });
+    expect(JSON.stringify(entry)).not.toMatch(/Acme|fireflies|jane/i);
+    expect(tracker.comments.get(entry!.id)![0]).toMatch(/proposed 1 task\(s\) to ana@m1, who approves them/);
     expect(r.meetings).toMatchObject({ already: 0, before: 1 });
     expect((await tracker.list()).some((t) => t.title.startsWith("Meeting"))).toBe(false); // ledger entries are not tasks
 

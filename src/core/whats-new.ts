@@ -19,6 +19,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.14.0", date: "2026-11-07", headline: "Private meetings stay private, and you approve what reaches Linear",
+    items: [
+      { what: "Tasks PMX proposes now wait on your Mac. See each exactly as Linear would get it, then approve or drop it. Nothing reaches Linear before you approve.", try: "pmx proposals" },
+      { what: "Task descriptions are short summaries: no transcript excerpts, meeting titles or quotes. Processed meetings show in Linear under an opaque ID, not their title." },
+      { what: "1:1s, hiring interviews and internal-only meetings never reach team tasks. PMX needs your company's email domain to tell colleagues from customers: run `pmx doctor`, and if it asks, run `pmx init` again.", try: "pmx doctor" },
+      { what: "Older versions may have written meeting excerpts or titles to Linear. List them, then rewrite them in today's form.", try: "pmx linear written, then pmx linear tidy" },
+      { what: "On a Claude plan there's no dollar cap of your own by default, and every run checks the same budget. A cap of $0 now says PMX is paused.", try: "pmx budget" },
+    ],
+  },
+  {
     version: "0.13.0", date: "2026-11-07", headline: "No more working hours",
     items: [
       { what: "PMX works whenever this Mac is on and awake, within your daily spend cap. `pmx init` no longer asks for working days or hours, and hours you saved before are ignored: nothing to change." },

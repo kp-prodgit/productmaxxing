@@ -31,7 +31,7 @@ export async function loadFlowGraph(ctx: Pick<Ctx, "team" | "personal" | "repo" 
     level: o.level, now, hours, agent: ctx.agent, receipts, runlog, chain: runlog ? verify(runlog) : null,
     issues: o.level === "team" ? null : issues, linearSyncedAt: snap?.syncedAt ?? null,
     outbox: outbox.ops.map((op) => ({ kind: op.kind, text: JSON.stringify(op) })), resolved: await readResolved(),
-    state, caps: { personalUsd: ctx.personal.budget.dailyUsd, teamUsd: ctx.team.caps.perDayUsd, resetHour: ctx.personal.budget.resetHour },
+    state, caps: { personalUsd: ctx.personal.budget.dailyUsd ?? ctx.team.caps.perDayUsd, teamUsd: ctx.team.caps.perDayUsd, resetHour: ctx.personal.budget.resetHour },
     live: o.level === "local" ? live : undefined,
   });
 }

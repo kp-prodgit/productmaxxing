@@ -1,4 +1,4 @@
-import type { Budget } from "../budget/provider.js";
+import { budgetBlock, type Budget } from "../budget/provider.js";
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
 import type { Task } from "../core/types.js";
 
@@ -41,7 +41,8 @@ export function selectTasks(i: SelectInput): Selection {
   const blockers: string[] = [];
   const cap = i.team.reviewQueueCap;
   if (i.inReview >= cap) blockers.push(`${i.inReview} of your drafts are waiting for review (cap ${cap}); review some first`);
-  if (i.budget.remainingUsd <= 0) blockers.push(`no budget left today ($${i.budget.spentUsd.toFixed(2)} of $${i.budget.capUsd.toFixed(2)} spent)`);
+  const paused = budgetBlock(i.budget);
+  if (paused) blockers.push(paused);
 
   const ready = i.tasks
     .filter((t) => t.status === "ready")

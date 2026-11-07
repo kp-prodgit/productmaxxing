@@ -1,7 +1,7 @@
 import { SIZES, STATUSES, type Size, type Status, type Task } from "../core/types.js";
 import type { Fetch } from "../sources/slack.js";
 import { CANARY_REFUSAL, hasCanary } from "../core/canary.js";
-import { meetingDescription, type MeetingEntry, type NewTask, type Tracker } from "./types.js";
+import { meetingDescription, meetingTitle, type MeetingEntry, type NewTask, type Tracker } from "./types.js";
 
 /**
  * Linear adapter (SCOPE-1). PMX fields are label groups, not custom fields, so no Linear admin
@@ -144,6 +144,11 @@ export function linearTracker(o: LinearOpts): Tracker {
     return (d.team.states.nodes as any[]).filter((x) => x.type === "completed").sort((a, b) => a.position - b.position)[0]?.id ?? null;
   }
 
+  async function canceledState(): Promise<string | null> {
+    const d = await gql(`query($id: String!) { team(id: $id) { states { nodes { id type position } } } }`, { id: await team() });
+    return (d.team.states.nodes as any[]).filter((x) => x.type === "canceled").sort((a, b) => a.position - b.position)[0]?.id ?? null;
+  }
+
   /** SEC-4: refuse any write to an issue outside the PMX project. */
   async function inProject(id: string): Promise<any> {
     const d = await gql(`query($id: String!) { issue(id: $id) { ${ISSUE_FIELDS} comments(last: 50) { nodes { body } } } }`, { id });
@@ -199,12 +204,18 @@ export function linearTracker(o: LinearOpts): Tracker {
       return (await allIssues()).filter((n) => kindOf(n) === "meeting").map(toMeeting);
     },
     async lodgeMeeting(m) {
-      if (hasCanary(m.title)) throw new Error(CANARY_REFUSAL);
+      if (hasCanary(JSON.stringify(m))) throw new Error(CANARY_REFUSAL);
       const labelIds = [await label("kind", "meeting"), await label("status", "running"), await label("agent", m.agent)];
       const d = await gql(`mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { ${ISSUE_FIELDS} } } }`, {
-        i: { teamId: await team(), projectId: o.projectId, title: `Meeting · ${m.title} · ${m.at}`, description: meetingDescription(m), labelIds },
+        i: { teamId: await team(), projectId: o.projectId, title: meetingTitle(m), description: meetingDescription(m), labelIds },
       });
       return toMeeting(d.issueCreate.issue);
+    },
+    async rewrite(id, r) {
+      await inProject(id);
+      const stateId = r.cancel ? await canceledState() : null;
+      const i = { ...(r.title ? { title: r.title } : {}), ...(r.description !== undefined ? { description: r.description } : {}), ...(stateId ? { stateId } : {}) };
+      await gql(`mutation($id: String!, $i: IssueUpdateInput!) { issueUpdate(id: $id, input: $i) { success } }`, { id, i });
     },
     async finishMeeting(id, f) {
       const issue = await inProject(id);

@@ -88,7 +88,8 @@ export interface TaskReceipt {
    * Where it went (FLOW-1): the Linear identifier it was created as (PENDING-… through the Claude relay until
    * the next sync; the flow view resolves it), the existing task it duplicated, or nowhere on a dry run.
    */
-  posted?: { identifier: string } | { duplicateOf: string } | { dryRun: true };
+  /** `staged`: waiting for the PM's approval as that proposal (APPROVE-1); `dropped`: the PM said no. */
+  posted?: { identifier: string } | { duplicateOf: string } | { dryRun: true } | { staged: string } | { dropped: true };
 }
 
 export type SizeFlag = "no-reason" | "cell-mismatch" | "count-below" | "count-above";

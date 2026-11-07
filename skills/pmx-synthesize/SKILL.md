@@ -15,6 +15,7 @@ A single JSON object and nothing else:
 ```json
 {"tasks": [
   {"title": "…", "category": "…", "size": "S|M|L|XL", "rationale": "…", "sources": ["T1", "S4"],
+   "support": {"T1": "The buyer asked for SCIM twice.", "S4": "Support reports the same gap."},
    "sizing": {"cell": "Themes across 3–8 sources", "why": "Five calls on one theme."}}
 ]}
 ```
@@ -24,8 +25,12 @@ A single JSON object and nothing else:
 - `size`: apply the size rubric in the prompt.
 - `sizing.cell`: the rubric cell you matched for this category and size, quoted word for word.
 - `sizing.why`: one sentence on why the task fits that cell.
-- `rationale`: one or two sentences on why this matters, grounded in the sources.
-- `sources`: the IDs of every source that supports the task. At least one.
+- `rationale`: two to four sentences, in your own words, on what the task needs and why it matters. It is
+  the whole description teammates see in the tracker: never quote a source, and never include names,
+  speaker labels, transcript lines or anything said about a person.
+- `sources`: the IDs of the sources that directly support the task. One is fine; never add a weak or
+  unrelated source to reach two.
+- `support`: for each cited source, one sentence on how it supports this task, in your own words.
 
 ## Rules
 

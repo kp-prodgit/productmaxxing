@@ -176,10 +176,12 @@ describe("0.11.0: recording the links (FLOW-1)", () => {
 describe("0.11.0: canaries (FLOW-3)", () => {
   it("holds every fake confidential meeting, including the PM's own do-not-read entries", () => {
     const base = { internalDomains: ["us.com"], requireExternalParticipant: true, neverIngest: { people: [], channels: [], meetingTitles: [] } };
-    expect(runCanaries(base)).toEqual({ total: 5, held: 5, failed: [] });
-    expect(runCanaries({ ...base, neverIngest: { people: ["Dana Board"], channels: [], meetingTitles: ["Board prep"] } })).toEqual({ total: 7, held: 7, failed: [] });
+    expect(runCanaries(base)).toEqual({ total: 7, held: 7, failed: [] });
+    expect(runCanaries({ ...base, neverIngest: { people: ["Dana Board"], channels: [], meetingTitles: ["Board prep"] } })).toEqual({ total: 9, held: 9, failed: [] });
     // Private to-dos allow 1:1s and internal meetings, so those canaries don't apply there.
-    expect(runCanaries({ ...base, requireExternalParticipant: false, allowOneOnOne: true }).total).toBe(3);
+    expect(runCanaries({ ...base, requireExternalParticipant: false, allowOneOnOne: true }).total).toBe(4);
+    // 0.14.0: with no company domain set, every canary is still held.
+    expect(runCanaries({ ...base, internalDomains: [] })).toEqual({ total: 7, held: 7, failed: [] });
   });
 });
 

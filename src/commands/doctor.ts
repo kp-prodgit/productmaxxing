@@ -15,7 +15,7 @@ import type { Exec } from "../core/exec.js";
 import { Git } from "../core/git.js";
 import type { Keychain } from "../core/keychain.js";
 import { killSwitchOn } from "../core/killswitch.js";
-import { jobEnv, type Launchd } from "../core/launchd.js";
+import { jobEnv, VERSIONED_NODE, type Launchd } from "../core/launchd.js";
 import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
 import { profileChecks, type Check } from "../core/profile.js";
 import { RunLogStore } from "../core/runlog-store.js";
@@ -24,6 +24,8 @@ import type { RunLogEntry } from "../core/runlog.js";
 import { SIZES, type Size } from "../core/types.js";
 import { tickHealth } from "./tick.js";
 import { runCanaries } from "../core/canary.js";
+import { privacyRules } from "../digest/gather.js";
+import { budget, budgetBlock } from "../budget/provider.js";
 import { mcpInstalled } from "../mcp/server.js";
 
 export interface DoctorDeps {
@@ -68,6 +70,22 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (signIn) add("profile.signed-in", signIn.ok, signIn.detail);
   // launchd has no shell PATH: an npm install of Claude Code under nvm is invisible to the job.
   const job = await d.launchd.installed();
+  if (job) {
+    // A job left pointing at a removed Node or Claude Code (a version manager's old folder, an upgraded Homebrew Node) stops silently.
+    const env = jobEnv(job);
+    const exists = (f: string) => stat(f).then(() => true, () => false);
+    const gone = [
+      ...(env.node && !(await exists(env.node)) ? [`Node at ${env.node}`] : []),
+      ...(env.PMX_CLAUDE && !(await exists(env.PMX_CLAUDE)) ? [`Claude Code at ${env.PMX_CLAUDE}`] : []),
+    ];
+    const stale = [];
+    for (const dir of env.PATH.split(":").filter((x) => /\/\.(nvm|fnm|volta|asdf)\//.test(x))) if (!(await exists(dir))) stale.push(dir);
+    const versioned = !!env.node && VERSIONED_NODE.test(env.node);
+    add("schedule.job-paths", !gone.length && !versioned, gone.length
+      ? `the background job runs ${gone.join(" and ")}, which no longer exist${gone.length === 1 ? "s" : ""}, so it can't run: run \`pmx init\` again and say yes to the background job`
+      : versioned ? `the background job runs Node from a versioned Homebrew folder (${env.node}); \`brew upgrade node\` will break it. Run \`pmx init\` again and say yes to the background job`
+      : `the background job's Node${env.PMX_CLAUDE ? " and Claude Code" : ""} paths exist${stale.length ? ` (its PATH still names ${stale.join(", ")}, which is harmless)` : ""}`, gone.length ? "fail" : "warn");
+  }
   if (job && cc) {
     const env = jobEnv(job);
     const r = await d.exec(env.PMX_CLAUDE ?? "claude", ["--version"], { env: { ...process.env, PATH: env.PATH }, timeoutMs: 15000 });
@@ -141,8 +159,17 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (cloud?.latest) add("cli.latest", (compareVersions(cloud.latest, current) ?? 0) <= 0, `latest release is pmx ${cloud.latest}`, "warn");
 
   // FLOW-3: fake confidential meetings must be held by today's rules and this PM's do-not-read list.
-  const can = runCanaries({ internalDomains: d.team.internalDomains, requireExternalParticipant: true, neverIngest: d.personal.neverIngest, allowOneOnOne: false });
-  add("privacy.canaries", !can.failed.length, can.failed.length ? `privacy rules let ${can.failed.length} test meeting(s) through (${can.failed.join(", ")}): nothing is sent, but check internalDomains in pmx.config.json and your do-not-read list` : `privacy rules hold all ${can.total} test meetings (1:1, internal-only, pay, performance, health${can.total > 5 ? ", do-not-read" : ""})`);
+  // BUDGET-2: a cap of 0 or a used-up day stops every run, so it's never silent.
+  const b = budget(d.personal, d.team, st, d.now?.() ?? new Date());
+  const blocked = budgetBlock(b);
+  add("budget", !blocked, blocked ?? `budget: ${b.personalCapUsd === null ? `no cap of your own, team cap $${b.capUsd.toFixed(2)} a day` : `$${b.capUsd.toFixed(2)} a day`}, $${b.spentUsd.toFixed(2)} used today (estimated at list prices)`, "warn");
+  const rules = privacyRules({ team: d.team, personal: d.personal });
+  // B2: without the company's own domain, PMX can't tell colleagues from customers, so it holds every meeting.
+  add("privacy.company-domains", rules.internalDomains.length > 0, rules.internalDomains.length
+    ? `meetings with only ${rules.internalDomains.join(", ")} attendees count as internal and never reach the team's tracker`
+    : "PMX doesn't know your company's email domain, so it holds every meeting from team tasks and your digest. Run `pmx init` and give your work email domain (or add it to internalDomains in pmx.config.json)");
+  const can = runCanaries(rules);
+  add("privacy.canaries", !can.failed.length, can.failed.length ? `privacy rules let ${can.failed.length} test meeting(s) through (${can.failed.join(", ")}): nothing is sent, but check internalDomains in pmx.config.json and your do-not-read list` : `privacy rules hold all ${can.total} test meetings (1:1s, internal-only, hiring, pay, performance, health${can.total > 8 ? ", do-not-read" : ""})`);
   // FLOW-5: a published flow page reads this Mac through the local server.
   if (d.personal.flow?.url) {
     const on = await mcpInstalled();

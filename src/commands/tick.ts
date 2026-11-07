@@ -23,12 +23,17 @@ export async function runTick(ctx: Ctx, steps: [string, TickStep][]): Promise<st
   const ks = await killSwitchOn(ctx.repo).catch(() => ({ on: false, reason: null }));
   if (ks.on) return [`kill switch on (${ks.reason}): nothing ran`];
   const out: string[] = [];
+  let paused = false;
   for (const [name, step] of steps) {
     try {
       const r = await step(ctx);
       if (r) out.push(`${name}: ${r}`);
     } catch (e: any) {
-      out.push(`${name}: failed: ${e.message}`);
+      // A paused or used-up budget isn't a failure (BUDGET-2): said once per pass, not once per step.
+      if (e?.budgetPaused) {
+        if (!paused) out.push(`budget: ${e.message}`);
+        paused = true;
+      } else out.push(`${name}: failed: ${e.message}`);
     }
   }
   return out;

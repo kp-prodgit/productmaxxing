@@ -12,7 +12,7 @@ export const CANARY_MARKER = "PMX-CANARY-7c1e";
 interface Canary {
   name: string;
   /** The rule that must stop it: the whole item, or one passage. */
-  expect: { item: HoldReason } | { passage: HoldReason };
+  expect: { item: HoldReason | HoldReason[] } | { passage: HoldReason };
   item: Omit<SignalItem, "id" | "kind" | "ref">;
   /** Whether these rules are meant to stop it at all (1:1s are allowed for private to-dos, for example). */
   applies: (r: FilterRules) => boolean;
@@ -23,12 +23,17 @@ const at = "2026-01-01T10:00:00Z";
 const talk = (line: string) => `Alex: Thanks for joining.\n\nJordan: ${line}\n\nAlex: Let's pick that up next week.`;
 
 function canaries(r: FilterRules): Canary[] {
-  const inside = r.internalDomains[0] ? `teammate@${r.internalDomains[0]}` : "teammate";
+  const inside = `teammate@${r.internalDomains[0] ?? "company.example"}`;
   const list: Canary[] = [
     { name: "1:1 title", expect: { item: "one-on-one" }, applies: (x) => !x.allowOneOnOne,
       item: { title: `1:1 Alex / Jordan ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk("How is the roadmap going?") } },
-    { name: "internal-only meeting", expect: { item: "no-external-participant" }, applies: (x) => x.requireExternalParticipant && x.internalDomains.length > 0,
-      item: { title: `Team sync ${CANARY_MARKER}`, at, participants: [inside], text: talk("Let's review the launch checklist.") } },
+    // Without a company domain the run holds every meeting, which also holds this one.
+    { name: "internal-only meeting", expect: { item: ["no-external-participant", "no-company-domain"] }, applies: (x) => x.requireExternalParticipant,
+      item: { title: `Team sync ${CANARY_MARKER}`, at, participants: [inside, `lead@${r.internalDomains[0] ?? "company.example"}`], text: talk("Let's review the launch checklist.") } },
+    { name: "two-person 1:1", expect: { item: ["one-on-one", "no-company-domain"] }, applies: (x) => !x.allowOneOnOne,
+      item: { title: `Alex / Jordan`, at, participants: [OUTSIDE, inside], text: talk(`How is the roadmap going? ${CANARY_MARKER}`) } },
+    { name: "hiring interview", expect: { item: ["hiring", "no-company-domain"] }, applies: () => true,
+      item: { title: `Video Interview - Jordan for Product Lead ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk("Tell me about your last role.") } },
     { name: "pay passage", expect: { passage: "compensation" }, applies: () => true,
       item: { title: `Customer call ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk(`Your salary band moves next quarter. ${CANARY_MARKER}`) } },
     { name: "performance passage", expect: { passage: "performance" }, applies: () => true,
@@ -54,7 +59,7 @@ export function runCanaries(r: FilterRules): { total: number; held: number; fail
     const item: SignalItem = { ...c.item, id: `C${i + 1}`, kind: "transcript", ref: `canary:${i}` };
     const d = filterItems([item], r).decisions[0];
     const ok = "item" in c.expect
-      ? d?.decision === "held" && d.rule === c.expect.item
+      ? d?.decision === "held" && [c.expect.item].flat().includes(d.rule as HoldReason)
       : !!d && (d.decision === "held" || d.passages.some((p) => p.rule === (c.expect as { passage: HoldReason }).passage));
     if (!ok) failed.push(c.name);
   }

@@ -7,6 +7,8 @@ export interface State {
   lastSynthAt: string | null;
   /** Self-tracked spend ledger (PULL-5): day (YYYY-MM-DD, in budget-reset time) → USD. */
   ledger: Record<string, number>;
+  /** Tokens PMX's runs used per ledger day (BUDGET-1). */
+  tokens?: Record<string, number>;
   eeTrialStartedAt: string | null;
   lastEventSyncAt: string | null;
   lastPipelineSyncAt: string | null;
@@ -51,6 +53,7 @@ export async function saveState(s: State): Promise<void> {
   // Keep 60 days of ledger.
   const days = Object.keys(s.ledger).sort();
   for (const d of days.slice(0, Math.max(0, days.length - 60))) delete s.ledger[d];
+  for (const d of Object.keys(s.tokens ?? {}).sort().slice(0, Math.max(0, Object.keys(s.tokens ?? {}).length - 60))) delete s.tokens![d];
   for (const d of Object.keys(s.caps ?? {}).sort().slice(0, Math.max(0, Object.keys(s.caps ?? {}).length - 60))) delete s.caps[d];
   const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
   s.collectReports = (s.collectReports ?? []).filter((r) => r.at >= cutoff).slice(-200);

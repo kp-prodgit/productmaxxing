@@ -72,6 +72,7 @@ export const meetingCommands: Command[] = [
         const since = sinceArg(a.values.since, ctx.now());
         const r = await refreshTodos(ctx, { since, dryRun: a.values["dry-run"] });
         console.log(`Meetings since ${localDay(since)}: ${r.meetings.read} read now, ${r.meetings.alreadyRead} already read for to-dos.`);
+        if (!r.meetings.read && !a.values.since) console.log(`Only today's meetings are read by default. For earlier ones: pmx todo --refresh --since ${localDay(new Date(ctx.now().getTime() - 6 * 86400000))}`);
         console.log(r.added.length ? `${a.values["dry-run"] ? "Would add" : "Added"} ${r.added.length} to-do(s):\n${formatTodos(r.added)}` : "No new to-dos.");
         if (r.receiptId) console.log(`See how each meeting was read: pmx explain ${r.receiptId}`);
         // The collection task's last step (COLLECT_TASK step 4), so its run counts as finished.

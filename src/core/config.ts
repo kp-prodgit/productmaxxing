@@ -57,7 +57,11 @@ export interface PersonalConfig {
    * older pmx reading this file behaves the same; older saved hours are ignored.
    */
   workingHours?: { days: number[]; start: string; end: string };
-  budget: { dailyUsd: number; resetHour: number; overrideUsd?: number | null };
+  /**
+   * `dailyUsd` null: no cap of the PM's own, only the team's (BUDGET-1). On a Claude plan the dollars are Claude
+   * Code's estimate at API list prices, not a bill; 0 pauses every run.
+   */
+  budget: { dailyUsd: number | null; resetHour: number; overrideUsd?: number | null };
   sources: { transcriptDirs: string[]; slackChannel: string | null };
   /** The personal never-ingest list (B2). Sensitive in itself, so it stays here. */
   neverIngest: { people: string[]; channels: string[]; meetingTitles: string[] };
@@ -67,6 +71,11 @@ export interface PersonalConfig {
   cloud?: { url: string; orgId: string } | null;
   /** Content-free analytics events to the hosted app (PRIV-5). Off until the PM signs in and sees what's sent. */
   analytics?: { enabled: boolean; decidedAt: string } | null;
+  /**
+   * This PM's company email domains (B2), added to the team's `internalDomains`: a meeting with only these
+   * domains is internal and never reaches the team's tracker. `pmx init` fills it in from the PM's work email.
+   */
+  companyDomains?: string[] | null;
   /** Who "me" is in a transcript, for individual to-dos (TODO-1). Learned from `pmx collect` or `pmx todo --me`. */
   identity?: { names: string[]; emails: string[] } | null;
   /** The board this PM published from this Mac with /pmx-board, and with which pmx (BOARD-1). */
@@ -109,8 +118,19 @@ export async function loadTeamConfig(repoPath: string): Promise<TeamConfig> {
   return validateTeamConfig({ ...DEFAULT_TEAM, team: "team", ...raw } as TeamConfig);
 }
 
+/**
+ * A Linear team key or project ID from what someone pasted: a link like linear.app/acme/team/PMX/… becomes "PMX",
+ * and linear.app/acme/project/pmx-5f2a91c0d3e4/overview becomes "pmx-5f2a91c0d3e4". The connector takes no links.
+ */
+export function linearRef(kind: "team" | "project", v: string): string {
+  const m = v.trim().match(new RegExp(`linear\\.app/[^/]+/${kind}/([^/?#\\s]+)`, "i"));
+  return m ? decodeURIComponent(m[1]!) : v.trim();
+}
+
 export function validateTeamConfig(c: TeamConfig): TeamConfig {
   assertSchema("teamConfig", c.version, TEAM_CONFIG_FILE);
+  if (c.tracker?.kind === "linear") c.tracker = { ...c.tracker, teamKey: linearRef("team", c.tracker.teamKey), projectId: linearRef("project", c.tracker.projectId) };
+  if (c.company?.teams) c.company = { ...c.company, teams: c.company.teams.map((t) => ({ ...t, teamKey: linearRef("team", t.teamKey), projectId: linearRef("project", t.projectId) })) };
   const problems: string[] = [];
   if (c.cli && !isVersion(c.cli.min)) problems.push(`cli.min must be a version like 0.5.0, not "${c.cli.min}"`);
   if (c.board && !/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]+\/?$/.test(c.board.url ?? "")) problems.push("board.url must be a Claude artifact link (https://claude.ai/artifact/…)");

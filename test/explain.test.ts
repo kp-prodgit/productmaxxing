@@ -36,7 +36,7 @@ describe("filter decisions (PRIV-4)", () => {
     const [used, internal, allCut] = r.decisions;
     expect(used).toMatchObject({ decision: "kept", detail: "has someone from outside the company (acme.com)", passagesKept: 1 });
     expect(used!.passages).toEqual([{ rule: "health", hash: expect.stringMatching(/^[0-9a-f]{16}$/) }]);
-    expect(internal).toMatchObject({ decision: "held", rule: "no-external-participant", detail: "everyone is on your company's domains (us.com)" });
+    expect(internal).toMatchObject({ decision: "held", rule: "no-external-participant", detail: "everyone is on your company's domains (us.com) or has no email address" });
     expect(allCut).toMatchObject({ decision: "held", rule: "all-passages-held" });
     expect(JSON.stringify(r.decisions.map(({ item: _i, ...d }) => d))).not.toMatch(/sick leave|bonus|jane@|ana@/);
   });
@@ -115,12 +115,15 @@ describe("explainable sizing", () => {
     expect(checkSizing(t("S", ["T1", "T2", "T3"]), undefined, rubric).flags).toEqual(["no-reason", "count-above"]);
 
     const ids = new Set(["T1"]);
-    const out = parseCandidates(JSON.stringify({ tasks: [{ title: "Synthesize SSO pain", category: "research-synthesis", size: "L", rationale: "r", sources: ["T1"] }] }), ["research-synthesis"], ids, rubric);
+    const out = parseCandidates(JSON.stringify({ tasks: [{ title: "Synthesize SSO pain", category: "research-synthesis", size: "L", rationale: "r", sources: ["T1"], support: { T1: "The admin describes SSO setup pain." } }] }), ["research-synthesis"], ids, rubric);
     expect(out.tasks).toHaveLength(1);
     expect(out.tasks[0]!.sizing!.flags).toEqual(["no-reason", "count-below"]);
-    const desc = describeTask(out.tasks[0] as CandidateTask, [item({ id: "T1", text: "Jane: slow" })]);
+    const desc = describeTask(out.tasks[0] as CandidateTask, [item({ id: "T1", title: "Acme renewal", text: "Jane: slow" })], "synthesize-x");
     expect(desc).toContain("**Why size L:** no rubric cell given");
     expect(desc).toContain("**Check the size:** it cites fewer sources than this size expects.");
+    // PRIV-6: the tracker gets a summary and a date, never the meeting's words or title.
+    expect(desc).toContain("**Based on** one meeting (2026-11-03)");
+    expect(desc).not.toMatch(/Jane|slow|Acme/);
   });
 });
 

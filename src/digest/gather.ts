@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Ctx } from "../core/context.js";
-import { filterItems, type FilterResult } from "../core/filter.js";
+import { companyDomains, filterItems, type FilterResult } from "../core/filter.js";
 import { makeRedactor } from "../core/redact.js";
 import { sourceReceipts, topicRulesHash, type RunReceipt } from "../core/receipt.js";
 import type { SignalItem } from "../core/types.js";
@@ -8,6 +8,18 @@ import { readSlack } from "../sources/slack.js";
 import { readTranscripts } from "../sources/transcripts.js";
 import { meetingKeys } from "../meetings/ledger.js";
 import { runCanaries } from "../core/canary.js";
+
+/**
+ * The privacy rules for one run (B2). Team and digest runs need an outside participant and hold a meeting whole when
+ * it keeps returning to a sensitive topic; private to-dos (TODO-2) may read the PM's own 1:1s and internal meetings.
+ */
+export function privacyRules(ctx: Pick<Ctx, "team" | "personal">, individual = false) {
+  const { team, personal } = ctx;
+  return {
+    internalDomains: companyDomains(team.internalDomains, { companyDomains: personal.companyDomains, emails: personal.identity?.emails }),
+    requireExternalParticipant: !individual, neverIngest: personal.neverIngest, allowOneOnOne: individual, wholeMeeting: !individual,
+  };
+}
 
 export interface Gathered {
   items: SignalItem[];
@@ -58,7 +70,7 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
   // Meeting identities come from participants and IDs, so they're worked out before redaction (MEET-1).
   for (const it of raw) if (it.kind === "transcript") it.keys = meetingKeys(it);
   const individual = o.scope === "individual";
-  const rules = { internalDomains: team.internalDomains, requireExternalParticipant: !individual, neverIngest: personal.neverIngest, allowOneOnOne: individual };
+  const rules = privacyRules(ctx, individual);
   const filtered = filterItems(raw, rules);
 
   const names = personal.crmNamesFile ? (await readFile(personal.crmNamesFile, "utf8").catch(() => "")).split("\n") : [];
@@ -71,7 +83,7 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
     receipt: {
       window: { days: o.days, since: new Date(sinceMs).toISOString(), scope: o.scope },
       rules: {
-        internalDomains: team.internalDomains, requireExternalParticipant: !individual, ...(individual ? { allowOneOnOne: true } : {}), topicRulesHash: topicRulesHash(),
+        internalDomains: rules.internalDomains, requireExternalParticipant: !individual, ...(individual ? { allowOneOnOne: true } : {}), topicRulesHash: topicRulesHash(),
         neverIngest: { people: personal.neverIngest.people.length, channels: personal.neverIngest.channels.length, meetingTitles: personal.neverIngest.meetingTitles.length },
         folders: team.allowedSources.includes("transcripts") ? personal.sources.transcriptDirs : [],
       },

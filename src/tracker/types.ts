@@ -22,11 +22,13 @@ export interface MeetingEntry {
   agent: string | null;
 }
 
+/**
+ * What PMX lodges for a processed meeting (MEET-2, PRIV-6): its identity hashes, its date and who processed it. Never
+ * its title, attendees or source, because the tracker is shared and a meeting's title can be private on its own.
+ */
 export interface NewMeeting {
-  title: string;
   keys: string[];
   at: string;
-  source: string;
   agent: string;
 }
 
@@ -53,10 +55,18 @@ export interface Tracker {
   lodgeMeeting(m: NewMeeting): Promise<MeetingEntry>;
   /** Marks a lodged meeting done (completed in the tracker) or blocked, with the tasks it produced. */
   finishMeeting(id: string, o: { status: "done" | "blocked"; tasks: string[]; note: string }): Promise<void>;
+  /**
+   * Replaces an issue's title or description, and with `cancel` moves it to canceled (TIDY-1). Only `pmx linear tidy`
+   * and `pmx linear withdraw` call it, to take back what PMX wrote. Never deletes.
+   */
+  rewrite(id: string, o: { title?: string; description?: string; cancel?: boolean }): Promise<void>;
 }
 
+/** An opaque title: the meeting's first identity hash, which only the PM's own Mac can match to a meeting. */
+export const meetingTitle = (m: Pick<NewMeeting, "keys">) => `Processed meeting ${m.keys[0]?.slice(0, 9) ?? "m?"}`;
+
 export const meetingDescription = (m: NewMeeting) =>
-  [`Lodged by PMX so no one processes this meeting twice (MEET-2). Not a task.`, ``, `Date: ${m.at}`, `Source: ${m.source}`, `Processed by: ${m.agent}`, ``, ...m.keys.map((k) => `pmx:meeting ${k}`)].join("\n");
+  [`PMX processed a meeting on ${m.at} and marks it here so no teammate processes it twice (MEET-2). Not a task, and it holds no meeting details.`, ``, `Processed by: ${m.agent}`, ``, ...m.keys.map((k) => `pmx:meeting ${k}`)].join("\n");
 
 /** An in-memory tracker for tests, demos and teams that haven't connected Linear yet. */
 export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string, Task>; comments: Map<string, string[]>; meetings: Map<string, MeetingEntry> } {
@@ -108,9 +118,17 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
     },
     async lodgeMeeting(m) {
       const id = `meeting-${++n}`;
-      const e: MeetingEntry = { id, identifier: `PMX-${n}`, url: `memory://${id}`, title: m.title, keys: [...m.keys], status: "running", tasks: [], agent: m.agent };
+      const e: MeetingEntry = { id, identifier: `PMX-${n}`, url: `memory://${id}`, title: meetingTitle(m), keys: [...m.keys], status: "running", tasks: [], agent: m.agent };
       meetings.set(id, e);
       return { ...e };
+    },
+    async rewrite(id, o) {
+      const t = tasks.get(id);
+      const m = meetings.get(id);
+      if (!t && !m) throw new Error(`No issue ${id} in the PMX project.`);
+      if (o.cancel) { tasks.delete(id); meetings.delete(id); return; }
+      if (t) Object.assign(t, o.title ? { title: o.title } : {}, o.description !== undefined ? { description: o.description } : {});
+      if (m && o.title) m.title = o.title;
     },
     async finishMeeting(id, o) {
       const e = meetings.get(id);

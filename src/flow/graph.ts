@@ -238,8 +238,10 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
     (r.synth?.tasks ?? []).forEach((t, idx) => {
       tasksN++;
       const id = `task:${r.id}:${idx}`;
+      const st = t.posted;
       add({
-        id, kind: "task", stage: 3, run: r.id, label: t.title, at: r.at, status: r.dryRun ? "dry-run" : "proposed",
+        id, kind: "task", stage: 3, run: r.id, label: t.title, at: r.at,
+        status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : "proposed",
         meta: { category: t.category, size: t.size, why: t.sizing?.why ?? null, flags: t.sizing?.flags.join(", ") || null, sources: t.sources.length },
       });
       link(runId, id, "synthesized");

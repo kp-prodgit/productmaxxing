@@ -421,6 +421,13 @@ header .sub code { font-family: var(--mono); font-size: 12px }
 
     const all = S.issues ? cards() : null;
     const L = labelIndex();
+    // BOARD-2: an empty board says why, so it never looks broken.
+    if (all && !S.issuesErr && !Object.values(all).some((l) => l.length)) {
+      const noLabels = S.labels && !L.ids["pmx-status"];
+      banner.append(h("div", { class: "banner warn", role: "status" }, h("span", null, noLabels
+        ? "Linear has no PMX labels yet, so there's nothing to show. The Linear sync creates them on its next run: in the Claude app, Code tab → Scheduled → \"PMX: sync Linear through Claude\" → Run now."
+        : "No PMX tasks in this project yet. PMX proposes tasks from your customer calls; approve them in Terminal with `pmx proposals`, and they show up here after the next Linear sync.")));
+    }
     // Filters
     $("filters").hidden = !all;
     if (all) {
@@ -443,7 +450,7 @@ header .sub code { font-family: var(--mono); font-size: 12px }
       if (!list) {
         if (!S.issuesErr) box.append(h("div", { class: "skeleton" }), h("div", { class: "skeleton" }));
       } else if (!list.length) {
-        box.append(h("div", { class: "empty" }, F.category || F.size || F.who || F.q ? "Nothing matches the filters." : z.key === "pool" ? "Nothing new. Meetings and digests add work here." : "Nothing here."));
+        box.append(h("div", { class: "empty" }, F.category || F.size || F.who || F.q ? "Nothing matches the filters." : z.key === "pool" ? "Nothing new. Tasks you approve with `pmx proposals` land here." : "Nothing here."));
       } else if (z.key === "ready") {
         // Group Ready by category, the way agents pick work up.
         const groups = {};

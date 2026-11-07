@@ -1,6 +1,7 @@
 import type { ParseArgsConfig } from "node:util";
 import type { Asker } from "../core/ask.js";
-import { loadPersonalConfig, loadTeamConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { loadPersonalConfig, loadTeamConfig, savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { budget, usageLine } from "../budget/provider.js";
 import { consoleOut, type Ctx } from "../core/context.js";
 import { exec } from "../core/exec.js";
 import { loginProfile, profileSignedIn } from "../core/claude-bin.js";
@@ -147,6 +148,29 @@ export const commands: Command[] = [
     options: {},
     async run(a) {
       console.log(await runStatus(await a.ctx(), await statusExtra(await a.ctx())));
+      return 0;
+    },
+  },
+  {
+    name: "budget",
+    summary: "PMX's daily usage cap: show it, set it in dollars, or turn it off (your Claude plan's own limits still apply)",
+    usage: "pmx budget | pmx budget set <dollars> | pmx budget off",
+    options: {},
+    async run(a) {
+      const ctx = await a.ctx();
+      const sub = a.positionals[0] ?? "show";
+      if (sub === "set" || sub === "off") {
+        const cap = ctx.team.caps.perDayUsd;
+        const v = sub === "off" ? null : Number(a.positionals[1]);
+        if (v !== null && (a.positionals[1] === undefined || !Number.isFinite(v) || v < 0)) throw new Error("Give a number of dollars, like `pmx budget set 10` (0 pauses PMX).");
+        if (v !== null && v > cap) throw new Error(`Your team allows at most $${cap} a day (caps.perDayUsd in pmx.config.json).`);
+        ctx.personal.budget = { ...ctx.personal.budget, dailyUsd: v };
+        await savePersonalConfig(ctx.personal);
+        console.log(v === null ? `No cap of your own now; your team's cap of $${cap} a day still applies.` : v === 0 ? "PMX is paused: no run calls the model until you raise the cap." : `Daily cap set to $${v}.`);
+      } else if (sub !== "show") throw new Error(`Unknown subcommand "${sub}". Use set or off.`);
+      const b = budget(ctx.personal, ctx.team, await loadState(), ctx.now());
+      console.log(usageLine(b, ctx.personal.plan));
+      console.log("Dollars are Claude Code's estimate at API list prices. On a Claude plan (Pro, Max, Team, Enterprise) runs count against your plan's usage limits instead of being billed per token; on an API key, Bedrock or Vertex they are what you pay.");
       return 0;
     },
   },

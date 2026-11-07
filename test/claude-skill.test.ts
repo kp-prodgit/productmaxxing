@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { appSkillInstalled, appSkillSource, appSkillTarget, installAppSkill } from "../src/claude/skill.js";
-import { COLLECT_TASK, formatTasks, tasksJson, taskFile } from "../src/claude/tasks.js";
+import { COLLECT_TASK, formatTasks, tasksJson, taskFile, taskDescription } from "../src/claude/tasks.js";
 import { DEFAULT_TEAM, type TeamConfig } from "../src/core/config.js";
 import { memoryKeychain } from "../src/core/keychain.js";
 import { tmp } from "./helpers.js";
@@ -44,7 +44,10 @@ describe("/pmx-schedule skill (CLAUDE-2)", () => {
     const old = await tasksJson(team, memoryKeychain());
     expect(old.outdated.map((t) => t.taskId)).toEqual(["pmx-collect-meetings"]); // /pmx-schedule updates its prompt
     expect(old.present).toEqual([]);
+    // 0.14.0: an old description is outdated too, so the app never shows stale text.
     await writeFile(taskFile(COLLECT_TASK.id), `---\nname: pmx-collect-meetings\ndescription: x\n---\n\n${COLLECT_TASK.prompt}\n`);
+    expect((await tasksJson(team, memoryKeychain())).outdated.map((t) => t.taskId)).toEqual(["pmx-collect-meetings"]);
+    await writeFile(taskFile(COLLECT_TASK.id), `---\nname: pmx-collect-meetings\ndescription: ${taskDescription(COLLECT_TASK)}\n---\n\n${COLLECT_TASK.prompt}\n`);
     expect((await tasksJson(team, memoryKeychain())).present).toEqual(["pmx-collect-meetings"]);
   });
 

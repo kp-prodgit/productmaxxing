@@ -86,26 +86,30 @@ describe("0.10.0: a solo install that works", () => {
         "Team name": ["acme"],
         handle: ["ana smith", "ana"],
         "Categories": ["spec, nonsense", "spec"],
-        "Daily spend": ["ten", "0"],
+        "Daily cap": ["ten", "0"],
+        "email domains": ["not a domain", "Acme.com, @us.acme.com"],
         transcripts: [join(dir, "t")],
       }, asked),
       keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude, out, now: () => new Date(), cliPath: "/x",
     });
     // Older pmx versions still read workingHours, so init writes "always" (0.13.0).
-    expect(personal).toMatchObject({ repoPath: repo, handle: "ana", categories: ["spec"], workingHours: { days: [0, 1, 2, 3, 4, 5, 6], start: "00:00", end: "24:00" }, budget: { dailyUsd: 0 } });
+    expect(personal).toMatchObject({ repoPath: repo, handle: "ana", categories: ["spec"], workingHours: { days: [0, 1, 2, 3, 4, 5, 6], start: "00:00", end: "24:00" }, budget: { dailyUsd: 0 }, companyDomains: ["acme.com", "us.acme.com"] });
     expect(asked.some((q) => /working (days|hours)/i.test(q))).toBe(false);
     const warnings = out.lines.filter((l) => l.startsWith("WARN"));
     expect(warnings.some((w) => /"\/pmx-schedule" looks like a command, not a folder/.test(w))).toBe(true);
     expect(warnings.some((w) => /looks like a command, not a git URL/.test(w))).toBe(true);
     expect(warnings.some((w) => /Enter a number of dollars/.test(w))).toBe(true);
+    expect(warnings.some((w) => /"not a domain" isn't an email domain/.test(w))).toBe(true);
+    expect(warnings.some((w) => /A cap of 0 pauses every PMX run/.test(w))).toBe(true);
     expect(out.lines.join("\n")).toMatch(/PMX will save this setup:[\s\S]*up to \$0 a day \(paused\); PMX works whenever this Mac is on and awake/);
+    expect(out.lines.join("\n")).toMatch(/Company +acme\.com, us\.acme\.com/);
     expect(out.lines.join("\n")).toContain('"PMX repo"');
   });
 
   it("gives up after three wrong answers and saves nothing", async () => {
     const dir = await tmp();
     await expect(runInit({
-      ask: sequenceAsker({ "PMX repo checkout": [join(dir, "pmx")], "Daily spend": ["ten"], transcripts: [join(dir, "t")] }),
+      ask: sequenceAsker({ "PMX repo checkout": [join(dir, "pmx")], "Daily cap": ["ten"], transcripts: [join(dir, "t")] }),
       keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x",
     })).rejects.toThrow(/after three tries\. Nothing was saved/);
     expect(await stat(paths.config()).catch(() => null)).toBeNull();

@@ -1,3 +1,4 @@
+import { privacyRules } from "../digest/gather.js";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -69,7 +70,7 @@ export async function startExplainServer(o: {
     }
     if (path === "/api/rules") {
       return [200, {
-        internalDomains: o.team.internalDomains,
+        internalDomains: privacyRules(o).internalDomains,
         allowedSources: o.team.allowedSources,
         slackChannels: o.team.slackChannels,
         folders: o.personal.sources.transcriptDirs,

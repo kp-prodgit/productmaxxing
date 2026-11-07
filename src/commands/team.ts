@@ -10,6 +10,7 @@ import { compareReports, neutralityRun, type NeutralityReport } from "../run/neu
 import { runTask } from "../run/run.js";
 import { verifyPr } from "../run/verify.js";
 import { synthesize } from "../synth/synthesize.js";
+import { approveProposals, dropProposals, formatProposals, readProposals } from "../synth/proposals.js";
 import { startOfDay } from "../meetings/ledger.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
@@ -24,7 +25,7 @@ async function findTask(svc: Services, ref: string) {
 export const teamCommands: Command[] = [
   {
     name: "synthesize",
-    summary: "Turn team sources into sized tasks in the PMX inbox (a human triages them)",
+    summary: "Turn customer calls into proposed tasks; you approve each one before it reaches Linear (`pmx proposals`)",
     usage: "pmx synthesize [--since today | YYYY-MM-DD] [--days 1] [--dry-run]",
     options: { days: { type: "string" }, since: { type: "string" }, "dry-run": { type: "boolean" } },
     async run(a) {
@@ -33,14 +34,45 @@ export const teamCommands: Command[] = [
       const days = Math.max(Number(a.values.days ?? 1), Math.ceil((ctx.now().getTime() - since.getTime()) / 86400000) + 1);
       const r = await synthesize(ctx, await services(ctx), { days, since, dryRun: a.values["dry-run"] });
       for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}`);
+      for (const p of r.staged) console.log(`? [${p.id}] ${p.title}`);
       for (const s of r.skipped) console.log(`· skipped ${s}`);
       const m = r.meetings;
       console.log(`Meetings since ${since.toDateString()}: ${m.processed.length} processed now${m.processed.length ? ` (${m.processed.map((x) => x.entry).join(", ")} marked done in the tracker)` : ""}, ${m.already} already processed by the team, ${m.busy} being processed on another machine.`);
       console.log(a.values["dry-run"]
-        ? `Dry run: ${r.posted.length} task(s) would be posted; nothing was. ${r.held} item(s) or passage(s) left out or cut.`
-        : `${r.posted.length} task(s) posted to inbox; ${r.held} item(s) or passage(s) left out or cut. Triage them in Linear: move to ready to let agents pull.`);
+        ? `Dry run: ${r.posted.length} task(s) would be proposed; nothing was. ${r.held} item(s) or passage(s) left out or cut.`
+        : `${r.staged.length} task(s) proposed and waiting for you; nothing was written to Linear. ${r.held} item(s) or passage(s) left out or cut.\nSee exactly what Linear would get, then approve or drop each: pmx proposals`);
       console.log("See why each was suggested and sized: pmx explain (or pmx explain --web)");
       return 0;
+    },
+  },
+  {
+    name: "proposals",
+    summary: "Tasks PMX proposed from your calls, exactly as Linear would get them: approve or drop each (nothing reaches Linear before you approve)",
+    usage: "pmx proposals [--brief] [--json] | pmx proposals approve <number or ID …> | --all | pmx proposals drop <number or ID …> | --all",
+    options: { all: { type: "boolean" }, brief: { type: "boolean" }, json: { type: "boolean" } },
+    async run(a) {
+      const sub = a.positionals[0] ?? "list";
+      const refs = [...a.positionals.slice(1), ...(a.values.all ? ["all"] : [])];
+      if (sub === "list") {
+        const list = await readProposals();
+        console.log(a.values.json ? JSON.stringify(list, null, 2) : formatProposals(list, !a.values.brief));
+        return 0;
+      }
+      if (sub !== "approve" && sub !== "drop") throw new Error(`Unknown subcommand "${sub}". Use approve or drop.`);
+      if (!refs.length) throw new Error(`Say which: pmx proposals ${sub} 1 2, an ID like p1a2b3c, or --all.`);
+      const ctx = await a.ctx();
+      if (sub === "drop") {
+        const r = await dropProposals(refs, ctx.now());
+        for (const p of r.dropped) console.log(`- dropped ${p.title}`);
+        for (const m of r.missing) console.log(`· no proposal ${m}`);
+        return r.missing.length ? 1 : 0;
+      }
+      const r = await approveProposals(ctx, await services(ctx), refs);
+      for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}`);
+      for (const d of r.duplicates) console.log(`· not posted: ${d}`);
+      for (const m of r.missing) console.log(`· no proposal ${m}`);
+      if (r.posted.length) console.log(`${r.posted.length} task(s) sent to the PMX inbox${r.posted.some((p) => p.identifier.startsWith("PENDING-")) ? ", reaching Linear at the next Claude sync" : ""}. Move one to ready to let agents pull it.`);
+      return r.missing.length ? 1 : 0;
     },
   },
   {
@@ -157,8 +189,8 @@ export const synthStep: TickStep = async (ctx: Ctx) => {
   const s = await loadState();
   const slackDue = !s.lastSynthAt || ctx.now().getTime() - new Date(s.lastSynthAt).getTime() >= 6 * 3600000;
   const r = await synthesize(ctx, await services(ctx), { days: 2, since: startOfDay(ctx.now()), skipIfNothingNew: !slackDue });
-  if (!r.meetings.processed.length && !r.posted.length) return null;
-  return `${r.meetings.processed.length} meeting(s) processed and marked done, ${r.posted.length} task(s) posted to inbox`;
+  if (!r.meetings.processed.length && !r.staged.length) return null;
+  return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} task(s) proposed and waiting for your approval (pmx proposals)`;
 };
 
 export const pullStep: TickStep = async (ctx) => {

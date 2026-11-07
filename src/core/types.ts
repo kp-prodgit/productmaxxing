@@ -45,6 +45,8 @@ export interface CandidateTask {
   size: Size;
   rationale: string;
   sources: string[];
+  /** How each cited source supports the task, in the model's words (PRIV-6). Shown to the PM only, never written to the tracker. */
+  support?: Record<string, string>;
   /** Why this size: the rubric cell, the reason and any checks that disagree (`pmx explain`). */
   sizing?: import("./receipt.js").Sizing;
 }

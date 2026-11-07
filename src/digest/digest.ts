@@ -1,3 +1,4 @@
+import { checkBudget, recordSpend } from "../budget/provider.js";
 import { createHash } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -6,6 +7,7 @@ import { isoWeek, type Ctx } from "../core/context.js";
 import { totalHeld, type HoldReason } from "../core/filter.js";
 import { privateDir, writeText } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
+import { updateState } from "../core/state.js";
 import { DATA_RULES, dataBlock } from "../core/prompt.js";
 import { newReceiptId, writeReceipt, type RunReceipt } from "../core/receipt.js";
 import { loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
@@ -72,6 +74,7 @@ export async function buildDigest(ctx: Ctx, o: { days?: number } = {}): Promise<
     block,
   ].join("\n");
 
+  await checkBudget(ctx);
   const result = await ctx.runtime.run({
     team: ctx.team,
     cwd: ctx.personal.repoPath,
@@ -79,6 +82,7 @@ export async function buildDigest(ctx: Ctx, o: { days?: number } = {}): Promise<
     tools: [],
     maxTurns: 1,
   });
+  await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), result.costUsd, result.tokens));
   receipt.model = {
     name: ctx.team.model, runtime: ctx.runtime.name, tools: "none: no files, no web, no personal Claude settings",
     costUsd: result.costUsd, tokens: result.tokens, durationMs: result.durationMs,

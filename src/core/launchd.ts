@@ -54,10 +54,28 @@ ${args}
 `;
 }
 
-/** The environment the installed job runs with, read back from its plist. */
-export function jobEnv(raw: string): { PATH: string; PMX_CLAUDE: string | null } {
-  const val = (k: string) => raw.match(new RegExp(`<key>${k}</key>\\s*<string>([^<]*)</string>`))?.[1]?.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") ?? null;
-  return { PATH: val("PATH") ?? "", PMX_CLAUDE: val("PMX_CLAUDE") };
+const unxml = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/** The environment the installed job runs with, read back from its plist, and the Node it starts. */
+export function jobEnv(raw: string): { PATH: string; PMX_CLAUDE: string | null; node: string | null } {
+  const val = (k: string) => raw.match(new RegExp(`<key>${k}</key>\\s*<string>([^<]*)</string>`))?.[1] ?? null;
+  const node = raw.match(/<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]*)<\/string>/)?.[1] ?? null;
+  const v = (s: string | null) => (s === null ? null : unxml(s));
+  return { PATH: v(val("PATH")) ?? "", PMX_CLAUDE: v(val("PMX_CLAUDE")), node: v(node) };
+}
+
+/** A Homebrew Node path that names a version (…/Cellar/node/26.13.0_2/bin/node): `brew upgrade node` removes it. */
+export const VERSIONED_NODE = /^(.*)\/Cellar\/(node(@\d+)?)\/[^/]+\/bin\/node$/;
+
+/**
+ * The path to give the job for this Node: Homebrew's stable link (…/opt/node/bin/node) instead of the versioned
+ * Cellar folder, so upgrading Node doesn't stop the job. Any other path is kept as it is.
+ */
+export async function stableNode(p: string, exists: (f: string) => Promise<boolean> = (f) => stat(f).then(() => true, () => false)): Promise<string> {
+  const m = p.match(VERSIONED_NODE);
+  if (!m) return p;
+  for (const c of [`${m[1]}/opt/${m[2]}/bin/node`, `${m[1]}/bin/node`]) if (await exists(c)) return c;
+  return p;
 }
 
 export interface Launchd {

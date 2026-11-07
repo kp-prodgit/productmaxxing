@@ -70,7 +70,7 @@ describe("0.10.1: runs that fail say why, and doctor catches it first", () => {
     const env = jobEnv(p);
     expect(env.PATH.split(":")[0]).toBe(bin);
     expect(env.PMX_CLAUDE).toBe(join(bin, "claude"));
-    expect(jobEnv(plist({ node: "n", cli: "c", pmxHome: "/h", home: "/h" }))).toEqual({ PATH: "/h/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", PMX_CLAUDE: null });
+    expect(jobEnv(plist({ node: "n", cli: "c", pmxHome: "/h", home: "/h" }))).toEqual({ PATH: "/h/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", PMX_CLAUDE: null, node: "n" });
   });
 
   it("fails doctor when the background job can't find Claude Code, though the shell can", async () => {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { recordSpend } from "../budget/provider.js";
+import { checkBudget, recordSpend } from "../budget/provider.js";
 import type { Ctx } from "../core/context.js";
 import { privateDir, readJson, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
@@ -121,8 +121,9 @@ export async function refreshTodos(ctx: Ctx, o: { since?: Date; dryRun?: boolean
     : `The PM's handle is ${ctx.personal.handle}. Their name isn't known yet, so only include to-dos clearly addressed to the person taking notes.`;
   const { tag, block } = dataBlock(work);
   const prompt = [skillBody(skill.text), "", who, `Today is ${now.toISOString().slice(0, 10)}.`, DATA_RULES(tag), "", block].join("\n");
+  await checkBudget(ctx);
   const r = await ctx.runtime.run({ team: ctx.team, cwd: ctx.personal.repoPath, prompt, tools: [], maxTurns: 1 });
-  await updateState((s) => recordSpend(s, ctx.personal, now, r.costUsd));
+  await updateState((s) => recordSpend(s, ctx.personal, now, r.costUsd, r.tokens));
   receipt.model = {
     name: ctx.team.model, runtime: ctx.runtime.name, tools: "none: no files, no web, no personal Claude settings",
     costUsd: r.costUsd, tokens: r.tokens, durationMs: r.durationMs, promptSha256: createHash("sha256").update(prompt).digest("hex"),

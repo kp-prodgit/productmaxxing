@@ -9,13 +9,17 @@ import { parseRubric, type SizeRubric } from "../core/skillcheck.js";
 import { loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
 import { updateState } from "../core/state.js";
 import { SIZES, type CandidateTask, type SignalItem, type Size } from "../core/types.js";
-import { recordSpend } from "../budget/provider.js";
+import { checkBudget, recordSpend } from "../budget/provider.js";
 import { gather } from "../digest/gather.js";
 import { planMeetings, startOfDay } from "../meetings/ledger.js";
 import type { MeetingEntry } from "../tracker/types.js";
+import { stageProposals } from "./proposals.js";
 
 export interface SynthResult {
+  /** Dry run: what would be proposed. */
   posted: { identifier: string; title: string }[];
+  /** Proposed tasks waiting for the PM's approval (APPROVE-1). Nothing reaches the tracker before that. */
+  staged: { id: string; title: string }[];
   skipped: string[];
   held: number;
   /** The meeting ledger (MEET-2): lodged and finished now, already done by someone, claimed elsewhere, before the window. */
@@ -51,6 +55,36 @@ export function checkSizing(t: { category: string; size: Size; sources: string[]
   return { cell, expectedCell, why, flags };
 }
 
+/**
+ * Rules PMX adds to every synthesis prompt, whatever the team's copy of the skill says (PRIV-6): the description is
+ * all a teammate sees in the tracker, so it's a summary, never the transcript.
+ */
+export const OUTPUT_RULES = `## Rules PMX enforces
+- \`rationale\` is the task's whole description in the tracker: two to four sentences, in your own words, on what the task needs and why. Never quote a source. No names, speaker labels (like "Microphone:"), transcript lines or anything said about a person.
+- Cite only sources that directly support the task. One source is fine; never add an unrelated one.
+- Give \`support\`: an object with one sentence per cited source ID on how that source supports the task. PMX drops any source without one, and any task left with none.`;
+
+/** "Microphone:", "System audio:", "Speaker 2:", "[00:12:03]": transcript markup that must never reach the tracker. */
+const TRANSCRIPT_MARKS = /\b(microphone|system audio|speaker \d+)\s*:|\[\d{1,2}:\d{2}(:\d{2})?\]/i;
+const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+
+/**
+ * Whether `text` repeats a source: eight or more words in a row from any source, or transcript markup (PRIV-6).
+ * Model-written text can echo what it read, so this is checked in code, not left to the prompt.
+ */
+export function quotesSource(text: string, sources: string[], run = 8): boolean {
+  if (TRANSCRIPT_MARKS.test(text)) return true;
+  const w = words(text);
+  if (w.length < run) return false;
+  const grams = new Set<string>();
+  for (let i = 0; i + run <= w.length; i++) grams.add(w.slice(i, i + run).join(" "));
+  return sources.some((src) => {
+    const s = words(src);
+    for (let i = 0; i + run <= s.length; i++) if (grams.has(s.slice(i, i + run).join(" "))) return true;
+    return false;
+  });
+}
+
 export const FLAG_TEXT: Record<SizeFlag, string> = {
   "no-reason": "the model gave no reason for this size",
   "cell-mismatch": "the rubric cell it quoted isn't the one for this category and size",
@@ -59,7 +93,7 @@ export const FLAG_TEXT: Record<SizeFlag, string> = {
 };
 
 /** Pulls the JSON object out of the model's reply and validates every task against team config. */
-export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric): { tasks: CandidateTask[]; skipped: string[] } {
+export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric, sourceText: Map<string, string> = new Map()): { tasks: CandidateTask[]; skipped: string[] } {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < start) throw new Error("Synthesis returned no JSON.");
@@ -68,35 +102,48 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
   const skipped: string[] = [];
   for (const t of (raw.tasks ?? []).slice(0, 10)) {
     const title = oneLine(String(t.title ?? "")).slice(0, 120);
-    const sources = (Array.isArray(t.sources) ? t.sources : []).map(String).filter((id: string) => validIds.has(id));
+    // A source counts only with a reason it supports this task (PRIV-6), so an unrelated meeting isn't cited to fill space.
+    const support = t.support && typeof t.support === "object" ? (t.support as Record<string, unknown>) : {};
+    const cited = [...new Set((Array.isArray(t.sources) ? t.sources : []).map(String).filter((id: string) => validIds.has(id)))] as string[];
+    const sources = cited.filter((id) => oneLine(String(support[id] ?? "")).length >= 10);
+    const rationale = oneLine(String(t.rationale ?? "")).slice(0, 1000);
     if (!title) { skipped.push("untitled task"); continue; }
     if (!categories.includes(t.category)) { skipped.push(`${title}: unknown category ${t.category}`); continue; }
     if (!SIZES.includes(t.size)) { skipped.push(`${title}: bad size ${t.size}`); continue; }
-    if (!sources.length) { skipped.push(`${title}: no valid sources`); continue; }
+    if (!sources.length) { skipped.push(`${title}: ${cited.length ? "no source has a reason it supports the task" : "no valid sources"}`); continue; }
+    const all = [...sourceText.values()];
+    if (quotesSource(`${title} ${rationale}`, all)) { skipped.push(`${title}: its text repeats a meeting word for word, and the tracker gets summaries only`); continue; }
+    const dropped = cited.filter((id) => !sources.includes(id));
+    if (dropped.length) skipped.push(`${title}: dropped source(s) ${dropped.join(", ")} with no reason they support it`);
     const sizing = checkSizing({ category: t.category, size: t.size, sources }, t.sizing, rubric);
-    tasks.push({ title, category: t.category, size: t.size as Size, rationale: oneLine(String(t.rationale ?? "")).slice(0, 1000), sources, sizing });
+    tasks.push({ title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])) });
   }
   return { tasks, skipped };
 }
 
-/** The task description: rationale, cited quotes (redacted) as evidence, and `pmx:source` lines. */
-export function describe(c: CandidateTask, items: SignalItem[]): string {
+/**
+ * The task description (PRIV-6): the model's summary, why it's this size, and when the sources were, never what they
+ * said or what they were called. Which meetings they were stays in the PM's receipt on their Mac.
+ */
+export function describe(c: CandidateTask, items: SignalItem[], receiptId?: string): string {
   const byId = new Map(items.map((i) => [i.id, i]));
-  const quotes = c.sources.map((id) => {
-    const i = byId.get(id)!;
-    const excerpt = i.text.replace(/\s+/g, " ").slice(0, 400);
-    return `- [${id}] ${i.title} (${i.at.slice(0, 10)}): ${excerpt}${i.text.length > 400 ? "…" : ""}`;
-  });
+  const srcs = c.sources.map((id) => byId.get(id)!);
+  const meetings = srcs.filter((i) => i.kind === "transcript").length;
+  const threads = srcs.length - meetings;
+  const kinds = [meetings ? `${meetings === 1 ? "one meeting" : `${meetings} meetings`}` : "", threads ? `${threads === 1 ? "one Slack thread" : `${threads} Slack threads`}` : ""].filter(Boolean).join(" and ");
+  const days = [...new Set(srcs.map((i) => i.at.slice(0, 10)))].sort().join(", ");
   const sz = c.sizing;
   const why = sz
     ? [`**Why size ${c.size}:** ${sz.cell ?? "no rubric cell given"}${sz.why ? `. ${sz.why}` : ""}`, ...sz.flags.map((f) => `**Check the size:** ${FLAG_TEXT[f]}.`), ""]
     : [];
-  return [c.rationale, "", ...why, "**Sources**", "", ...quotes, "", ...c.sources.map((id) => `pmx:source ${id} ${byId.get(id)!.kind === "slack" ? byId.get(id)!.ref : ""}`.trim())].join("\n");
+  const based = `**Based on** ${kinds} (${days}). The sources stay on the PM's Mac${receiptId ? `: \`pmx explain ${receiptId}\` there shows them` : ""}.`;
+  return [c.rationale, "", ...why, based, "", ...c.sources.map((id) => `pmx:source ${id} ${byId.get(id)!.kind === "slack" ? byId.get(id)!.ref : ""}`.trim())].join("\n");
 }
 
 /**
- * `pmx synthesize` (SIG-2, SIG-4). Reads team sources with no tools, proposes sized tasks and
- * posts them to the PMX project's inbox only. A human triages before anything runs (SEC-2).
+ * `pmx synthesize` (SIG-2, SIG-4). Reads team sources with no tools and proposes sized tasks. They wait on this Mac
+ * until the PM approves them (APPROVE-1); only then do they go to the PMX project's inbox, and a human triages
+ * before anything runs (SEC-2).
  */
 export async function synthesize(
   ctx: Ctx, svc: Services,
@@ -109,7 +156,7 @@ export async function synthesize(
     v: 1, id: newReceiptId("synthesize", ctx.now()), type: "synthesize", at: ctx.now().toISOString(), agent: ctx.agent, dryRun: !!o.dryRun,
     outcome: "no-signal", ...g.receipt, skills: [], model: null,
   };
-  const result0: SynthResult = { posted: [], skipped: [], held: totalHeld(g.held), meetings: { processed: [], already: 0, busy: 0, before: 0 } };
+  const result0: SynthResult = { posted: [], staged: [], skipped: [], held: totalHeld(g.held), meetings: { processed: [], already: 0, busy: 0, before: 0 } };
 
   // The team's meeting ledger (MEET-2): skip meetings someone already processed, claim the rest.
   const plan = planMeetings(g.items, await svc.tracker.listMeetings(), since);
@@ -122,6 +169,8 @@ export async function synthesize(
   result0.meetings.already = plan.already.length;
   result0.meetings.before = plan.before.length;
 
+  // Before anything is claimed or lodged, so a paused budget leaves no meeting half-processed (BUDGET-2).
+  if (plan.fresh.length || (!o.skipIfNothingNew && plan.other.length)) await checkBudget(ctx);
   const lodged: { item: SignalItem; entry: MeetingEntry; lease: string }[] = [];
   if (o.dryRun) for (const f of plan.fresh) mark(f.item, "would-process", f.entry?.identifier ?? null);
   else {
@@ -135,9 +184,7 @@ export async function synthesize(
         result0.meetings.busy++;
         continue;
       }
-      const entry = f.entry ?? (await svc.tracker.lodgeMeeting({
-        title: f.item.title, keys: f.item.keys!, at: f.item.at.slice(0, 10), source: f.item.origin?.source ?? "transcript file", agent: ctx.agent,
-      }));
+      const entry = f.entry ?? (await svc.tracker.lodgeMeeting({ keys: f.item.keys!, at: f.item.at.slice(0, 10), agent: ctx.agent }));
       mark(f.item, "processed-now", entry.identifier);
       lodged.push({ item: f.item, entry, lease });
     }
@@ -170,13 +217,14 @@ export async function synthesize(
     skillBody(rubric.text),
     "",
     `Categories you may use: ${categories.join(", ")}.`,
+    OUTPUT_RULES,
     DATA_RULES(tag),
     "",
     block,
   ].join("\n");
 
   const result = await ctx.runtime.run({ team: ctx.team, cwd: ctx.personal.repoPath, prompt, tools: [], maxTurns: 1 });
-  await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), result.costUsd));
+  await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), result.costUsd, result.tokens));
   receipt.model = {
     name: ctx.team.model, runtime: ctx.runtime.name, tools: "none: no files, no web, no personal Claude settings",
     costUsd: result.costUsd, tokens: result.tokens, durationMs: result.durationMs, promptSha256: createHash("sha256").update(prompt).digest("hex"),
@@ -188,42 +236,51 @@ export async function synthesize(
     throw new Error(`Synthesis run failed: ${result.error ?? "unknown"}`);
   }
 
-  const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text));
+  const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])));
   const existing = new Map((await svc.tracker.list()).filter((t) => t.status !== "done").map((t) => [norm(t.title), t.identifier]));
   const posted: SynthResult["posted"] = [];
-  const bySource = new Map<string, string[]>();
+  const bySource = new Map<string, number>();
   // Where each task went, for the receipt and the flow view (FLOW-1).
   const went = new Map<CandidateTask, NonNullable<TaskReceipt["posted"]>>();
+  const fresh: CandidateTask[] = [];
   for (const c of tasks) {
     const dup = existing.get(norm(c.title));
     if (dup) { skipped.push(`${c.title}: already in the PMX project`); went.set(c, { duplicateOf: dup }); continue; }
     if (o.dryRun) { posted.push({ identifier: "(dry run)", title: c.title }); went.set(c, { dryRun: true }); continue; }
-    const t = await svc.tracker.createInbox({ title: c.title, description: describe(c, work), category: c.category, size: c.size, sources: c.sources });
-    posted.push({ identifier: t.identifier, title: t.title });
-    went.set(c, { identifier: t.identifier });
-    for (const id of c.sources) bySource.set(id, [...(bySource.get(id) ?? []), t.identifier]);
-    existing.set(norm(c.title), t.identifier);
+    fresh.push(c);
   }
-  // Mark each lodged meeting complete in the tracker, with the tasks it produced (MEET-2).
+  // APPROVE-1: proposals wait on this Mac, exactly as they'd be written, until the PM approves them.
+  const byId = new Map(work.map((i) => [i.id, i]));
+  const staged = await stageProposals(fresh.map((c) => ({
+    at: ctx.now().toISOString(), receipt: receipt.id, title: c.title, description: describe(c, work, receipt.id), category: c.category, size: c.size, sources: c.sources,
+    from: c.sources.map((id) => ({ id, title: byId.get(id)!.title, at: byId.get(id)!.at, why: c.support?.[id] ?? "" })),
+  })));
+  for (const c of fresh) {
+    const s = staged.find((p) => p.title === c.title);
+    if (!s) { skipped.push(`${c.title}: already waiting for your approval`); continue; }
+    went.set(c, { staged: s.id });
+    for (const id of c.sources) bySource.set(id, (bySource.get(id) ?? 0) + 1);
+  }
+  // Mark each lodged meeting processed in the tracker (MEET-2). The tasks it led to aren't named: they aren't in the tracker yet.
   for (const l of lodged) {
-    const made = bySource.get(l.item.id) ?? [];
+    const made = bySource.get(l.item.id) ?? 0;
     await svc.tracker.finishMeeting(l.entry.id, {
-      status: "done", tasks: made,
-      note: made.length ? `PMX processed this meeting: ${made.length} suggested task(s), ${made.join(", ")}. See why with \`pmx explain ${receipt.id}\` on ${ctx.agent}.` : "PMX processed this meeting: nothing in it fits a PMX task.",
+      status: "done", tasks: [],
+      note: made ? `PMX processed this meeting and proposed ${made} task(s) to ${ctx.agent}, who approves them before any reaches the tracker.` : "PMX processed this meeting: nothing in it fits a PMX task.",
     });
-    result0.meetings.processed.push({ entry: l.entry.identifier, tasks: made });
+    result0.meetings.processed.push({ entry: l.entry.identifier, tasks: [] });
   }
   await release();
 
-  receipt.outcome = o.dryRun ? "dry-run" : "posted";
+  receipt.outcome = o.dryRun ? "dry-run" : staged.length ? "staged" : "posted";
   receipt.synth = { tasks: tasks.map((c) => ({ title: c.title, category: c.category, size: c.size, sources: c.sources, sizing: c.sizing ?? null, ...(went.get(c) ? { posted: went.get(c) } : {}) })), skipped };
   await writeReceipt(receipt, ctx.now());
   if (!o.dryRun) {
     await updateState((s) => (s.lastSynthAt = ctx.now().toISOString()));
     await new RunLogStore(ctx).record({
-      type: "synthesize", agent: ctx.agent, machine: ctx.personal.machineId, receipt: receipt.id, posted: posted.length, held: totalHeld(g.held),
+      type: "synthesize", agent: ctx.agent, machine: ctx.personal.machineId, receipt: receipt.id, posted: staged.length, held: totalHeld(g.held),
       durationMs: result.durationMs, tokens: result.tokens, costUsd: result.costUsd,
     });
   }
-  return { ...result0, posted, skipped };
+  return { ...result0, posted, staged: staged.map((p) => ({ id: p.id, title: p.title })), skipped };
 }

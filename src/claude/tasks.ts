@@ -69,12 +69,21 @@ export const taskFile = (id: string) => join(claudeAppHome(), "scheduled-tasks",
 
 export type TaskState = "missing" | "outdated" | "current";
 
-/** Whether the task's file exists and still holds PMX's current prompt. An outdated one gets the new prompt from /pmx-schedule. */
+/** The description PMX gives each task in the Claude app. */
+export const taskDescription = (t: ClaudeTask) => `Product Git: ${t.why}.`;
+
+/**
+ * Whether the task's file exists and still holds PMX's current prompt and description. An outdated one gets both
+ * from /pmx-schedule. A file with no description line (older Claude apps) is judged by its prompt only.
+ */
 export async function taskState(t: ClaudeTask): Promise<TaskState> {
   const raw = await readFile(taskFile(t.id), "utf8").catch(() => null);
   if (raw === null) return "missing";
+  const front = raw.match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? "";
   const body = raw.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
-  return body === t.prompt.trim() ? "current" : "outdated";
+  const description = front.match(/^description:\s*(.*)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "");
+  if (body !== t.prompt.trim()) return "outdated";
+  return description === undefined || description === taskDescription(t) ? "current" : "outdated";
 }
 
 type Test = (n: number) => boolean;
@@ -150,7 +159,7 @@ export async function tasksJson(team: TeamConfig | null, keychain: Keychain) {
   for (const t of await neededTasks(team, keychain)) {
     const state = await taskState(t);
     if (state === "current") present.push(t.id);
-    else (state === "missing" ? missing : outdated).push({ taskId: t.id, title: t.title, description: `Product Git: ${t.why}.`, cronExpression: t.cron, prompt: t.prompt });
+    else (state === "missing" ? missing : outdated).push({ taskId: t.id, title: t.title, description: taskDescription(t), cronExpression: t.cron, prompt: t.prompt });
   }
   return { missing, outdated, present, allowRulesMissing: await missingAllowRules() };
 }

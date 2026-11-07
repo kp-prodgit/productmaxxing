@@ -2,6 +2,26 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.14.0: private meetings stay private, and you approve what reaches Linear
+
+From a tester's first real run: internal 1:1s and a hiring interview were treated as customer calls, task issues carried raw transcript text, every processed meeting showed up in Linear under its own title, a $0 budget paused some commands but not others, and the board stayed empty.
+
+- **Company domain, or nothing (B2).** A call counts as a customer call only when someone outside your company's email domains attended. PMX now adds your own work domain to the team's `internalDomains`, and `pmx init` asks for it. With no domain known, PMX holds every meeting instead of treating colleagues as outsiders, and `pmx doctor` fails. Before, an empty `internalDomains` made every attendee look external.
+- **More meetings held whole.** A title about 1:1s, hiring or interviews, performance, pay or health holds the whole meeting from team tasks, as does a two-person meeting whose title names two people ("Sam / Priya"). A meeting that returns to one of those topics in two or more passages is held whole too; one passage is still just cut. Hiring and interviews are a new topic; "customer interview" and other research interviews are not held. Your own to-dos still read 1:1s.
+- **You approve every task before it reaches Linear (APPROVE-1).** `pmx synthesize` and the background job now stage proposed tasks on your Mac. `pmx proposals` shows each one exactly as Linear would get it, plus, for you only, which meetings it came from and why. `pmx proposals approve 1 3` (or `--all`) sends them to the PMX inbox; `drop` discards them.
+- **Summaries, never transcripts (PRIV-6).** A task's description is a short summary in the model's words, its size reasoning, and how many sources it has and when they were. No excerpts, titles, speaker labels or quotes. PMX adds these rules to every synthesis prompt, even when your team's copy of the skill is older. It refuses a description that repeats eight words in a row from a meeting, and drops any cited source the model can't say supports the task. A task with one source says so.
+- **Processed meetings are opaque in Linear.** The marker that stops two teammates processing the same meeting is now titled "Processed meeting m1a2b3c4d", with only the date and who processed it.
+- **Take back what older versions wrote (TIDY-1).** `pmx linear written` lists every issue PMX wrote and flags old ones. `pmx linear tidy` rewrites task descriptions without meeting excerpts and gives markers opaque titles. `pmx linear withdraw PMX-12` moves an issue to canceled and replaces its text. Each asks first, and nothing is deleted. Linear may keep earlier text in an issue's history.
+- **A dollar cap is optional (BUDGET-1).** On a Claude plan the dollars are Claude Code's estimate at API list prices, not a bill, so `pmx init` sets no cap of your own; your team's cap still applies. On an API key, Bedrock or Vertex it still asks. `pmx status` and the new `pmx budget` show tokens first and say what the dollars mean. `pmx budget set 10`, `pmx budget off` and `pmx budget set 0` (pause) change it without editing files.
+- **One budget check for every run (BUDGET-2).** To-dos, the digest, synthesis, the company roll-up, the brain and pulls all stop the same way at a $0 or used-up cap, before any meeting is claimed. Before, `pmx todo` and `pmx synthesize` ran anyway, and the digest wasn't counted at all. `pmx doctor` warns, `pmx status` says "PAUSED", and the background job reports it once per pass instead of as a failure.
+- **The board explains itself (BOARD-2).** Every Linear sync makes sure PMX's labels exist, and `pmx doctor` names missing ones. An empty board says why: no PMX labels yet, or no approved tasks yet.
+- **Setup fixes.**
+  - A Linear link pasted as the team key or project ID now works: PMX keeps the key or the project's slug, in `pmx init` and in existing configs, and the sync check treats a link and its slug as the same project.
+  - The sync records its real time: PMX stamps it from the snapshot file, instead of trusting a time the model may not know.
+  - The background job uses Homebrew's stable Node link (`…/opt/node/bin/node`), so `brew upgrade node` doesn't break it. `pmx doctor` fails when the job's Node or Claude Code path no longer exists, and warns on a versioned one; run `pmx init` again to fix either.
+  - `pmx schedule` and `/pmx-schedule` update a scheduled task whose description is stale, not only its prompt.
+  - `pmx todo --refresh` says how to read earlier meetings when it finds none today.
+
 ## 0.13.0: no more working hours
 
 - **PMX works whenever this Mac is on and awake.** Your daily spend cap still limits it, along with the review cap. Pulls no longer stop "outside your working hours".

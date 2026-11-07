@@ -13,12 +13,14 @@ import type { Exec } from "../core/exec.js";
 import { privateDir, readJson } from "../core/fsutil.js";
 import { Git } from "../core/git.js";
 import type { Keychain } from "../core/keychain.js";
-import { plist, type Launchd } from "../core/launchd.js";
+import { plist, stableNode, type Launchd } from "../core/launchd.js";
 import { paths, pmxHome } from "../core/paths.js";
 import { writeProfile } from "../core/profile.js";
 import { scaffoldRepo } from "../core/scaffold.js";
 import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
 import type { Out } from "../core/context.js";
+import { cleanDomain, companyDomains } from "../core/filter.js";
+import { linearRef } from "../core/config.js";
 
 export interface InviteFile {
   version: 1;
@@ -130,9 +132,10 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     if (!(await ask.confirm("This repo has no pmx.config.json. Set it up as a new PMX repo?", true)))
       throw new Error("A PMX repo needs pmx.config.json. Ask your team lead for the repo or an invite file.");
     const teamName = await askValid(d, "Team name", "product", (a) => (/^\w[\w .-]{0,39}$/.test(a) ? null : "Use up to 40 letters, numbers, spaces, dots or dashes"));
-    const linearTeamKey = (d.invite?.team.linearTeamKey ?? (await askValid(d, "Linear team key, like ENG (blank for none yet)", "", (a) => (!a || /^[a-z][a-z0-9]{0,9}$/i.test(a) ? null : "A Linear team key is a short code like ENG or PRO2")))).toUpperCase();
+    // A pasted Linear link works too: PMX keeps only the team key or the project's slug (the connector takes no URLs).
+    const linearTeamKey = linearRef("team", d.invite?.team.linearTeamKey ?? (await askValid(d, "Linear team key, like ENG, or the team's Linear link (blank for none yet)", "", (a) => (!a || /^[a-z][a-z0-9]{0,9}$/i.test(linearRef("team", a)) ? null : "A Linear team key is a short code like ENG or PRO2")))).toUpperCase();
     const linearProjectId = linearTeamKey
-      ? d.invite?.team.linearProjectId ?? (await askValid(d, "Linear PMX project ID (blank to add later)", "", (a) => (!a || (/^[\w-]{3,}$/.test(a) && !looksLikeCommand(a)) ? null : "Paste the project's ID from Linear")))
+      ? linearRef("project", d.invite?.team.linearProjectId ?? (await askValid(d, "Linear PMX project ID or link (blank to add later)", "", (a) => (!a || (/^[\w-]{3,}$/.test(linearRef("project", a)) && !looksLikeCommand(a)) ? null : "Paste the project's ID or its link from Linear"))))
       : "";
     newRepo = { team: teamName, tracker: linearTeamKey && linearProjectId ? { kind: "linear", teamKey: linearTeamKey, projectId: linearProjectId } : { kind: "none" } };
     team = validateTeamConfig({ ...DEFAULT_TEAM, ...newRepo });
@@ -152,10 +155,27 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     return unknown.length ? `Unknown: ${unknown.join(", ")}. Pick from ${cats.join(", ")}` : split(a).length ? null : "Pick at least one";
   }));
   const cap = team.caps.perDayUsd;
-  const dailyUsd = Number(await askValid(d, `Daily spend cap for your agent's runs, in USD (0 pauses it; your team allows up to ${cap})`, String(existing?.budget.dailyUsd ?? Math.min(10, cap)), (a) => {
+  // BUDGET-1: on a Claude plan the dollars are an estimate at list prices, not a bill, so there's no cap of PMX's own by default.
+  const billed = isBilledPlan(plan);
+  const capDefault = existing ? (existing.budget.dailyUsd === null ? "" : String(existing.budget.dailyUsd)) : billed ? String(Math.min(10, cap)) : "";
+  const capAnswer = await askValid(d, billed
+    ? `Daily spend cap for PMX's runs, in USD (your team allows up to ${cap})`
+    : `Daily cap on PMX's usage, in USD at API list prices (blank for none: your Claude plan's own limits apply, and your team's cap of $${cap})`, capDefault, (a) => {
     const n = Number(a);
+    if (a === "" && !billed) return null;
     return a === "" || !Number.isFinite(n) || n < 0 ? "Enter a number of dollars, like 10" : n > cap ? `Your team allows at most ${cap} a day` : null;
-  }));
+  });
+  const dailyUsd = capAnswer === "" ? null : Number(capAnswer);
+  if (dailyUsd === 0) out.warn("A cap of 0 pauses every PMX run until you raise it with `pmx budget set <dollars>`.");
+
+  // B2: the company's own domains tell colleagues from customers. Without one PMX holds every meeting.
+  const workEmail = (await d.exec("git", ["config", "--get", "user.email"]).catch(() => null))?.stdout.trim() ?? "";
+  const known = companyDomains(team.internalDomains, { companyDomains: existing?.companyDomains, emails: [...(existing?.identity?.emails ?? []), workEmail] });
+  const domains = split(await askValid(d, "Your company's email domains, like acme.com (meetings with only these people are internal and never reach the team)", known.join(", "), (a) => {
+    const bad = split(a).filter((x) => !cleanDomain(x));
+    return bad.length ? `"${bad[0]}" isn't an email domain like acme.com` : null;
+  })).map((x) => cleanDomain(x)!);
+  if (!domains.length) out.warn("No company domain: PMX holds every meeting from team tasks until you add one.");
 
   // 3. Sources (default-deny, B2).
   const transcriptDirs = team.allowedSources.includes("transcripts")
@@ -181,6 +201,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     categories,
     workingHours: ALWAYS,
     budget: { dailyUsd, resetHour: existing?.budget.resetHour ?? 0, overrideUsd: null },
+    companyDomains: domains,
     sources: { transcriptDirs, slackChannel },
     neverIngest: { people, channels, meetingTitles },
     crmNamesFile: existing?.crmNamesFile ?? null,
@@ -196,7 +217,8 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     `  PMX repo       ${repoPath} (${repoNote}, team "${team.team}", ${tracker})`,
     `  You            ${handle}, ${plan} plan`,
     `  Agent work     ${categories.join(", ")}`,
-    `  Spend          up to $${dailyUsd} a day${dailyUsd === 0 ? " (paused)" : ""}; PMX works whenever this Mac is on and awake`,
+    `  Spend          ${dailyUsd === null ? `no cap of your own (team cap $${cap} a day, estimated at list prices)` : `up to $${dailyUsd} a day${dailyUsd === 0 ? " (paused)" : ""}`}; PMX works whenever this Mac is on and awake`,
+    `  Company        ${domains.join(", ") || "no domain set: every meeting is held from team tasks"}`,
     `  Transcripts    ${transcriptDirs.join(", ") || "none"}`,
     ...(team.allowedSources.includes("slack") ? [`  Slack digest   ${slackChannel ?? "none"}`] : []),
     `  Never ingest   ${count(people.length, "person", "people")}, ${count(meetingTitles.length, "meeting title")}, ${count(channels.length, "channel")}`,
@@ -210,7 +232,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
       await d.exec("git", ["init", "-q", "-b", "main", repoPath]);
     }
     const git = new Git(repoPath, d.exec);
-    const created = await scaffoldRepo(repoPath, newRepo);
+    const created = await scaffoldRepo(repoPath, { ...newRepo, internalDomains: domains });
     // Teammates and CI install the CLI from the repo, so they don't need npm access to it.
     await vendorCli(repoPath, d.exec).then(
       () => created.push(VENDORED_CLI),
@@ -253,7 +275,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
   if (await ask.confirm("Register the background job (runs `pmx tick` every 30 minutes)?", true)) {
     await mkdir(paths.logs(), { recursive: true });
     const claude = await claudeAbsolutePath(d.exec);
-    await d.launchd.install(plist({ node: process.execPath, cli: d.cliPath, pmxHome: pmxHome(), claude }));
+    await d.launchd.install(plist({ node: await stableNode(process.execPath), cli: d.cliPath, pmxHome: pmxHome(), claude }));
     out.info(`Registered launchd job com.productgit.pmx${claude ? `, using Claude Code at ${claude}` : ""}.`);
   }
   if (d.invite && d.onInvite) await d.onInvite(d.invite);
@@ -289,9 +311,13 @@ export async function nextSteps(team: TeamConfig, personal: PersonalConfig): Pro
     ? "  1. Open the Claude desktop app (Code tab), start a session with auto mode off, and type /pmx-schedule. Claude creates PMX's scheduled tasks; click \"Run now\" on each once."
     : "  1. Run `pmx schedule` and paste what it prints into the Claude desktop app (Code tab), in a session with auto mode off.");
   lines.push(`  2. Put call transcripts in ${personal.sources.transcriptDirs[0] ?? "a transcripts folder"} and run \`pmx digest\`.`);
-  lines.push("  3. See where your data goes (meetings read and held, tasks, Linear, agent runs, spend) with `pmx flow --web`.");
+  lines.push("  3. Tasks PMX proposes from your calls wait for you: `pmx proposals` shows each exactly as Linear would get it. Nothing reaches Linear until you approve.");
+  lines.push("  4. See where your data goes (meetings read and held, tasks, Linear, agent runs, spend) with `pmx flow --web`.");
   const shared = boardUrl(team, personal);
   if (shared) lines.push(`Your team's board: ${shared.url}`);
   else if ((await checkBoard(team)).ok && (await appSkillInstalled(BOARD_SKILL))) lines.push("For the team board, type /pmx-board in the Claude app: Claude publishes it as a live artifact that reads Linear through your Linear connector.");
   return lines.join("\n");
 }
+
+/** Plans billed per token, where PMX's dollar figures are real charges (BUDGET-1). */
+export const isBilledPlan = (p: Plan) => p === "api" || p === "bedrock" || p === "vertex";

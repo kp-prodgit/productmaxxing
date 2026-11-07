@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Asker } from "../../../src/core/ask.js";
-import { budget, recordSpend } from "../../../src/budget/provider.js";
+import { budget, checkBudget, recordSpend } from "../../../src/budget/provider.js";
 import { analyticsOn, cloudTarget } from "../../../src/cloud/account.js";
 import { Cloud } from "../../../src/cloud/client.js";
 import { postEvents } from "../../../src/cloud/events.js";
@@ -267,8 +267,9 @@ export async function brainPass(ctx: Ctx, svc: Services, o: { policy: BrainPolic
     block,
   ].join("\n");
 
+  await checkBudget(ctx);
   const result = await ctx.runtime.run({ team: ctx.team, cwd: ctx.personal.repoPath, prompt, tools: [], maxTurns: 1 });
-  await updateState((s) => recordSpend(s, ctx.personal, now, result.costUsd));
+  await updateState((s) => recordSpend(s, ctx.personal, now, result.costUsd, result.tokens));
   receipt.model = { name: ctx.team.model, costUsd: result.costUsd, tokens: result.tokens, durationMs: result.durationMs, promptSha256: createHash("sha256").update(prompt).digest("hex") };
   if (!result.ok) {
     receipt.error = result.error ?? "unknown";

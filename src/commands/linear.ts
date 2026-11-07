@@ -9,6 +9,8 @@ import { linearAccess } from "../linear/access.js";
 import { linearLogin, linearLogout, readGrant } from "../linear/oauth.js";
 import { checkRelay, readOutbox, readSnapshot, relayPrompt } from "../tracker/relay.js";
 import type { Command } from "./index.js";
+import { services } from "../core/services.js";
+import { WITHDRAWN, writtenByPmx } from "../tracker/tidy.js";
 
 async function openUrl(url: string) {
   await exec("open", [url]);
@@ -34,8 +36,8 @@ export const linearCommands: Command[] = [
   {
     name: "linear",
     summary: "How PMX reaches Linear: through your Claude app's Linear connector (no key or sign-in) by default",
-    usage: "pmx linear status | pmx linear relay --prompt | pmx linear relay --check | pmx linear key (advanced: store a Linear API key)",
-    options: { prompt: { type: "boolean" }, check: { type: "boolean" } },
+    usage: "pmx linear status | pmx linear written [--json] | pmx linear tidy [--yes] | pmx linear withdraw <PMX-12 …> [--yes] | pmx linear relay --prompt | --check | pmx linear key (advanced: store a Linear API key)",
+    options: { prompt: { type: "boolean" }, check: { type: "boolean" }, json: { type: "boolean" }, yes: { type: "boolean", short: "y" } },
     async run(a) {
       const sub = a.positionals[0] ?? "status";
       if (sub === "login") {
@@ -73,7 +75,40 @@ export const linearCommands: Command[] = [
         console.log(`Linear: ${await linearMode(ctx)}`);
         return 0;
       }
-      throw new Error(`Unknown subcommand "${sub}". Use status, relay or key.`);
+      // TIDY-1: what PMX wrote, and taking it back. Never deletes; the PM confirms each batch.
+      if (sub === "written" || sub === "tidy" || sub === "withdraw") {
+        const svc = await services(ctx);
+        const all = await writtenByPmx(svc.tracker);
+        if (sub === "written") {
+          if (a.values.json) console.log(JSON.stringify(all.map(({ fix: _f, ...w }) => w), null, 2));
+          else {
+            console.log(all.length ? `PMX wrote ${all.length} issue(s) in the PMX project:` : "PMX hasn't written anything to the PMX project.");
+            for (const w of all) console.log(`${w.problems.length ? "!" : "·"} ${w.identifier} ${w.kind === "meeting" ? "(processed-meeting marker) " : ""}${w.title}${w.problems.length ? `: ${w.problems.join("; ")}` : ""}`);
+            if (all.some((w) => w.problems.length)) console.log("\nRewrite the flagged ones to what PMX writes now: pmx linear tidy. Take a task back entirely: pmx linear withdraw <identifier>.");
+          }
+          return 0;
+        }
+        if (sub === "tidy") {
+          const todo = all.filter((w) => w.fix);
+          if (!todo.length) { console.log("Nothing to tidy: every issue PMX wrote is in today's form."); return 0; }
+          console.log(`PMX will rewrite ${todo.length} issue(s): task descriptions lose their meeting excerpts, and processed-meeting markers get an opaque title and no meeting details.`);
+          for (const w of todo) console.log(`  ${w.identifier} ${w.title}${w.fix!.title ? ` → ${w.fix!.title}` : ""}`);
+          if (!a.values.yes && !(await a.ask.confirm("Rewrite them?", false))) { console.log("Nothing changed."); return 0; }
+          for (const w of todo) await svc.tracker.rewrite(w.id, w.fix!);
+        } else {
+          const refs = a.positionals.slice(1).map((r) => r.toUpperCase());
+          if (!refs.length) throw new Error("Say which issues: pmx linear withdraw PMX-12 PMX-13.");
+          const hit = all.filter((w) => refs.includes(w.identifier.toUpperCase()));
+          const missing = refs.filter((r) => !hit.some((w) => w.identifier.toUpperCase() === r));
+          if (missing.length) throw new Error(`Not an issue PMX wrote in the PMX project: ${missing.join(", ")}. See them with \`pmx linear written\`.`);
+          console.log(`PMX will move ${hit.map((w) => w.identifier).join(", ")} to canceled and replace each description with a short note. Nothing is deleted.`);
+          if (!a.values.yes && !(await a.ask.confirm("Withdraw them?", false))) { console.log("Nothing changed."); return 0; }
+          for (const w of hit) await svc.tracker.rewrite(w.id, { description: WITHDRAWN, cancel: true });
+        }
+        console.log(svc.tracker.kind === "claude-relay" ? "Queued. The next \"PMX: sync Linear through Claude\" run applies it in Linear." : "Done in Linear.");
+        return 0;
+      }
+      throw new Error(`Unknown subcommand "${sub}". Use status, written, tidy, withdraw, relay or key.`);
     },
   },
   {

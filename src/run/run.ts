@@ -115,7 +115,7 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
       checklist: { ok: checklist.ok, problems: checklist.problems },
     };
 
-    await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), result.costUsd));
+    await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), result.costUsd, result.tokens));
     await log.record({
       type: "run", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier, category, size: task.size!,
       skill: skillName, skillVersion: skill.version, outcome, durationMs: result.durationMs, tokens: result.tokens,

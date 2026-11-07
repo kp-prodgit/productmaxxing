@@ -24,7 +24,7 @@ async function setUp(asks: Record<string, string | boolean> = {}) {
   const keychain = memoryKeychain();
   const launchd = fakeLaunchd();
   const personal = await runInit({
-    ask: scriptedAsker({ "PMX repo checkout": repo, "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), ...asks }),
+    ask: scriptedAsker({ "PMX repo checkout": repo, "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), "email domains": "acme.com", ...asks }),
     keychain, launchd, exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x/cli.js",
   });
   const team: TeamConfig = { ...(await loadTeamConfig(repo)), tracker: linear };

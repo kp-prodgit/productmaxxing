@@ -278,7 +278,7 @@ async function loadRules() {
           h("p", "small muted", "Sources your team allows: " + r.allowedSources.join(", ") + (r.slackChannels.length ? " · Slack channels: " + r.slackChannels.join(", ") : ""))),
         h("div", "card", h("h3", null, "2. Customer calls only"),
           h("p", "small", "A call is used only if at least one participant has an email outside your company's domains. A file with no participant list is left out."),
-          list(r.internalDomains, "No company domains set, so anyone with an email counts as outside. Add yours to internalDomains in pmx.config.json.")),
+          list(r.internalDomains, "No company domain set, so PMX holds every call: it can't tell a customer from a colleague. Run pmx init, or add yours to internalDomains in pmx.config.json.")),
         h("div", "card", h("h3", null, "3. Your do-not-read list"),
           h("p", "small", "Anything involving these people, meeting titles or channels is left out. Only you see this list; receipts record how many entries it has, not what they are."),
           h("p", "small muted", "People"), list(r.neverIngest.people, "None"),

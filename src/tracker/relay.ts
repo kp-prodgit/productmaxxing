@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { TeamConfig } from "../core/config.js";
+import { linearRef, type TeamConfig } from "../core/config.js";
 import { privateDir, readJson, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
 import { CANARY_REFUSAL, hasCanary } from "../core/canary.js";
-import type { Size, Status, Task } from "../core/types.js";
+import { SIZES, STATUSES, type Size, type Status, type Task } from "../core/types.js";
 import { GROUPS, kindOf, toMeeting, toTask } from "./linear.js";
-import { meetingDescription, type MeetingEntry, type NewMeeting, type NewTask, type Tracker } from "./types.js";
+import { meetingDescription, meetingTitle, type MeetingEntry, type NewMeeting, type NewTask, type Tracker } from "./types.js";
 
 /**
  * The Claude relay (LINEAR-2): when a PM has no Linear key or sign-in, a scheduled task in their Claude
@@ -37,7 +37,8 @@ export type RelayOp =
   | { id: string; at: string; kind: "comment"; target: string; body: string }
   | { id: string; at: string; kind: "append-description"; target: string; line: string }
   | { id: string; at: string; kind: "lodge-meeting"; title: string; description: string; agent: string }
-  | { id: string; at: string; kind: "finish-meeting"; target: string; status: "done" | "blocked"; lines: string[]; comment: string };
+  | { id: string; at: string; kind: "finish-meeting"; target: string; status: "done" | "blocked"; lines: string[]; comment: string }
+  | { id: string; at: string; kind: "rewrite"; target: string; title?: string; description?: string; cancel?: boolean };
 type NewOp = RelayOp extends infer O ? (O extends RelayOp ? Omit<O, "id" | "at"> : never) : never;
 
 export interface Snapshot {
@@ -46,6 +47,16 @@ export interface Snapshot {
   projectId: string;
   /** Issue nodes in the Linear API's shape: id, identifier, title, description, url, priority, createdAt, labels.nodes[{name, parent{name}}], comments.nodes[{body}]. */
   issues: any[];
+  /** The team's PMX labels as "group/name", so doctor can say which are missing (BOARD-2). Absent from older syncs. */
+  labels?: string[];
+}
+
+/** Every label PMX and the board use, as "group/name" (BOARD-2). The sync creates any that are missing. */
+export function pmxLabels(team: TeamConfig): string[] {
+  return [
+    ...STATUSES.map((s) => `${GROUPS.status}/${s}`), ...SIZES.map((s) => `${GROUPS.size}/${s}`),
+    ...Object.keys(team.categories).map((c) => `${GROUPS.category}/${c}`), `${GROUPS.kind}/meeting`,
+  ];
 }
 
 interface Outbox {
@@ -108,7 +119,10 @@ export function overlay(snap: Snapshot, ops: RelayOp[]): any[] {
     else if (op.kind === "set-priority") n.priority = op.priority;
     else if (op.kind === "comment") n.comments.nodes.push({ body: op.body });
     else if (op.kind === "append-description") n.description = `${n.description ?? ""}\n${op.line}`;
-    else if (op.kind === "finish-meeting") {
+    else if (op.kind === "rewrite") {
+      if (op.cancel) nodes.splice(nodes.indexOf(n), 1);
+      else Object.assign(n, op.title ? { title: op.title } : {}, op.description !== undefined ? { description: op.description } : {});
+    } else if (op.kind === "finish-meeting") {
       label(n, GROUPS.status, op.status);
       n.description = [n.description ?? "", ...op.lines].join("\n");
       n.comments.nodes.push({ body: op.comment });
@@ -120,12 +134,16 @@ export function overlay(snap: Snapshot, ops: RelayOp[]): any[] {
 export function relayTracker(team: TeamConfig, warn: (m: string) => void = () => {}, now: () => Date = () => new Date()): Tracker {
   if (team.tracker.kind !== "linear") throw new Error("The Claude relay needs a Linear tracker in pmx.config.json.");
   const projectId = team.tracker.projectId;
+  let warned = false;
 
   async function state() {
     const snap = await readSnapshot();
     if (!snap) throw new Error("Claude hasn't synced Linear for PMX yet. Run the \"PMX: sync Linear through Claude\" task in your Claude app (`pmx schedule` shows how to set it up).");
-    if (snap.projectId !== projectId) throw new Error(`The Linear snapshot is for project ${snap.projectId}, not this team's ${projectId}. Run the sync task again.`);
-    if (now().getTime() - Date.parse(snap.syncedAt) > STALE_MS) warn(`Linear was last synced by Claude at ${snap.syncedAt}; tasks may be out of date.`);
+    if (linearRef("project", snap.projectId) !== projectId) throw new Error(`The Linear snapshot is for project ${snap.projectId}, not this team's ${projectId}. Run the sync task again.`);
+    if (!warned && now().getTime() - Date.parse(snap.syncedAt) > STALE_MS) {
+      warned = true;
+      warn(`Linear was last synced by Claude at ${snap.syncedAt}; tasks may be out of date.`);
+    }
     const outbox = await readOutbox();
     return { snap, outbox, nodes: overlay(snap, outbox.ops) };
   }
@@ -180,8 +198,12 @@ export function relayTracker(team: TeamConfig, warn: (m: string) => void = () =>
       return (await state()).nodes.filter((n) => kindOf(n) === "meeting").map(toMeeting);
     },
     async lodgeMeeting(m: NewMeeting): Promise<MeetingEntry> {
-      const op = await enqueue({ kind: "lodge-meeting", title: `Meeting · ${m.title} · ${m.at}`, description: meetingDescription(m), agent: m.agent });
+      const op = await enqueue({ kind: "lodge-meeting", title: meetingTitle(m), description: meetingDescription(m), agent: m.agent });
       return toMeeting((await state()).nodes.find((n) => n.id === ref(op.id)));
+    },
+    async rewrite(id, o) {
+      const n = await nodeFor(id);
+      await enqueue({ kind: "rewrite", target: target(n), ...o });
     },
     async finishMeeting(id, f) {
       const n = await nodeFor(id);
@@ -198,9 +220,15 @@ export async function relayPrompt(team: TeamConfig): Promise<string> {
   await privateDir(relayDir());
   const outbox = await readOutbox();
   const { teamKey, projectId } = team.tracker;
+  const byGroup = new Map<string, string[]>();
+  for (const l of pmxLabels(team)) { const [g, n] = l.split("/") as [string, string]; byGroup.set(g, [...(byGroup.get(g) ?? []), n]); }
   return `# Sync Product Git (PMX) with Linear
 
 Use the Linear connector. Work only in Linear team ${teamKey}, project ${projectId}. Never change any other issue, project or team, and never delete anything.
+
+## 0. Make sure PMX's labels exist
+In team ${teamKey}, each of these label groups must exist with these labels inside it. Create any group or label that's missing; leave every other label alone.
+${[...byGroup].map(([g, ns]) => `- ${g}: ${ns.join(", ")}`).join("\n")}
 
 ## 1. Apply PMX's changes
 ${outbox.ops.length ? `Read ${files.outbox()}. Apply each operation in \`ops\`, in order, exactly as written:` : "There are no changes to apply. Skip to step 2."}
@@ -211,6 +239,7 @@ ${outbox.ops.length ? `- \`create-task\`: create an issue in project ${projectId
 - \`append-description\`: add the line to the end of the target's description, on its own line.
 - \`lodge-meeting\`: create an issue in project ${projectId} with the title and description verbatim and labels pmx-kind: meeting, pmx-status: running, pmx-agent: <agent>.
 - \`finish-meeting\`: on the target, add each of \`lines\` to the end of the description, set the pmx-status label to \`status\`, add \`comment\` as a comment, and if status is done, move it to the team's first "completed" workflow state.
+- \`rewrite\`: on the target, replace the title with \`title\` and the whole description with \`description\`, each only when given, verbatim. If \`cancel\` is true, also move it to the team's first "canceled" workflow state. Never delete it.
 
 Labels named "pmx-…: x" are label \`x\` inside the label group \`pmx-…\`. Create a missing group or label in team ${teamKey}.
 A target like PMX-12 is an issue identifier. A target like \`ref:<id>\` means the issue created by the operation with that id earlier in this list, and text like PENDING-1A2B3C anywhere in an operation stands for the issue created by the operation whose id starts with 1a2b3c: write that issue's real identifier instead.
@@ -220,7 +249,7 @@ Then write ${files.results()} with your file-writing tool (not a shell command) 
 
 ## 2. Export the project for PMX
 Write ${files.snapshot()} with your file-writing tool (not a shell command; a shell command stops for an approval nobody sees) as this JSON, with every issue in project ${projectId} that isn't canceled, except completed ones older than 14 days:
-{"v": 1, "syncedAt": "<now, ISO 8601>", "projectId": "${projectId}", "issues": [
+{"v": 1, "syncedAt": "<now, ISO 8601>", "projectId": "${projectId}", "labels": ["<group>/<label> for every label inside a pmx-… group in team ${teamKey}, like pmx-status/inbox>"], "issues": [
   {"id": "<uuid>", "identifier": "PMX-12", "title": "…", "description": "<full description, verbatim>", "url": "…", "priority": 2, "createdAt": "<ISO>",
    "labels": {"nodes": [{"name": "ready", "parent": {"name": "pmx-status"}}]},
    "comments": {"nodes": [{"body": "<only comments that contain a line starting with pmx:>"}]}}
@@ -239,11 +268,13 @@ export async function relayHealth(team: TeamConfig, now = new Date()): Promise<{
   const queue = `${ops.length} change(s) waiting${failing ? `, ${failing} failed at least once` : ""}`;
   const how = "run the \"PMX: sync Linear through Claude\" task in the Claude app (`pmx schedule` says whether it exists)";
   if (!snap) return { ok: false, detail: `Linear through Claude: not synced yet; ${how}` };
-  if (team.tracker.kind === "linear" && snap.projectId !== team.tracker.projectId)
+  if (team.tracker.kind === "linear" && linearRef("project", snap.projectId) !== team.tracker.projectId)
     return { ok: false, detail: `Linear through Claude: the snapshot is for project ${snap.projectId}, not this team's; ${how}` };
   const age = now.getTime() - Date.parse(snap.syncedAt);
   const hours = Math.round(age / 3600000);
   if (!(age <= STALE_MS)) return { ok: false, detail: `Linear through Claude: last synced ${hours}h ago (${queue}); ${how}` };
+  const missing = snap.labels ? pmxLabels(team).filter((l) => !snap.labels!.includes(l)) : [];
+  if (missing.length) return { ok: false, detail: `Linear through Claude: ${missing.length} PMX label(s) missing in Linear (${missing.slice(0, 4).join(", ")}${missing.length > 4 ? ", …" : ""}), so the board can't move cards; the next sync creates them: ${how}` };
   return { ok: !failing, detail: `Linear through Claude: synced ${hours ? `${hours}h` : "under an hour"} ago, ${queue}` };
 }
 
@@ -295,10 +326,16 @@ export async function checkRelay(team: TeamConfig, now = new Date()): Promise<st
   if (!snap) problems.push("no snapshot was written");
   else {
     if (snap.v !== 1) problems.push(`snapshot format ${snap.v} isn't one PMX knows`);
-    if (team.tracker.kind === "linear" && snap.projectId !== team.tracker.projectId) problems.push(`snapshot is for project ${snap.projectId}, not ${team.tracker.projectId}`);
+    if (team.tracker.kind === "linear" && linearRef("project", snap.projectId) !== team.tracker.projectId) problems.push(`snapshot is for project ${snap.projectId}, not ${team.tracker.projectId}`);
     if (!Array.isArray(snap.issues)) problems.push("snapshot has no issues list");
     else for (const n of snap.issues) if (!n?.id || !n?.identifier || typeof n?.title !== "string" || !Array.isArray(n?.labels?.nodes)) { problems.push(`issue ${n?.identifier ?? "?"} is missing id, identifier, title or labels`); break; }
     if (!problems.length) {
+      // The model may not know the time, so PMX stamps the sync with when the snapshot file was written.
+      const written = await stat(files.snapshot()).then((s) => s.mtime, () => null);
+      if (written && !(Math.abs(written.getTime() - Date.parse(snap.syncedAt)) < 120000)) {
+        snap.syncedAt = written.toISOString();
+        await writeJson(files.snapshot(), snap, 0o600);
+      }
       // Each created task must now be in Linear: matched by title, since Claude made it this run.
       for (const r of results.filter((x) => x.ok && x.identifier)) {
         if (!snap.issues.some((n) => n.identifier === r.identifier)) out.push(`  ⚠ ${r.identifier} was reported done but isn't in the snapshot; PMX will check again next sync.`);

@@ -50,7 +50,11 @@ describe("pull policy and dry-run explanations (PULL-1..4, PULL-9)", () => {
     expect(selectTasks(input({ tasks, inReview: 3 })).blockers[0]).toMatch(/3 of your drafts are waiting for review \(cap 3\)/);
     const spent = input({ tasks });
     spent.budget = { ...spent.budget, remainingUsd: 0, spentUsd: 10 };
-    expect(selectTasks(spent).blockers[0]).toMatch(/no budget left/);
+    expect(selectTasks(spent).blockers[0]).toMatch(/budget is used up/);
+    // BUDGET-2: a cap of 0 says PMX is paused, not just "no budget".
+    const zero = input({ tasks });
+    zero.budget = { ...zero.budget, personalCapUsd: 0, capUsd: 0, remainingUsd: 0 };
+    expect(selectTasks(zero).blockers[0]).toMatch(/PMX is paused: your daily cap is \$0/);
     expect(selectTasks(spent).candidates).toEqual([]);
   });
 

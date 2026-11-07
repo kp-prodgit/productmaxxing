@@ -19,6 +19,13 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.15.0", date: "2026-11-07", headline: "Product Git is now ProductMaxxing",
+    items: [
+      { what: "New name: the repo is kp-prodgit/productmaxxing and the npm package is productmaxxing. The pmx command, ~/.pmx, your PMX repo and your settings are unchanged." },
+      { what: "This Mac moved its keychain items, its npm package and its background job to the new names by itself. `pmx doctor` warns if anything is left under the old ones.", try: "pmx doctor" },
+    ],
+  },
+  {
     version: "0.14.0", date: "2026-11-07", headline: "Private meetings stay private, and you approve what reaches Linear",
     items: [
       { what: "Tasks PMX proposes now wait on your Mac. See each exactly as Linear would get it, then approve or drop it. Nothing reaches Linear before you approve.", try: "pmx proposals" },

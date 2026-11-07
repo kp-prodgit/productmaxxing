@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/productmaxxing-0.14.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/SHA256SUMS
-shasum -a 256 -c SHA256SUMS
-npm install -g ./productmaxxing-0.14.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.15.0/productmaxxing-0.15.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.15.0/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+npm install -g ./productmaxxing-0.15.0.tgz
 pmx init
 ```
 
@@ -105,6 +105,7 @@ Your team's PMX repo holds the CLI package everyone installs (`.pmx/cli/productm
 
 | This Mac | To update |
 |---|---|
+| On pmx 0.14.0 or older (named Product Git) | Update as usual below; it just works. Your team's repo and each release carry a bridge copy for older versions; on its first run it swaps the `productgit` npm package for `productmaxxing` and moves your keychain items and background job to their new names. Installing by hand instead? Run `npm uninstall -g productgit` just before the install. |
 | On pmx 0.6.0 or later, team has auto-update on | Nothing. The background job installs the team's version within the hour, even when the Claude app is closed, and the next `pmx` command says what's new. |
 | On pmx 0.6.0 or later, no auto-update | `pmx update`. It pulls the PMX repo, installs the team's version and prints what's new. |
 | Solo, or the team lead, on pmx 0.10.0 or later | `pmx update --latest` installs the newest release after checking its SHA256SUMS. Team lead: then `pmx vendor --require` and merge it. |
@@ -114,15 +115,17 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/productmaxxing-0.14.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.14.0/SHA256SUMS
-shasum -a 256 -c SHA256SUMS
-npm install -g ./productmaxxing-0.14.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.15.0/productmaxxing-0.15.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.15.0/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
+npm install -g ./productmaxxing-0.15.0.tgz
 pmx whats-new --since <the version you had>
 ```
 
 Then run `pmx doctor`. It names anything left to do: for example, `pmx claude login` when PMX's Claude profile isn't signed in, or typing `/pmx-schedule` in the Claude app when a scheduled task's prompt changed.
 
+- **Product Git is now ProductMaxxing (0.15.0).** The `pmx` command, `~/.pmx`, your PMX repo and your settings stay the same. The npm package, the keychain service and the background job have new names (`productmaxxing`, `com.productmaxxing.pmx`); PMX moves them on its first run after the update, and `pmx doctor` warns if anything is left under the old names.
 - **Updating to 0.14.0.** Tasks now wait for your approval (`pmx proposals`) instead of going straight to Linear. Run `pmx doctor` afterwards: if it says PMX doesn't know your company's email domain, run `pmx init` again and give it (until then PMX holds every meeting). If it says PMX is paused, your daily cap is $0: `pmx budget off` or `pmx budget set 10`. If older versions already wrote to Linear, check `pmx linear written` and run `pmx linear tidy`. Run `pmx init` again too if doctor says the background job's Node or Claude Code path is gone.
 - **No working hours since 0.13.0.** PMX works whenever this Mac is on and awake; your budget still limits it. Hours saved by an older `pmx init` are ignored, so there's nothing to change.
 - **Auto-update and sudo.** Where npm's global folder needs `sudo` (Node installed as root), PMX can't type the password, so it tells you once to run `pmx update`. Installing Node with Homebrew avoids that.

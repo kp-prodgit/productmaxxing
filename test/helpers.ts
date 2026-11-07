@@ -19,6 +19,8 @@ export async function tmp(prefix = "pmx-"): Promise<string> {
 export async function freshHome(): Promise<string> {
   const h = await tmp("pmx-home-");
   process.env.PMX_HOME = h;
+  // Never the real ~/Library/LaunchAgents: the rename check looks for a pre-0.15.0 job there.
+  process.env.PMX_OLD_LAUNCH_AGENT_FOR_TESTS = join(h, "com.productgit.pmx.plist");
   return h;
 }
 

@@ -25,6 +25,7 @@ import { SIZES, type Size } from "../core/types.js";
 import { tickHealth } from "./tick.js";
 import { runCanaries } from "../core/canary.js";
 import { privacyRules } from "../digest/gather.js";
+import { OLD, renameLeftovers } from "../core/rename.js";
 import { budget, budgetBlock } from "../budget/provider.js";
 import { mcpInstalled } from "../mcp/server.js";
 
@@ -38,6 +39,8 @@ export interface DoctorDeps {
   /** The Node binary the background job uses; tests pass their own. */
   execPath?: string;
   now?: () => Date;
+  /** The keychain under its pre-0.15.0 name; tests pass their own. */
+  oldKeychain?: Keychain;
   /** Extra checks from ee/ (license, policy). */
   extra?: () => Promise<DoctorCheck[]>;
 }
@@ -94,6 +97,9 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
       : `the background job can't find Claude Code${cc.onPath ? "" : ` (it's at ${cc.cmd})`}, so its runs fail with "spawn claude ENOENT": run \`pmx init\` again and say yes to the background job`);
   }
 
+  // RENAME-1: anything still under the ProductGit names after the move to ProductMaxxing.
+  const left = await renameLeftovers(d.oldKeychain);
+  if (left.length) add("rename.leftovers", false, `ProductGit is now ProductMaxxing, but ${left.join("; ")}. Run any pmx command (like \`pmx status\`) to finish moving; if that can't, run \`npm uninstall -g ${OLD.pkg} && npm install -g <the productmaxxing package>\` (README, "Updating")`, "warn");
   add("config.personal", !!d.personal, d.personal ? `personal config at ${paths.config()}` : "personal config missing: run `pmx init`");
   add("config.team", !!d.team, d.team ? `${TEAM_CONFIG_FILE} valid (team ${d.team.team})` : `team config: ${d.teamError ?? "missing"}`);
   if (!d.personal || !d.team) return out;

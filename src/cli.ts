@@ -15,6 +15,7 @@ import { effectiveTeam } from "./core/services.js";
 import { writeProfile } from "./core/profile.js";
 import { paths } from "./core/paths.js";
 import { announceOnce, markSeen, QUIET_COMMANDS } from "./core/whats-new.js";
+import { migrateFromProductGit } from "./core/rename.js";
 import { commands as core } from "./commands/index.js";
 import { registerEe } from "../ee/src/index.js";
 
@@ -61,6 +62,12 @@ async function main(argv: string[]): Promise<number> {
   if (values.help) {
     console.log(`pmx ${cmd.name}: ${cmd.summary}\n\n${cmd.usage ?? ""}`);
     return 0;
+  }
+  // RENAME-1: a Mac still on the ProductGit names moves over first. When the old package was swapped out, the new
+  // pmx already ran this command, so its exit code is the answer.
+  if (cmd.name !== "mcp" && cmd.name !== "uninstall") {
+    const handed = await migrateFromProductGit({ exec, launchd: macLaunchd(), cli: fileURLToPath(import.meta.url), argv, say: (s) => process.stderr.write(`${s}\n`) });
+    if (handed !== null) return handed;
   }
   // NEW-1: after an update, the first command says what's new, once, on stderr.
   const fresh = cmd.name === "init" && !(await stat(paths.config()).then(() => true, () => false));

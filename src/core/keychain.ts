@@ -11,25 +11,26 @@ export interface Keychain {
   list(): Promise<SecretName[]>;
 }
 
-const ALL: SecretName[] = ["slack-token", "linear-token", "linear-oauth", "github-token", "machine-token", "anthropic-api-key"];
+export const ALL_SECRETS: SecretName[] = ["slack-token", "linear-token", "linear-oauth", "github-token", "machine-token", "anthropic-api-key"];
 
-export function macKeychain(exec: Exec = defaultExec): Keychain {
+/** `service` is the keychain service the items live under; only the 0.15.0 rename reads the old one (RENAME-1). */
+export function macKeychain(exec: Exec = defaultExec, service: string = KEYCHAIN_SERVICE): Keychain {
   return {
     async get(name) {
-      const r = await exec("security", ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", name, "-w"]);
+      const r = await exec("security", ["find-generic-password", "-s", service, "-a", name, "-w"]);
       return r.code === 0 ? r.stdout.replace(/\n$/, "") : null;
     },
     async set(name, value) {
       // -U updates in place. The value is passed as an argument to `security`, never written to disk.
-      const r = await exec("security", ["add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", name, "-w", value]);
+      const r = await exec("security", ["add-generic-password", "-U", "-s", service, "-a", name, "-w", value]);
       if (r.code !== 0) throw new Error(`keychain: could not store ${name}: ${r.stderr.trim()}`);
     },
     async delete(name) {
-      await exec("security", ["delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", name]);
+      await exec("security", ["delete-generic-password", "-s", service, "-a", name]);
     },
     async list() {
       const found: SecretName[] = [];
-      for (const n of ALL) if ((await this.get(n)) !== null) found.push(n);
+      for (const n of ALL_SECRETS) if ((await this.get(n)) !== null) found.push(n);
       return found;
     },
   };

@@ -2,6 +2,16 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.15.0: Product Git is now ProductMaxxing
+
+- **New name.** The public repo is `kp-prodgit/productmaxxing`, the npm package is `productmaxxing` and the site is productmaxxing.com. The `pmx` command, `~/.pmx`, your PMX repo, your settings and your data don't change. Old GitHub links redirect.
+- **Existing Macs move over by themselves (RENAME-1).** npm won't install a differently named package over the old one's `pmx` command, so each release and your team's PMX repo also carry a bridge: the same build packed under the old name `productgit`, at the old file names (`productgit-0.15.0.tgz`, `.pmx/cli/productgit.tgz`). A Mac on 0.14.0 or older updates to it as usual. On its first run the bridge:
+  - moves PMX's keychain items from the `productgit` service to `productmaxxing`, deleting each old copy only once the new one reads back;
+  - replaces the `productgit` npm package with `productmaxxing`, putting the bridge back if that install fails, so the Mac always keeps a working `pmx`;
+  - hands the command it was running to the new `pmx`, which re-registers the background job as `com.productmaxxing.pmx` with the same Claude Code and stops the old `com.productgit.pmx` job.
+- **`pmx doctor`** warns while anything is still under the old names, and `pmx uninstall` removes those too.
+- **Installing by hand over Product Git:** run `npm uninstall -g productgit` just before installing (README, "Updating"; INSTALL.md). The release's SHA256SUMS lists both packages, so check it with `shasum -a 256 -c SHA256SUMS --ignore-missing`.
+
 ## 0.14.0: private meetings stay private, and you approve what reaches Linear
 
 From a tester's first real run: internal 1:1s and a hiring interview were treated as customer calls, task issues carried raw transcript text, every processed meeting showed up in Linear under its own title, a $0 budget paused some commands but not others, and the board stayed empty.

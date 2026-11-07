@@ -34,6 +34,8 @@ export interface State {
    * What's new (NEW-1): `seen` is the last version this Mac was told about; `since` is the version an update
    * replaced, so the new pmx can say what changed since then.
    */
+  /** When this Mac moved from the ProductGit names (RENAME-1): keychain items, then the background job. */
+  renamed?: { keychain?: string; launchd?: string } | null;
   whatsNew: { seen: string | null; since: string | null } | null;
   /** When this Mac's pmx started tracking task runs. Older runs left no record, so "never ran" counts from here. */
   taskRunsSince: string | null;

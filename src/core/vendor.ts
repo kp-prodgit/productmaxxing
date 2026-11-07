@@ -2,6 +2,7 @@ import { mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import type { Exec } from "./exec.js";
 import { packageRoot } from "./skills.js";
+import { BRIDGE_CLI, OLD, repackAs } from "./rename.js";
 
 /** Where a PMX repo keeps the CLI package its PMs and its CI install. */
 export const VENDORED_CLI = ".pmx/cli/productmaxxing.tgz";
@@ -24,5 +25,9 @@ export async function vendorCli(repoPath: string, exec: Exec): Promise<string> {
   const [packed] = JSON.parse(r.stdout) as { filename: string; version: string }[];
   if (!packed) throw new Error("npm pack produced no package.");
   await rename(join(dir, packed.filename), join(repoPath, VENDORED_CLI));
+  // RENAME-1: teammates still on 0.14.0 or older look for .pmx/cli/productgit.tgz and can only update a package of
+  // that name. The bridge is the same build packed as "productgit"; on its first run it moves the Mac over.
+  const bridge = await repackAs(join(repoPath, VENDORED_CLI), OLD.pkg, dir, exec);
+  await rename(bridge, join(repoPath, BRIDGE_CLI));
   return packed.version;
 }

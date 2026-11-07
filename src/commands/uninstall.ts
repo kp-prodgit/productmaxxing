@@ -6,12 +6,13 @@ import type { Keychain, SecretName } from "../core/keychain.js";
 import type { Launchd } from "../core/launchd.js";
 import { readJson } from "../core/fsutil.js";
 import { paths, pmxHome } from "../core/paths.js";
+import { OLD, oldLaunchAgent } from "../core/rename.js";
 
 /**
  * `pmx uninstall` (CLI-4): removes the launchd job, the clean profile, staged drafts, worktrees,
  * personal config and keychain items. The PMX repo and its shared skills are team assets and stay.
  */
-export async function runUninstall(d: { ask: Asker; keychain: Keychain; launchd: Launchd; exec: Exec; out: Out; yes?: boolean }): Promise<void> {
+export async function runUninstall(d: { ask: Asker; keychain: Keychain; oldKeychain?: Keychain; launchd: Launchd; exec: Exec; out: Out; yes?: boolean }): Promise<void> {
   if (!d.yes && !(await d.ask.confirm(`Remove ProductMaxxing from this Mac (${pmxHome()}, the background job and keychain items)?`, false))) {
     d.out.info("Nothing removed.");
     return;
@@ -19,6 +20,10 @@ export async function runUninstall(d: { ask: Asker; keychain: Keychain; launchd:
   await d.launchd.uninstall();
   const names: SecretName[] = ["slack-token", "linear-token", "linear-oauth", "github-token", "machine-token", "anthropic-api-key"];
   for (const n of names) await d.keychain.delete(n);
+  // Anything a pmx from before the ProductMaxxing rename left behind (RENAME-1).
+  if (d.oldKeychain) for (const n of names) await d.oldKeychain.delete(n);
+  await rm(oldLaunchAgent(), { force: true });
+  await d.exec("launchctl", ["bootout", `gui/${process.getuid?.() ?? 501}/${OLD.label}`]).catch(() => null);
   const cfg = await readJson<{ repoPath?: string }>(paths.config());
   await rm(pmxHome(), { recursive: true, force: true });
   if (cfg?.repoPath) await d.exec("git", ["worktree", "prune"], { cwd: cfg.repoPath });

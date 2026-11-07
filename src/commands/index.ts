@@ -8,6 +8,7 @@ import { loginProfile, profileSignedIn } from "../core/claude-bin.js";
 import { readJson } from "../core/fsutil.js";
 import { effectiveTeam } from "../core/services.js";
 import { macKeychain } from "../core/keychain.js";
+import { OLD } from "../core/rename.js";
 import { capTickLogs, macLaunchd } from "../core/launchd.js";
 import { runDigest } from "./digest.js";
 import { doctorJson, formatDoctor, runDoctor } from "./doctor.js";
@@ -327,7 +328,7 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
     summary: "Remove the background job, clean profile, keychain items and ~/.pmx",
     options: { ...yes },
     async run(a) {
-      await runUninstall({ ask: a.ask, keychain: macKeychain(), launchd: macLaunchd(), exec, out: consoleOut, yes: a.values.yes });
+      await runUninstall({ ask: a.ask, keychain: macKeychain(), oldKeychain: macKeychain(exec, OLD.keychain), launchd: macLaunchd(), exec, out: consoleOut, yes: a.values.yes });
       return 0;
     },
   },
@@ -354,5 +355,5 @@ async function doctorChecks() {
   } catch (e: any) {
     teamError = e.message;
   }
-  return runDoctor({ personal, team, teamError, keychain: macKeychain(), launchd: macLaunchd(), exec, extra: doctorExtra });
+  return runDoctor({ personal, team, teamError, keychain: macKeychain(), oldKeychain: macKeychain(exec, OLD.keychain), launchd: macLaunchd(), exec, extra: doctorExtra });
 }

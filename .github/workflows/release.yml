@@ -22,10 +22,17 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm pack
-      - run: shasum -a 256 productmaxxing-*.tgz > SHA256SUMS && cat SHA256SUMS
+      # RENAME-1: Macs on 0.14.0 or older can only update a package named productgit. The bridge is the same build
+      # under that name; on its first run it swaps itself for productmaxxing.
+      - name: bridge package for Macs still on productgit
+        run: |
+          mkdir -p "$RUNNER_TEMP/bridge" && tar -xzf productmaxxing-*.tgz -C "$RUNNER_TEMP/bridge"
+          node -e 'const f=process.argv[1],p=require(f),c=p.bin.pmx;p.name="productgit";p.bin={pmx:c,productgit:c};require("fs").writeFileSync(f,JSON.stringify(p,null,2)+"\n")' "$RUNNER_TEMP/bridge/package/package.json"
+          npm pack --ignore-scripts "$RUNNER_TEMP/bridge/package"
+      - run: shasum -a 256 productmaxxing-*.tgz productgit-*.tgz > SHA256SUMS && cat SHA256SUMS
       - name: publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" productmaxxing-*.tgz SHA256SUMS --title "pmx ${GITHUB_REF_NAME#v}" \
+          gh release create "$GITHUB_REF_NAME" productmaxxing-*.tgz productgit-*.tgz SHA256SUMS --title "pmx ${GITHUB_REF_NAME#v}" \
             --notes "Install: follow INSTALL.md (https://github.com/${{ github.repository }}/blob/main/INSTALL.md). Changes: CHANGELOG.md."

@@ -19,6 +19,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.18.0", date: "2026-11-08", headline: "A Categories tab shows each kind of work end to end",
+    items: [
+      { what: "The pipeline board has a Categories tab. Each category reads left to right: the Linear label and its tasks now, the skill Claude follows, the draft file and the sections it must have, and how the team has judged its drafts. Each size's wording sits underneath.", try: "pmx flow --web" },
+      { what: "Linear tasks in a category no skill handles are listed, since agents skip them. \"Add a category\" lists the three files a new category needs." },
+      { what: "Skill cards link to their category, and the Ready, Agent works, To review and Done steps on the map link to the categories." },
+    ],
+  },
+  {
     version: "0.17.0", date: "2026-11-08", headline: "The pipeline board shows you where to act",
     items: [
       { what: "Click a step on the map and its detail opens beside it (or scrolls into view on a narrow window), with what's waiting there and what you can do. The cards at the top take you straight to it.", try: "pmx flow --web" },

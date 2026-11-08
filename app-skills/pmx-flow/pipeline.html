@@ -205,6 +205,37 @@ dl.kv dd { margin: 0; font-family: var(--font-data); font-size: 12.5px; text-ali
 details summary { cursor: pointer; color: var(--ink-2) }
 
 /* Skills and schedules */
+/* Categories: one card per category, read left to right as the work moves. */
+.catflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; margin: 0 0 14px; background: var(--panel) }
+.catflow > div, .cat .stage { padding: 10px 14px; border-right: 1px solid var(--line); display: grid; gap: 6px; align-content: start; font-size: 13px; min-width: 0; position: relative }
+.catflow > div:last-child, .cat .stage:last-child { border-right: 0 }
+.catflow > div:not(:last-child)::after, .cat .stage:not(:last-child)::after { content: "→"; position: absolute; right: -8px; top: 9px; background: var(--panel); color: var(--ink-3); font-size: 12px; line-height: 1; padding: 1px 0 }
+.lab { font-size: 11px; letter-spacing: .06em; font-weight: 700; text-transform: uppercase }
+.st-task .lab { color: var(--linear) } .st-skill .lab { color: var(--claude) } .st-draft .lab { color: var(--repo) } .st-review .lab { color: var(--ok) }
+.cat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 14px; scroll-margin-top: 12px }
+.cat.off { background: transparent }
+.cat > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap }
+.cat > header h2 { margin: 0; font-size: 16px }
+.cat > header .tags { display: flex; gap: 6px; flex-wrap: wrap }
+.cat .stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) }
+.cat .sizes4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line) }
+.cat .sizes4 > div { padding: 8px 14px; font-size: 12.5px; border-right: 1px solid var(--line); min-width: 0 }
+.cat .sizes4 > div:last-child { border-right: 0 }
+.cat .banner { margin: 10px 14px 0 }
+.counts, .secs { display: flex; flex-wrap: wrap; gap: 4px }
+.secs span { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--repo-soft); color: var(--ink) }
+.pill.bad { color: var(--bad) } .pill.on { color: var(--ink) }
+.cat code, .catflow code { overflow-wrap: anywhere }
+details.addcat { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 4px }
+details.addcat summary { cursor: pointer; font-weight: 600 }
+details.addcat ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13px; max-width: 80ch }
+@media (max-width: 900px) {
+  .catflow, .cat .stages, .cat .sizes4 { grid-template-columns: 1fr 1fr }
+  .catflow > div, .cat .stage { border-bottom: 1px solid var(--line) }
+  .catflow > div:nth-child(2n), .cat .stage:nth-child(2n), .cat .sizes4 > div:nth-child(2n) { border-right: 0 }
+  .catflow > div::after, .cat .stage::after { display: none }
+}
+@media (max-width: 560px) { .catflow, .cat .stages { grid-template-columns: 1fr } .catflow > div, .cat .stage { border-right: 0 } }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; align-items: start }
 .group-h { display: flex; align-items: baseline; gap: 10px; margin: 20px 0 8px }
 .group-h:first-child { margin-top: 0 }
@@ -302,6 +333,7 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
 
   <nav class="tabs" aria-label="Sections">
     <a href="#connections" data-tab="connections">Overview</a>
+    <a href="#categories" data-tab="categories">Categories</a>
     <a href="#rules" data-tab="rules">Rules</a>
     <a href="#schedules" data-tab="schedules">Scheduled tasks <span class="n" id="n-sched"></span></a>
     <a href="#skills" data-tab="skills">Skills</a>
@@ -341,6 +373,7 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
       <ul id="checks"></ul>
     </section>
   </section>
+  <section id="v-categories" hidden><p class="loading">Loading from PMX…</p></section>
   <section id="v-rules" hidden><p class="loading">Loading from PMX…</p></section>
   <section id="v-schedules" hidden><p class="loading">Loading from PMX…</p></section>
   <section id="v-skills" hidden><p class="loading">Loading from PMX…</p></section>
@@ -438,7 +471,7 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
         for (const id of ["mapbox", "listbox", "needs", "detail"]) $(id).classList.add("stale");
       } else {
         $("asof").textContent = "Not connected";
-        for (const id of ["v-rules", "v-schedules", "v-skills"]) $(id).replaceChildren(h("p", { class: "loading" }, msg));
+        for (const id of ["v-categories", "v-rules", "v-schedules", "v-skills"]) $(id).replaceChildren(h("p", { class: "loading" }, msg));
         $("detail").replaceChildren(h("p", { class: "loading" }, msg));
         $("map").replaceChildren(s("text", { x: 20, y: 60, class: "band" }, "No data yet"));
       }
@@ -501,9 +534,9 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
   const stacked = () => matchMedia("(max-width: 1179px)").matches;
 
   // ================= tabs and routes =================
-  // Routes: #connections, #connections/<step>, #rules, #rules/<section>, #schedules, #skills. The local page adds a history
+  // Routes: #connections, #connections/<step>, #categories, #categories/<id>, #rules, #rules/<section>, #schedules, #skills. The local page adds a history
   // entry per click so Back works; inside the Claude app the page only replaces it, so Back leaves the page.
-  const TABS = ["connections", "rules", "schedules", "skills"];
+  const TABS = ["connections", "categories", "rules", "schedules", "skills"];
   let fromNode = null; // the step the PM came from when a rule button took them to Rules
   function show(tab, focusId) {
     if (!TABS.includes(tab)) tab = "connections";
@@ -521,6 +554,7 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     const [tab, sub] = location.hash.slice(1).split("/");
     if (!TABS.includes(tab)) return;
     if (tab === "rules" && sub) show("rules", `r-${sub}`);
+    else if (tab === "categories" && sub) show("categories", `cat-${sub}`);
     else show(tab);
     if (tab === "connections" && sub && D && nodes[sub]) select("node", sub, { quiet: true });
   }
@@ -528,6 +562,8 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
   window.addEventListener("popstate", route);
   document.querySelectorAll("nav.tabs a").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); show(a.dataset.tab); setRoute(a.dataset.tab, true); }));
   const goRule = (id) => { fromNode = sel && sel.type === "node" ? sel.id : fromNode; if (D && state) { rulesSig = ""; drawRules(); } show("rules", `r-${id}`); setRoute(`rules/${id}`, true); };
+  const goCategory = (id) => { show("categories", id ? `cat-${id}` : null); setRoute(id ? `categories/${id}` : "categories", true); };
+  const goSkill = (name) => { show("skills", `skill-${name}`); setRoute("skills", true); };
   // From the needs bar or a problem: open the step and land on what to do there.
   function goNode(id) {
     show("connections"); setRoute(`connections/${id}`, true);
@@ -898,6 +934,8 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     }
     const sched = D.schedules.find((x) => x.node === sel.id);
     if (sched) parts.push(h("p", { class: "small muted" }, `${sched.name}: last ran ${when(sched.last)}, next ${when(sched.next)}.`));
+    if (["ready", "agent", "review", "done"].includes(sel.id) && (D.categories || []).length)
+      parts.push(h("div", { class: "links" }, h("span", { class: "small muted" }, "What agents draft:"), h("button", { type: "button", class: "btn", onclick: () => goCategory() }, `${plural(D.categories.length, "category", "categories")} →`)));
     parts.push(ruleButtons(rules));
     put(box, parts);
     for (const d of box.querySelectorAll("details[data-k]")) if (open.has(d.dataset.k)) d.open = true;
@@ -1019,14 +1057,89 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
       h("p", { class: "muted", style: "margin:0 0 14px;max-width:72ch" }, `Skills are the written instructions Claude follows at each step. Your team's copies live in the PMX repo and change only by reviewed pull request. Run counts are ${winText()}.`),
       ...groups.flatMap(([g, list]) => [
         h("div", { class: "group-h" }, h("h2", null, g), h("span", { class: "faint small" }, plural(list.length, "skill"))),
-        h("div", { class: "grid2" }, list.map((k) => h("article", { class: `card${k.runs ? "" : " idle"}` },
+        h("div", { class: "grid2" }, list.map((k) => h("article", { class: `card${k.runs ? "" : " idle"}`, id: `skill-${k.name}` },
           h("div", { class: "row" }, h("code", null, k.name), h("span", { class: "pill" }, k.copy)),
           h("p", { class: "what" }, k.what),
+          k.category && (D.categories || []).some((c) => c.id === k.category) ? h("button", { type: "button", class: "textlink small", style: "justify-self:start", onclick: () => goCategory(k.category) }, `Category: ${D.categories.find((c) => c.id === k.category).name} →`) : null,
           h("div", { class: "row small" },
             k.node ? h("button", { type: "button", class: "textlink", onclick: () => goNode(k.node) }, `Step: ${k.where}`) : h("span", { class: "muted" }, k.where),
             h("span", { class: "num faint" }, k.runs ? plural(k.runs, "run") : "not run"))))),
       ]),
     );
+  }
+
+  // ================= categories =================
+  const STAGES = [
+    ["task", "Task in Linear", "Each approved task carries a pmx-category label. Agents take only Ready tasks, in categories their PM accepts."],
+    ["skill", "Skill Claude follows", "A clean Claude run with the category's skill, the task and your team's memory. It can only write files in a copy of the team repo."],
+    ["draft", "Draft in the team repo", "One Markdown file, opened as a pull request with its run record. PMX checks the required sections and citations first."],
+    ["review", "Your review", "Accept, redo with a note, or reject. Linear gets a link and the outcome, never the draft itself."],
+  ];
+  const stage = (k, body) => h("div", { class: `stage st-${k}` }, h("span", { class: "lab" }, STAGES.find((x) => x[0] === k)[1]), ...body);
+  function categoryCard(c) {
+    const t = c.tasks, r = c.reviews;
+    const counts = [[t.proposed, "to approve"], [t.inbox, "in Inbox"], [t.ready, "Ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "rejected"]].filter(([n]) => n);
+    const decided = r.accepted + r.redo + r.rejected;
+    return h("article", { class: `cat${c.takenOn && !c.paused ? "" : " off"}`, id: `cat-${c.id}` },
+      h("header", null,
+        h("div", { style: "min-width:0;flex:1 1 320px" }, h("h2", { tabindex: "-1" }, c.name), h("p", { class: "muted small", style: "margin:3px 0 0;max-width:80ch" }, c.produces || "This category's skill doesn't say what it produces.")),
+        h("div", { class: "tags" },
+          c.paused ? h("span", { class: "pill bad" }, "Paused") : null,
+          h("span", { class: `pill${c.takenOn ? " on" : ""}` }, c.takenOn ? "Your agent takes these" : "Your agent skips these"),
+          c.externalFacing ? h("span", { class: "pill" }, "Customer-facing: never sent automatically") : null)),
+      c.paused ? h("div", { class: "banner", role: "note" }, h("span", null, h("strong", null, "Agents don't take these tasks right now: "), c.paused.replace(/`([^`]+)`/g, "$1"))) : null,
+      h("div", { class: "stages" },
+        stage("task", [
+          h("div", null, h("code", null, `pmx-category: ${c.id}`)),
+          counts.length ? h("div", { class: "counts" }, counts.map(([n, l]) => h("span", { class: "pill" }, `${n} ${l}`))) : h("span", { class: "faint small" }, "No tasks in this category yet."),
+          h("button", { type: "button", class: "textlink small", style: "justify-self:start", onclick: () => goRule("agent") }, c.takenOn ? "Stop taking these →" : "Take these on →"),
+        ]),
+        stage("skill", c.skill.missing
+          ? [h("span", { class: "err" }, `pmx.config.json names ${c.skill.name}, but no such skill exists. Agents can't draft these tasks.`)]
+          : [
+            h("div", null, h("code", null, c.skill.name), " ", h("span", { class: "pill" }, c.skill.copy)),
+            h("span", { class: "small muted" }, c.runs.n ? `${plural(c.runs.n, "run")}, ${plural(c.runs.drafts, "draft")} ${winText()}` : `Not run ${winText()}`),
+            h("button", { type: "button", class: "textlink small", style: "justify-self:start", onclick: () => goSkill(c.skill.name) }, "See the skill →"),
+          ]),
+        stage("draft", [
+          c.output ? h("code", { class: "small" }, c.output.replace("{id}", "<task ID>")) : h("span", { class: "faint small" }, "The skill doesn't name a file."),
+          c.sections.length ? h("div", null, h("div", { class: "small muted", style: "margin-bottom:4px" }, "Must have these sections"), h("div", { class: "secs" }, c.sections.map((x) => h("span", null, x)))) : h("span", { class: "faint small" }, "No required sections."),
+          h("span", { class: "small muted" }, c.minCitations ? `Cites at least ${plural(c.minCitations, "source")} from the task` : "No minimum number of citations"),
+        ]),
+        stage("review", [
+          h("span", null, r.rate == null ? `No drafts reviewed in the last ${r.days} days.` : h("span", null, h("strong", null, `${Math.round(r.rate * 100)}% accepted`), ` over the last ${r.days} days`)),
+          decided ? h("span", { class: "small muted" }, `${r.accepted} accepted, ${r.redo} redo, ${r.rejected} rejected`) : null,
+          h("span", { class: "small faint" }, `Agents stop taking these if fewer than ${Math.round(r.pauseBelow * 100)}% are accepted after ${r.minReviews} reviews.`),
+          t.review ? h("button", { type: "button", class: "textlink small", style: "justify-self:start", onclick: () => goNode("review") }, `${plural(t.review, "draft")} to review →`) : null,
+        ])),
+      h("div", { class: "sizes4", role: "list", "aria-label": `${c.name}: what each size means` }, SZ.map((z) => h("div", { role: "listitem" },
+        h("div", null, h("strong", null, `Size ${z}`), h("span", { class: "faint" }, ` · about ${c.sizes[z].minutes} min`)),
+        c.sizes[z].text ? h("div", null, c.sizes[z].text) : h("div", { class: "faint" }, "No wording in the size rubric")))),
+    );
+  }
+  let catSig = "";
+  function drawCategories() {
+    const cats = D.categories || [];
+    const sig = JSON.stringify([cats, D.unknownCategories, hours]);
+    if (sig === catSig) return;
+    catSig = sig;
+    const box = $("v-categories");
+    const wasOpen = box.querySelector("details.addcat")?.open;
+    if (!cats.length && !D.categories) { box.replaceChildren(h("p", { class: "muted" }, "This PMX is too old to list categories. Update it with pmx update.")); return; }
+    const unknown = D.unknownCategories || [];
+    put(box,
+      h("p", { class: "muted", style: "margin:0 0 12px;max-width:80ch" }, "A category is a kind of work an agent can draft for your team. Each one is tied to one skill: the written instructions Claude follows, which also say what the finished draft must contain. When PMX turns your meetings into proposed tasks, Claude picks one of these categories for each task by its name, and sizes it with the wording below. Work that fits none of them isn't proposed."),
+      h("div", { class: "catflow", role: "list", "aria-label": "How a task moves through a category" }, STAGES.map(([k, l, d]) => h("div", { class: `st-${k}`, role: "listitem" }, h("span", { class: "lab" }, l), h("span", { class: "small muted" }, d)))),
+      unknown.length ? h("div", { class: "banner", role: "note" }, h("span", null, h("strong", null, "Linear has tasks in categories PMX has no skill for: "), unknown.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds the category.")) : null,
+      cats.length ? cats.map(categoryCard) : h("p", { class: "muted" }, "Your team has no categories yet, so agents have nothing to draft."),
+      h("details", { class: "addcat" }, h("summary", null, "Add a category"),
+        h("ol", null,
+          h("li", null, "Write its skill at ", h("code", null, ".claude/skills/pmx-<name>/SKILL.md"), " in your team repo. Its ", h("code", null, "pmx:"), " line names the category, the output file, the required sections and the minimum citations. Copying ", h("code", null, "pmx-spec"), " is the quickest start."),
+          h("li", null, "Add it to ", h("code", null, "categories"), " in ", h("code", null, "pmx.config.json"), ": ", h("code", null, '"<name>": { "skill": "pmx-<name>" }'), ". Pick a name that says what the work is: it's all Claude sees when it chooses a category."),
+          h("li", null, "Add a row for it to the size rubric in ", h("code", null, ".claude/skills/pmx-size/SKILL.md"), ", so Claude can size its tasks."),
+          h("li", null, "Open one pull request with all three. Once it's merged, PMX proposes tasks in the new category, and each PM chooses whether their agent takes them on under Rules."))),
+    );
+    if (wasOpen) box.querySelector("details.addcat").open = true;
   }
 
   // ================= schedules =================
@@ -1318,7 +1431,7 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     refreshNumbers(sameShape ? prev : null);
     markSelection();
     $("mode-note").textContent = LOCAL ? "Private view: only on this Mac" : "Shared view: counts only, no titles";
-    drawSummary(); drawNeeds(); drawDetail(); drawChecks(); drawSkills(); drawSchedules();
+    drawSummary(); drawNeeds(); drawDetail(); drawChecks(); drawCategories(); drawSkills(); drawSchedules();
     initRules();
     // The Rules tab redraws only when the rules themselves changed and the PM isn't in the middle of using it.
     const sig = JSON.stringify([D.rules, D.held, D.pendingTeam, hours, fromNode]);

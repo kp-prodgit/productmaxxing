@@ -70,6 +70,8 @@ export interface SkillInfo {
   /** "differs from built-in" means the team edited it, or this pmx has a newer built-in copy. */
   status: "same as built-in" | "differs from built-in" | "team only" | "built-in only";
   path: string;
+  /** A category skill's checklist from its `pmx:` frontmatter: the file a run must write and what it must contain. */
+  check?: { output: string | null; sections: string[]; minCitations: number };
 }
 
 const hash = (t: string) => createHash("sha256").update(t).digest("hex").slice(0, 12);
@@ -87,7 +89,7 @@ export async function skillInventory(repoPath: string, categories: Record<string
     const text = (team ?? bundled)!;
     const meta = frontmatter(text);
     const category = Object.entries(categories).find(([, c]) => c.skill === name)?.[0] ?? null;
-    const pmx = meta.pmx ? (JSON.parse(meta.pmx) as { kind?: "core" | "category"; category?: string }) : {};
+    const pmx = meta.pmx ? (JSON.parse(meta.pmx) as { kind?: "core" | "category"; category?: string; output?: string; requiredHeadings?: string[]; minCitations?: number }) : {};
     out.push({
       name,
       description: meta.description ?? "",
@@ -98,6 +100,7 @@ export async function skillInventory(repoPath: string, categories: Record<string
       version: hash(text),
       status: !team ? "built-in only" : !bundled ? "team only" : hash(team) === hash(bundled) ? "same as built-in" : "differs from built-in",
       path: team ? teamSkillPath(repoPath, name) : join(bundledSkillsDir(), name, "SKILL.md"),
+      ...(pmx.kind === "category" ? { check: { output: pmx.output ?? null, sections: pmx.requiredHeadings ?? [], minCitations: pmx.minCitations ?? 0 } } : {}),
     });
   }
   return out;

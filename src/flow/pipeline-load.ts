@@ -19,6 +19,7 @@ import { overlay, readOutbox, readResolved, readSnapshot, relayHealth } from "..
 import { buildFlowGraph } from "./graph.js";
 import { buildPipeline, rubricFor, type HealthProblem, type PipelineData, type PipelineLevel } from "./pipeline.js";
 import { pendingTeamPrs } from "./team-prs.js";
+import { pausedCategories } from "../core/services.js";
 
 // The run log lives on a git branch; the artifact polls every minute, so it's fetched at most once a minute.
 let runlogCache: { at: number; repo: string; entries: RunLogEntry[] | null } | null = null;
@@ -50,7 +51,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const state = await loadState();
   const issues = nodes.map((n) => {
     const t = toTask(n);
-    return { identifier: t.identifier, title: t.title, url: t.url || undefined, createdAt: n.createdAt, status: t.status, meeting: kindOf(n) === "meeting" };
+    return { identifier: t.identifier, title: t.title, url: t.url || undefined, createdAt: n.createdAt, status: t.status, meeting: kindOf(n) === "meeting", category: t.category };
   });
 
   // The privacy checks the flow view already computes, from the same records.
@@ -119,6 +120,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals: await readProposals(),
     openTodos: todos.filter((t) => t.status === "open"), pendingTeam: await pendingTeamPrs({ ...ctx, keychain: o.keychain }).catch(() => []),
     checks: graph.checks, health: { problems, facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
+    teamCategories: ctx.team.categories, paused: await pausedCategories(ctx as Ctx).catch(() => new Map()), autoPause: ctx.team.autoPause,
     rules: {
       routes: { ...(ctx.personal.sources.routes ?? {}) },
       teamDomains: ctx.team.internalDomains, myDomains: ctx.personal.companyDomains ?? [],

@@ -10,7 +10,9 @@ import { applyPersonal, checkChange, loosens, proposeTeamChanges, setRubricCell 
 import { buildFlowGraph } from "../src/flow/graph.js";
 import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
 import { pipelineTemplate } from "../src/flow/pipeline-page.js";
-import { buildPipeline, type PipelineInputs } from "../src/flow/pipeline.js";
+import { buildPipeline, splitDescription, type PipelineInputs } from "../src/flow/pipeline.js";
+import { DEFAULT_TEAM } from "../src/core/config.js";
+import { skillInventory } from "../src/core/skills.js";
 import { handleMcp } from "../src/mcp/server.js";
 import { stageProposals } from "../src/synth/proposals.js";
 import { freshHome, pmxRepo, testCtx, tmp } from "./helpers.js";
@@ -253,5 +255,73 @@ describe("0.17.0: the board shows where to act (BOARD-4)", () => {
     expect(page).not.toMatch(/replaceChildren\(\.\.\.parts\)/);
     // Line-pattern classes for the key never share a name with a step's kind class.
     expect(page).not.toMatch(/class="k-(full|model|linear|status|held|off)"/);
+  });
+});
+
+describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
+  beforeEach(freshHome);
+
+  const specSkill = {
+    name: "pmx-spec", description: "Spec drafting. Writes a one-pager or PRD draft.", kind: "category", category: "spec", usedBy: "", runs: "team", version: "abc", status: "same as built-in", path: "",
+    runsInWindow: 1, check: { output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2 },
+  } as PipelineInputs["skills"][number];
+  const withCats = (level: "local" | "shared"): PipelineInputs => {
+    const i = inputs(level);
+    return {
+      ...i,
+      skills: [specSkill],
+      teamCategories: { spec: { skill: "pmx-spec" }, "release-notes": { skill: "pmx-release-notes", externalFacing: true } },
+      paused: new Map([["release-notes", "accept rate 20% over 5 reviews"]]),
+      autoPause: { windowDays: 30, threshold: 0.3, minVerdicts: 5 },
+      issues: [
+        ...i.issues.map((x) => ({ ...x, category: "spec" })),
+        { identifier: "PMX-9", title: "Pricing page copy", status: "ready", meeting: false, category: "copywriting" },
+        { identifier: "PMX-10", title: "Old copy", status: "done", meeting: false, category: "copywriting" },
+      ],
+    };
+  };
+
+  it("each category carries its skill, the draft it must produce, its sizes, its tasks now and its reviews", () => {
+    const [spec, notes] = buildPipeline(withCats("local")).categories;
+    expect(spec).toEqual({
+      id: "spec", name: "Spec drafting", produces: "Writes a one-pager or PRD draft.",
+      skill: { name: "pmx-spec", version: "abc", copy: "team's copy", missing: false },
+      output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2, externalFacing: false,
+      sizes: { S: { minutes: 15, usd: 0.5, text: "a" }, M: { minutes: 30, usd: 1.5, text: "b" }, L: { minutes: 60, usd: 4, text: "c" }, XL: { minutes: 120, usd: 8, text: "d" } },
+      takenOn: true, paused: null,
+      tasks: { proposed: 1, inbox: 1, ready: 1, working: 0, review: 1, done: 0, blocked: 0 },
+      runs: { n: 1, drafts: 1 },
+      reviews: { accepted: 1, redo: 0, rejected: 0, rate: 1, days: 30, pauseBelow: 0.3, minReviews: 5 },
+    });
+    // A category whose skill doesn't exist says so, and keeps its pause and customer-facing flag.
+    expect(notes).toMatchObject({ id: "release-notes", name: "Release notes", skill: { name: "pmx-release-notes", missing: true, copy: null }, output: null, externalFacing: true, takenOn: false, paused: "accept rate 20% over 5 reviews", reviews: { rate: null } });
+  });
+
+  it("Linear tasks in a category no skill handles are listed, open ones only; the shared page gets the same counts and no titles", () => {
+    expect(buildPipeline(withCats("local")).unknownCategories).toEqual([{ id: "copywriting", tasks: 1 }]);
+    const shared = buildPipeline(withCats("shared"));
+    expect(shared.categories[0]!.tasks).toEqual(buildPipeline(withCats("local")).categories[0]!.tasks);
+    expect(JSON.stringify(shared.categories)).not.toMatch(/Pricing page|Private idea|SSO/);
+  });
+
+  it("names come from the skill description's first sentence, or the category id in words", () => {
+    expect(splitDescription("research-synthesis", "Research synthesis. Turns evidence into a readout.")).toEqual({ name: "Research synthesis", produces: "Turns evidence into a readout." });
+    expect(splitDescription("win-loss", "")).toEqual({ name: "Win loss", produces: "" });
+    expect(splitDescription("x", "Compares the named competitors on the feature area in a task, using only cited evidence.")).toMatchObject({ name: "X" });
+  });
+
+  it("the skill inventory reads each category skill's checklist; core skills have none", async () => {
+    const { repo } = await pmxRepo({});
+    const skills = await skillInventory(repo, DEFAULT_TEAM.categories);
+    expect(skills.find((k) => k.name === "pmx-spec")!.check).toEqual({ output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence", "Proposal", "Success metrics", "Open questions"], minCitations: 2 });
+    expect(skills.find((k) => k.name === "pmx-synthesize")!.check).toBeUndefined();
+  });
+
+  it("the page has a Categories tab with its own route, and the skills link to their category", async () => {
+    const page = await readFile(pipelineTemplate(), "utf8");
+    expect(page).toMatch(/<a href="#categories" data-tab="categories">Categories<\/a>/);
+    expect(page).toMatch(/const TABS = \["connections", "categories", "rules", "schedules", "skills"\]/);
+    expect(page).toMatch(/tab === "categories" && sub/);
+    expect(page).toMatch(/`Category: \$\{/);
   });
 });

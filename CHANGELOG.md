@@ -2,6 +2,16 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.18.0: a Categories tab shows each kind of work end to end
+
+CAT-1. Categories are how PMX grows, so the board now shows each one from task to review in one place.
+
+- **Categories tab.** One card per category in `pmx.config.json`, read left to right: the Linear label (`pmx-category: <id>`) with how many tasks are proposed, in Inbox, Ready, being drafted, waiting for review, done or rejected; the skill Claude follows, whether it's the team's copy, and its runs in the window; the draft file (`outputs/<category>/<task ID>.md`), its required sections and minimum citations, from the skill's `pmx:` line; and the accept rate over the auto-pause window, with when agents stop taking the category. Each size's wording from the rubric sits underneath. A category's name is its skill description's first sentence.
+- **What's wrong, in place.** A paused category says why. A category whose skill is missing says agents can't draft it. Linear tasks in a category no skill handles are listed, since agents skip them.
+- **Add a category.** The three files a new category needs: its skill, its `pmx.config.json` entry and its size rubric row, in one pull request. Claude chooses a category for a proposed task by its name alone, so the name has to say what the work is.
+- **Links.** `#categories/<id>` opens one category; skill cards link to their category and back; the Ready, Agent works, To review and Done steps link to the categories.
+- The pipeline data gains `categories` and `unknownCategories`, counts and config only, so the board published in Claude shows them too. `skillInventory` carries each category skill's checklist.
+
 ## 0.17.0: the pipeline board shows you where to act
 
 From a usability review of the board by four critic agents (actions, map and navigation, clarity, accessibility and states). BOARD-4.

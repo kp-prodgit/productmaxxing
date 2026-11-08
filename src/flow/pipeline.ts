@@ -1,6 +1,7 @@
 import { HOLD_LABELS, type HoldReason } from "../core/filter.js";
 import type { RunReceipt } from "../core/receipt.js";
 import type { RunLogEntry } from "../core/runlog.js";
+import { acceptStats } from "../review/queue.js";
 import type { SizeRubric } from "../core/skillcheck.js";
 import type { SkillInfo } from "../core/skills.js";
 import { SIZES, type Size } from "../core/types.js";
@@ -38,6 +39,33 @@ export interface HealthProblem {
   fix?: string;
 }
 
+/**
+ * A category end to end (CAT-1): the kind of Linear task, the skill that drafts it, the file the draft must be and what
+ * it must contain, how big each size is, and how the team has judged its drafts. Config and counts only, so the shared
+ * page shows it too.
+ */
+export interface PipelineCategory {
+  id: string;
+  /** The skill description's first sentence ("Spec drafting"), or the id in words. */
+  name: string;
+  /** The rest of the skill description: what a draft is. */
+  produces: string;
+  skill: { name: string; version: string | null; copy: string | null; missing: boolean };
+  output: string | null;
+  sections: string[];
+  minCitations: number;
+  externalFacing: boolean;
+  sizes: Record<Size, { minutes: number; usd: number; text: string }>;
+  takenOn: boolean;
+  paused: string | null;
+  /** Tasks with this category now. `proposed` waits for the PM's approval on this Mac. */
+  tasks: { proposed: number; inbox: number; ready: number; working: number; review: number; done: number; blocked: number };
+  /** In the board's time window. */
+  runs: { n: number; drafts: number };
+  /** Over the team's auto-pause window. `rate` is null before the first decision. */
+  reviews: { accepted: number; redo: number; rejected: number; rate: number | null; days: number; pauseBelow: number; minReviews: number };
+}
+
 export interface PipelineData {
   v: 1;
   level: PipelineLevel;
@@ -59,6 +87,9 @@ export interface PipelineData {
   checks: FlowCheck[];
   held: { rule: string; label: string; n: number }[];
   skills: { name: string; what: string; node: string | null; where: string; runs: number; copy: string; category: string | null }[];
+  categories: PipelineCategory[];
+  /** Category labels on Linear tasks that no skill handles: agents skip these tasks. */
+  unknownCategories: { id: string; tasks: number }[];
   schedules: { name: string; where: "Claude app" | "This Mac"; when: string; last: string | null; next: string | null; ok: boolean; detail: string; node: string | null; hours: number[] }[];
   rules: PipelineRules;
 }
@@ -86,7 +117,7 @@ export interface PipelineInputs {
   receipts: RunReceipt[];
   runlog: RunLogEntry[] | null;
   /** Linear as PMX sees it (relay snapshot with queued changes, or the API). */
-  issues: { identifier: string; title: string; url?: string; createdAt?: string; status: string | null; meeting: boolean }[];
+  issues: { identifier: string; title: string; url?: string; createdAt?: string; status: string | null; meeting: boolean; category?: string | null }[];
   linearSyncedAt: string | null;
   collectReports: { at: string; connector: string | null; saved: number }[];
   todosCreated: string[];
@@ -98,6 +129,11 @@ export interface PipelineInputs {
   health: { problems: HealthProblem[]; facts: string[] };
   lastTick: string | null;
   skills: (SkillInfo & { runsInWindow: number })[];
+  /** The team's categories as pmx.config.json has them. */
+  teamCategories?: Record<string, { skill: string; externalFacing?: boolean }>;
+  /** Paused categories with the reason (REV-3). */
+  paused?: Map<string, string>;
+  autoPause?: { windowDays: number; threshold: number; minVerdicts: number };
   schedules: PipelineData["schedules"];
   rules: PipelineRules;
 }
@@ -114,6 +150,48 @@ function skillNode(s: SkillInfo): { node: string | null; where: string } {
   if (s.name === "pmx-rollup") return { node: null, where: "pmx company, on the company Mac" };
   if (s.name === "pmx-brain") return { node: null, where: "pmx brain (Team plan)" };
   return { node: null, where: "Your own Claude Code session" };
+}
+
+/** "Research synthesis. Turns …" → ["Research synthesis", "Turns …"]. */
+export function splitDescription(id: string, description: string): { name: string; produces: string } {
+  const m = description.match(/^([^.]{2,40})\.\s+(.+)$/s);
+  if (m) return { name: m[1]!.trim(), produces: m[2]!.trim() };
+  const words = id.replace(/[-_]+/g, " ");
+  return { name: words.charAt(0).toUpperCase() + words.slice(1), produces: description.trim() };
+}
+
+function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "run" }>[]): { categories: PipelineCategory[]; unknown: PipelineData["unknownCategories"] } {
+  const cfg: Record<string, { skill: string; externalFacing?: boolean }> = i.teamCategories ?? Object.fromEntries(i.rules.categories.map((c) => [c.name, { skill: i.skills.find((s) => s.category === c.name)?.name ?? "" }]));
+  const ap = i.autoPause ?? { windowDays: 30, threshold: 0.3, minVerdicts: 5 };
+  const days = ap.windowDays;
+  const stats = acceptStats(i.runlog ?? [], i.now, days);
+  const tasks = i.issues.filter((x) => !x.meeting);
+  const count = (id: string, st: string[]) => tasks.filter((x) => x.category === id && st.includes(x.status ?? "")).length;
+  const categories = Object.entries(cfg).map(([id, c]): PipelineCategory => {
+    const sk = i.skills.find((s) => s.name === c.skill);
+    const { name, produces } = splitDescription(id, sk?.description ?? "");
+    const st = stats[id];
+    const mine = runs.filter((e) => e.category === id);
+    return {
+      id, name, produces,
+      skill: { name: c.skill, version: sk?.version ?? null, copy: sk ? (sk.runs === "team" ? "team's copy" : "built-in") : null, missing: !sk },
+      output: sk?.check?.output ?? null, sections: sk?.check?.sections ?? [], minCitations: sk?.check?.minCitations ?? 0,
+      externalFacing: !!c.externalFacing,
+      sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: i.rules.sizes[z].minutes, usd: i.rules.sizes[z].usd, text: i.rules.rubric[id]?.[z] ?? "" }])) as PipelineCategory["sizes"],
+      takenOn: !!i.rules.categories.find((x) => x.name === id)?.accepted,
+      paused: i.paused?.get(id) ?? null,
+      tasks: {
+        proposed: i.proposals.filter((p) => p.category === id).length,
+        inbox: count(id, ["inbox"]), ready: count(id, ["ready"]), working: count(id, ["claimed", "running"]),
+        review: count(id, ["review"]), done: count(id, ["done"]), blocked: count(id, ["blocked"]),
+      },
+      runs: { n: mine.length, drafts: mine.filter((e) => e.outcome === "ok").length },
+      reviews: { accepted: st?.accepted ?? 0, redo: st?.redo ?? 0, rejected: st?.rejected ?? 0, rate: st?.total ? st.rate : null, days, pauseBelow: ap.threshold, minReviews: ap.minVerdicts },
+    };
+  });
+  const byUnknown = new Map<string, number>();
+  for (const t of tasks) if (t.category && !cfg[t.category] && t.status !== "done") byUnknown.set(t.category, (byUnknown.get(t.category) ?? 0) + 1);
+  return { categories, unknown: [...byUnknown].map(([id, n]) => ({ id, tasks: n })).sort((a, b) => a.id.localeCompare(b.id)) };
 }
 
 export function buildPipeline(i: PipelineInputs): PipelineData {
@@ -195,6 +273,8 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     ...i.health.problems,
   ];
 
+  const cats = buildCategories(i, runs);
+
   const sharedRules: PipelineRules = local ? i.rules : {
     ...i.rules,
     neverIngest: {
@@ -221,6 +301,8 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     checks: i.checks,
     held,
     skills: i.skills.map((s) => ({ name: s.name, what: s.description, ...skillNode(s), runs: s.runsInWindow, copy: s.runs === "team" ? "team's copy" : "built-in", category: s.category })),
+    categories: cats.categories,
+    unknownCategories: cats.unknown,
     schedules: i.schedules,
     rules: sharedRules,
   };

@@ -52,6 +52,13 @@ export function registerServices(o: { tracker?: Factory<Tracker>; lease?: Factor
   if (o.paused) overrides.paused!.push(o.paused);
 }
 
+/** Categories blocked by admin policy or auto-paused (REV-3), with the reason. Empty without ee/. */
+export async function pausedCategories(ctx: Ctx): Promise<Map<string, string>> {
+  const m = new Map<string, string>();
+  for (const f of overrides.paused ?? []) for (const [k, v] of await f(ctx)) m.set(k, v);
+  return m;
+}
+
 export async function services(ctx: Ctx, test?: Partial<Services>): Promise<Services> {
   // Everything that reaches the tracker or leases is shared team work (COMPAT-2).
   assertTeamVersion(ctx.team);
@@ -61,13 +68,7 @@ export async function services(ctx: Ctx, test?: Partial<Services>): Promise<Serv
     tracker,
     lease,
     meetings: test?.meetings ?? gitMeetingLedger(ctx.repo),
-    paused:
-      test?.paused ??
-      (async () => {
-        const m = new Map<string, string>();
-        for (const f of overrides.paused ?? []) for (const [k, v] of await f(ctx)) m.set(k, v);
-        return m;
-      }),
+    paused: test?.paused ?? (() => pausedCategories(ctx)),
   };
 }
 

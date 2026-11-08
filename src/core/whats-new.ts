@@ -19,6 +19,15 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.17.0", date: "2026-11-08", headline: "The pipeline board shows you where to act",
+    items: [
+      { what: "Click a step on the map and its detail opens beside it (or scrolls into view on a narrow window), with what's waiting there and what you can do. The cards at the top take you straight to it.", try: "pmx flow --web" },
+      { what: "Approve or drop proposed tasks, and accept, reject or ask for a redo on agent drafts, right on the board. Dropping waits a few seconds with an Undo.", try: "pmx flow --web" },
+      { what: "Each problem says how to fix it, with a command to copy or a button to the setting. A failed privacy check now shows at the top.", try: "pmx flow --web" },
+      { what: "Published the board in Claude? Type /pmx-flow there again to update it. Its Rules tab now turns your changes into commands to copy." },
+    ],
+  },
+  {
     version: "0.16.2", date: "2026-11-08", headline: "The board's Skills tab lists your skills again",
     items: [
       { what: "The Skills tab on the pipeline board showed \"[object HTMLDivElement]\" instead of your skills. It now lists them in their groups, with run counts. Published the board in Claude? Type /pmx-flow there again to update it.", try: "pmx flow --web" },

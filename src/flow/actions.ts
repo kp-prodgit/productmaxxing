@@ -134,7 +134,7 @@ export function setRubricCell(skill: string, category: string, size: Size, text:
  * Team settings as one pull request to the PMX repo (BOARD-3): a branch off the default branch in a worktree, so the
  * PM's own checkout is never touched. Nothing changes for anyone until a code owner merges it.
  */
-export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{ url: string; branch: string }> {
+export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{ id: string; url: string; branch: string }> {
   const team = changes.filter(isTeamChange);
   if (!team.length) throw new Error("No team changes to propose.");
   const base = await ctx.repo.defaultBranch();
@@ -162,7 +162,7 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
     if (!sha) throw new Error("Those team settings are already in place.");
     const host = await outputHost(ctx.repo, ctx.keychain, ctx.exec, ctx.fetch);
     const pr = await host.openPr({ branch, base, title: "Team settings from the PMX board", body: `Proposed from the PMX pipeline board on ${ctx.agent}.\n\n${lines.join("\n")}\n\nNothing changes for anyone until this merges.` });
-    return { url: pr.url, branch };
+    return { id: pr.id, url: pr.url, branch };
   } finally {
     await ctx.repo.removeWorktree(dir).catch(() => {});
   }

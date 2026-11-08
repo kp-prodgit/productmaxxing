@@ -17,6 +17,7 @@ import { kindOf, toMeeting, toTask } from "../tracker/linear.js";
  *    opaque IDs; no folders, no to-do text, no `detail` strings, no hashes.
  *  - "team": the shared run log only, as every teammate's clone has it. No meetings, no titles.
  */
+const pl = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export type FlowLevel = "local" | "shared" | "team";
 
 export type NodeKind = "source" | "skipped" | "vault" | "run" | "skill" | "task" | "todo" | "issue" | "meeting" | "execution" | "verdict";
@@ -337,26 +338,26 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
     const leaked = heldKeys.filter((h) => h.keys.some((k) => ledgerKeys.has(k)));
     const outboxCanary = i.outbox.filter((o) => o.text.includes("PMX-CANARY-")).length;
     checks.push(i.issues === null
-      ? { id: "held-never-in-linear", status: "unknown", label: "Held meetings stayed out of Linear", detail: "PMX has no copy of Linear yet, so it can't compare. Run the Linear sync." }
+      ? { id: "held-never-in-linear", status: "unknown", label: "Private meetings stayed out of Linear", detail: "PMX has no copy of Linear yet, so it can't compare. It checks after the next Linear sync." }
       : leaked.length
-        ? { id: "held-never-in-linear", status: "violated", label: "Held meetings stayed out of Linear", detail: `${leaked.length} held meeting(s) match a meeting in Linear's ledger: ${[...new Set(leaked.flatMap((h) => h.keys.map((k) => ledgerKeys.get(k)).filter(Boolean)))].join(", ")}. A teammate may have processed the same meeting; check it.` }
-        : { id: "held-never-in-linear", status: "ok", label: "Held meetings stayed out of Linear", detail: `${held} held item(s) and ${skippedUpstream} skipped before saving; none matches any of the ${ledgerKeys.size} meeting key(s) in Linear, and every task cites only sources that passed.` });
+        ? { id: "held-never-in-linear", status: "violated", label: "Private meetings stayed out of Linear", detail: `${pl(leaked.length, "private meeting matches", "private meetings match")} a meeting in Linear's ledger: ${[...new Set(leaked.flatMap((h) => h.keys.map((k) => ledgerKeys.get(k)).filter(Boolean)))].join(", ")}. A teammate may have processed the same meeting; check it.` }
+        : { id: "held-never-in-linear", status: "ok", label: "Private meetings stayed out of Linear", detail: `${pl(held, "meeting")} kept private and ${skippedUpstream} skipped before saving; none of them is among the ${pl(ledgerKeys.size, "meeting")} recorded for Linear, and every task cites only meetings that passed the rules.` });
     checks.push(canaryTotal === 0
-      ? { id: "canaries", status: "unknown", label: "Canaries held", detail: "No run in this window tested canaries yet (runs from pmx 0.11.0 on do)." }
+      ? { id: "canaries", status: "unknown", label: "Test meetings: not tested yet", detail: "PMX tests its rules with fake confidential meetings. No run in this window has done that yet." }
       : canaryFailed.size
-        ? { id: "canaries", status: "violated", label: "Canaries held", detail: `${canaryTotal - canaryHeld} of ${canaryTotal} test meeting(s) got past the rules: ${[...canaryFailed].join(", ")}. Run \`pmx doctor\`.` }
-        : { id: "canaries", status: "ok", label: "Canaries held", detail: `${canaryHeld} of ${canaryTotal} fake confidential meetings were held by this window's own rules.` });
+        ? { id: "canaries", status: "violated", label: "Test meetings were kept private", detail: `${canaryTotal - canaryHeld} of ${pl(canaryTotal, "fake confidential meeting")} got past the rules: ${[...canaryFailed].join(", ")}. Run \`pmx doctor\`.` }
+        : { id: "canaries", status: "ok", label: "Test meetings were kept private", detail: `PMX tests its rules with fake confidential meetings: ${canaryHeld} of ${canaryTotal} were kept private.` });
     checks.push(outboxCanary
-      ? { id: "outbox-clean", status: "violated", label: "Nothing confidential is waiting to go to Linear", detail: `${outboxCanary} queued change(s) carry a canary marker.` }
-      : { id: "outbox-clean", status: "ok", label: "Nothing confidential is waiting to go to Linear", detail: `${i.outbox.length} change(s) waiting for the next sync; none carries a canary.` });
+      ? { id: "outbox-clean", status: "violated", label: "Nothing confidential is waiting to go to Linear", detail: `${pl(outboxCanary, "queued change carries", "queued changes carry")} a test marker.` }
+      : { id: "outbox-clean", status: "ok", label: "Nothing confidential is waiting to go to Linear", detail: `${pl(i.outbox.length, "change")} waiting for the next sync; none carries a test marker.` });
   }
   if (i.chain) checks.push(i.chain.ok
-    ? { id: "runlog-chain", status: "ok", label: "Run log unbroken", detail: `${i.chain.entries} entries from ${i.chain.agents} agent(s); every hash matches.` }
-    : { id: "runlog-chain", status: "violated", label: "Run log unbroken", detail: i.chain.problems.slice(0, 3).join("; ") });
-  else checks.push({ id: "runlog-chain", status: "unknown", label: "Run log unbroken", detail: "No run log yet: no agent has run a task." });
+    ? { id: "runlog-chain", status: "ok", label: "Agent history is untouched", detail: `${pl(i.chain.entries, "entry", "entries")} from ${pl(i.chain.agents, "agent")}; none was changed afterwards.` }
+    : { id: "runlog-chain", status: "violated", label: "Agent history is untouched", detail: i.chain.problems.slice(0, 3).join("; ") });
+  else checks.push({ id: "runlog-chain", status: "unknown", label: "Agent history", detail: "Nothing recorded yet: no agent has run a task." });
   if (!team) checks.push(oldLinks || unresolved
-    ? { id: "links", status: "unknown", label: "Every link is recorded", detail: [oldLinks ? `${oldLinks} task link(s) matched by title (older runs don't record the issue; drawn dashed)` : "", unresolved ? `${unresolved} task(s) wait for the next Linear sync` : ""].filter(Boolean).join("; ") }
-    : { id: "links", status: "ok", label: "Every link is recorded", detail: "Every task that went to Linear in this window records the issue it became." });
+    ? { id: "links", status: "unknown", label: "Every Linear task traces back to its run", detail: [oldLinks ? `${pl(oldLinks, "task")} matched by title (older runs don't record the issue; drawn dashed)` : "", unresolved ? `${pl(unresolved, "task waits", "tasks wait")} for the next Linear sync` : ""].filter(Boolean).join("; ") }
+    : { id: "links", status: "ok", label: "Every Linear task traces back to its run", detail: "Every task that went to Linear in this window records the issue it became." });
 
   if (!team && !receipts.length) gaps.push("No PMX run on this Mac in this window. Widen the window, or check `pmx schedule`.");
   if (i.issues === null && !team) gaps.push("No copy of Linear yet: issues appear after the next Linear sync.");

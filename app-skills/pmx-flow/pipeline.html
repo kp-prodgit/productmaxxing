@@ -6,8 +6,9 @@
 <script type="application/json" id="pmx-config">{"mode":"artifact","version":"0.0.0"}</script>
 <style>
 /* Installed by ProductMaxxing. `pmx flow --web` serves this page on this Mac; /pmx-flow publishes it as a Claude artifact (BOARD-3).
-   Layout: "Needs you" first, then a map coloured by where data goes (this Mac, Claude, Linear, the PMX repo).
-   Top band runs left to right to Linear; the bottom band turns back for agent work. Rules say what works today. */
+   Layout: a one-line summary and "Needs you" first, then a map coloured by where data goes (this Mac, Claude, Linear,
+   the PMX repo) with the selected step's detail beside it. Top band runs left to right to Linear; the bottom band turns
+   back for agent work. Rules say what works today. */
 :root {
   --bg: #f4f5f3;
   --panel: #ffffff;
@@ -15,7 +16,7 @@
   --line: #cfd4cb;
   --ink: #1b211e;
   --ink-2: #48524c;
-  --ink-3: #6b766f;
+  --ink-3: #5b655f;
   --chrome: #1b211e;
   --mac: #2f5f86;
   --mac-soft: #e1ebf4;
@@ -59,6 +60,8 @@ p { margin: 0 }
 .small { font-size: 12.5px }
 button { font: inherit; color: inherit }
 :focus-visible { outline: 2px solid var(--chrome); outline-offset: 2px }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0 }
+a { color: inherit }
 .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 11px; cursor: pointer; font-size: 13px; line-height: 1.2 }
 .btn:hover { border-color: var(--ink-3) }
 .btn.primary { background: var(--chrome); border-color: var(--chrome); color: var(--bg) }
@@ -73,16 +76,28 @@ header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-cont
 .need { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; text-align: left }
 .need:hover { border-color: var(--ink-3) }
 .need .big { font-family: var(--font-data); font-size: 20px; font-weight: 500 }
-.need.todo { border-color: var(--chrome) }
-.need.calm { cursor: default }
+.need.todo { border-color: var(--chrome); border-width: 2px }
+.need.calm { cursor: default; background: transparent; border-style: dashed }
+.need .go { margin-left: 4px; font-weight: 600 }
+.summary { font-size: 14px; margin: 0 0 10px; max-width: 90ch }
+.health .fixes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px }
+.health ul.probs { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px }
+.chipcmd { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-data); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px 2px 8px }
+.chipcmd button { border: 0; border-left: 1px solid var(--line); background: none; padding: 2px 6px; cursor: pointer; font-family: var(--font-ui); font-size: 12px }
+.toast { position: sticky; top: 8px; z-index: 4; background: var(--chrome); color: var(--bg); border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; font-size: 13px; display: flex; gap: 12px; align-items: center; justify-content: space-between }
+.toast a { color: var(--bg) }
+.toast .btn { background: transparent; color: var(--bg); border-color: var(--bg) }
+.toast :focus-visible { outline-color: var(--bg) }
 .health { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); flex: 1 1 280px; min-width: 0 }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none }
 .dot.bad { background: var(--bad) }
+.dot.paused { background: var(--ink-3) }
+.stale { opacity: 0.6 }
 
 nav.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto }
 nav.tabs a { text-decoration: none; color: var(--ink-2); padding: 9px 12px; border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 500 }
 nav.tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--chrome) }
-nav.tabs .n { font-family: var(--font-data); font-size: 11.5px; color: var(--ink-3); margin-left: 4px }
+nav.tabs .n { font-size: 11.5px; color: var(--bad); margin-left: 4px; font-weight: 600 }
 
 /* Connections */
 .bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin-bottom: 10px }
@@ -90,22 +105,39 @@ nav.tabs .n { font-family: var(--font-data); font-size: 11.5px; color: var(--ink
 .seg button { border: 0; background: none; padding: 6px 11px; cursor: pointer; font-size: 13px; border-right: 1px solid var(--line) }
 .seg button:last-child { border-right: 0 }
 .seg button[aria-pressed="true"] { background: var(--chrome); color: var(--bg) }
+.seg button:focus-visible { outline-offset: -3px }
+.seg button[aria-pressed="true"]:focus-visible { outline-color: var(--bg) }
 .seg button:disabled { cursor: not-allowed; color: var(--ink-3) }
 .asof { font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.hint-map { font-size: 13px; color: var(--ink-2); margin: 0 0 8px }
+.key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin: 0 0 8px; align-items: center }
+.key span { display: inline-flex; align-items: center; gap: 7px }
+.key svg { width: 28px; height: 8px; overflow: visible }
+.key .pillkey { font-family: var(--font-data); font-size: 11px; background: var(--chrome); color: var(--bg); border-radius: 999px; padding: 0 7px }
+/* The detail sits beside the map wherever both fit, so picking a step shows its detail in view. */
 .conn { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px }
-@media (min-width: 1560px) { .conn { grid-template-columns: minmax(0, 1fr) 340px; align-items: start } }
-@media (min-width: 900px) and (max-width: 1559px) { aside.detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 28px; align-content: start; grid-auto-flow: dense } aside.detail > * { grid-column: 1 } aside.detail > .prop, aside.detail > dl, aside.detail > h3, aside.detail > .links, aside.detail > .cmdline, aside.detail > .carry { grid-column: 2 } }
+@media (min-width: 1180px) { .conn { grid-template-columns: minmax(0, 1fr) 340px; align-items: start } aside.detail { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto } aside.detail .backmap { display: none } }
 .mapbox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; overflow-x: auto }
-svg.map { display: block; width: 100%; min-width: 900px; height: auto; font-family: var(--font-ui) }
-.map .band { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; fill: var(--ink-3); font-weight: 600 }
+svg.map { display: block; width: 100%; min-width: 760px; height: auto; font-family: var(--font-ui) }
+.map .band { font-size: 12.5px; letter-spacing: 0.07em; text-transform: uppercase; fill: var(--ink-3); font-weight: 600 }
 .map .divider { stroke: var(--line); stroke-dasharray: 4 4 }
 .map .node rect.box { stroke-width: 1.5 }
-.map .node .t { font-size: 13.5px; font-weight: 600; fill: var(--ink) }
-.map .node .s { font-size: 11.5px; fill: var(--ink-2) }
-.map .node .c { font-family: var(--font-data); font-size: 14px; font-weight: 500; fill: var(--ink) }
-.map .node .tag { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em }
+.map .node .t { font-size: 14.5px; font-weight: 600; fill: var(--ink) }
+.map .node .s { font-size: 12.5px; fill: var(--ink-2) }
+.map .node .tag { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em }
 .map .node { cursor: pointer }
-.map .node.sel rect.box { stroke: var(--ink); stroke-width: 2.5 }
+.map .node .halo { fill: none; stroke: var(--chrome); stroke-width: 2; opacity: 0 }
+.map .node:hover rect.box { stroke-width: 2.5 }
+.map .node.sel rect.box { stroke-width: 3 }
+.map .node.sel .halo { opacity: 0.55 }
+.map g:focus-visible { outline: none }
+.map .node:focus-visible rect.box { stroke: var(--ink); stroke-width: 3; stroke-dasharray: none }
+.map .queue rect { fill: var(--chrome) }
+.map .queue text { fill: var(--bg); font-family: var(--font-data); font-size: 12px; font-weight: 600 }
+.map .queue.zero rect { fill: var(--panel-2); stroke: var(--line) }
+.map .queue.zero text { fill: var(--ink-3) }
+.map .node, .map .edge, .map .badge { transition: opacity 120ms }
+.map.has-sel .node:not(.sel):not(.adj), .map.has-sel .edge:not(.sel):not(.adj), .map.has-sel .badge:not(.adj) { opacity: 0.35 }
 .k-app rect.box { fill: var(--panel); stroke: var(--ink-3) } .k-app .tag { fill: var(--ink-3) }
 .k-mac rect.box { fill: var(--mac-soft); stroke: var(--mac) } .k-mac .tag { fill: var(--mac) }
 .k-claude rect.box { fill: var(--claude-soft); stroke: var(--claude) } .k-claude .tag { fill: var(--claude) }
@@ -113,31 +145,31 @@ svg.map { display: block; width: 100%; min-width: 900px; height: auto; font-fami
 .k-repo rect.box { fill: var(--repo-soft); stroke: var(--repo) } .k-repo .tag { fill: var(--repo) }
 .k-held rect.box { fill: var(--held-soft); stroke: var(--held); stroke-dasharray: 5 3 } .k-held .tag { fill: var(--held) }
 .k-off rect.box { fill: var(--panel); stroke: var(--ink-3); stroke-dasharray: 3 3 } .k-off .t, .k-off .s { fill: var(--ink-3) }
+/* Each kind of connection differs in line pattern as well as colour. */
 .map .edge path.l { fill: none; stroke-width: 2.2 }
 .map .edge .hit { stroke: transparent; stroke-width: 16; fill: none }
 .map .edge { cursor: pointer }
-.e-full path.l { stroke: var(--mac) }
-.e-model path.l { stroke: var(--claude); stroke-width: 3 }
-.e-linear path.l { stroke: var(--linear); stroke-width: 3 }
-.e-status path.l { stroke: var(--ink-3) }
-.e-held path.l { stroke: var(--held); stroke-dasharray: 6 4 }
-.e-off path.l { stroke: var(--ink-3); stroke-dasharray: 3 4 }
-.map .edge.sel path.l { stroke-width: 4.5 }
+.e-full path.l, .kl-full { stroke: var(--mac); stroke-width: 2 }
+.e-model path.l, .kl-model { stroke: var(--claude); stroke-width: 3.5 }
+.e-linear path.l, .kl-linear { stroke: var(--linear); stroke-width: 3; stroke-dasharray: 12 3 2 3 }
+.e-status path.l, .kl-status { stroke: var(--ink-3); stroke-width: 1.5 }
+.e-held path.l, .kl-held { stroke: var(--held); stroke-width: 2; stroke-dasharray: 6 4 }
+.e-off path.l, .kl-off { stroke: var(--ink-3); stroke-width: 2; stroke-dasharray: 2 4 }
+.map .edge:hover path.l, .map .edge:focus-visible path.l { stroke-width: 4.5 }
+.map .edge.sel path.l { stroke-width: 5 }
+.map .badge { cursor: pointer }
 .map .badge rect { fill: var(--panel); stroke: var(--line) }
-.map .badge text { font-family: var(--font-data); font-size: 12px; fill: var(--ink); font-weight: 500 }
+.map .badge text { font-family: var(--font-data); font-size: 12.5px; fill: var(--ink); font-weight: 500 }
+.map .badge.zero text { fill: var(--ink-3) }
 .map .badge.new rect { stroke: var(--ink); stroke-width: 2 }
 .map .pulse { fill: var(--ink) }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); padding: 10px 4px 0 }
-.legend span { display: inline-flex; align-items: center; gap: 7px }
-.legend i { display: inline-block; width: 24px; border-top: 3px solid var(--ink-3) }
-.legend i.full { border-top: 2px solid var(--mac) } .legend i.model { border-color: var(--claude) } .legend i.linear { border-color: var(--linear) }
-.legend i.status { border-top: 2px solid var(--ink-3) } .legend i.held { border-top: 2px dashed var(--held) }
 
 table.list { width: 100%; border-collapse: collapse; font-size: 13px }
 table.list th, table.list td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top }
 table.list th { font-size: 12px; color: var(--ink-2); font-weight: 600 }
 table.list td.n { font-family: var(--font-data); text-align: right; white-space: nowrap }
 table.list tr.grp td { background: var(--panel-2); font-weight: 600; font-size: 12px; color: var(--ink-2) }
+table.list tr.grp .textlink { font-weight: 600 }
 .kindchip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; white-space: nowrap }
 .kindchip.full { background: var(--mac-soft); color: var(--mac) } .kindchip.model { background: var(--claude-soft); color: var(--claude) }
 .kindchip.linear { background: var(--linear-soft); color: var(--linear) } .kindchip.status { background: var(--panel-2); color: var(--ink-2) }
@@ -146,6 +178,13 @@ table.list tr.grp td { background: var(--panel-2); font-weight: 600; font-size: 
 aside.detail { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0 }
 .eyebrow { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3); font-weight: 600 }
 aside.detail h2 { margin: 3px 0 6px }
+aside.detail h2:focus { outline: none }
+.backmap { display: inline-block; margin-bottom: 8px; font-size: 13px }
+.detail .empty { color: var(--ink-2); font-size: 13px; display: grid; gap: 8px }
+.prop.busy { opacity: 0.6 }
+.prop .acts .btn.primary:disabled { opacity: 0.6 }
+.todo-item { display: grid; gap: 2px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px }
+.review-acts { display: grid; gap: 6px; margin-top: 4px }
 dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 5px 12px; margin: 10px 0 }
 dl.kv dt { color: var(--ink-2); font-size: 12.5px }
 dl.kv dd { margin: 0; font-family: var(--font-data); font-size: 12.5px; text-align: right }
@@ -162,6 +201,7 @@ dl.kv dd { margin: 0; font-family: var(--font-data); font-size: 12.5px; text-ali
 .checks li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; font-size: 13px }
 .checks li .ic { font-weight: 700 }
 .checks li.ok .ic { color: var(--ok) } .checks li.info .ic { color: var(--ink-3) } .checks li.bad .ic { color: var(--bad) }
+.checks li.bad { background: var(--held-soft); border-radius: 6px; padding: 4px 6px }
 details summary { cursor: pointer; color: var(--ink-2) }
 
 /* Skills and schedules */
@@ -176,6 +216,9 @@ code { font-family: var(--font-data); font-size: 12.5px; overflow-wrap: anywhere
 .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--ink-2); white-space: nowrap }
 .textlink { border: 0; background: none; padding: 0; color: var(--ink); text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; cursor: pointer; font-size: inherit }
 .banner { display: flex; gap: 10px; align-items: flex-start; background: var(--held-soft); color: var(--ink); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px }
+.banner.error { background: var(--panel); border: 1px solid var(--bad) }
+.banner.error::before { content: "Error:"; font-weight: 700; color: var(--bad) }
+.loading { color: var(--ink-3); padding: 20px 4px }
 .tl { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; overflow-x: auto }
 .tl svg { display: block; min-width: 640px; width: 100% }
 .tl .tick { font-size: 10.5px; fill: var(--ink-3); font-family: var(--font-data) }
@@ -206,7 +249,9 @@ code { font-family: var(--font-data); font-size: 12.5px; overflow-wrap: anywhere
 .chip.pending { border-style: dashed; border-color: var(--ink-2) }
 .chip button { border: 0; background: none; cursor: pointer; color: var(--ink-3); padding: 0 2px; font-size: 14px; line-height: 1 }
 .addrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px }
-input.in, select.in, textarea.in { font: inherit; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); min-width: 0 }
+input.in, select.in, textarea.in { font: inherit; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--ink-3); background: var(--panel); color: var(--ink); min-width: 0 }
+.ro { font-weight: 600 }
+.inreview { display: grid; gap: 4px; background: var(--linear-soft); border-radius: 10px; padding: 10px 12px; font-size: 13px }
 input.in.bad { border-color: var(--bad) }
 .err { color: var(--bad); font-size: 12.5px }
 .hint { font-size: 12.5px; color: var(--ink-2); margin-top: 6px }
@@ -228,10 +273,12 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
 .tray-actions { display: flex; gap: 8px; flex-wrap: wrap }
 .tray .btn { background: transparent; color: var(--bg); border-color: var(--bg) }
 .tray .btn.primary { background: var(--bg); color: var(--chrome) }
+.tray :focus-visible { outline-color: var(--bg) }
 #review { margin-top: 16px }
 .sheet { background: var(--panel); border: 2px solid var(--chrome); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px }
 .chg { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--line); align-items: start }
 .chg .when { font-size: 12px; color: var(--ink-3) }
+.chg details summary { font-size: 12px }
 
 @media (max-width: 640px) { .ctl { grid-template-columns: 1fr } }
 @media (prefers-reduced-motion: reduce) { .map .pulse { display: none } }
@@ -241,24 +288,25 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
 <div class="wrap">
   <header class="top">
     <div>
-      <h1 id="h-title">PMX Pipeline</h1>
-      <p class="sub">What PMX read, what it held back, what reached Linear and what happened next. And the rules that decide each step.</p>
+      <h1 id="h-title">PMX: from meetings to Linear</h1>
+      <p class="sub">PMX reads your meeting transcripts, keeps private ones on this Mac, and turns customer calls into proposed tasks. Nothing reaches Linear until you approve it.</p>
     </div>
     <span class="example" id="mode-note"></span>
   </header>
 
   <div class="banner" id="banner" role="alert" hidden></div>
+  <p class="summary" id="summary"></p>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <div class="needs" id="needs"></div>
+  <p class="sr-only" id="sr" role="status" aria-live="polite"></p>
 
   <nav class="tabs" aria-label="Sections">
-    <a href="#skills" data-tab="skills">Skills <span class="n" id="n-skills"></span></a>
-    <a href="#schedules" data-tab="schedules">Scheduled tasks <span class="n" id="n-sched"></span></a>
-    <a href="#connections" data-tab="connections">Connections</a>
+    <a href="#connections" data-tab="connections">Overview</a>
     <a href="#rules" data-tab="rules">Rules</a>
+    <a href="#schedules" data-tab="schedules">Scheduled tasks <span class="n" id="n-sched"></span></a>
+    <a href="#skills" data-tab="skills">Skills</a>
   </nav>
 
-  <section id="v-skills" hidden></section>
-  <section id="v-schedules" hidden></section>
   <section id="v-connections">
     <div class="bar">
       <div class="seg" role="group" aria-label="Time window">
@@ -266,36 +314,42 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
         <button type="button" data-win="168" aria-pressed="true">Last 7 days</button>
         <button type="button" data-win="336" aria-pressed="false">Last 14 days</button>
       </div>
-      <div class="asof"><span class="dot" id="live-dot"></span><span id="asof">Loading from PMX…</span><button type="button" class="btn" id="live-btn" aria-pressed="true">Pause updates</button>
+      <div class="asof"><span class="dot" id="live-dot"></span><span id="asof">Loading from PMX…</span><button type="button" class="btn" id="live-btn">Pause updates</button>
         <div class="seg" role="group" aria-label="View"><button type="button" data-view="map" aria-pressed="true">Map</button><button type="button" data-view="list" aria-pressed="false">List</button></div>
       </div>
     </div>
+    <p class="hint-map" id="hint-map">Click a step or an arrow to see what it carries and what you can do there.</p>
+    <div class="key" id="legend">
+      <span><span class="pillkey">2</span>waiting now</span>
+      <span><span class="num">2</span>on an arrow: <span id="key-win">moved in the last 7 days</span></span>
+      <span><svg viewBox="0 0 28 8" aria-hidden="true"><line class="kl-full" x1="0" y1="4" x2="28" y2="4"/></svg>Full transcript, stays on this Mac</span>
+      <span><svg viewBox="0 0 28 8" aria-hidden="true"><line class="kl-model" x1="0" y1="4" x2="28" y2="4"/></svg>Private details removed, sent to Claude</span>
+      <span><svg viewBox="0 0 28 8" aria-hidden="true"><line class="kl-linear" x1="0" y1="4" x2="28" y2="4"/></svg>Task summaries sent to Linear</span>
+      <span><svg viewBox="0 0 28 8" aria-hidden="true"><line class="kl-status" x1="0" y1="4" x2="28" y2="4"/></svg>No meeting text: counts and status</span>
+      <span><svg viewBox="0 0 28 8" aria-hidden="true"><line class="kl-held" x1="0" y1="4" x2="28" y2="4"/></svg>Private: never sent anywhere</span>
+      <span><svg viewBox="0 0 28 8" aria-hidden="true"><line class="kl-off" x1="0" y1="4" x2="28" y2="4"/></svg>Not connected</span>
+    </div>
     <div class="conn">
       <div>
-        <div class="mapbox" id="mapbox"><svg class="map" id="map" viewBox="0 0 1160 600" role="group" aria-label="Connections map. Use Tab to move between steps and connections."></svg></div>
+        <div class="mapbox" id="mapbox"><svg class="map" id="map" viewBox="0 0 1160 600" role="group" aria-label="Map of PMX's steps. Tab to it, then use the arrow keys to move between steps and Enter to open one. Use the right and left square brackets to step through a step's connections." aria-describedby="legend"><text x="20" y="60" class="band">Loading from PMX…</text></svg></div>
         <div class="mapbox" id="listbox" hidden></div>
-        <div class="legend">
-          <span><i class="full"></i>Full transcript, stays on this Mac</span>
-          <span><i class="model"></i>Redacted text sent to Claude</span>
-          <span><i class="linear"></i>Task summaries sent to Linear</span>
-          <span><i class="status"></i>Status and IDs only</span>
-          <span><i class="held"></i>Held: never sent anywhere</span>
-        </div>
       </div>
-      <aside class="detail" id="detail"></aside>
+      <aside class="detail" id="detail" aria-label="Selected step"><p class="loading">Loading from PMX…</p></aside>
     </div>
-    <section class="checks" aria-label="Checks">
-      <h2>Checks</h2>
+    <section class="checks" id="checks-box" aria-labelledby="checks-h">
+      <h2 id="checks-h" tabindex="-1">Privacy checks</h2>
       <ul id="checks"></ul>
     </section>
   </section>
-  <section id="v-rules" hidden></section>
+  <section id="v-rules" hidden><p class="loading">Loading from PMX…</p></section>
+  <section id="v-schedules" hidden><p class="loading">Loading from PMX…</p></section>
+  <section id="v-skills" hidden><p class="loading">Loading from PMX…</p></section>
   <div id="review"></div>
 </div>
 
 <div class="tray" id="tray" hidden>
   <div class="in">
-    <span id="tray-text"></span>
+    <span id="tray-text" role="status"></span>
     <span class="tray-actions">
       <button type="button" class="btn" id="tray-discard">Discard all</button>
       <button type="button" class="btn primary" id="tray-review">Review changes</button>
@@ -312,12 +366,20 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
   // and can only add to the do-not-read list.
   const CFG = JSON.parse(document.getElementById("pmx-config").textContent || "{}");
   const LOCAL = CFG.mode === "local";
-  const TOKEN = LOCAL ? new URLSearchParams(location.hash.slice(1)).get("t") || "" : "";
-  if (LOCAL && TOKEN) { try { history.replaceState(null, "", location.pathname); } catch {} }
+  // The link from Terminal carries the token as #t=…, optionally with &tab=rules. It moves to this tab's session storage
+  // so a reload keeps working, and leaves the address bar for the page's own routes.
+  const sess = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch {} } };
+  const linkParams = new URLSearchParams(location.hash.slice(1));
+  let TOKEN = "";
+  if (LOCAL) {
+    TOKEN = linkParams.get("t") || sess.get("pmx-t") || "";
+    if (linkParams.get("t")) { sess.set("pmx-t", TOKEN); try { history.replaceState(null, "", `${location.pathname}#${linkParams.get("tab") || "connections"}`); } catch {} }
+  }
   let D = null;           // the latest PipelineData
   let first = null;       // edge counts when the page opened, for "since you opened"
   let hours = 168;
   let mcpP = null;
+  let loadSeq = 0;
 
   const HELP = {
     server_not_connected: "This page reads PMX on your Mac. Open it in the Claude desktop app on the Mac where PMX runs. If PMX is there, run pmx mcp --install once in Terminal and restart the Claude app.",
@@ -338,21 +400,50 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     return p;
   }
   async function api(path, body) {
-    const res = await fetch(path, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${TOKEN}`, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    let res;
+    try {
+      res = await fetch(path, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${TOKEN}`, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    } catch {
+      const e = new Error("PMX isn't answering on this Mac"); e.status = 0; throw e;
+    }
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { const e = new Error(j.error || `PMX answered ${res.status}`); e.status = res.status; e.body = j; throw e; }
     return j;
   }
+  function loadError(e) {
+    if (LOCAL) {
+      if (e.status === 403 || !TOKEN) return "This page's link has expired. In Terminal, run pmx flow --web and use the new link it opens.";
+      if (e.status === 0) return "PMX isn't answering. If you closed the Terminal window that ran pmx flow --web, run it again.";
+      return `PMX couldn't read its records: ${e.message}.`;
+    }
+    return HELP[e && e.code] || `Couldn't reach PMX on this Mac: ${(e && e.message) || "no answer"}.`;
+  }
   async function load() {
+    const seq = ++loadSeq;
+    document.querySelectorAll("[data-win]").forEach((b) => b.closest(".seg").setAttribute("aria-busy", "true"));
     try {
-      D = LOCAL ? (await api(`/api/pipeline?hours=${hours}`)).pipeline : await call("pipeline", { hours });
-      if (!first) first = edgeTotal();
+      const data = LOCAL ? (await api(`/api/pipeline?hours=${hours}`)).pipeline : await call("pipeline", { hours });
+      if (seq !== loadSeq) return; // an older answer arriving after a newer request
+      D = data;
+      if (first === null) first = edgeTotal();
       showBanner("");
       render();
     } catch (e) {
-      showBanner(LOCAL ? `Couldn't read PMX on this Mac (${e.message}). If you closed Terminal, run pmx flow --web again.` : HELP[e && e.code] || `Couldn't reach PMX on this Mac${e && e.code ? ` (${e.code})` : ""}: ${e.message || ""}`);
-      $("asof").textContent = D ? `Updated ${hm(D.at)} · couldn't refresh` : "Not connected";
+      if (seq !== loadSeq) return;
+      const msg = loadError(e);
+      showBanner(msg);
       $("live-dot").className = "dot bad";
+      if (D) {
+        $("asof").textContent = `Showing data from ${when(D.at)}. Couldn't refresh; trying again every minute.`;
+        for (const id of ["mapbox", "listbox", "needs", "detail"]) $(id).classList.add("stale");
+      } else {
+        $("asof").textContent = "Not connected";
+        for (const id of ["v-rules", "v-schedules", "v-skills"]) $(id).replaceChildren(h("p", { class: "loading" }, msg));
+        $("detail").replaceChildren(h("p", { class: "loading" }, msg));
+        $("map").replaceChildren(s("text", { x: 20, y: 60, class: "band" }, "No data yet"));
+      }
+    } finally {
+      if (seq === loadSeq) document.querySelectorAll("[data-win]").forEach((b) => b.closest(".seg").removeAttribute("aria-busy"));
     }
   }
   const edgeTotal = () => (D ? Object.values(D.edges).reduce((a, e) => a + e.n, 0) + D.sources.reduce((a, s) => a + s.n, 0) : 0);
@@ -368,6 +459,8 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     for (const c of kids.flat(3)) if (c != null && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c)));
     return el;
   };
+  // replaceChildren prints a null child as "null"; this skips empty ones, like h() does.
+  const put = (el, ...kids) => el.replaceChildren(...kids.flat(3).filter((k) => k != null && k !== false));
   const SVG = "http://www.w3.org/2000/svg";
   const s = (tag, attrs, ...kids) => {
     const el = document.createElementNS(SVG, tag);
@@ -388,55 +481,97 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
   const winText = () => (hours <= 24 ? "today" : `in the last ${Math.round(hours / 24)} days`);
   const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
   const activate = (fn) => ({ onclick: fn, onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(); } } });
-  const showBanner = (t) => { $("banner").textContent = t; $("banner").hidden = !t; };
-  async function copy(text, btn) {
-    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; } catch { btn.textContent = "Select and copy the command"; }
-    setTimeout(() => (btn.textContent = "Copy"), 1600);
+  // The banner is for errors only, and speaks once per new error rather than on every failed poll.
+  const showBanner = (t) => { const b = $("banner"); if (b.textContent !== t) b.textContent = t; b.hidden = !t; b.classList.toggle("error", !!t); };
+  const announce = (t) => { $("sr").textContent = ""; requestAnimationFrame(() => ($("sr").textContent = t)); };
+  let toastT = 0;
+  // Results of what the PM did, in one place near the top that screen readers also hear.
+  function toast(text, extra) {
+    clearTimeout(toastT);
+    put($("toast"), h("span", null, text), extra, h("button", { type: "button", class: "btn", onclick: () => ($("toast").hidden = true) }, "Dismiss"));
+    $("toast").hidden = false;
+    if (!extra) toastT = setTimeout(() => ($("toast").hidden = true), 8000);
   }
+  async function copy(text, btn) {
+    const was = btn.textContent;
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; } catch { btn.textContent = "Select and copy it"; }
+    setTimeout(() => (btn.textContent = was), 1600);
+  }
+  const cmdChip = (cmd) => h("span", { class: "chipcmd" }, cmd, h("button", { type: "button", "aria-label": `Copy ${cmd}`, onclick: (ev) => copy(cmd, ev.currentTarget) }, "Copy"));
+  const stacked = () => matchMedia("(max-width: 1179px)").matches;
 
-  // ================= tabs =================
-  const TABS = ["skills", "schedules", "connections", "rules"];
+  // ================= tabs and routes =================
+  // Routes: #connections, #connections/<step>, #rules, #rules/<section>, #schedules, #skills. The local page adds a history
+  // entry per click so Back works; inside the Claude app the page only replaces it, so Back leaves the page.
+  const TABS = ["connections", "rules", "schedules", "skills"];
+  let fromNode = null; // the step the PM came from when a rule button took them to Rules
   function show(tab, focusId) {
     if (!TABS.includes(tab)) tab = "connections";
     for (const t of TABS) $(`v-${t}`).hidden = t !== tab;
     document.querySelectorAll("nav.tabs a").forEach((a) => (a.dataset.tab === tab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
     store.set("pmx-pipeline-tab", tab);
-    try { history.replaceState(null, "", `#${tab}`); } catch {}
+    if (tab !== "rules") fromNode = null;
     if (focusId) requestAnimationFrame(() => { const el = $(focusId); if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); el.querySelector("h2")?.focus({ preventScroll: true }); } });
   }
-  document.querySelectorAll("nav.tabs a").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); show(a.dataset.tab); }));
-  const goRule = (id) => show("rules", `r-${id}`);
-  const goNode = (id) => { show("connections"); select("node", id); requestAnimationFrame(() => $("mapbox").scrollIntoView({ behavior: "smooth", block: "center" })); };
+  function setRoute(r, push) {
+    if (location.hash === `#${r}`) return;
+    try { if (push && LOCAL) history.pushState(null, "", `#${r}`); else history.replaceState(null, "", `#${r}`); } catch {}
+  }
+  function route() {
+    const [tab, sub] = location.hash.slice(1).split("/");
+    if (!TABS.includes(tab)) return;
+    if (tab === "rules" && sub) show("rules", `r-${sub}`);
+    else show(tab);
+    if (tab === "connections" && sub && D && nodes[sub]) select("node", sub, { quiet: true });
+  }
+  window.addEventListener("hashchange", route);
+  window.addEventListener("popstate", route);
+  document.querySelectorAll("nav.tabs a").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); show(a.dataset.tab); setRoute(a.dataset.tab, true); }));
+  const goRule = (id) => { fromNode = sel && sel.type === "node" ? sel.id : fromNode; if (D && state) { rulesSig = ""; drawRules(); } show("rules", `r-${id}`); setRoute(`rules/${id}`, true); };
+  // From the needs bar or a problem: open the step and land on what to do there.
+  function goNode(id) {
+    show("connections"); setRoute(`connections/${id}`, true);
+    if (view !== "map" && !nodes[id]) setView("map");
+    select("node", id, { user: true });
+    requestAnimationFrame(() => {
+      if (!stacked()) $("mapbox").scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const target = $("detail").querySelector(".prop .btn.primary, .review-acts .btn.primary") || $("detail-h");
+      target?.focus({ preventScroll: !stacked() });
+    });
+  }
 
   // ================= the map's shape =================
   const COLX = [20, 210, 400, 590, 780, 970], NW = 150, NH = 58;
+  // Tags say where the data is, not which product: that's what the colours mean too.
   const FIXED_NODES = {
-    collect:  { col: 1, y: 110, kind: "claude", tag: "CLAUDE", title: "Collect meetings", sub: "copies transcripts" },
-    filter:   { col: 2, y: 190, kind: "mac", tag: "MAC", title: "Privacy filter", sub: "fixed rules + yours" },
-    held:     { col: 2, y: 320, kind: "held", tag: "HELD", title: "Held back", sub: "not used, not sent" },
-    findtodo: { col: 3, y: 70, kind: "claude", tag: "CLAUDE", title: "Finds to-dos", sub: "in your meetings" },
-    draft:    { col: 3, y: 190, kind: "claude", tag: "CLAUDE", title: "Drafts tasks", sub: "from customer calls" },
-    todos:    { col: 4, y: 70, kind: "mac", tag: "MAC", title: "My to-dos", sub: "never leave this Mac" },
-    approve:  { col: 4, y: 190, kind: "mac", tag: "MAC", title: "You approve", sub: "pmx proposals" },
-    dropped:  { col: 4, y: 320, kind: "mac", tag: "MAC", title: "Dropped", sub: "you said no" },
-    inbox:    { col: 5, y: 190, kind: "linear", tag: "LINEAR", title: "Linear inbox", sub: "PMX project" },
-    ready:    { col: 5, y: 320, kind: "linear", tag: "LINEAR", title: "Ready", sub: "triaged, now" },
-    agent:    { col: 4, y: 470, kind: "claude", tag: "CLAUDE", title: "Agent works", sub: "clean PMX profile" },
-    review:   { col: 3, y: 470, kind: "repo", tag: "PMX REPO", title: "Draft PR", sub: "waiting for review" },
-    done:     { col: 2, y: 470, kind: "repo", tag: "PMX REPO", title: "Accepted", sub: "merged" },
+    collect:  { col: 1, y: 110, kind: "claude", tag: "CLAUDE APP", title: "Collect meetings", sub: "copies transcripts" },
+    filter:   { col: 2, y: 190, kind: "mac", tag: "ON YOUR MAC", title: "Privacy filter", sub: "decides what's private" },
+    held:     { col: 2, y: 320, kind: "held", tag: "KEPT PRIVATE", title: "Kept private", sub: "stays on your Mac" },
+    findtodo: { col: 3, y: 70, kind: "claude", tag: "SENT TO CLAUDE", title: "Finds to-dos", sub: "in your own meetings" },
+    draft:    { col: 3, y: 190, kind: "claude", tag: "SENT TO CLAUDE", title: "Proposes tasks", sub: "from customer calls" },
+    todos:    { col: 4, y: 70, kind: "mac", tag: "ON YOUR MAC", title: "Your to-dos", sub: "stay on your Mac", queue: true },
+    approve:  { col: 4, y: 190, kind: "mac", tag: "ON YOUR MAC", title: "You approve", sub: "you say yes or no", queue: true },
+    dropped:  { col: 4, y: 320, kind: "mac", tag: "ON YOUR MAC", title: "Dropped", sub: "you said no" },
+    inbox:    { col: 5, y: 190, kind: "linear", tag: "IN LINEAR", title: "Linear inbox", sub: "PMX project" },
+    ready:    { col: 5, y: 320, kind: "linear", tag: "IN LINEAR", title: "Ready", sub: "picked for an agent", queue: true },
+    agent:    { col: 4, y: 470, kind: "claude", tag: "CLAUDE AGENT", title: "Agent works", sub: "AI drafts the change" },
+    review:   { col: 3, y: 470, kind: "repo", tag: "TEAM REPO", title: "Agent draft", sub: "for you to review", queue: true },
+    done:     { col: 2, y: 470, kind: "repo", tag: "TEAM REPO", title: "Accepted", sub: "merged" },
   };
+  // The order Tab-and-arrow keys and the list view walk the steps in: the way work flows.
+  const FLOW = ["collect", "filter", "held", "findtodo", "todos", "draft", "approve", "dropped", "inbox", "ready", "agent", "review", "done"];
   const FIXED_EDGES = [
     ["c-f", "collect", "filter", "full", "Transcript files on this Mac. Nothing has left it at this point."],
     ["s-f", "slack", "filter", "status", "Messages from the Slack channels your team approved, read every 6 hours on the team's synthesis Mac. Never DMs."],
-    ["f-h", "filter", "held", "held", "Held meetings aren't sent to Claude or Linear. The transcript file stays on this Mac; receipts keep only the rule and a hash."],
-    ["f-t", "filter", "findtodo", "model", "Your own meetings, 1:1s included, redacted (emails, phone numbers, names on your CRM list) and with pay, performance and health passages cut. Sent to Claude with no tools; the to-dos it finds stay on this Mac."],
-    ["f-d", "filter", "draft", "model", "Customer calls and approved Slack threads, redacted, sent to Claude with no tools. 1:1s, hiring, internal-only meetings and anything on your do-not-read list never get here."],
+    ["f-h", "filter", "held", "held", "Meetings kept private aren't sent to Claude or Linear. The transcript file stays on this Mac; PMX's record keeps only which rule kept it private."],
+    ["f-t", "filter", "findtodo", "model", "Your own meetings, 1:1s included, with emails, phone numbers and names on your CRM list removed, and pay, performance and health passages cut. Sent to Claude with no tools; the to-dos it finds stay on this Mac."],
+    ["f-d", "filter", "draft", "model", "Customer calls and approved Slack threads, with private details removed, sent to Claude with no tools. 1:1s, hiring, internal-only meetings and anything on your do-not-read list never get here."],
     ["t-t", "findtodo", "todos", "status", "To-dos saved on this Mac only."],
     ["d-a", "draft", "approve", "status", "Proposed tasks wait on this Mac, exactly as Linear would get them. Linear has none of them yet."],
     ["a-x", "approve", "dropped", "status", "Tasks you dropped. Nothing about them reaches Linear."],
     ["a-i", "approve", "inbox", "linear", "Title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes."],
-    ["i-r", "inbox", "ready", "status", "Tasks a person moved to Ready, now. Only Ready tasks can be picked up."],
-    ["r-g", "ready", "agent", "model", "Your agent claimed a ready task that fits your budget and review cap, and ran its category's skill in PMX's clean Claude profile with the task text and team memory.", "uturn"],
+    ["i-r", "inbox", "ready", "status", "Tasks a teammate moved to Ready, counted now rather than over the window. Only Ready tasks are picked up."],
+    ["r-g", "ready", "agent", "model", "Your agent took a Ready task within your budget and review limit, and drafted the work in PMX's own Claude setup with the task text and team memory.", "uturn"],
     ["g-v", "agent", "review", "status", "A draft pull request in the PMX repo, with its run record."],
     ["v-d", "review", "done", "status", "A person accepted it. Rejected drafts lower the category's accept rate."],
   ];
@@ -459,23 +594,58 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
       edges.push({ id, from, to, kind: id === "s-f" && nodes.slack.kind === "off" ? "off" : kind, n: e.n, unit: e.unit, tokens: e.tokens, last: e.last, carries, route });
     }
   }
+  const order = () => [...Object.keys(nodes).filter((k) => nodes[k].col === 0), ...FLOW.filter((k) => nodes[k])];
 
-  // ================= needs you =================
+  // ================= summary and needs =================
+  const n0 = (id) => (D.edges[id] ? D.edges[id].n : 0);
+  function drawSummary() {
+    const collected = D.sources.reduce((a, x) => a + x.n, 0) + n0("s-f");
+    const waiting = [D.needs.proposals ? plural(D.needs.proposals, "task to approve", "tasks to approve") : "", D.needs.drafts ? plural(D.needs.drafts, "agent draft to review", "agent drafts to review") : ""].filter(Boolean);
+    const win = hours <= 24 ? "Today" : `Last ${Math.round(hours / 24)} days`;
+    $("summary").replaceChildren(h("strong", null, `${win}: `),
+      `${plural(collected, "meeting")} collected, ${n0("f-h")} kept private, ${plural(n0("d-a"), "task")} proposed, ${n0("a-i")} sent to Linear. `,
+      waiting.length ? h("strong", null, `Waiting for you: ${waiting.join(", ")}.`) : "Nothing is waiting for you.");
+  }
+  function fixButtons(p) {
+    const out = [];
+    if (p.cmd) out.push(cmdChip(p.cmd));
+    if (p.fix && p.fix.startsWith("rule:")) out.push(h("button", { type: "button", class: "btn", onclick: () => goRule(p.fix.slice(5)) }, `Fix it in Rules →`));
+    if (p.fix === "tab:schedules") out.push(h("button", { type: "button", class: "btn", onclick: () => { show("schedules"); setRoute("schedules", true); } }, "See scheduled tasks →"));
+    if (p.fix && p.fix.startsWith("check:")) out.push(h("button", { type: "button", class: "btn", onclick: () => goCheck(p.fix.slice(6)) }, "See privacy checks →"));
+    return out.length ? h("div", { class: "fixes" }, out) : null;
+  }
+  function goCheck(id) {
+    show("connections"); setRoute("connections", true);
+    requestAnimationFrame(() => { ($(`check-${id}`) || $("checks-box")).scrollIntoView({ behavior: "smooth", block: "center" }); $("checks-h").focus({ preventScroll: true }); });
+  }
   function drawNeeds() {
-    const p = D.needs.proposals, d = D.needs.drafts, ok = D.health.ok;
-    $("needs").replaceChildren(
-      h("button", { type: "button", class: `need${p ? " todo" : " calm"}`, onclick: () => goNode("approve") }, h("span", { class: "big" }, p), h("span", null, h("strong", null, p === 1 ? "proposed task to approve" : "proposed tasks to approve"), h("br"), h("span", { class: "faint small" }, "Nothing reaches Linear until you do"))),
-      h("button", { type: "button", class: `need${d ? " todo" : " calm"}`, onclick: () => goNode("review") }, h("span", { class: "big" }, d), h("span", null, h("strong", null, d === 1 ? "draft to review" : "drafts to review"), h("br"), h("span", { class: "faint small" }, "Agent work waiting for you"))),
-      h("div", { class: "health" }, h("span", { class: ok ? "dot" : "dot bad" }), h("span", null,
-        h("strong", null, ok ? "Everything ran on time. " : `${plural(D.health.problems.length, "thing needs", "things need")} you: `),
-        h("span", { class: "muted small" }, ok ? D.health.facts.join(" · ") || "Nothing has run yet." : D.health.problems[0]),
-        !ok && D.health.problems.length > 1 ? h("details", { class: "small" }, h("summary", null, `${D.health.problems.length - 1} more`), h("ul", null, D.health.problems.slice(1).map((p) => h("li", null, p)))) : null)),
-    );
+    const p = D.needs.proposals, d = D.needs.drafts, t = D.needs.todos || 0, ok = D.health.ok;
+    const card = (n, one, many, sub, go, calm) => n
+      ? h("button", { type: "button", class: "need todo", onclick: go }, h("span", { class: "big" }, n), h("span", null, h("strong", null, n === 1 ? one : many), h("span", { class: "go", "aria-hidden": "true" }, "→"), h("br"), h("span", { class: "faint small" }, sub)))
+      : h("div", { class: "need calm" }, h("span", { class: "muted small" }, calm));
+    const checks = D.checks, bad = checks.filter((c) => c.status === "violated").length, okN = checks.filter((c) => c.status === "ok").length, unk = checks.length - bad - okN;
+    const probs = D.health.items || D.health.problems.map((text) => ({ text }));
+    $("needs").replaceChildren(...[
+      card(p, "proposed task to approve", "proposed tasks to approve", LOCAL ? "Nothing reaches Linear until you do" : "Approve on your Mac: run pmx flow --web", () => goNode("approve"), "Nothing to approve"),
+      card(d, "agent draft to review", "agent drafts to review", "Pull requests waiting for you", () => goNode("review"), "No drafts to review"),
+      t ? card(t, "open to-do", "open to-dos", "From your own meetings; only on this Mac", () => goNode("todos"), "") : null,
+      h("button", { type: "button", class: "need", onclick: () => goCheck(bad ? checks.find((c) => c.status === "violated").id : "") },
+        h("span", { class: bad ? "dot bad" : "dot" }), h("span", null, h("strong", null, bad ? `${plural(bad, "privacy check")} failed` : "Privacy checks"), h("br"),
+          h("span", { class: "faint small" }, [okN ? `${okN} passed` : "", unk ? `${unk} not run yet` : "", bad ? `${bad} failed` : ""].filter(Boolean).join(", ") || "none yet"))),
+      h("div", { class: "health" }, h("span", { class: ok ? "dot" : "dot bad" }), h("div", null,
+        ok ? [h("strong", null, "Everything ran on time. "), h("span", { class: "muted small" }, D.health.facts.join(" · ") || "Nothing has run yet.")]
+          : [h("strong", null, `${plural(probs.length, "thing needs", "things need")} you`),
+            h("ul", { class: "probs" }, probs.slice(0, 3).map((x) => h("li", { class: "small" }, x.text, fixButtons(x)))),
+            probs.length > 3 ? h("details", { class: "small", "data-k": "more-probs" }, h("summary", null, `${probs.length - 3} more`), h("ul", { class: "probs" }, probs.slice(3).map((x) => h("li", null, x.text, fixButtons(x))))) : null])),
+    ].filter(Boolean));
+    const schedBad = D.schedules.filter((x) => !x.ok).length;
+    $("n-sched").textContent = schedBad ? `${schedBad} late` : "";
   }
 
   // ================= map =================
-  let sel = { type: "node", id: "approve" };
+  let sel = null;
   let view = "map";
+  let focusNode = null; // the one step that takes Tab focus in the map (roving tabindex)
   const P = (n, side) => side === "r" ? { x: n.x + NW, y: n.y + NH / 2 } : side === "l" ? { x: n.x, y: n.y + NH / 2 } : side === "t" ? { x: n.x + NW / 2, y: n.y } : { x: n.x + NW / 2, y: n.y + NH };
   function geom(e) {
     const a = nodes[e.from], b = nodes[e.to];
@@ -485,64 +655,140 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     const dx = (p2.x - p1.x) / 2;
     return { d: `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${p2.x - dx},${p2.y} ${p2.x},${p2.y}`, lx: (p1.x + p2.x) / 2, ly: (p1.y + p2.y) / 2 };
   }
-  function nodeTotal(id) {
+  // Only steps where work waits carry a number, as a pill: arrows carry what moved.
+  function queueCount(id) {
     if (id === "approve") return D.needs.proposals;
     if (id === "review") return D.needs.drafts;
-    const n = nodes[id];
-    const list = n.kind === "app" ? edges.filter((e) => e.from === id && e.kind !== "off") : edges.filter((e) => e.to === id && e.kind !== "off");
-    return list.reduce((a, e) => a + e.n, 0);
+    if (id === "todos") return D.needs.todos || 0;
+    if (id === "ready") return n0("i-r");
+    return null;
   }
-  const refs = { badges: {}, counts: {} };
+  const QUEUE_WORD = { approve: "to approve", review: "to review", todos: "open", ready: "ready" };
+  const refs = { badges: {}, queues: {} };
   function buildMap() {
     const svg = $("map");
     svg.replaceChildren();
-    refs.badges = {}; refs.counts = {};
+    refs.badges = {}; refs.queues = {};
     const defs = s("defs");
     for (const [k, v] of [["full", "--mac"], ["model", "--claude"], ["linear", "--linear"], ["status", "--ink-3"], ["held", "--held"], ["off", "--ink-3"]])
       defs.append(s("marker", { id: `ar-${k}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, s("path", { d: "M0,0 L10,5 L0,10 z", style: `fill: var(${v})` })));
     svg.append(defs);
     for (const [t, c] of [["Sources", 0], ["Collect", 1], ["Privacy", 2], ["Claude reads", 3], ["You", 4], ["Linear", 5]]) svg.append(s("text", { class: "band", x: COLX[c], y: 34 }, t));
-    svg.append(s("line", { class: "divider", x1: 10, x2: 1150, y1: 420, y2: 420 }), s("text", { class: "band", x: 20, y: 446 }, "After Linear: agent work"));
+    // The agent row runs right to left, so its label starts where the row does.
+    svg.append(s("line", { class: "divider", x1: 10, x2: 1150, y1: 420, y2: 420 }), s("text", { class: "band", x: 1030, y: 446, "text-anchor": "end" }, "← After Linear: agent work"));
     const eg = s("g"), ng = s("g"), bg = s("g");
     for (const e of edges) {
       const g = geom(e);
-      eg.append(s("g", { class: `edge e-${e.kind}`, id: `edge-${e.id}`, tabindex: 0, role: "button", "aria-label": `${nodes[e.from].title} to ${nodes[e.to].title}`, ...activate(() => select("edge", e.id)) },
+      eg.append(s("g", { class: `edge e-${e.kind}`, id: `edge-${e.id}`, tabindex: -1, role: "button", "aria-label": `${nodes[e.from].title} to ${nodes[e.to].title}`, ...activate(() => select("edge", e.id, { user: true })) },
         s("path", { class: "l", d: g.d, id: `path-${e.id}`, "marker-end": `url(#ar-${e.kind})` }), s("path", { class: "hit", d: g.d })));
       if (e.kind !== "off") {
         const t = s("text", { x: 0, y: 14, "text-anchor": "middle" }, "");
         const r = s("rect", { width: 34, height: 20, rx: 10, x: -17 });
-        const b = s("g", { class: "badge", transform: `translate(${g.lx},${g.ly - 10})`, "aria-hidden": "true", onclick: () => select("edge", e.id) }, r, t);
+        const b = s("g", { class: "badge", id: `badge-${e.id}`, transform: `translate(${g.lx},${g.ly - 10})`, "aria-hidden": "true", onclick: () => select("edge", e.id, { user: true }) }, r, t);
         refs.badges[e.id] = { g: b, t, r };
         bg.append(b);
       }
     }
     for (const [id, n] of Object.entries(nodes)) {
-      const c = s("text", { class: "c", x: NW - 10, y: 22, "text-anchor": "end" }, "");
-      const sub = s("text", { class: "s", x: 10, y: 48 }, n.sub);
-      refs.counts[id] = { c, sub };
-      ng.append(s("g", { class: `node k-${n.kind}`, id: `node-${id}`, transform: `translate(${n.x},${n.y})`, tabindex: 0, role: "button", "aria-label": `${n.title}. ${n.sub}`, ...activate(() => select("node", id)) },
-        s("rect", { class: "box", width: NW, height: NH, rx: 9 }), s("text", { class: "tag", x: 10, y: 14 }, n.tag), s("text", { class: "t", x: 10, y: 31 }, n.title), sub, c));
+      const kids = [s("rect", { class: "halo", x: -5, y: -5, width: NW + 10, height: NH + 10, rx: 12 }), s("rect", { class: "box", width: NW, height: NH, rx: 9 }), s("text", { class: "tag", x: 10, y: 15 }, n.tag), s("text", { class: "t", x: 10, y: 33 }, n.title), s("text", { class: "s", x: 10, y: 50 }, n.sub)];
+      if (n.queue) {
+        const t = s("text", { x: 0, y: 14, "text-anchor": "middle" }, "");
+        const r = s("rect", { width: 28, height: 20, rx: 10, x: -14 });
+        const q = s("g", { class: "queue", transform: `translate(${NW - 20},-10)` }, r, t);
+        refs.queues[id] = { g: q, t, r };
+        kids.push(q);
+      }
+      ng.append(s("g", { class: `node k-${n.kind}`, id: `node-${id}`, "data-id": id, transform: `translate(${n.x},${n.y})`, tabindex: -1, role: "button", ...activate(() => select("node", id, { user: true })) }, ...kids));
     }
     svg.append(eg, ng, bg);
+    setFocusNode(focusNode && nodes[focusNode] ? focusNode : sel && sel.type === "node" && nodes[sel.id] ? sel.id : "approve");
     markSelection();
   }
+  function setFocusNode(id) {
+    focusNode = id;
+    document.querySelectorAll(".map .node").forEach((g) => g.setAttribute("tabindex", g.dataset.id === id ? "0" : "-1"));
+  }
+  // Arrow keys move between steps by where they sit; [ and ] walk the focused step's connections.
+  $("map").addEventListener("keydown", (ev) => {
+    const cur = document.activeElement?.closest?.(".node, .edge");
+    if (!cur) return;
+    const at = cur.classList.contains("node") ? cur.dataset.id : null;
+    if (["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown"].includes(ev.key) && at) {
+      ev.preventDefault();
+      const a = nodes[at], dir = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+      let best = null, bestD = Infinity;
+      for (const [id, b] of Object.entries(nodes)) {
+        if (id === at) continue;
+        const dx = b.x - a.x, dy = b.y - a.y, along = dx * dir[0] + dy * dir[1], across = Math.abs(dx * dir[1] + dy * dir[0]);
+        if (along <= 0) continue;
+        const d = along + across * 2;
+        if (d < bestD) { bestD = d; best = id; }
+      }
+      if (best) { setFocusNode(best); $(`node-${best}`).focus(); }
+    } else if (ev.key === "]" || ev.key === "[") {
+      ev.preventDefault();
+      const base = at || focusNode;
+      const list = edges.filter((e) => e.from === base || e.to === base);
+      if (!list.length) return;
+      const i = cur.classList.contains("edge") ? list.findIndex((e) => `edge-${e.id}` === cur.id) : -1;
+      const next = list[(i + (ev.key === "]" ? 1 : list.length - 1) + (i < 0 && ev.key === "[" ? 1 : 0)) % list.length];
+      $(`edge-${next.id}`).focus();
+    } else if (ev.key === "Escape" && cur.classList.contains("edge")) {
+      $(`node-${focusNode}`)?.focus();
+    }
+  });
   // Numbers are patched in place, so keyboard focus and hover survive every refresh.
   function refreshNumbers(prev) {
     for (const e of edges) {
+      const g = $(`edge-${e.id}`);
+      if (g) g.setAttribute("aria-label", `${nodes[e.from].title} to ${nodes[e.to].title}: ${e.kind === "off" ? "not connected" : `${e.n} ${e.unit} ${e.id === "i-r" ? "now" : winText()}`}`);
       const r = refs.badges[e.id]; if (!r) continue;
-      const v = String(e.n); r.t.textContent = v;
-      const w = Math.max(26, 12 + v.length * 8); r.r.setAttribute("width", w); r.r.setAttribute("x", -w / 2);
-      $(`edge-${e.id}`).setAttribute("aria-label", `${nodes[e.from].title} to ${nodes[e.to].title}: ${e.n} ${e.unit} ${winText()}`);
-      if (prev && prev[e.id] !== undefined && e.n > prev[e.id]) pulse(e.id);
+      const grew = prev && prev[e.id] !== undefined && e.n > prev[e.id];
+      setPill(r, grew ? `+${e.n - prev[e.id]}` : String(e.n));
+      r.g.classList.toggle("zero", e.n === 0);
+      if (grew) { pulse(e.id); setTimeout(() => setPill(r, String(e.n)), 1600); }
     }
-    for (const id of Object.keys(nodes)) { const n = nodes[id]; refs.counts[id].c.textContent = n.kind === "off" ? "" : fmt(nodeTotal(id)); }
+    for (const [id, n] of Object.entries(nodes)) {
+      const q = queueCount(id);
+      if (refs.queues[id]) { setPill(refs.queues[id], String(q ?? 0)); refs.queues[id].g.classList.toggle("zero", !q); }
+      $(`node-${id}`)?.setAttribute("aria-label", `${n.title}: ${n.sub}${q !== null ? `. ${q} ${QUEUE_WORD[id]}` : ""}`);
+    }
     if (view === "list") drawList();
   }
-  function markSelection() {
-    document.querySelectorAll(".map .sel").forEach((x) => x.classList.remove("sel"));
-    $(`${sel.type}-${sel.id}`)?.classList.add("sel");
+  function setPill(r, v) {
+    r.t.textContent = v;
+    const w = Math.max(26, 12 + v.length * 8); r.r.setAttribute("width", w); r.r.setAttribute("x", -w / 2);
   }
-  function select(type, id) { sel = { type, id }; markSelection(); drawDetail(); }
+  // Selecting a step lights it and its connections and dims the rest, so the map shows what the panel describes.
+  function markSelection() {
+    const svg = $("map");
+    svg.querySelectorAll(".sel, .adj").forEach((x) => x.classList.remove("sel", "adj"));
+    svg.querySelectorAll("[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+    svg.classList.toggle("has-sel", !!sel);
+    if (!sel) return;
+    const el = $(`${sel.type}-${sel.id}`);
+    el?.classList.add("sel"); el?.setAttribute("aria-current", "true");
+    const near = sel.type === "node" ? edges.filter((e) => e.from === sel.id || e.to === sel.id) : edges.filter((e) => e.id === sel.id);
+    for (const e of near) {
+      $(`edge-${e.id}`)?.classList.add("adj"); $(`badge-${e.id}`)?.classList.add("adj");
+      for (const n of [e.from, e.to]) if (!(sel.type === "node" && n === sel.id)) $(`node-${n}`)?.classList.add("adj");
+    }
+  }
+  function select(type, id, o = {}) {
+    const changed = !sel || sel.type !== type || sel.id !== id;
+    sel = { type, id };
+    if (changed) lastMsg = "";
+    if (type === "node") setFocusNode(id);
+    markSelection();
+    drawDetail(true);
+    if (o.quiet) return;
+    const title = type === "node" ? nodes[id]?.title : (() => { const e = edges.find((x) => x.id === id); return e ? `${nodes[e.from].title} to ${nodes[e.to].title}` : ""; })();
+    announce(`${title} selected.${stacked() ? " Its detail is below the map." : ""}`);
+    if (o.user) {
+      if (type === "node") setRoute(`connections/${id}`, false);
+      if (stacked()) requestAnimationFrame(() => { $("detail").scrollIntoView({ behavior: "smooth", block: "start" }); $("detail-h")?.focus({ preventScroll: true }); });
+    }
+  }
   function pulse(id) {
     const r = refs.badges[id]; if (r) { r.g.classList.add("new"); setTimeout(() => r.g.classList.remove("new"), 1600); }
     if (matchMedia("(prefers-reduced-motion: reduce)").matches || view !== "map") return;
@@ -552,121 +798,218 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     const step = (t) => { const k = Math.min(1, (t - t0) / 1200), ease = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; const pt = p.getPointAtLength(len * ease); dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); if (k < 1) requestAnimationFrame(step); else dot.remove(); };
     requestAnimationFrame(step);
   }
-  const KINDNAME = { full: "Full text, this Mac", model: "Redacted text to Claude", linear: "Summaries to Linear", status: "Status and IDs", held: "Held", off: "Not connected" };
+  const KINDNAME = { full: "Full text, this Mac", model: "Private details removed, to Claude", linear: "Summaries to Linear", status: "Counts and status", held: "Private", off: "Not connected" };
+  // The list view walks the steps in flow order; each step's name opens it, each row opens a connection.
   function drawList() {
-    $("listbox").replaceChildren(h("table", { class: "list" },
-      h("thead", null, h("tr", null, h("th", null, "From → to"), h("th", null, "What travels"), h("th", { style: "text-align:right" }, winText()), h("th", null, "Last"))),
-      h("tbody", null, edges.map((e) => h("tr", null,
-        h("td", null, h("button", { type: "button", class: "textlink", onclick: () => select("edge", e.id) }, `${nodes[e.from].title} → ${nodes[e.to].title}`)),
+    const rows = [];
+    for (const id of order()) {
+      const n = nodes[id], q = queueCount(id), outs = edges.filter((e) => e.from === id);
+      rows.push(h("tr", { class: "grp" }, h("td", { colspan: 4 }, h("button", { type: "button", class: "textlink", onclick: () => select("node", id, { user: true }) }, n.title), q !== null ? ` · ${q} ${QUEUE_WORD[id]}` : "")));
+      for (const e of outs) rows.push(h("tr", null,
+        h("td", null, h("button", { type: "button", class: "textlink", onclick: () => select("edge", e.id, { user: true }) }, `→ ${nodes[e.to].title}`)),
         h("td", null, h("span", { class: `kindchip ${e.kind}` }, KINDNAME[e.kind])),
-        h("td", { class: "n" }, e.kind === "off" ? "—" : `${e.n} ${e.unit}`), h("td", { class: "faint" }, e.kind === "off" ? "—" : when(e.last)))))));
+        h("td", { class: "n" }, e.kind === "off" ? "—" : `${e.n} ${e.unit}`), h("td", { class: "faint" }, e.kind === "off" ? "—" : when(e.last))));
+    }
+    $("listbox").replaceChildren(h("table", { class: "list" },
+      h("thead", null, h("tr", null, h("th", null, "Step → next step"), h("th", null, "What travels"), h("th", { style: "text-align:right" }, `Moved ${winText()}`), h("th", null, "Last"))),
+      h("tbody", null, rows)));
   }
   function setView(v) {
     view = v;
-    $("mapbox").hidden = v !== "map"; $("listbox").hidden = v !== "list";
+    $("mapbox").hidden = v !== "map"; $("listbox").hidden = v !== "list"; $("legend").hidden = v !== "map";
+    $("hint-map").textContent = v === "map" ? "Click a step or an arrow to see what it carries and what you can do there." : "Pick a step or a connection to see what it carries and what you can do there.";
     document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.view === v ? "true" : "false"));
-    if (v === "list") drawList();
+    if (v === "list" && D) drawList();
   }
   document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+  matchMedia("(max-width: 700px)").addEventListener("change", (m) => setView(m.matches ? "list" : "map"));
   document.querySelectorAll("[data-win]").forEach((b) => b.addEventListener("click", () => {
     hours = Number(b.dataset.win);
     document.querySelectorAll("[data-win]").forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    $("key-win").textContent = `moved ${winText()}`;
     first = null; load();
   }));
 
   // ================= detail =================
-  const KINDTEXT = { full: ["full", "Full transcript text, on this Mac only."], model: ["model", "Redacted text, sent to Claude."], linear: ["linear", "Sent to Linear: task summaries, never meeting text."], status: ["", "No meeting text: counts, status and IDs."], held: ["held", "Nothing is sent anywhere."], off: ["", "Nothing: not connected."] };
+  const KINDTEXT = { full: ["full", "Full transcript text, on this Mac only."], model: ["model", "Text with private details removed, sent to Claude."], linear: ["linear", "Sent to Linear: task summaries, never meeting text."], status: ["", "No meeting text: counts, status and IDs."], held: ["held", "Nothing is sent anywhere."], off: ["", "Nothing: not connected."] };
   const NODE_INFO = {
     collect: ["A scheduled task in your Claude app. Claude copies each new transcript word for word into ~/.pmx/transcripts. It's told to skip your do-not-read list and sources you turned off, but that's an instruction to Claude, not a check: the privacy filter is the check.", ["dnr", "routes"]],
-    filter: ["Code on this Mac, not Claude. It decides what Claude may read for your to-dos and for team tasks, before anything is sent.", ["fixed", "domains", "dnr"]],
-    held: ["Held meetings are never sent to Claude or Linear. Their transcript files stay in ~/.pmx/transcripts; receipts keep only the rule and a hash.", ["fixed", "dnr"]],
+    filter: ["Code on this Mac, not Claude. Before anything is sent, it decides what Claude may read for your to-dos and for team tasks, and keeps the rest private.", ["fixed", "domains", "dnr"]],
+    held: ["Meetings kept private are never sent to Claude or Linear. Their transcript files stay in ~/.pmx/transcripts; PMX's record keeps only which rule kept each one private.", ["fixed", "dnr"]],
     findtodo: ["Claude reads your own meetings with no tools and lists your action items.", ["routes"]],
-    draft: ["Claude reads redacted customer calls and Slack threads with no tools and drafts sized tasks, with a reason each source supports it. PMX drops any task that quotes a meeting.", ["sizes", "gets"]],
-    todos: ["Your to-dos. `pmx todo` lists them; they never leave this Mac.", []],
-    approve: ["Every drafted task waits here until you approve or drop it.", ["gets"]],
-    dropped: ["Tasks you dropped. Each run's receipt says so, for `pmx explain`.", []],
-    inbox: ["Approved tasks land in the PMX project with pmx-status: inbox. A person triages them.", ["gets"]],
-    ready: ["Tasks a person moved to Ready. Agents pick up only these.", ["agent"]],
-    agent: ["Your agent claims one ready task per pass, if it fits your budget and fewer than your review cap of drafts are waiting.", ["agent", "budget"]],
-    review: ["Draft pull requests in the PMX repo. Accept, reject or ask for a redo with `pmx review`.", ["agent"]],
+    draft: ["Claude reads customer calls and Slack threads, with private details removed and no tools, and proposes sized tasks, with a reason each source supports it. PMX drops any task that quotes a meeting.", ["sizes", "gets"]],
+    todos: ["Your to-dos from your own meetings. They never leave this Mac.", []],
+    approve: ["Every proposed task waits here until you approve or drop it. Approving sends it to Linear's inbox; dropping sends nothing.", ["gets"]],
+    dropped: ["Tasks you dropped. Nothing about them reaches Linear.", []],
+    inbox: ["Approved tasks arrive in Linear's PMX project as Inbox. A teammate moves the ones worth doing to Ready.", ["gets"]],
+    ready: ["Tasks a teammate moved to Ready. Agents pick up only these.", ["agent"]],
+    agent: ["Your agent takes one Ready task per pass, if it fits your budget and fewer drafts than your review limit are waiting.", ["agent", "budget"]],
+    review: ["Draft pull requests in the PMX repo, made by agents. Accept, reject or ask for a redo.", ["agent"]],
     done: ["Accepted drafts. Each one's run record shows the skill, model and cost.", []],
     slack: ["Only channels your team approved in pmx.config.json, never DMs. Read every 6 hours on the team's synthesis Mac.", ["routes", "dnr"]],
     email: ["PMX doesn't read email.", []],
   };
-  const RULELABEL = { routes: "What each source may feed", fixed: "Always held", domains: "Who counts as a customer", dnr: "Never read", sizes: "T-shirt sizes", gets: "What Linear gets", agent: "Your agent's work", budget: "Budget" };
-  const ruleButtons = (ids) => (ids.length ? h("div", { class: "links" }, ids.map((r) => h("button", { type: "button", class: "btn", onclick: () => goRule(r) }, `${RULELABEL[r]} →`))) : null);
-  function drawDetail() {
+  const RULELABEL = { routes: "What each source may feed", fixed: "Always private", domains: "Who counts as a customer", dnr: "Do-not-read list", sizes: "T-shirt sizes", gets: "What Linear gets", agent: "Your agent's work", budget: "Budget" };
+  const ruleButtons = (ids) => (ids.length ? h("div", { class: "links" }, h("span", { class: "small muted" }, "Rules for this step:"), ids.map((r) => h("button", { type: "button", class: "btn", onclick: () => goRule(r) }, `${RULELABEL[r]} →`))) : null);
+  let lastMsg = "", lastSig = "";
+  const busy = new Set();      // proposal IDs and draft identifiers with a request in flight
+  const pendingDrop = new Set(); // proposals hidden while their Undo is offered
+  function drawDetail(force) {
     if (!D) return;
     const box = $("detail");
+    const sig = JSON.stringify([sel, hours, lastMsg, [...busy], [...pendingDrop], D.needs, D.proposals, D.drafts, D.todos, D.held, D.edges, D.sources, D.schedules.map((x) => [x.node, x.last, x.next])]);
+    // The minute refresh leaves the panel alone unless something in it changed, and never while the PM is using it.
+    if (!force && (sig === lastSig || box.contains(document.activeElement))) return;
+    lastSig = sig;
+    const open = new Set([...box.querySelectorAll("details[open][data-k]")].map((x) => x.dataset.k));
+    const back = h("a", { href: "#mapbox", class: "textlink backmap", onclick: (ev) => { ev.preventDefault(); $("mapbox").scrollIntoView({ behavior: "smooth", block: "start" }); if (sel && sel.type === "node") $(`node-${sel.id}`)?.focus({ preventScroll: true }); } }, "↑ Back to the map");
+    if (!sel) {
+      box.replaceChildren(h("div", { class: "eyebrow" }, "Pick a step"), h("h2", { id: "detail-h", tabindex: "-1" }, "What each step does"),
+        h("div", { class: "empty" }, h("p", null, "Click a step or an arrow on the map. You'll see what it carries, what's waiting there, and the rules behind it."), h("p", null, "Steps with a dark number have something waiting for you.")));
+      return;
+    }
     if (sel.type === "edge") {
       const e = edges.find((x) => x.id === sel.id);
-      if (!e) return;
+      if (!e) { sel = null; markSelection(); drawDetail(true); return; }
       const [cls, lead] = KINDTEXT[e.kind];
       const rules = e.to === "held" || e.from === "filter" ? ["fixed", "dnr"] : e.to === "inbox" ? ["gets"] : nodes[e.from].col === 0 ? ["routes"] : e.to === "agent" ? ["agent", "budget"] : [];
-      box.replaceChildren(h("div", { class: "eyebrow" }, "Connection"), h("h2", null, `${nodes[e.from].title} → ${nodes[e.to].title}`),
-        h("dl", { class: "kv" }, h("dt", null, `Passed ${winText()}`), h("dd", null, e.kind === "off" ? "—" : `${e.n} ${e.unit}`),
+      put(box, back, h("div", { class: "eyebrow" }, "Connection"), h("h2", { id: "detail-h", tabindex: "-1" }, `${nodes[e.from].title} → ${nodes[e.to].title}`),
+        h("dl", { class: "kv" }, h("dt", null, e.id === "i-r" ? "Ready now" : `Moved ${winText()}`), h("dd", null, e.kind === "off" ? "—" : `${e.n} ${e.unit}`),
           e.tokens ? [h("dt", null, "Text sent to Claude"), h("dd", null, `${fmt(e.tokens)} tokens`)] : null,
           h("dt", null, "Last time"), h("dd", null, e.kind === "off" ? "never" : when(e.last))),
-        h("div", { class: `carry ${cls}` }, h("strong", null, `${lead} `), e.carries), ruleButtons(rules));
+        h("div", { class: `carry ${cls}` }, h("strong", null, `${lead} `), e.carries),
+        h("div", { class: "links" }, h("button", { type: "button", class: "btn", onclick: () => select("node", e.from, { user: true }) }, `← ${nodes[e.from].title}`), h("button", { type: "button", class: "btn", onclick: () => select("node", e.to, { user: true }) }, `${nodes[e.to].title} →`)),
+        ruleButtons(rules));
       return;
     }
     const n = nodes[sel.id];
-    if (!n) return;
+    if (!n) { sel = null; markSelection(); drawDetail(true); return; }
     const [what, rules] = NODE_INFO[sel.id] ?? [n.col === 0 ? "A meeting app. PMX never talks to it directly: the collection task in your Claude app reads it through your connector." : "", n.col === 0 ? ["routes"] : []];
-    const parts = [h("div", { class: "eyebrow" }, { app: "Source", off: "Source", mac: "On this Mac", claude: "Claude", linear: "Linear", repo: "PMX repo", held: "On this Mac" }[n.kind]), h("h2", null, n.title), h("p", { class: "muted small" }, what)];
-    if (sel.id === "approve") {
-      parts.push(h("h3", { style: "margin-top:12px" }, `Waiting for you (${D.needs.proposals})`));
-      if (!LOCAL) parts.push(h("p", { class: "small muted", style: "margin-top:6px" }, D.needs.proposals ? "Their titles stay on your Mac until you approve them. Approve or drop them in Terminal with pmx proposals, or on this Mac's own page: pmx flow --web." : "Nothing waiting."));
-      else if (!D.proposals.length) parts.push(h("p", { class: "faint small", style: "margin-top:6px" }, "Nothing waiting. New customer calls are drafted at the next collection."));
-      for (const p of D.proposals) parts.push(h("div", { class: "prop" }, h("strong", null, p.title), h("span", { class: "from" }, `${p.category} · size ${p.size} · from ${p.from}`),
-        h("details", null, h("summary", { class: "small" }, "What Linear would get"), h("div", { class: "cmdline", style: "white-space:pre-wrap" }, p.description)),
-        h("div", { class: "acts" }, h("button", { type: "button", class: "btn primary", onclick: () => decide(p, "approve") }, "Approve"), h("button", { type: "button", class: "btn", onclick: () => decide(p, "drop") }, "Drop"))));
-      if (lastMsg) parts.push(h("p", { class: "small", style: "margin-top:8px" }, lastMsg));
-    } else if (sel.id === "review") {
-      if (!D.drafts.length) parts.push(h("p", { class: "faint small" }, "No drafts waiting."));
-      for (const d of D.drafts) parts.push(h("div", { class: "prop" }, h("strong", null, `${d.identifier} · ${d.title}`), h("span", { class: "from" }, d.since ? `since ${when(d.since)}` : ""), h("div", { class: "cmdline" }, "pmx review")));
-    } else if (sel.id === "filter" || sel.id === "held") {
-      parts.push(D.held.length ? h("dl", { class: "kv" }, D.held.flatMap((x) => [h("dt", null, x.label), h("dd", null, x.n)])) : h("p", { class: "faint small" }, `Nothing held ${winText()}.`));
+    const parts = [back, h("div", { class: "eyebrow" }, n.tag || "Source"), h("h2", { id: "detail-h", tabindex: "-1" }, n.title), h("p", { class: "muted small" }, what)];
+    if (sel.id === "approve") parts.push(...approvePanel());
+    else if (sel.id === "review") parts.push(...reviewPanel());
+    else if (sel.id === "todos") parts.push(...todoPanel());
+    else if (sel.id === "filter" || sel.id === "held") {
+      parts.push(h("h3", { style: "margin-top:12px" }, `Kept private ${winText()}, by reason`));
+      parts.push(D.held.length ? h("dl", { class: "kv" }, D.held.flatMap((x) => [h("dt", null, x.label), h("dd", null, x.n)])) : h("p", { class: "faint small" }, `Nothing kept private ${winText()}.`));
     } else if (n.kind !== "off") {
       const ins = edges.filter((e) => e.to === sel.id && e.kind !== "off"), outs = edges.filter((e) => e.from === sel.id && e.kind !== "off");
-      parts.push(h("dl", { class: "kv" }, ins.map((e) => [h("dt", null, `From ${nodes[e.from].title}`), h("dd", null, `${e.n} ${e.unit}`)]), outs.map((e) => [h("dt", null, `To ${nodes[e.to].title}`), h("dd", null, `${e.n} ${e.unit}`)])));
+      if (ins.length || outs.length) parts.push(h("dl", { class: "kv" }, ins.map((e) => [h("dt", null, `From ${nodes[e.from].title}`), h("dd", null, `${e.n} ${e.unit}`)]), outs.map((e) => [h("dt", null, `To ${nodes[e.to].title}`), h("dd", null, `${e.n} ${e.unit}`)])));
     }
     const sched = D.schedules.find((x) => x.node === sel.id);
-    if (sched) parts.push(h("p", { class: "small muted" }, `${sched.name}: last ${when(sched.last)}, next ${when(sched.next)}.`));
+    if (sched) parts.push(h("p", { class: "small muted" }, `${sched.name}: last ran ${when(sched.last)}, next ${when(sched.next)}.`));
     parts.push(ruleButtons(rules));
-    box.replaceChildren(...parts);
+    put(box, parts);
+    for (const d of box.querySelectorAll("details[data-k]")) if (open.has(d.dataset.k)) d.open = true;
   }
-  let lastMsg = "";
-  async function decide(p, action) {
+  function approvePanel() {
+    const out = [h("h3", { style: "margin-top:12px" }, `Waiting for you (${D.needs.proposals})`)];
+    if (!LOCAL) {
+      out.push(D.needs.proposals
+        ? h("div", { class: "small muted", style: "display:grid;gap:6px;margin-top:6px" }, "Their titles stay on your Mac until you approve them, so this shared page can't show them. Approve or drop them on your Mac:", cmdChip("pmx flow --web"), "or in Terminal:", cmdChip("pmx proposals"))
+        : h("p", { class: "faint small", style: "margin-top:6px" }, "Nothing waiting. New customer calls are proposed after the next collection."));
+      return out;
+    }
+    const list = D.proposals.filter((p) => !pendingDrop.has(p.id));
+    if (!list.length) out.push(h("p", { class: "faint small", style: "margin-top:6px" }, "Nothing waiting. New customer calls are proposed after the next collection."));
+    if (list.length > 1) out.push(h("div", { class: "links" }, h("button", { type: "button", class: "btn", disabled: busy.size > 0, onclick: () => approve(list.map((p) => p.id)) }, `Approve all ${list.length}: send to Linear inbox`)));
+    for (const p of list) {
+      const b = busy.has(p.id);
+      out.push(h("div", { class: `prop${b ? " busy" : ""}`, "aria-busy": b ? "true" : null }, h("strong", null, p.title), h("span", { class: "from" }, `${p.category} · size ${p.size} · from ${p.from}`),
+        h("details", { "data-k": `p-${p.id}` }, h("summary", { class: "small" }, "What Linear would get"), h("div", { class: "cmdline", style: "white-space:pre-wrap" }, p.description)),
+        h("div", { class: "acts" }, h("button", { type: "button", class: "btn primary", disabled: b, onclick: () => approve([p.id]) }, b ? "Sending…" : "Approve: send to Linear inbox"), h("button", { type: "button", class: "btn", disabled: b, onclick: () => dropLater(p) }, "Drop"))));
+    }
+    if (lastMsg) out.push(h("p", { class: "small", style: "margin-top:8px" }, lastMsg));
+    return out;
+  }
+  function reviewPanel() {
+    const out = [h("h3", { style: "margin-top:12px" }, `Waiting for you (${D.drafts.length})`)];
+    if (!D.drafts.length) out.push(h("p", { class: "faint small" }, "No drafts waiting. Agents propose one when they finish a Ready task."));
+    for (const d of D.drafts) {
+      const b = busy.has(d.identifier), note = h("textarea", { class: "in", rows: 2, placeholder: "Why, for a reject or a redo", "aria-label": `Note for ${d.identifier}`, style: "width:100%" });
+      out.push(h("div", { class: "prop" }, h("strong", null, `${d.identifier} · ${d.title}`), h("span", { class: "from" }, d.since ? `waiting since ${when(d.since)}` : ""),
+        d.url ? h("a", { href: d.url, target: "_blank", rel: "noopener", class: "small" }, "Open in Linear ↗") : null,
+        LOCAL ? h("div", { class: "review-acts" }, note, h("div", { class: "acts" },
+          h("button", { type: "button", class: "btn primary", disabled: b, onclick: () => review(d.identifier, "accepted", note.value) }, b ? "Working…" : "Accept and merge"),
+          h("button", { type: "button", class: "btn", disabled: b, onclick: () => review(d.identifier, "redo", note.value) }, "Ask for a redo"),
+          h("button", { type: "button", class: "btn", disabled: b, onclick: () => review(d.identifier, "rejected", note.value) }, "Reject")))
+          : h("div", { class: "small muted" }, "Review it on your Mac: ", cmdChip("pmx review"))));
+    }
+    if (lastMsg) out.push(h("p", { class: "small", style: "margin-top:8px" }, lastMsg));
+    return out;
+  }
+  function todoPanel() {
+    const n = D.needs.todos || 0;
+    const out = [h("h3", { style: "margin-top:12px" }, `Open (${n})`)];
+    if (!LOCAL) { out.push(h("div", { class: "small muted", style: "display:grid;gap:6px" }, "They stay on your Mac, so this shared page only counts them. List them in Terminal:", cmdChip("pmx todo"))); return out; }
+    if (!D.todos.length) out.push(h("p", { class: "faint small" }, "No open to-dos."));
+    for (const t of D.todos) out.push(h("div", { class: "todo-item" }, h("span", null, t.text), h("span", { class: "faint small" }, [t.due ? `due ${t.due}` : "", `from ${t.from}`].filter(Boolean).join(" · "))));
+    out.push(h("p", { class: "small muted", style: "margin-top:8px" }, "Mark them done in Terminal: ", cmdChip("pmx todo")));
+    return out;
+  }
+  async function approve(ids) {
+    for (const id of ids) busy.add(id);
+    drawDetail(true);
     try {
-      const r = await api("/api/pipeline/proposals", { action, ids: [p.id] });
-      lastMsg = r.message;
-    } catch (e) { lastMsg = `Couldn't ${action} it: ${e.message}`; }
+      const r = await api("/api/pipeline/proposals", { action: "approve", ids });
+      lastMsg = r.message; toast(r.message);
+    } catch (e) { lastMsg = `Couldn't approve: ${e.message}`; toast(lastMsg); }
+    for (const id of ids) busy.delete(id);
     await load();
+    drawDetail(true);
+    $("detail").querySelector(".prop .btn.primary")?.focus() || $("detail-h")?.focus();
+  }
+  // Dropping can't be undone once it's sent, so it waits a few seconds with an Undo first.
+  function dropLater(p) {
+    pendingDrop.add(p.id);
+    drawDetail(true);
+    $("detail").querySelector(".prop .btn.primary")?.focus() || $("detail-h")?.focus();
+    let undone = false;
+    const undo = h("button", { type: "button", class: "btn", onclick: () => { undone = true; pendingDrop.delete(p.id); $("toast").hidden = true; drawDetail(true); } }, "Undo");
+    toast(`Dropping "${p.title}"…`, undo);
+    undo.focus();
+    setTimeout(async () => {
+      if (undone) return;
+      try { const r = await api("/api/pipeline/proposals", { action: "drop", ids: [p.id] }); lastMsg = r.message; toast(r.message); }
+      catch (e) { lastMsg = `Couldn't drop it: ${e.message}`; toast(lastMsg); }
+      pendingDrop.delete(p.id);
+      await load();
+      drawDetail(true);
+    }, 6000);
+  }
+  async function review(identifier, verdict, note) {
+    if (verdict !== "accepted" && !note.trim()) { lastMsg = `A ${verdict === "redo" ? "redo" : "reject"} needs a note, so the agent or the team knows why.`; drawDetail(true); return; }
+    busy.add(identifier); drawDetail(true);
+    try { const r = await api("/api/pipeline/review", { identifier, verdict, note }); lastMsg = r.message; toast(r.message); }
+    catch (e) { lastMsg = `Couldn't record that: ${e.message}`; toast(lastMsg); }
+    busy.delete(identifier);
+    await load();
+    drawDetail(true);
   }
 
   // ================= live =================
   let live = true;
   function asof() {
     const since = first !== null ? edgeTotal() - first : 0;
-    $("asof").textContent = `Updated ${hm(D.at)}${since > 0 ? ` · ${plural(since, "new item")} since you opened` : ""}${live ? "" : " · paused"}`;
-    $("live-dot").className = live ? "dot" : "dot bad";
+    $("asof").textContent = `Updated ${when(D.at)}${since > 0 ? ` · ${since} new since you opened` : ""}${live ? "" : " · updates paused"}`;
+    $("live-dot").className = live ? "dot" : "dot paused";
+    for (const id of ["mapbox", "listbox", "needs", "detail"]) $(id).classList.remove("stale");
   }
-  $("live-btn").addEventListener("click", () => { live = !live; $("live-btn").textContent = live ? "Pause updates" : "Resume updates"; $("live-btn").setAttribute("aria-pressed", String(live)); if (D) asof(); });
+  $("live-btn").addEventListener("click", () => { live = !live; $("live-btn").textContent = live ? "Pause updates" : "Resume updates"; if (D) asof(); });
   // PMX's records change in batches (collection twice a day, the background job every 30 minutes, the Linear sync
   // hourly), so the page asks once a minute and moves only when a batch landed.
   setInterval(() => { if (live && !document.hidden) load(); }, 60000);
 
   // ================= checks =================
   function drawChecks() {
-    const items = D.checks.map((c) => [c.status === "ok" ? "ok" : c.status === "violated" ? "bad" : "info", c.label, c.detail]);
-    items.push(["info", "Processed meetings are recorded in your PMX repo, not Linear.", "Under keyed IDs only your team's repo can match to a meeting. Linear gets only the tasks you approve."]);
-    $("checks").replaceChildren(...items.map(([k, t, d]) => h("li", { class: k }, h("span", { class: "ic", "aria-hidden": "true" }, k === "ok" ? "✓" : k === "bad" ? "!" : "i"), h("span", null, h("strong", null, t), " ", h("span", { class: "muted" }, d)))));
+    const rank = { violated: 0, unknown: 1, ok: 2 };
+    const items = [...D.checks].sort((a, b) => rank[a.status] - rank[b.status]).map((c) => [c.status === "ok" ? "ok" : c.status === "violated" ? "bad" : "info", c.label, c.detail, c.id]);
+    items.push(["info", "Linear never gets a list of your meetings.", "PMX records which meetings it processed in your team's repo, under codes only your team can match. Linear gets only the tasks you approve.", "ledger"]);
+    $("checks").replaceChildren(...items.map(([k, t, d, id]) => h("li", { class: k, id: `check-${id}` }, h("span", { class: "ic", "aria-hidden": "true" }, k === "ok" ? "✓" : k === "bad" ? "!" : "i"), h("span", null, h("span", { class: "sr-only" }, k === "ok" ? "Passed: " : k === "bad" ? "Failed: " : "Not checked yet: "), h("strong", null, t), " ", h("span", { class: "muted" }, d)))));
   }
 
   // ================= skills =================
   function drawSkills() {
-    $("n-skills").textContent = D.skills.length;
     const groups = [
       ["Turn meetings into work", D.skills.filter((k) => k.node === "draft" || k.node === "findtodo" || k.name === "pmx-digest")],
       ["Do the work: one skill per task category", D.skills.filter((k) => k.node === "agent")],
@@ -688,7 +1031,6 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
 
   // ================= schedules =================
   function drawSchedules() {
-    $("n-sched").textContent = D.schedules.length;
     const W = 1000, L = 170, R = 20, x = (hr) => L + ((W - L - R) * hr) / 24;
     const now = new Date(), nowH = now.getHours() + now.getMinutes() / 60;
     const tl = s("svg", { viewBox: `0 0 ${W} ${36 + D.schedules.length * 28}`, role: "img", "aria-label": "Today's run times" });
@@ -710,7 +1052,9 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
   }
 
   // ================= rules =================
-  const ROUTE_OPTS = [["off", "Off"], ["mine", "My to-dos only"], ["linear", "My to-dos + Linear tasks"]];
+  const SOURCE_NAMES = { granola: "Granola", fireflies: "Fireflies", otter: "Otter", fathom: "Fathom", tldv: "tl;dv", zoom: "Zoom", "google-meet": "Google Meet", file: "Transcript folder", slack: "Slack" };
+  const sourceName = (k) => SOURCE_NAMES[k] || (D.sources.find((x) => x.id === k) || { label: k }).label;
+  const ROUTE_OPTS = [["off", "Off"], ["mine", "Your to-dos only"], ["linear", "To-dos and team tasks"]];
   const RANK = { off: 0, mine: 1, linear: 2 };
   const SZ = ["S", "M", "L", "XL"];
   let original = null, state = null, cellEdit = null;
@@ -727,16 +1071,21 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     if (!original || JSON.stringify(original) === JSON.stringify(state)) { original = base; state = clone(base); }
     else original = base; // keep the PM's unsaved edits across refreshes
   }
-  const scopeTag = (k) => h("span", { class: `scope ${k}` }, { me: "This Mac", team: "Team · reviewed PR", fixed: "Fixed in PMX" }[k]);
+  const scopeTag = (k) => h("span", { class: `scope ${k}` }, { me: "Just you", team: "Whole team, needs review", fixed: "Built in" }[k]);
   function rb(id, title, tags, desc, ...body) {
-    return h("section", { class: "rb", id: `r-${id}` }, h("header", null, h("div", null, h("h2", { tabindex: "-1" }, title), desc ? h("p", { class: "muted" }, desc) : null), h("div", { class: "tags" }, tags.map(scopeTag))), ...body);
+    const prs = tags.includes("team") ? (D.pendingTeam || []) : [];
+    return h("section", { class: "rb", id: `r-${id}` }, h("header", null, h("div", null, h("h2", { tabindex: "-1" }, title), desc ? h("p", { class: "muted" }, desc) : null), h("div", { class: "tags" }, tags.map(scopeTag), prs.length ? h("a", { class: "scope new", href: prs[prs.length - 1].url, target: "_blank", rel: "noopener" }, `${plural(prs.length, "change")} in review ↗`) : null)), ...body);
   }
   function seg(opts, val, pick, label, disabled) {
-    return h("div", { class: "seg", role: "radiogroup", "aria-label": label }, opts.map(([v, l]) => h("button", { type: "button", role: "radio", "aria-checked": v === val ? "true" : "false", "aria-pressed": v === val ? "true" : "false", disabled: !!disabled, onclick: () => pick(v) }, l)));
+    // Read-only (the shared page's team settings): the value as text, so it's read out and not skipped as disabled.
+    if (disabled) return h("span", { class: "ro" }, (opts.find(([v]) => v === val) || ["", "—"])[1]);
+    return h("div", { class: "seg", role: "group", "aria-label": label }, opts.map(([v, l]) => h("button", { type: "button", "aria-pressed": v === val ? "true" : "false", onclick: () => pick(v) }, l)));
   }
   const invalid = {};
-  function numIn(id, val, min, max, set, unit, step = 1) {
-    const inp = h("input", { class: "in", id, type: "number", min, max, step, value: val, style: "width:72px", "aria-label": id, disabled: !LOCAL });
+  function numIn(id, val, min, max, set, unit, step = 1, label = id, ro = false) {
+    if (ro) return h("span", { class: "ro" }, unit === "$" ? `$${val}` : `${val}${unit ? ` ${unit}` : ""}`);
+    invalid[id] = false; // a rebuilt field holds a valid value again
+    const inp = h("input", { class: "in", id, type: "number", min, max, step, value: val, style: "width:72px", "aria-label": label });
     const err = h("span", { class: "err" });
     inp.addEventListener("input", () => {
       const v = Number(inp.value), bad = inp.value === "" || !Number.isFinite(v) || v < min || v > max;
@@ -745,12 +1094,22 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     });
     return h("span", { class: "addrow", style: "margin:0;gap:4px" }, unit === "$" ? "$" : null, inp, unit && unit !== "$" ? unit : null, err);
   }
+  // Text typed into these boxes survives the minute refresh, and so does the result of the last add.
+  const typed = {}, formMsg = {};
   function addForm(id, ph, add, preview) {
     const inp = h("input", { class: "in", id, placeholder: ph, "aria-label": ph, style: "flex:1 1 200px" });
-    const msg = h("div", { class: "hint" });
+    inp.value = typed[id] || "";
+    const msg = h("div", { class: formMsg[id] && formMsg[id].err ? "err" : "hint", role: "status" }, formMsg[id] ? formMsg[id].text : "");
     let t = 0;
-    inp.addEventListener("input", () => { msg.className = "hint"; clearTimeout(t); const v = inp.value.trim(); msg.textContent = ""; if (v.length >= 3 && preview) t = setTimeout(() => preview(v).then((p) => { if (inp.value.trim() === v) msg.textContent = p; }, () => {}), 400); });
-    return h("div", null, h("form", { class: "addrow", onsubmit: (ev) => { ev.preventDefault(); const e = add(inp.value.trim()); if (e) { msg.className = "err"; msg.textContent = e; } else requestAnimationFrame(() => $(id)?.focus()); } }, inp, h("button", { type: "submit", class: "btn" }, "Add")), msg);
+    inp.addEventListener("input", () => { typed[id] = inp.value; formMsg[id] = null; msg.className = "hint"; clearTimeout(t); const v = inp.value.trim(); msg.textContent = ""; if (v.length >= 3 && preview) t = setTimeout(() => preview(v).then((p) => { if (inp.value.trim() === v) msg.textContent = `Preview: ${p}`; }, () => {}), 400); });
+    const say = (text, err) => { formMsg[id] = { text, err }; msg.className = err ? "err" : "hint"; msg.textContent = text; };
+    return h("div", null, h("form", { class: "addrow", onsubmit: async (ev) => {
+      ev.preventDefault();
+      const r = await add(inp.value.trim(), say);
+      if (typeof r === "string") { say(r, true); return; }
+      typed[id] = ""; inp.value = "";
+      requestAnimationFrame(() => $(id)?.focus());
+    } }, inp, h("button", { type: "submit", class: "btn" }, "Add")), msg);
   }
   const whatIf = (kind) => async (v) => {
     const r = LOCAL ? (await api(`/api/pipeline/what-if?kind=${kind}&value=${encodeURIComponent(v)}`)).whatIf : await call("flow_what_if", { kind, value: v });
@@ -759,73 +1118,86 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
   function drawRules() {
     if (!state) return;
     const focusedId = document.activeElement?.id;
-    const domainList = (key) => h("div", null,
+    // On the shared page in Claude, your own settings still change here and turn into commands to copy; team ones are
+    // read-only there, because only this Mac's page can open the team's pull request.
+    const TEAM_RO = !LOCAL;
+    const domainList = (key, ro) => h("div", null,
       h("div", { class: "chips" }, state[key].map((d) => h("span", { class: `chip${original[key].includes(d) ? "" : " pending"}` }, d,
-        LOCAL ? h("button", { type: "button", "aria-label": `Remove ${d}`, onclick: () => { state[key] = state[key].filter((x) => x !== d); update(); } }, "×") : null)),
+        ro ? null : h("button", { type: "button", "aria-label": `Remove ${d}`, onclick: () => { state[key] = state[key].filter((x) => x !== d); update(); } }, "×"))),
         state[key].length ? null : h("span", { class: "faint small" }, "None")),
-      LOCAL ? addForm(`add-${key}`, "Add a domain, like acme.com", (v) => { const d = v.toLowerCase().replace(/^.*@/, ""); if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return "That isn't a domain like acme.com"; if (state[key].includes(d)) return "Already listed"; state[key].push(d); update(); return null; }) : null);
+      ro ? null : addForm(`add-${key}`, "Add a domain, like acme.com", (v) => { const d = v.toLowerCase().replace(/^.*@/, ""); if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return "That isn't a domain like acme.com"; if (state[key].includes(d)) return "Already listed"; state[key].push(d); update(); return null; }));
     const dnr = (key, list, label, ph) => h("div", { class: "ctl" },
       h("div", { class: "lab" }, h("strong", null, label)),
       h("div", null,
         LOCAL ? h("div", { class: "chips" }, state[key].map((v) => h("span", { class: `chip${original[key].includes(v) ? "" : " pending"}` }, v, h("button", { type: "button", "aria-label": `Remove ${v}`, onclick: () => { state[key] = state[key].filter((x) => x !== v); update(); } }, "×"))), state[key].length ? null : h("span", { class: "faint small" }, "None"))
-          : h("p", { class: "faint small" }, `${plural(D.rules.neverIngest[key] || 0, "entry", "entries")}. Only this Mac's page shows them.`),
-        addForm(`add-${key}`, ph, (v) => {
+          : h("p", { class: "faint small" }, `${plural(D.rules.neverIngest[key] || 0, "entry", "entries")}. Only this Mac's own page lists them.`),
+        addForm(`add-${key}`, ph, async (v, say) => {
           if (v.length < 3) return "Give at least 3 characters";
-          if (state[key].some((x) => x.toLowerCase() === v.toLowerCase())) return "Already listed";
-          if (!LOCAL) { call("never_ingest_add", { kind: list, value: v }).then((r) => { showBanner(r.message); load(); }, (e) => showBanner(e.message)); return null; }
+          if (LOCAL && state[key].some((x) => x.toLowerCase() === v.toLowerCase())) return "Already listed";
+          if (!LOCAL) {
+            // The shared page adds straight away: it only ever tightens privacy.
+            try { const r = await call("never_ingest_add", { kind: list, value: v }); say(`Added. ${r.message || "PMX skips it from the next run."}`); load(); return null; }
+            catch (e) { return `Couldn't add it: ${e.message}`; }
+          }
           state[key].push(v); update(); return null;
         }, whatIf(list))));
     const sizeHead = SZ.map((z) => h("th", null, `Size ${z}`, h("div", { class: "meta" },
-      numIn(`min-${z}`, state.minutes[z], 5, 480, (v) => { state.minutes[z] = v; update(false); }, "min"), numIn(`usd-${z}`, state.usd[z], 0, 50, (v) => { state.usd[z] = v; update(false); }, "$", 0.5))));
+      numIn(`min-${z}`, state.minutes[z], 5, 480, (v) => { state.minutes[z] = v; update(false); }, "min", 1, `Size ${z} minutes`, TEAM_RO), numIn(`usd-${z}`, state.usd[z], 0, 50, (v) => { state.usd[z] = v; update(false); }, "$", 0.5, `Size ${z} cost in dollars`, TEAM_RO))));
     const sizeRows = Object.keys(state.rubric).map((c) => h("tr", null, h("th", { scope: "row" }, c), SZ.map((z) => {
       const changed = state.rubric[c][z] !== original.rubric[c][z];
       if (cellEdit && cellEdit.cat === c && cellEdit.z === z) {
-        const ta = h("textarea", { class: "in", id: `cell-${c}-${z}`, rows: 3, style: "width:100%" }); ta.value = state.rubric[c][z];
+        const ta = h("textarea", { class: "in", id: `cell-${c}-${z}`, rows: 3, style: "width:100%", "aria-label": `${c}, size ${z}` }); ta.value = state.rubric[c][z];
         const save = () => { const v = ta.value.replace(/[|\s]+/g, " ").trim(); if (v.length < 3 || v.length > 120) { ta.classList.add("bad"); return; } state.rubric[c][z] = v; cellEdit = null; update(); requestAnimationFrame(() => $(`cellbtn-${c}-${z}`)?.focus()); };
         ta.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); save(); } if (ev.key === "Escape") { cellEdit = null; drawRules(); requestAnimationFrame(() => $(`cellbtn-${c}-${z}`)?.focus()); } });
         requestAnimationFrame(() => ta.focus());
         return h("td", null, ta, h("div", { class: "addrow" }, h("button", { type: "button", class: "btn primary", onclick: save }, "Save"), h("button", { type: "button", class: "btn", onclick: () => { cellEdit = null; drawRules(); } }, "Cancel")));
       }
-      return h("td", { class: changed ? "changed" : "" }, h("button", { type: "button", class: "cell", id: `cellbtn-${c}-${z}`, disabled: !LOCAL, "aria-label": `${c}, size ${z}: ${state.rubric[c][z]}. Edit`, onclick: () => { cellEdit = { cat: c, z }; drawRules(); } }, h("span", null, state.rubric[c][z] || "—"), LOCAL ? h("span", { class: "pen", "aria-hidden": "true" }, "✎") : null));
+      if (TEAM_RO) return h("td", null, state.rubric[c][z] || "—");
+      return h("td", { class: changed ? "changed" : "" }, h("button", { type: "button", class: "cell", id: `cellbtn-${c}-${z}`, "aria-label": `${c}, size ${z}: ${state.rubric[c][z]}. Edit`, onclick: () => { cellEdit = { cat: c, z }; drawRules(); } }, h("span", null, state.rubric[c][z] || "—"), h("span", { class: "pen", "aria-hidden": "true" }, "✎")));
     })));
     const heldBy = Object.fromEntries(D.held.map((x) => [x.rule, x.n]));
-    const FIXED = [["one-on-one", "1:1s and career talks", "a 1:1 title, or two people with a title naming two people"], ["hiring", "Hiring and interviews", "an interview, debrief, recruiter or offer in the title, or twice in the text"],
-      ["no-external-participant", "Internal-only meetings", "nobody from outside your company's domains"], ["no-company-domain", "Company domain not set", "PMX can't tell colleagues from customers, so it holds everything"],
-      ["unknown-participants", "No participant list", "PMX can't tell who was there"], ["performance", "Performance and HR", "in the title, or in two or more passages; one passage is cut"],
-      ["compensation", "Pay and compensation", "in the title, or in two or more passages; one passage is cut"], ["health", "Health and leave", "in the title, or in two or more passages; one passage is cut"],
-      ["never-ingest", "Your do-not-read list", "a person, title or channel you listed"], ["source-off", "Sources you turned off", "a source set to Off, or to My to-dos only for team tasks"]];
-    const readOnly = LOCAL ? null : h("p", { class: "banner", role: "note" }, "This shared page shows your rules and can add to your do-not-read list. To change anything else, open this Mac's own page with pmx flow --web, or use the commands in Review changes.");
+    const FIXED = [["one-on-one", "1:1s and career talks", "a 1:1 in the title, or a two-person meeting"], ["hiring", "Hiring and interviews", "an interview, debrief, recruiter or offer in the title, or mentioned twice"],
+      ["no-external-participant", "Internal-only meetings", "nobody from outside your company's domains"], ["no-company-domain", "Company domain not set", "PMX can't tell colleagues from customers, so it keeps everything private"],
+      ["unknown-participants", "No participant list", "PMX can't tell who was there"], ["performance", "Performance and HR", "in the title or mentioned twice; a single mention is cut from the text"],
+      ["compensation", "Pay and compensation", "in the title or mentioned twice; a single mention is cut from the text"], ["health", "Health and leave", "in the title or mentioned twice; a single mention is cut from the text"],
+      ["never-ingest", "Your do-not-read list", "a person, title or channel you listed"], ["source-off", "Sources you turned off", "a source set to Off, or to Your to-dos only for team tasks"]];
+    const note = LOCAL ? null : h("p", { class: "banner", role: "note" }, "This shared page can't change settings itself. Change your own settings here and copy the commands it gives you into Terminal, or open this Mac's own page, which applies them: pmx flow --web. Additions to the do-not-read list apply straight away.");
+    const back = fromNode && nodes[fromNode] ? h("p", null, h("button", { type: "button", class: "textlink", onclick: () => goNode(fromNode) }, `← Back to ${nodes[fromNode].title} on the map`)) : null;
+    const prs = D.pendingTeam || [];
+    const inReview = prs.length ? h("div", { class: "inreview" }, h("strong", null, `Team changes in review (${prs.length})`),
+      prs.map((p) => h("span", null, h("a", { href: p.url, target: "_blank", rel: "noopener" }, "Pull request ↗"), ` · ${when(p.at)} · ${p.changes.join("; ")}`)),
+      h("span", { class: "faint small" }, "Nothing changes for anyone until a code owner merges it.")) : null;
     $("v-rules").replaceChildren(h("div", { class: "rules" },
-      readOnly,
-      rb("routes", "What each source may feed", ["me"], "Off reads nothing from a source. My to-dos only keeps it out of team tasks. Team tasks reach Linear only after you approve them.",
+      back, note, inReview,
+      rb("routes", "What each source may feed", ["me"], "Off reads nothing from a source. Your to-dos only keeps it out of team tasks. Team tasks reach Linear only after you approve them.",
         ...Object.keys(state.routes).map((k) => h("div", { class: "ctl" },
-          h("div", { class: "lab" }, h("strong", null, k === "slack" ? "Slack" : (D.sources.find((x) => x.id === k) || { label: k }).label), RANK[state.routes[k]] > RANK[original.routes[k]] ? h("span", { class: "scope loosen", style: "justify-self:start" }, "Loosens privacy") : null),
-          seg(k === "slack" ? [["off", "Off"], ["linear", "Digest + Linear tasks"]] : ROUTE_OPTS, state.routes[k], (v) => { state.routes[k] = v; update(); }, `${k} feeds`, !LOCAL))),
+          h("div", { class: "lab" }, h("strong", null, sourceName(k)), RANK[state.routes[k]] > RANK[original.routes[k]] ? h("span", { class: "scope loosen", style: "justify-self:start" }, "Loosens privacy") : null),
+          seg(k === "slack" ? [["off", "Off"], ["linear", "Digest and team tasks"]] : ROUTE_OPTS, state.routes[k], (v) => { state.routes[k] = v; update(); }, `What ${sourceName(k)} may feed`, k === "slack" && TEAM_RO))),
         h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Email")), h("span", { class: "faint small" }, "PMX can't read email. Forward customer emails to an approved Slack channel."))),
       rb("domains", "Who counts as a customer", ["team", "me"], "A meeting reaches team tasks only if someone outside these domains was in it. Removing a domain loosens privacy: its people start to count as customers.",
-        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Team's domains"), h("span", { class: "faint small" }, "for everyone, by pull request")), domainList("teamDomains")),
-        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Your domains"), h("span", { class: "faint small" }, "added on this Mac")), domainList("myDomains"))),
-      rb("fixed", "Always held", ["fixed"], "Code decides these, before Claude reads anything. Nobody can switch them off here; changing one takes a new PMX release.",
-        h("div", { class: "fixed-list" }, FIXED.map(([rule, name, how]) => h("div", { class: "fx" }, h("div", { class: "row" }, h("b", null, name), h("span", { class: "num faint small" }, `${heldBy[rule] || 0} held ${winText()}`)), h("span", { class: "faint small" }, how))))),
-      rb("dnr", "Never read", ["me"], "Only you see this list, and only on this Mac. Removing an entry loosens privacy.",
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Team's domains"), h("span", { class: "faint small" }, "for everyone, by pull request")), domainList("teamDomains", TEAM_RO)),
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Your domains"), h("span", { class: "faint small" }, "added on this Mac")), domainList("myDomains", false))),
+      rb("fixed", "Always private", ["fixed"], "Code decides these, before Claude reads anything. Nobody can switch them off here; changing one takes a new PMX release.",
+        h("div", { class: "fixed-list" }, FIXED.map(([rule, name, how]) => h("div", { class: "fx" }, h("div", { class: "row" }, h("b", null, name), h("span", { class: "num faint small" }, `${heldBy[rule] || 0} kept private ${winText()}`)), h("span", { class: "faint small" }, how))))),
+      rb("dnr", "Do-not-read list", ["me"], "PMX never reads meetings with these people, titles or channels. Only you see this list, and only on this Mac. Removing an entry loosens privacy.",
         dnr("people", "person", "People", "Name or email"), dnr("titles", "title", "Meeting titles containing", "Title text, like Board prep"), dnr("channels", "channel", "Slack channels", "#channel")),
       rb("gets", "What Linear gets", ["fixed"], "Every task waits for your approval first. This is always on.",
         h("div", { class: "gets" },
           h("div", null, h("strong", null, "A task in Linear has"), h("ul", null, h("li", null, "A title and labels: inbox, category, size"), h("li", null, "A 2–4 sentence summary in Claude's words"), h("li", null, "Why it got its size"), h("li", null, "How many sources and their dates"))),
           h("div", null, h("strong", null, "It never has"), h("ul", null, h("li", null, "Transcript text or quotes (PMX drops a task that repeats 8 words of a meeting)"), h("li", null, "Meeting titles or attendees"), h("li", null, "Speaker labels like \"Microphone:\""))),
-          h("div", null, h("strong", null, "Not in Linear at all"), h("ul", null, h("li", null, "Which meetings were processed: that's recorded in your PMX repo under keyed IDs"))))),
-      rb("sizes", "T-shirt sizes", ["team"], "How long each size takes an agent, its estimated cost, and the rubric Claude matches when it sizes a task. Click a cell to change its wording.",
+          h("div", null, h("strong", null, "Not in Linear at all"), h("ul", null, h("li", null, "Which meetings were processed: that's recorded in your team's repo, under codes only your team can match"))))),
+      rb("sizes", "T-shirt sizes", ["team"], `How long each size takes an agent, its estimated cost, and the wording Claude matches when it sizes a task.${TEAM_RO ? "" : " Click a cell to change its wording."}`,
         h("div", { style: "overflow-x:auto" }, h("table", { class: "sizes" }, h("thead", null, h("tr", null, h("th", null, "Category"), sizeHead)), h("tbody", null, sizeRows))),
-        h("p", { class: "hint" }, "Run time and cost live in pmx.config.json; the wording lives in your team's pmx-size skill. Both change through one pull request.")),
-      rb("budget", "Budget", ["me"], `On a Claude plan the dollars are an estimate at API list prices, not a bill. Your team's cap of $${D.rules.budget.teamCap} a day always applies. Today: ${fmt(D.rules.budget.tokens)} tokens, ~$${D.rules.budget.spentUsd.toFixed(2)}.`,
+        h("p", { class: "hint" }, TEAM_RO ? "Change these on this Mac's own page (pmx flow --web): they go to your team as one pull request." : "Run time and cost live in pmx.config.json; the wording lives in your team's pmx-size skill. Both change through one pull request.")),
+      rb("budget", "Budget", ["me"], `On a Claude plan the dollars are an estimate at API list prices, not a bill. Your team's cap of $${D.rules.budget.teamCap} a day always applies. Today: ${fmt(D.rules.budget.tokens)} tokens, about $${D.rules.budget.spentUsd.toFixed(2)}.`,
         h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Your daily cap")),
-          h("div", { class: "addrow", style: "margin:0" }, seg([["off", "None of my own"], ["set", "Cap per day"], ["pause", "Pause PMX"]], state.budget === null ? "off" : state.budget === 0 ? "pause" : "set", (v) => { state.budget = v === "off" ? null : v === "pause" ? 0 : (original.budget || 10); update(); }, "Budget", !LOCAL),
-            state.budget ? numIn("cap", state.budget, 1, D.rules.budget.teamCap, (v) => { state.budget = v; update(false); }, "$") : null))),
+          h("div", { class: "addrow", style: "margin:0" }, seg([["off", "None of my own"], ["set", "Cap per day"], ["pause", "Pause PMX"]], state.budget === null ? "off" : state.budget === 0 ? "pause" : "set", (v) => { state.budget = v === "off" ? null : v === "pause" ? 0 : (original.budget || 10); update(); }, "Your daily cap"),
+            state.budget ? numIn("cap", state.budget, 1, D.rules.budget.teamCap, (v) => { state.budget = v; update(false); }, "$", 1, "Daily cap in dollars") : null))),
       rb("agent", "Your agent's work", ["me", "team"], null,
         h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Categories you take on"), scopeTag("me")),
-          h("div", { class: "chips" }, Object.keys(state.accept).map((c) => h("label", { class: "chip" }, h("input", { type: "checkbox", id: `cat-${c}`, checked: state.accept[c], disabled: !LOCAL, onchange: (ev) => { state.accept[c] = ev.target.checked; update(); } }), c)))),
-        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Stop pulling when"), scopeTag("team")),
-          h("div", { class: "addrow", style: "margin:0" }, numIn("revcap", state.reviewCap, 1, 10, (v) => { state.reviewCap = v; update(false); }), h("span", null, "drafts wait for review")))),
+          h("div", { class: "chips" }, Object.keys(state.accept).map((c) => h("label", { class: "chip" }, h("input", { type: "checkbox", id: `cat-${c}`, checked: state.accept[c], onchange: (ev) => { state.accept[c] = ev.target.checked; update(); } }), c)))),
+        h("div", { class: "ctl" }, h("div", { class: "lab" }, h("strong", null, "Agents stop taking tasks when"), scopeTag("team")),
+          h("div", { class: "addrow", style: "margin:0" }, numIn("revcap", state.reviewCap, 1, 10, (v) => { state.reviewCap = v; update(false); }, "", 1, "Review limit", TEAM_RO), h("span", null, "drafts are waiting for review")))),
     ));
     if (focusedId) requestAnimationFrame(() => $(focusedId)?.focus());
   }
@@ -836,21 +1208,21 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     if (!state) return [];
     const out = [];
     const add = (change, label, scope, cmd, loosens = false) => out.push({ change, label, scope, cmd, loosens });
-    for (const k of Object.keys(state.routes)) if (state.routes[k] !== original.routes[k]) add({ kind: "route", source: k, value: state.routes[k] }, `${k}: ${(ROUTE_OPTS.find((o) => o[0] === state.routes[k]) || ["", "Digest + Linear tasks"])[1]}`, "me", `pmx sources set ${k} ${state.routes[k]}`, RANK[state.routes[k]] > RANK[original.routes[k]]);
+    for (const k of Object.keys(state.routes)) if (state.routes[k] !== original.routes[k]) add({ kind: "route", source: k, value: state.routes[k] }, `${sourceName(k)}: ${(ROUTE_OPTS.find((o) => o[0] === state.routes[k]) || ["", "Digest and team tasks"])[1]}`, "me", `pmx sources set ${k} ${state.routes[k]}`, RANK[state.routes[k]] > RANK[original.routes[k]]);
     for (const [key, kind, scope] of [["teamDomains", "team-domain", "team"], ["myDomains", "my-domain", "me"]]) {
-      for (const d of state[key]) if (!original[key].includes(d)) add({ kind, op: "add", value: d }, `Add company domain ${d}`, scope, scope === "me" ? `pmx domains add ${d}` : `pmx.config.json internalDomains + "${d}"`);
-      for (const d of original[key]) if (!state[key].includes(d)) add({ kind, op: "remove", value: d }, `Remove company domain ${d}`, scope, scope === "me" ? `pmx domains remove ${d}` : `pmx.config.json internalDomains − "${d}"`, true);
+      for (const d of state[key]) if (!original[key].includes(d)) add({ kind, op: "add", value: d }, `Add company domain ${d}${scope === "team" ? " for the team" : ""}`, scope, scope === "me" ? `pmx domains add ${d}` : `pmx.config.json: internalDomains + "${d}"`);
+      for (const d of original[key]) if (!state[key].includes(d)) add({ kind, op: "remove", value: d }, `Remove company domain ${d}${scope === "team" ? " for the team" : ""}`, scope, scope === "me" ? `pmx domains remove ${d}` : `pmx.config.json: internalDomains − "${d}"`, true);
     }
     for (const [key, list] of [["people", "person"], ["titles", "title"], ["channels", "channel"]]) {
       for (const v of state[key]) if (!original[key].includes(v)) add({ kind: "never", list, op: "add", value: v }, `Never read ${list} "${v}"`, "me", `pmx never-ingest add --${list} "${v}"`);
       for (const v of original[key]) if (!state[key].includes(v)) add({ kind: "never", list, op: "remove", value: v }, `Read ${list} "${v}" again`, "me", `pmx never-ingest remove --${list} "${v}"`, true);
     }
     for (const z of SZ) if (state.minutes[z] !== original.minutes[z] || state.usd[z] !== original.usd[z])
-      add({ kind: "size", size: z, ...(state.minutes[z] !== original.minutes[z] ? { minutes: state.minutes[z] } : {}), ...(state.usd[z] !== original.usd[z] ? { usd: state.usd[z] } : {}) }, `Size ${z}: ${state.minutes[z]} min, ~$${state.usd[z]}`, "team", `pmx.config.json sizes.${z}`);
+      add({ kind: "size", size: z, ...(state.minutes[z] !== original.minutes[z] ? { minutes: state.minutes[z] } : {}), ...(state.usd[z] !== original.usd[z] ? { usd: state.usd[z] } : {}) }, `Size ${z}: ${state.minutes[z]} min, about $${state.usd[z]}`, "team", `pmx.config.json: sizes.${z}`);
     for (const c of Object.keys(state.rubric)) for (const z of SZ) if (state.rubric[c][z] !== original.rubric[c][z]) add({ kind: "rubric", category: c, size: z, text: state.rubric[c][z] }, `${c} ${z}: "${state.rubric[c][z]}"`, "team", `.claude/skills/pmx-size/SKILL.md (${c}, ${z})`);
     if (state.budget !== original.budget) add({ kind: "budget", value: state.budget }, state.budget === null ? "No cap of your own" : state.budget === 0 ? "Pause PMX" : `Cap $${state.budget} a day`, "me", state.budget === null ? "pmx budget off" : `pmx budget set ${state.budget}`);
     for (const c of Object.keys(state.accept)) if (state.accept[c] !== original.accept[c]) add({ kind: "category", name: c, accepted: state.accept[c] }, `${state.accept[c] ? "Take on" : "Stop taking"} ${c}`, "me", `pmx categories ${state.accept[c] ? "add" : "remove"} ${c}`);
-    if (state.reviewCap !== original.reviewCap) add({ kind: "review-cap", value: state.reviewCap }, `Stop pulling at ${state.reviewCap} drafts`, "team", `pmx.config.json reviewQueueCap`);
+    if (state.reviewCap !== original.reviewCap) add({ kind: "review-cap", value: state.reviewCap }, `Agents stop at ${state.reviewCap} drafts waiting`, "team", `pmx.config.json: reviewQueueCap`);
     return out;
   }
   function update(redraw = true) { if (redraw) drawRules(); drawTray(); if ($("review").childElementCount) drawReview(); }
@@ -858,28 +1230,33 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     const ch = diff(), bad = Object.values(invalid).some(Boolean);
     $("tray").hidden = !ch.length && !bad;
     const me = ch.filter((c) => c.scope === "me").length, team = ch.length - me, loose = ch.filter((c) => c.loosens).length;
-    $("tray-text").textContent = bad ? "Fix the highlighted value first." : `${plural(ch.length, "change")}: ${me} on this Mac${team ? `, ${team} in a team pull request` : ""}${loose ? ` · ${loose} loosen${loose === 1 ? "s" : ""} privacy` : ""}`;
+    $("tray-text").textContent = bad ? "Fix the highlighted value first." : `${plural(ch.length, "change")} not applied yet: ${me} just for you${team ? `, ${team} for the team (one pull request)` : ""}${loose ? ` · ${loose} loosen${loose === 1 ? "s" : ""} privacy` : ""}`;
     $("tray-review").disabled = bad;
   }
-  let applied = null;
-  function drawReview() {
+  let applied = null, applying = false, undoBase = null;
+  function closeReview() { applied = null; undoBase = null; $("review").replaceChildren(); (!$("tray").hidden ? $("tray-review") : $("h-title"))?.focus?.(); }
+  function drawReview(o = {}) {
     const ch = diff();
     if (!ch.length && !applied) { $("review").replaceChildren(); return; }
     const row = (c) => h("div", { class: "chg" },
-      h("div", null, h("div", null, c.label, c.loosens ? [" ", h("span", { class: "scope loosen" }, "Loosens privacy")] : null), h("div", { class: "cmdline", style: "margin-top:4px" }, c.cmd)),
+      h("div", null, h("div", null, c.label, c.loosens ? [" ", h("span", { class: "scope loosen" }, "Loosens privacy")] : null),
+        c.scope === "team" ? h("div", { class: "small faint", style: "margin-top:4px" }, `File changed: ${c.cmd}`)
+          : LOCAL ? h("details", null, h("summary", null, "Terminal equivalent"), h("div", { class: "cmdline", style: "margin-top:4px" }, c.cmd))
+            : h("div", { class: "cmdline", style: "margin-top:4px" }, c.cmd)),
       h("button", { type: "button", class: "btn", onclick: () => { revert(c.change); } }, "Undo"));
     const me = ch.filter((c) => c.scope === "me"), team = ch.filter((c) => c.scope === "team"), loose = ch.some((c) => c.loosens);
-    const confirm = h("input", { type: "checkbox", id: "confirm-loosen" });
-    const go = h("button", { type: "button", class: "btn primary", onclick: () => apply(confirm.checked) }, team.length ? "Apply and open the pull request" : "Apply");
-    $("review").replaceChildren(h("section", { class: "sheet", "aria-label": "Review changes" },
-      h("div", { class: "row" }, h("h2", { tabindex: "-1", id: "review-h" }, "Review changes"), h("button", { type: "button", class: "btn", onclick: () => { applied = null; $("review").replaceChildren(); } }, "Close")),
-      applied ? h("div", { class: "carry full" }, applied) : null,
-      me.length ? [h("h3", null, "On this Mac"), h("p", { class: "small muted" }, LOCAL ? "Applied right away; each takes effect from the next run." : "Run these in Terminal on your Mac:"), me.map(row)] : null,
-      team.length ? [h("h3", null, "For the team: one pull request to the PMX repo"), h("p", { class: "small muted" }, "A code owner reviews it. Until it merges, nothing changes for anyone."), team.map(row)] : null,
+    const go = h("button", { type: "button", class: "btn primary", disabled: applying || loose, onclick: () => apply(loose) }, applying ? (team.length ? "Applying… opening the pull request" : "Applying…") : team.length ? "Apply and open the pull request" : "Apply");
+    const confirm = h("input", { type: "checkbox", id: "confirm-loosen", onchange: (ev) => { go.disabled = applying || !ev.target.checked; } });
+    $("review").replaceChildren(h("section", { class: "sheet", "aria-label": "Review changes", onkeydown: (ev) => { if (ev.key === "Escape") closeReview(); } },
+      h("div", { class: "row" }, h("h2", { tabindex: "-1", id: "review-h" }, "Review changes"), h("button", { type: "button", class: "btn", onclick: closeReview }, "Close")),
+      applied ? h("div", { class: "carry full", role: "status" }, applied,
+        undoBase ? h("div", { class: "links" }, h("button", { type: "button", class: "btn", onclick: undoApplied }, "Undo the changes just for you")) : null) : null,
+      me.length ? [h("h3", null, "Just for you, on this Mac"), h("p", { class: "small muted" }, LOCAL ? "Applied right away; each takes effect from the next run." : "This shared page can't apply them. Copy the commands into Terminal on your Mac:"), me.map(row)] : null,
+      team.length ? [h("h3", null, "For the whole team: one pull request to the PMX repo"), h("p", { class: "small muted" }, "A code owner reviews it. Until it merges, nothing changes for anyone."), team.map(row)] : null,
       LOCAL && loose ? h("label", { class: "addrow" }, confirm, h("span", { class: "err" }, "I understand some of these let more of my meetings through.")) : null,
       LOCAL && ch.length ? h("div", { class: "addrow" }, go) : null,
-      !LOCAL && ch.length ? h("div", { class: "addrow" }, h("button", { type: "button", class: "btn", onclick: (ev) => copy(me.map((c) => c.cmd).join("\n"), ev.target) }, "Copy")) : null));
-    requestAnimationFrame(() => $("review-h")?.focus());
+      !LOCAL && me.length ? h("div", { class: "addrow" }, h("button", { type: "button", class: "btn", onclick: (ev) => copy(me.map((c) => c.cmd).join("\n"), ev.currentTarget) }, "Copy the commands")) : null));
+    if (o.focus) requestAnimationFrame(() => $("review-h")?.focus());
   }
   function revert(c) {
     const k = { route: () => (state.routes[c.source] = original.routes[c.source]), "team-domain": () => togg("teamDomains"), "my-domain": () => togg("myDomains"), never: () => togg({ person: "people", title: "titles", channel: "channels" }[c.list]),
@@ -888,38 +1265,71 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     function togg(key) { state[key] = c.op === "add" ? state[key].filter((x) => x !== c.value) : [...state[key], c.value]; }
     k(); update();
   }
+  const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept"];
   async function apply(confirmed) {
-    const ch = diff();
+    if (applying) return;
+    const ch = diff(), before = clone(original);
+    applying = true; drawReview();
     try {
       const r = await api("/api/pipeline/changes", { changes: ch.map((c) => c.change), confirmLoosening: confirmed });
-      applied = [...r.applied, r.pr ? `Pull request: ${r.pr.url}` : null].filter(Boolean).join(" · ") || "Nothing changed.";
+      const mine = ch.some((c) => c.scope === "me");
+      applied = h("span", null, [r.applied.join(" · "),
+        r.pr ? h("span", null, " · Team changes: ", h("a", { href: r.pr.url, target: "_blank", rel: "noopener" }, "pull request opened ↗")) : null,
+        r.prError ? h("span", { class: "err" }, ` · Your own changes are saved, but the team pull request couldn't be opened: ${r.prError}. Your team edits are still here; try again.`) : null].filter(Boolean));
+      undoBase = mine ? before : null;
+      // Team edits stay on screen when their pull request failed, so the PM can try again.
+      const keepTeam = r.prError ? clone(state) : null;
       original = null; state = null;
+      applying = false;
       await load();
+      if (keepTeam && state) { for (const k of ["teamDomains", "minutes", "usd", "rubric", "reviewCap"]) state[k] = keepTeam[k]; update(); }
+      toast(r.prError ? "Saved your own changes. The team pull request failed." : r.pr ? "Applied. The team pull request is open for review." : "Applied.");
     } catch (e) {
       applied = e.status === 409 ? "Tick the box first: some changes let more of your meetings through." : `Couldn't apply: ${e.message}`;
     }
-    drawReview();
+    applying = false;
+    drawReview({ focus: true });
   }
-  $("tray-review").addEventListener("click", () => { applied = null; drawReview(); $("review").scrollIntoView({ behavior: "smooth" }); });
-  $("tray-discard").addEventListener("click", () => { state = clone(original); cellEdit = null; for (const k in invalid) delete invalid[k]; applied = null; $("review").replaceChildren(); update(); });
+  // Undo after Apply: put your own settings back as they were, as a new set of changes to review and apply.
+  function undoApplied() {
+    if (!undoBase || !state) return;
+    for (const k of PERSONAL) state[k] = clone(undoBase[k]);
+    applied = null; undoBase = null;
+    update();
+    drawReview({ focus: true });
+  }
+  $("tray-review").addEventListener("click", () => { applied = null; undoBase = null; drawReview({ focus: true }); $("review").scrollIntoView({ behavior: "smooth" }); });
+  $("tray-discard").addEventListener("click", () => { state = clone(original); cellEdit = null; for (const k in invalid) invalid[k] = false; applied = null; $("review").replaceChildren(); update(); });
 
   // ================= render =================
-  let built = false;
+  let built = false, rulesSig = "", routed = false;
   function render() {
     const prev = edges.length ? Object.fromEntries(edges.map((e) => [e.id, e.n])) : null;
     const sameShape = built && D.sources.map((x) => x.id).join() === Object.keys(nodes).filter((k) => k.startsWith("src-")).map((k) => k.slice(4)).join();
     shape();
+    // First load: open "You approve" only when something waits there; otherwise the panel explains how to pick a step.
+    if (!routed) {
+      routed = true;
+      const [t0, sub] = location.hash.slice(1).split("/");
+      if (t0 === "connections" && sub && nodes[sub]) sel = { type: "node", id: sub };
+      else if (D.needs.proposals) sel = { type: "node", id: "approve" };
+    }
     if (!sameShape) { buildMap(); built = true; }
     refreshNumbers(sameShape ? prev : null);
-    $("mode-note").textContent = LOCAL ? "This Mac only" : "Shared view: counts only";
-    drawNeeds(); drawDetail(); drawChecks(); drawSkills(); drawSchedules();
-    initRules(); if (!cellEdit) drawRules(); drawTray();
+    markSelection();
+    $("mode-note").textContent = LOCAL ? "Private view: only on this Mac" : "Shared view: counts only, no titles";
+    drawSummary(); drawNeeds(); drawDetail(); drawChecks(); drawSkills(); drawSchedules();
+    initRules();
+    // The Rules tab redraws only when the rules themselves changed and the PM isn't in the middle of using it.
+    const sig = JSON.stringify([D.rules, D.held, D.pendingTeam, hours, fromNode]);
+    if (!cellEdit && sig !== rulesSig && !$("v-rules").contains(document.activeElement)) { rulesSig = sig; drawRules(); }
+    drawTray();
     asof();
   }
 
   if (matchMedia("(max-width: 700px)").matches) setView("list");
-  const tab = location.hash.slice(1);
-  show(TABS.includes(tab) ? tab : store.get("pmx-pipeline-tab") || "connections");
+  const first0 = location.hash.slice(1).split("/")[0];
+  if (TABS.includes(first0)) route(); else show(store.get("pmx-pipeline-tab") || "connections");
   load();
 })();
 </script>

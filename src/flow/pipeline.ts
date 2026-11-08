@@ -28,6 +28,16 @@ export interface PipelineEdge {
   last: string | null;
 }
 
+/**
+ * Something the PM should fix, in words, with what fixes it: a Terminal command to copy, and/or the place on the board
+ * that fixes it ("rule:<id>" for a Rules section, "tab:<id>" for a tab, "check:<id>" for a privacy check).
+ */
+export interface HealthProblem {
+  text: string;
+  cmd?: string;
+  fix?: string;
+}
+
 export interface PipelineData {
   v: 1;
   level: PipelineLevel;
@@ -36,11 +46,16 @@ export interface PipelineData {
   freshness: { linearSyncedAt: string | null; lastTick: string | null; lastCollect: string | null };
   sources: { id: string; label: string; connected: boolean; n: number; last: string | null }[];
   edges: Record<EdgeId, PipelineEdge>;
-  needs: { proposals: number; drafts: number };
+  needs: { proposals: number; drafts: number; todos: number };
   /** Local level only. */
   proposals: { id: string; title: string; category: string; size: Size; from: string; description: string }[];
   drafts: { identifier: string; title: string; url: string | null; since: string | null }[];
-  health: { ok: boolean; problems: string[]; facts: string[] };
+  /** Open to-dos. Local level only: they never leave the Mac. */
+  todos: { id: string; text: string; due: string | null; from: string }[];
+  /** Team settings pull requests opened from the board that are still open. */
+  pendingTeam: { url: string; at: string; changes: string[] }[];
+  /** `problems` stays plain text for boards published before 0.17.0; `items` carries each one's fix. */
+  health: { ok: boolean; problems: string[]; items: HealthProblem[]; facts: string[] };
   checks: FlowCheck[];
   held: { rule: string; label: string; n: number }[];
   skills: { name: string; what: string; node: string | null; where: string; runs: number; copy: string; category: string | null }[];
@@ -75,9 +90,12 @@ export interface PipelineInputs {
   linearSyncedAt: string | null;
   collectReports: { at: string; connector: string | null; saved: number }[];
   todosCreated: string[];
+  /** Open to-dos on this Mac. */
+  openTodos?: { id: string; text: string; due: string | null; source: { title: string; at: string } }[];
+  pendingTeam?: PipelineData["pendingTeam"];
   proposals: Proposal[];
   checks: FlowCheck[];
-  health: { problems: string[]; facts: string[] };
+  health: { problems: HealthProblem[]; facts: string[] };
   lastTick: string | null;
   skills: (SkillInfo & { runsInWindow: number })[];
   schedules: PipelineData["schedules"];
@@ -145,17 +163,17 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
   const edges: Record<EdgeId, PipelineEdge> = {
     "c-f": { ...distinct(receipts, (s) => s.kind === "transcript"), unit: "meetings" },
     "s-f": { ...distinct(receipts, (s) => s.kind === "slack"), unit: "threads" },
-    "f-h": { ...distinct(team, (s) => s.decision === "left-out"), unit: "held" },
+    "f-h": { ...distinct(team, (s) => s.decision === "left-out"), unit: "meetings" },
     "f-t": { ...distinct(todo, (s) => s.decision === "used"), unit: "meetings", tokens: tokens(todo) },
-    "f-d": { ...distinct(synth, (s) => s.decision === "used"), unit: "sources", tokens: tokens(synth) },
+    "f-d": { ...distinct(synth, (s) => s.decision === "used"), unit: "meetings and threads", tokens: tokens(synth) },
     "t-t": { n: i.todosCreated.filter(inWin).length, unit: "to-dos", last: latest(i.todosCreated.filter(inWin)) },
-    "d-a": { n: proposed.length, unit: "proposed", last: latest(proposed.map((x) => x.at)) },
-    "a-x": { n: dropped.length, unit: "dropped", last: latest(dropped.map((x) => x.at)) },
+    "d-a": { n: proposed.length, unit: "tasks", last: latest(proposed.map((x) => x.at)) },
+    "a-x": { n: dropped.length, unit: "tasks", last: latest(dropped.map((x) => x.at)) },
     "a-i": { n: posted.length, unit: "tasks", last: latest(posted.map((x) => x.at)) },
-    "i-r": { n: ready.length, unit: "ready now", last: i.linearSyncedAt },
+    "i-r": { n: ready.length, unit: "tasks ready now", last: i.linearSyncedAt },
     "r-g": { n: runs.length, unit: "runs", tokens: runs.reduce((a, e) => a + (e.tokens ?? 0), 0), last: latest(runs.map((e) => e.ts)) },
     "g-v": { n: runs.filter((e) => e.outcome === "ok").length, unit: "drafts", last: latest(runs.filter((e) => e.outcome === "ok").map((e) => e.ts)) },
-    "v-d": { n: verdicts.filter((v) => v.verdict === "accepted").length, unit: "accepted", last: latest(verdicts.filter((v) => v.verdict === "accepted").map((v) => v.ts)) },
+    "v-d": { n: verdicts.filter((v) => v.verdict === "accepted").length, unit: "drafts", last: latest(verdicts.filter((v) => v.verdict === "accepted").map((v) => v.ts)) },
   };
 
   const heldBy = new Map<string, Set<string>>();
@@ -164,6 +182,18 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     heldBy.set(rule, (heldBy.get(rule) ?? new Set()).add(s.refHash));
   }
   const held = [...heldBy].map(([rule, set]) => ({ rule, label: HOLD_LABELS[rule as HoldReason] ?? rule, n: set.size })).sort((a, b) => b.n - a.n);
+
+  // A failed privacy check outranks everything else that needs the PM.
+  const CHECK_PROBLEM: Record<string, string> = {
+    "held-never-in-linear": "Privacy check failed: a meeting PMX kept private may be in Linear.",
+    canaries: "Privacy check failed: a test meeting got past the privacy rules.",
+    "outbox-clean": "Privacy check failed: a change waiting to go to Linear carries a test marker.",
+    "runlog-chain": "The agent history doesn't add up: an entry was changed or is missing.",
+  };
+  const problems: HealthProblem[] = [
+    ...i.checks.filter((c) => c.status === "violated").map((c) => ({ text: `${CHECK_PROBLEM[c.id] ?? `Privacy check failed: ${c.label}.`} See which in Privacy checks.`, fix: `check:${c.id}` })),
+    ...i.health.problems,
+  ];
 
   const sharedRules: PipelineRules = local ? i.rules : {
     ...i.rules,
@@ -178,14 +208,16 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     v: 1, level: i.level, at: until, hours,
     freshness: { linearSyncedAt: i.linearSyncedAt, lastTick: i.lastTick, lastCollect: latest(i.collectReports.map((c) => c.at)) },
     sources, edges,
-    needs: { proposals: i.proposals.length, drafts: review.length },
+    needs: { proposals: i.proposals.length, drafts: review.length, todos: (i.openTodos ?? []).length },
     // A proposal the PM hasn't approved stays theirs, so only this Mac's page shows it.
     proposals: local ? i.proposals.map((p) => ({
       id: p.id, title: p.title, category: p.category, size: p.size, description: p.description,
       from: p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
     })) : [],
     drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null })),
-    health: { ok: !i.health.problems.length, ...i.health },
+    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, from: `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
+    pendingTeam: i.pendingTeam ?? [],
+    health: { ok: !problems.length, problems: problems.map((p) => p.text), items: problems, facts: i.health.facts },
     checks: i.checks,
     held,
     skills: i.skills.map((s) => ({ name: s.name, what: s.description, ...skillNode(s), runs: s.runsInWindow, copy: s.runs === "team" ? "team's copy" : "built-in", category: s.category })),

@@ -62,13 +62,13 @@ describe("0.16.0: the pipeline board (BOARD-3)", () => {
     expect(d.sources).toEqual([{ id: "granola", label: "Granola", connected: true, n: 3, last: "2026-11-07T12:30:00Z" }]);
     expect(d.edges["c-f"].n).toBe(2);
     expect(d.edges["s-f"].n).toBe(1);
-    expect(d.edges["f-h"]).toMatchObject({ n: 1, unit: "held" });
+    expect(d.edges["f-h"]).toMatchObject({ n: 1, unit: "meetings" });
     expect(d.edges["f-d"]).toMatchObject({ n: 2, tokens: 4000 });
     expect(d.edges["f-t"]).toMatchObject({ n: 2, tokens: 2500 });
     expect(d.edges["t-t"].n).toBe(2);
     expect([d.edges["d-a"].n, d.edges["a-i"].n, d.edges["a-x"].n]).toEqual([3, 1, 1]);
     expect([d.edges["i-r"].n, d.edges["r-g"].n, d.edges["g-v"].n, d.edges["v-d"].n]).toEqual([1, 1, 1, 1]);
-    expect(d.needs).toEqual({ proposals: 1, drafts: 1 });
+    expect(d.needs).toEqual({ proposals: 1, drafts: 1, todos: 0 });
     expect(d.held).toEqual([{ rule: "one-on-one", label: "1:1s and career talks", n: 1 }]);
     expect(d.proposals[0]).toMatchObject({ id: "p1", title: "Private idea", from: "1 source (2026-11-07)" });
     expect(d.rules.neverIngest.people).toEqual(["Dana Reyes"]);
@@ -183,5 +183,75 @@ describe("0.16.0: the pipeline board (BOARD-3)", () => {
     const page = await readFile(pipelineTemplate(), "utf8");
     // replaceChildren(...xs.map((x) => [a, b])) stringifies each inner array; flatMap or a flat list is right.
     expect(page.match(/\.\.\.[\w.$()"]+\.map\(\(?[^)]*\)?\s*=>\s*\[/g) ?? []).toEqual([]);
+  });
+});
+
+describe("0.17.0: the board shows where to act (BOARD-4)", () => {
+  beforeEach(freshHome);
+
+  it("a failed privacy check comes first among the problems, and each problem says what fixes it", () => {
+    const i = inputs("local");
+    i.checks = [{ id: "canaries", status: "violated", label: "Test meetings were kept private", detail: "1 of 3 got past the rules" }, { id: "links", status: "ok", label: "x", detail: "y" }];
+    i.health = { problems: [{ text: "PMX doesn't know your company's email domain.", cmd: "pmx domains add <your domain>", fix: "rule:domains" }], facts: [] };
+    const d = buildPipeline(i);
+    expect(d.health.ok).toBe(false);
+    expect(d.health.items[0]).toMatchObject({ text: expect.stringMatching(/^Privacy check failed: a test meeting got past/), fix: "check:canaries" });
+    expect(d.health.items[1]).toEqual({ text: "PMX doesn't know your company's email domain.", cmd: "pmx domains add <your domain>", fix: "rule:domains" });
+    // Boards published in Claude before 0.17.0 read plain text here.
+    expect(d.health.problems).toEqual(d.health.items.map((p) => p.text));
+  });
+
+  it("open to-dos are listed only on this Mac's page; the shared page gets their count", () => {
+    const todo = { id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", source: { title: "Acme renewal", at: "2026-11-07T10:00:00Z" } };
+    const local = buildPipeline({ ...inputs("local"), openTodos: [todo], pendingTeam: [{ url: "https://github.com/x/y/pull/3", at: NOW.toISOString(), changes: ["review cap 5"] }] });
+    expect(local.needs.todos).toBe(1);
+    expect(local.todos).toEqual([{ id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", from: "Acme renewal (2026-11-07)" }]);
+    expect(local.pendingTeam).toHaveLength(1);
+    const shared = buildPipeline({ ...inputs("shared"), openTodos: [todo] });
+    expect(shared.needs.todos).toBe(1);
+    expect(shared.todos).toEqual([]);
+    expect(JSON.stringify(shared)).not.toContain("pricing sheet");
+  });
+
+  it("units say what moved: meetings, tasks and drafts", () => {
+    const d = buildPipeline(inputs("local"));
+    expect([d.edges["f-h"].unit, d.edges["f-d"].unit, d.edges["d-a"].unit, d.edges["a-x"].unit, d.edges["i-r"].unit, d.edges["v-d"].unit])
+      .toEqual(["meetings", "meetings and threads", "tasks", "tasks", "tasks ready now", "drafts"]);
+  });
+
+  it("a team pull request that fails is reported next to the personal changes it saved; drafts can be decided from the page", async () => {
+    const { repo } = await pmxRepo({ internalDomains: ["us.com"] });
+    const ctx = await testCtx({ repo, now: NOW, team: { internalDomains: ["us.com"] }, personal: { companyDomains: [] } });
+    const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, pipeline: pipelineHandlers(ctx) });
+    const token = new URL(s.flowUrl).hash.slice(3);
+    const base = s.flowUrl.split("#")[0]!.replace(/\/flow$/, "");
+    const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    try {
+      // us.com is already the team's, so the pull request has nothing to change and fails; the personal domain still saves.
+      const r = await post("/api/pipeline/changes", { changes: [{ kind: "my-domain", op: "add", value: "me.example.com" }, { kind: "team-domain", op: "add", value: "us.com" }] });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({ applied: [expect.stringMatching(/me\.example\.com/)], pr: null, prError: expect.stringMatching(/already in place/) });
+      expect(ctx.personal.companyDomains).toEqual(["me.example.com"]);
+      expect((await post("/api/pipeline/review", { identifier: "PMX-1", verdict: "maybe" })).status).toBe(400);
+      expect((await post("/api/pipeline/review", { identifier: 1 })).status).toBe(400);
+      const expired = await fetch(`${base}/api/pipeline?hours=24`, { headers: { authorization: "Bearer nope" } });
+      expect(expired.status).toBe(403);
+      expect((await expired.json()).error).toMatch(/link has expired: run pmx flow --web again/);
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("the page: the detail sits beside the map, steps are reachable by link and keyboard, and the shared page can still produce commands", async () => {
+    const page = await readFile(pipelineTemplate(), "utf8");
+    expect(page).toMatch(/@media \(min-width: 1180px\) \{ \.conn \{ grid-template-columns: minmax\(0, 1fr\) 340px/);
+    expect(page).toMatch(/addEventListener\("hashchange", route\)/);
+    expect(page).toMatch(/\$\("map"\)\.addEventListener\("keydown"/);
+    expect(page).not.toMatch(/disabled: !LOCAL/);
+    expect(page).not.toMatch(/role: "radio"/);
+    // A null child given to replaceChildren prints "null"; the page goes through put() where one can be empty.
+    expect(page).not.toMatch(/replaceChildren\(\.\.\.parts\)/);
+    // Line-pattern classes for the key never share a name with a step's kind class.
+    expect(page).not.toMatch(/class="k-(full|model|linear|status|held|off)"/);
   });
 });

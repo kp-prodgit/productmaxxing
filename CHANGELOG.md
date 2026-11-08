@@ -2,6 +2,22 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.17.0: the pipeline board shows you where to act
+
+From a usability review of the board by four critic agents (actions, map and navigation, clarity, accessibility and states). BOARD-4.
+
+- **The map is clickable where you can see it.** The selected step's detail sits beside the map from 1180px wide, and scrolls into view below it on narrower windows, with a way back. The selected step is outlined and its connections stay lit while the rest dims; steps and arrows show hover and focus. The map is one Tab stop: arrow keys move between steps, Enter opens one, `[` and `]` walk its connections.
+- **Numbers mean one thing each.** Arrows count what moved in the window; a dark pill on a step counts what's waiting there now (to approve, to review, to-dos, Ready). A key above the map says so, and connection lines differ in pattern as well as colour.
+- **A one-line summary and a needs bar that goes to the action.** "Last 7 days: 2 meetings collected, 1 kept private, …". The cards open the step and focus its first action; empty ones say so quietly. Open to-dos get a card and are listed on this Mac's page.
+- **Problems say how to fix them.** Each has a command to copy and, where the board can fix it, a button to the setting. A failed privacy check is the first problem, not a line at the bottom; checks read in plain words ("Test meetings were kept private", "Agent history is untouched").
+- **Actions on the board.** Approve shows "Sending…" and can't be clicked twice; "Approve all"; Drop waits six seconds with Undo. Agent drafts can be accepted, rejected or sent back for a redo with a note (`POST /api/pipeline/review`), with a link to the task in Linear.
+- **Settings changes you can trust.** Apply can't be clicked twice and stays disabled until you confirm a loosening. If the team pull request fails, the board says your own changes were saved and keeps the team edits to try again. The pull request is a link, open ones show as "in review" on the team's rules, and Undo puts your own settings back.
+- **Nothing you're doing is lost on refresh.** The minute refresh leaves the detail panel and the Rules tab alone unless something in them changed, keeps open sections open and keeps text you were typing.
+- **Links and reloads work.** Tabs and steps have addresses (`#rules/dnr`, `#connections/approve`), Back works on this Mac's page, and reloading keeps working; an expired link says to run `pmx flow --web` again.
+- **The shared board in Claude is honest about what it can do.** Your own settings change there and become commands to copy; team settings show as text; adding to the do-not-read list says so next to the form. Type `/pmx-flow` again to update a board you published.
+- **Clearer words.** "Kept private" instead of held, "proposed task" before approval and "agent draft" after, labels that say where data sits ("On your Mac", "Sent to Claude", "In Linear"), and scope tags "Just you", "Whole team, needs review", "Built in".
+- **Accessibility.** Selection and results are announced, errors alert once, focus is visible in the tray and segmented buttons, paused updates aren't shown as an error, and light-theme faint text meets contrast.
+
 ## 0.16.2: the board's Skills tab lists your skills again
 
 - **Fixed: the Skills tab on the pipeline board** (`pmx flow --web` and `/pmx-flow` in Claude) showed "[object HTMLDivElement]" instead of the skills. It now lists them in their three groups with run counts. A test checks the page for the same mistake. Type `/pmx-flow` in the Claude app again to update a board you published there.

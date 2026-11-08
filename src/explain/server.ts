@@ -44,6 +44,7 @@ export async function startExplainServer(o: {
     proposals(action: "approve" | "drop", ids: string[]): Promise<string>;
     changes(changes: unknown[], confirmLoosening: boolean): Promise<{ status: number; body: unknown }>;
     whatIf(kind: string, value: string): Promise<unknown>;
+    review(identifier: string, verdict: string, note: string): Promise<{ status: number; body: unknown }>;
   };
 }): Promise<ExplainServer> {
   const token = randomBytes(24).toString("base64url");
@@ -74,6 +75,11 @@ export async function startExplainServer(o: {
     if (o.pipeline && path === "/api/pipeline/changes" && body) {
       if (!Array.isArray(body.changes) || body.changes.length > 100) return [400, { error: "changes must be a list" }];
       const r = await o.pipeline.changes(body.changes, body.confirmLoosening === true);
+      return [r.status, r.body];
+    }
+    if (o.pipeline && path === "/api/pipeline/review" && body) {
+      if (typeof body.identifier !== "string" || typeof body.verdict !== "string") return [400, { error: "identifier and verdict are required" }];
+      const r = await o.pipeline.review(body.identifier, body.verdict, typeof body.note === "string" ? body.note.slice(0, 2000) : "");
       return [r.status, r.body];
     }
     if (path === "/api/flow") {
@@ -138,7 +144,7 @@ export async function startExplainServer(o: {
       }
       if (!path.startsWith("/api/")) return send(res, 404, "text/plain", "Not found");
       const given = Buffer.from(req.headers.authorization ?? "");
-      if (given.length !== want.length || !timingSafeEqual(given, want)) return json(res, 403, { error: "missing or wrong token: run `pmx explain --web` again" });
+      if (given.length !== want.length || !timingSafeEqual(given, want)) return json(res, 403, { error: `this page's link has expired: run ${o.pipeline ? "pmx flow --web" : o.flow ? "pmx flow --web" : "pmx explain --web"} again` });
       let body: unknown = null;
       if (post) {
         const chunks: Buffer[] = [];

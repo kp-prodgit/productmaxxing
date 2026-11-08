@@ -674,7 +674,7 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     ].filter(([, l]) => l.length);
     $("v-skills").replaceChildren(
       h("p", { class: "muted", style: "margin:0 0 14px;max-width:72ch" }, `Skills are the written instructions Claude follows at each step. Your team's copies live in the PMX repo and change only by reviewed pull request. Run counts are ${winText()}.`),
-      ...groups.map(([g, list]) => [
+      ...groups.flatMap(([g, list]) => [
         h("div", { class: "group-h" }, h("h2", null, g), h("span", { class: "faint small" }, plural(list.length, "skill"))),
         h("div", { class: "grid2" }, list.map((k) => h("article", { class: `card${k.runs ? "" : " idle"}` },
           h("div", { class: "row" }, h("code", null, k.name), h("span", { class: "pill" }, k.copy)),

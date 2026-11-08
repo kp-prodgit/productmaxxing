@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.16.2", date: "2026-11-08", headline: "The board's Skills tab lists your skills again",
+    items: [
+      { what: "The Skills tab on the pipeline board showed \"[object HTMLDivElement]\" instead of your skills. It now lists them in their groups, with run counts. Published the board in Claude? Type /pmx-flow there again to update it.", try: "pmx flow --web" },
+    ],
+  },
+  {
     version: "0.16.1", date: "2026-11-07", headline: "Setup connects the board in Claude",
     items: [
       { what: "`pmx init` now offers to connect the /pmx-flow board in the Claude app to PMX on this Mac, so there's no separate step. Already connected? It's kept up to date with this pmx.", try: "pmx doctor" },

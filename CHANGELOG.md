@@ -2,6 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.16.2: the board's Skills tab lists your skills again
+
+- **Fixed: the Skills tab on the pipeline board** (`pmx flow --web` and `/pmx-flow` in Claude) showed "[object HTMLDivElement]" instead of the skills. It now lists them in their three groups with run counts. A test checks the page for the same mistake. Type `/pmx-flow` in the Claude app again to update a board you published there.
+
 ## 0.16.1: setup connects the board in Claude
 
 - **`pmx init` offers PMX's local server to the Claude desktop app** (FLOW-4), so the `/pmx-flow` board reads PMX without a separate `pmx mcp --install`. It asks first, because it changes the Claude app's settings, and only when the app is on the Mac. The server answers with counts only, never meeting or task titles; its one write adds to your do-not-read list. Restart the Claude app once afterwards.

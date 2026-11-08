@@ -9,6 +9,7 @@ import { startExplainServer } from "../src/explain/server.js";
 import { applyPersonal, checkChange, loosens, proposeTeamChanges, setRubricCell } from "../src/flow/actions.js";
 import { buildFlowGraph } from "../src/flow/graph.js";
 import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
+import { pipelineTemplate } from "../src/flow/pipeline-page.js";
 import { buildPipeline, type PipelineInputs } from "../src/flow/pipeline.js";
 import { handleMcp } from "../src/mcp/server.js";
 import { stageProposals } from "../src/synth/proposals.js";
@@ -176,5 +177,11 @@ describe("0.16.0: the pipeline board (BOARD-3)", () => {
     expect(r.result.structuredContent).toMatchObject({ level: "shared", needs: { proposals: 1 }, proposals: [] });
     expect(JSON.stringify(r.result)).not.toContain("Another private idea");
     expect(await readFile(join(process.env.PMX_HOME!, "staging", "proposals.json"), "utf8")).toContain("Another private idea");
+  });
+
+  it("the page never spreads a list of lists into the DOM, which prints [object HTMLDivElement] (Skills tab, 0.16.2)", async () => {
+    const page = await readFile(pipelineTemplate(), "utf8");
+    // replaceChildren(...xs.map((x) => [a, b])) stringifies each inner array; flatMap or a flat list is right.
+    expect(page.match(/\.\.\.[\w.$()"]+\.map\(\(?[^)]*\)?\s*=>\s*\[/g) ?? []).toEqual([]);
   });
 });

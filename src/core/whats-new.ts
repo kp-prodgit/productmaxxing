@@ -19,6 +19,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.19.0", date: "2026-11-08", headline: "Categories follow the product's life, from problem to production",
+    items: [
+      { what: "Four new categories: problem brief, build brief, validation plan and validation readout. A build brief ends in a prompt you can hand to Claude Code; validation counts only paid pilots and subscriptions. New teams get them by default; existing teams add a category's line to pmx.config.json by pull request.", try: "pmx flow --web" },
+      { what: "Every product category's skill shares the same drafting rules: the problem before any solution, what users ask for as a signal, every claim cited or marked as an assumption, and decisions left to you, marked \"PM decides\"." },
+      { what: "Research synthesis adds Insights, competitive analysis adds a Switching bar, and specs add Validated by. The Categories tab groups categories by stage, and Claude now picks a category from its description, not its name alone." },
+    ],
+  },
+  {
     version: "0.18.0", date: "2026-11-08", headline: "A Categories tab shows each kind of work end to end",
     items: [
       { what: "The pipeline board has a Categories tab. Each category reads left to right: the Linear label and its tasks now, the skill Claude follows, the draft file and the sections it must have, and how the team has judged its drafts. Each size's wording sits underneath.", try: "pmx flow --web" },

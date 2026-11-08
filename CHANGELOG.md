@@ -2,6 +2,17 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.19.0: categories follow the product's life, from problem to production
+
+CAT-2 to CAT-5. The categories now follow one product philosophy: fall in love with the problem, build the real thing, and count only paid commitments as validation.
+
+- **Four new categories.** `problem-brief` (who has the pain, what it costs them, what they've asked for and whether they'd pay), `build-brief` (the smallest working product someone would pay for, ending in a prompt for Claude Code), `validation-plan` (who is asked to pay, for what, the buyer's procurement path, and kill criteria) and `validation-readout` (commitments by rung, blockers, what changed and the decision). Each has its skill, required sections, minimum citations, size rubric row and a test fixture.
+- **New teams get eight categories.** `pmx init` writes all of them to a new team's `pmx.config.json`. Existing teams keep theirs; to add one, add its line to `categories` (the skills are built in) and its row to a team copy of the size rubric, in one pull request.
+- **Shared drafting rules.** Every product category skill now says: problem first; what users ask for is a signal, not the requirement; cite or mark *Assumption:*; only payment or a formal commitment validates; decisions are options marked **PM decides**; no unsourced numbers; end in a decision.
+- **Upgraded skills.** Research synthesis adds **Insights** (themes the team can act on, each naming its decision). Competitive analysis adds **Switching bar** and counts the customer's current workaround as an alternative. Spec adds **Validated by**. Teams with their own copy of these skills keep their copy; `pmx skills` shows it differs from the built-in.
+- **Lifecycle stages.** A category skill's `pmx:` line can name its `stage` (identify, build, validate, productionize, operate). The board's Categories tab groups categories by stage, and the pipeline data gains `stage` on each category.
+- **Claude chooses a category by its description.** Synthesis and the company roll-up now list each category with its skill's description, not the id alone.
+
 ## 0.18.0: a Categories tab shows each kind of work end to end
 
 CAT-1. Categories are how PMX grows, so the board now shows each one from task to review in one place.

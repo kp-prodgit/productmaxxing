@@ -12,6 +12,10 @@ SSO setup is the main onboarding friction for multi-workspace customers. Three s
 - Docs skip SCIM entirely [T2]
 - Requests for SCIM are recurring [S1]
 
+## Insights
+
+- Missing SCIM support, not SSO itself, is what makes setup slow for multi-workspace admins [T1] [T2]. It informs whether SCIM goes ahead of other onboarding work. **PM decides**.
+
 ## Open questions
 
 - How many accounts have more than one workspace? Ask the data team.

@@ -1,3 +1,4 @@
+import { STAGES } from "../src/core/types.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -263,7 +264,7 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
 
   const specSkill = {
     name: "pmx-spec", description: "Spec drafting. Writes a one-pager or PRD draft.", kind: "category", category: "spec", usedBy: "", runs: "team", version: "abc", status: "same as built-in", path: "",
-    runsInWindow: 1, check: { output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2 },
+    runsInWindow: 1, check: { output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2, stage: "productionize" },
   } as PipelineInputs["skills"][number];
   const withCats = (level: "local" | "shared"): PipelineInputs => {
     const i = inputs(level);
@@ -284,7 +285,7 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
   it("each category carries its skill, the draft it must produce, its sizes, its tasks now and its reviews", () => {
     const [spec, notes] = buildPipeline(withCats("local")).categories;
     expect(spec).toEqual({
-      id: "spec", name: "Spec drafting", produces: "Writes a one-pager or PRD draft.",
+      id: "spec", name: "Spec drafting", produces: "Writes a one-pager or PRD draft.", stage: "productionize",
       skill: { name: "pmx-spec", version: "abc", copy: "team's copy", missing: false },
       output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2, externalFacing: false,
       sizes: { S: { minutes: 15, usd: 0.5, text: "a" }, M: { minutes: 30, usd: 1.5, text: "b" }, L: { minutes: 60, usd: 4, text: "c" }, XL: { minutes: 120, usd: 8, text: "d" } },
@@ -294,7 +295,7 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
       reviews: { accepted: 1, redo: 0, rejected: 0, rate: 1, days: 30, pauseBelow: 0.3, minReviews: 5 },
     });
     // A category whose skill doesn't exist says so, and keeps its pause and customer-facing flag.
-    expect(notes).toMatchObject({ id: "release-notes", name: "Release notes", skill: { name: "pmx-release-notes", missing: true, copy: null }, output: null, externalFacing: true, takenOn: false, paused: "accept rate 20% over 5 reviews", reviews: { rate: null } });
+    expect(notes).toMatchObject({ id: "release-notes", name: "Release notes", stage: null, skill: { name: "pmx-release-notes", missing: true, copy: null }, output: null, externalFacing: true, takenOn: false, paused: "accept rate 20% over 5 reviews", reviews: { rate: null } });
   });
 
   it("Linear tasks in a category no skill handles are listed, open ones only; the shared page gets the same counts and no titles", () => {
@@ -313,7 +314,7 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
   it("the skill inventory reads each category skill's checklist; core skills have none", async () => {
     const { repo } = await pmxRepo({});
     const skills = await skillInventory(repo, DEFAULT_TEAM.categories);
-    expect(skills.find((k) => k.name === "pmx-spec")!.check).toEqual({ output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence", "Proposal", "Success metrics", "Open questions"], minCitations: 2 });
+    expect(skills.find((k) => k.name === "pmx-spec")!.check).toEqual({ output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence", "Validated by", "Proposal", "Success metrics", "Open questions"], minCitations: 2, stage: "productionize" });
     expect(skills.find((k) => k.name === "pmx-synthesize")!.check).toBeUndefined();
   });
 
@@ -323,5 +324,13 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
     expect(page).toMatch(/const TABS = \["connections", "categories", "rules", "schedules", "skills"\]/);
     expect(page).toMatch(/tab === "categories" && sub/);
     expect(page).toMatch(/`Category: \$\{/);
+  });
+
+  it("0.19.0: categories are grouped by lifecycle stage, in order, with unstaged ones last (CAT-2)", async () => {
+    const page = await readFile(pipelineTemplate(), "utf8");
+    const order = [...page.matchAll(/^\s+\["(identify|build|validate|productionize|operate)", "/gm)].map((m) => m[1]);
+    expect(order).toEqual([...STAGES]);
+    expect(page).toMatch(/cats\.length \? lifecycleGroups\(cats\)/);
+    expect(page).toMatch(/k: "other", l: "Other categories"/);
   });
 });

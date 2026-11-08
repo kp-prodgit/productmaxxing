@@ -23,6 +23,10 @@ Size is the expected agent effort to produce a reviewable draft, not the enginee
 | competitive-analysis | One competitor, one feature | One competitor, full feature area | 3–5 competitors on one area | Market landscape |
 | tracking-hygiene | Fix one epic's labels | Stale/duplicate report for one project | Whole PMX project audit | Cross-project audit |
 | spec | Problem statement only | One-pager | Full PRD draft | PRD plus rollout and metrics plan |
+| problem-brief | One problem from 1–2 calls | One problem across 3–8 sources | One problem across segments, with the buyer mapped | Several related problems compared, with which to pursue |
+| build-brief | A change to an existing prototype | A new single-workflow product | Several workflows or a real integration | Needs buyer data, a security review and several integrations |
+| validation-plan | One account, one ask | A handful of accounts in one segment | Several segments, with pricing options | A pilot programme with procurement packs |
+| validation-readout | One account's outcome | One segment's results | Several segments with iteration history | A full programme with a case for production |
 
 When unsure between two sizes, pick the larger one.
 

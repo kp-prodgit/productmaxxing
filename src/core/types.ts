@@ -1,6 +1,10 @@
 export const SIZES = ["S", "M", "L", "XL"] as const;
 export type Size = (typeof SIZES)[number];
 
+/** The product lifecycle a category's work belongs to, in order (CAT-2): identify → build → validate → productionize, plus operate. */
+export const STAGES = ["identify", "build", "validate", "productionize", "operate"] as const;
+export type Stage = (typeof STAGES)[number];
+
 export const STATUSES = ["inbox", "ready", "claimed", "running", "review", "done", "blocked"] as const;
 export type Status = (typeof STATUSES)[number];
 

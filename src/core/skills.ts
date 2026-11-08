@@ -36,6 +36,18 @@ export async function listBundledSkills(): Promise<string[]> {
   return (await readdir(bundledSkillsDir(), { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name).sort();
 }
 
+/**
+ * The categories a model may choose from, each with its skill's description, so Claude chooses by what the work is
+ * and not by the name alone (CAT-2). A category whose skill is missing is listed by name only.
+ */
+export async function categoryMenu(repoPath: string, categories: Record<string, { skill: string }>): Promise<string> {
+  const lines = await Promise.all(Object.entries(categories).map(async ([id, c]) => {
+    const d = await loadSkill(repoPath, c.skill).then((s) => frontmatter(s.text).description ?? "", () => "");
+    return d ? `- ${id}: ${d}` : `- ${id}`;
+  }));
+  return ["Categories you may use (the id before the colon is the value for `category`):", ...lines].join("\n");
+}
+
 /** Strips YAML frontmatter, leaving the instructions. */
 export function skillBody(text: string): string {
   return text.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
@@ -71,7 +83,7 @@ export interface SkillInfo {
   status: "same as built-in" | "differs from built-in" | "team only" | "built-in only";
   path: string;
   /** A category skill's checklist from its `pmx:` frontmatter: the file a run must write and what it must contain. */
-  check?: { output: string | null; sections: string[]; minCitations: number };
+  check?: { output: string | null; sections: string[]; minCitations: number; stage: string | null };
 }
 
 const hash = (t: string) => createHash("sha256").update(t).digest("hex").slice(0, 12);
@@ -89,7 +101,7 @@ export async function skillInventory(repoPath: string, categories: Record<string
     const text = (team ?? bundled)!;
     const meta = frontmatter(text);
     const category = Object.entries(categories).find(([, c]) => c.skill === name)?.[0] ?? null;
-    const pmx = meta.pmx ? (JSON.parse(meta.pmx) as { kind?: "core" | "category"; category?: string; output?: string; requiredHeadings?: string[]; minCitations?: number }) : {};
+    const pmx = meta.pmx ? (JSON.parse(meta.pmx) as { kind?: "core" | "category"; category?: string; stage?: string; output?: string; requiredHeadings?: string[]; minCitations?: number }) : {};
     out.push({
       name,
       description: meta.description ?? "",
@@ -100,7 +112,7 @@ export async function skillInventory(repoPath: string, categories: Record<string
       version: hash(text),
       status: !team ? "built-in only" : !bundled ? "team only" : hash(team) === hash(bundled) ? "same as built-in" : "differs from built-in",
       path: team ? teamSkillPath(repoPath, name) : join(bundledSkillsDir(), name, "SKILL.md"),
-      ...(pmx.kind === "category" ? { check: { output: pmx.output ?? null, sections: pmx.requiredHeadings ?? [], minCitations: pmx.minCitations ?? 0 } } : {}),
+      ...(pmx.kind === "category" ? { check: { output: pmx.output ?? null, sections: pmx.requiredHeadings ?? [], minCitations: pmx.minCitations ?? 0, stage: pmx.stage ?? null } } : {}),
     });
   }
   return out;

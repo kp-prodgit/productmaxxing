@@ -1,3 +1,4 @@
+import { DEFAULT_TEAM } from "../src/core/config.js";
 import { approveProposals, dropProposals, readProposals, stageProposals } from "../src/synth/proposals.js";
 import { listReceipts, readReceipt } from "../src/core/receipt.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -26,6 +27,10 @@ Admins sync users by hand [T1].
 
 - Weekly CSV export [T1]
 - Recurring requests [S1]
+
+## Validated by
+
+Not validated yet [T1].
 
 ## Proposal
 
@@ -235,11 +240,15 @@ describe("neutrality test (B6)", () => {
     const { repo, origin } = await pmxRepo({}, { remote: true });
     const canned: Record<string, string> = {};
     const { readFile } = await import("node:fs/promises");
-    for (const s of ["pmx-research", "pmx-competitive", "pmx-hygiene", "pmx-spec"])
+    // Each category skill's body starts with its own title, which tells the mock which fixture to answer with.
+    const titles: Record<string, string> = {};
+    for (const { skill: s } of Object.values(DEFAULT_TEAM.categories)) {
       canned[s] = await readFile(join(repo, ".claude/skills", s, "fixtures/expected.md"), "utf8");
+      titles[s] = (await readFile(join(repo, ".claude/skills", s, "SKILL.md"), "utf8")).match(/^# .+$/m)![0];
+    }
     const rt = () => mockRuntime(async (o) => {
       const out = o.prompt.match(/Write the output to (\S+?)\.?$/m)![1]!;
-      const skill = Object.keys(canned).find((k) => o.prompt.includes(`# ${k === "pmx-research" ? "Research synthesis" : k === "pmx-competitive" ? "Competitive analysis" : k === "pmx-hygiene" ? "Tracking hygiene" : "Spec draft"}`))!;
+      const skill = Object.keys(canned).find((k) => o.prompt.startsWith(`${titles[k]}\n`))!;
       await mkdir(dirname(join(o.cwd, out)), { recursive: true });
       await writeFile(join(o.cwd, out), canned[skill]!);
       return "ok";

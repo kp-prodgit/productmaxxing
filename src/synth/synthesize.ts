@@ -6,7 +6,7 @@ import type { Services } from "../core/services.js";
 import { createHash } from "node:crypto";
 import { newReceiptId, writeReceipt, type RunReceipt, type SizeFlag, type Sizing, type TaskReceipt } from "../core/receipt.js";
 import { parseRubric, type SizeRubric } from "../core/skillcheck.js";
-import { loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
+import { categoryMenu, loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
 import { updateState } from "../core/state.js";
 import { SIZES, type CandidateTask, type SignalItem, type Size } from "../core/types.js";
 import { checkBudget, recordSpend } from "../budget/provider.js";
@@ -215,7 +215,7 @@ export async function synthesize(
     "## Size rubric",
     skillBody(rubric.text),
     "",
-    `Categories you may use: ${categories.join(", ")}.`,
+    await categoryMenu(ctx.personal.repoPath, ctx.team.categories),
     OUTPUT_RULES,
     DATA_RULES(tag),
     "",

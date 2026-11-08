@@ -226,6 +226,8 @@ details summary { cursor: pointer; color: var(--ink-2) }
 .secs span { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--repo-soft); color: var(--ink) }
 .pill.bad { color: var(--bad) } .pill.on { color: var(--ink) }
 .cat code, .catflow code { overflow-wrap: anywhere }
+.lifecycle > h3 { font-size: 13px; margin: 18px 0 8px; font-weight: 700 }
+.lifecycle:first-of-type > h3 { margin-top: 4px }
 details.addcat { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-top: 4px }
 details.addcat summary { cursor: pointer; font-weight: 600 }
 details.addcat ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13px; max-width: 80ch }
@@ -1117,6 +1119,22 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
         c.sizes[z].text ? h("div", null, c.sizes[z].text) : h("div", { class: "faint" }, "No wording in the size rubric")))),
     );
   }
+  // The product lifecycle each category's work belongs to (CAT-2), in order. A skill without a stage goes last.
+  const LIFECYCLE = [
+    ["identify", "Identify the problem", "Who has the pain, how much it matters, what else they use, and whether they'd pay."],
+    ["build", "Build the real thing", "The smallest working product someone would pay for."],
+    ["validate", "Validate with paying customers", "Only a paid pilot or subscription counts. Feedback and sign-ups don't."],
+    ["productionize", "Take it to production", "What the validated product needs to run for every customer."],
+    ["operate", "Keep the work tidy", "Housekeeping for the team's tracker."],
+  ];
+  function lifecycleGroups(cats) {
+    const known = LIFECYCLE.map(([k]) => k);
+    const groups = LIFECYCLE.map(([k, l, d]) => ({ k, l, d, cats: cats.filter((c) => c.stage === k) }));
+    groups.push({ k: "other", l: "Other categories", d: "Their skills don't say which stage they belong to.", cats: cats.filter((c) => !known.includes(c.stage)) });
+    return groups.filter((g) => g.cats.length).map((g) => h("section", { class: "lifecycle", "aria-label": g.l },
+      h("h3", null, g.l, h("span", { class: "small muted" }, ` · ${g.d}`)),
+      g.cats.map(categoryCard)));
+  }
   let catSig = "";
   function drawCategories() {
     const cats = D.categories || [];
@@ -1128,14 +1146,14 @@ table.sizes td.changed button.cell { border-color: var(--ink-2); border-style: d
     if (!cats.length && !D.categories) { box.replaceChildren(h("p", { class: "muted" }, "This PMX is too old to list categories. Update it with pmx update.")); return; }
     const unknown = D.unknownCategories || [];
     put(box,
-      h("p", { class: "muted", style: "margin:0 0 12px;max-width:80ch" }, "A category is a kind of work an agent can draft for your team. Each one is tied to one skill: the written instructions Claude follows, which also say what the finished draft must contain. When PMX turns your meetings into proposed tasks, Claude picks one of these categories for each task by its name, and sizes it with the wording below. Work that fits none of them isn't proposed."),
+      h("p", { class: "muted", style: "margin:0 0 12px;max-width:80ch" }, "A category is a kind of work an agent can draft for your team. Each one is tied to one skill: the written instructions Claude follows, which also say what the finished draft must contain. When PMX turns your meetings into proposed tasks, Claude picks one of these categories for each task from its name and description, and sizes it with the wording below. Work that fits none of them isn't proposed. Categories are grouped by where the work sits in the product's life, from finding the problem to production."),
       h("div", { class: "catflow", role: "list", "aria-label": "How a task moves through a category" }, STAGES.map(([k, l, d]) => h("div", { class: `st-${k}`, role: "listitem" }, h("span", { class: "lab" }, l), h("span", { class: "small muted" }, d)))),
       unknown.length ? h("div", { class: "banner", role: "note" }, h("span", null, h("strong", null, "Linear has tasks in categories PMX has no skill for: "), unknown.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds the category.")) : null,
-      cats.length ? cats.map(categoryCard) : h("p", { class: "muted" }, "Your team has no categories yet, so agents have nothing to draft."),
+      cats.length ? lifecycleGroups(cats) : h("p", { class: "muted" }, "Your team has no categories yet, so agents have nothing to draft."),
       h("details", { class: "addcat" }, h("summary", null, "Add a category"),
         h("ol", null,
-          h("li", null, "Write its skill at ", h("code", null, ".claude/skills/pmx-<name>/SKILL.md"), " in your team repo. Its ", h("code", null, "pmx:"), " line names the category, the output file, the required sections and the minimum citations. Copying ", h("code", null, "pmx-spec"), " is the quickest start."),
-          h("li", null, "Add it to ", h("code", null, "categories"), " in ", h("code", null, "pmx.config.json"), ": ", h("code", null, '"<name>": { "skill": "pmx-<name>" }'), ". Pick a name that says what the work is: it's all Claude sees when it chooses a category."),
+          h("li", null, "Write its skill at ", h("code", null, ".claude/skills/pmx-<name>/SKILL.md"), " in your team repo. Its ", h("code", null, "pmx:"), " line names the category, its stage (identify, build, validate, productionize or operate), the output file, the required sections and the minimum citations. Its description's first sentence is the category's name. Copying ", h("code", null, "pmx-problem-brief"), " is the quickest start."),
+          h("li", null, "Add it to ", h("code", null, "categories"), " in ", h("code", null, "pmx.config.json"), ": ", h("code", null, '"<name>": { "skill": "pmx-<name>" }'), ". Pick a name and a skill description that say what the work is: they're what Claude sees when it chooses a category."),
           h("li", null, "Add a row for it to the size rubric in ", h("code", null, ".claude/skills/pmx-size/SKILL.md"), ", so Claude can size its tasks."),
           h("li", null, "Open one pull request with all three. Once it's merged, PMX proposes tasks in the new category, and each PM chooses whether their agent takes them on under Rules."))),
     );

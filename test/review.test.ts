@@ -16,7 +16,7 @@ import { mockRuntime } from "../src/runtime/mock.js";
 import { memoryTracker } from "../src/tracker/types.js";
 import { freshHome, git, pmxRepo, testCtx } from "./helpers.js";
 
-const DRAFT = "# Draft\n\n## Problem\n\nManual sync [T1].\n\n## Evidence\n\n- CSV export [T1]\n- Requests [S1]\n\n## Proposal\n\nSCIM.\n\n## Success metrics\n\n- Fast.\n\n## Open questions\n\n- IdPs?\n";
+const DRAFT = "# Draft\n\n## Problem\n\nManual sync [T1].\n\n## Evidence\n\n- CSV export [T1]\n- Requests [S1]\n\n## Validated by\n\nNot yet [T1].\n\n## Proposal\n\nSCIM.\n\n## Success metrics\n\n- Fast.\n\n## Open questions\n\n- IdPs?\n";
 
 const task = (over: Partial<Task> = {}): Task => ({
   id: "lin-1", identifier: "PMX-14", title: "Draft a one-pager for SCIM sync",

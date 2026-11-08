@@ -92,10 +92,14 @@ export const DEFAULT_TEAM: Omit<TeamConfig, "team"> = {
   version: 1,
   model: "claude-sonnet-5-5",
   categories: {
+    "problem-brief": { skill: "pmx-problem-brief" },
     "research-synthesis": { skill: "pmx-research" },
     "competitive-analysis": { skill: "pmx-competitive" },
-    "tracking-hygiene": { skill: "pmx-hygiene" },
+    "build-brief": { skill: "pmx-build-brief" },
+    "validation-plan": { skill: "pmx-validation-plan" },
+    "validation-readout": { skill: "pmx-validation-readout" },
     spec: { skill: "pmx-spec" },
+    "tracking-hygiene": { skill: "pmx-hygiene" },
   },
   sizes: {
     S: { minutes: 15, costUsd: 0.5 },

@@ -1,7 +1,7 @@
 ---
 name: pmx-competitive
-description: Competitive analysis. Compares named competitors on the feature area in a PMX task, using only the evidence cited in the task and public facts already in team memory.
-pmx: {"kind": "category", "category": "competitive-analysis", "output": "outputs/competitive-analysis/{id}.md", "requiredHeadings": ["Summary", "Comparison", "Implications"], "minCitations": 2}
+description: Competitive analysis. Compares the alternatives a customer has today, named competitors and doing nothing, on the feature area in a PMX task, and says whether ours is enough better to make them switch. Uses only the evidence cited in the task and public facts already in team memory.
+pmx: {"kind": "category", "category": "competitive-analysis", "stage": "identify", "output": "outputs/competitive-analysis/{id}.md", "requiredHeadings": ["Summary", "Comparison", "Switching bar", "Implications"], "minCitations": 2}
 ---
 
 # Competitive analysis
@@ -17,13 +17,31 @@ Write `outputs/competitive-analysis/<task id>.md`:
 
 1. `# <task title>`
 2. `## Summary`: where we win, where we lose, in 3 sentences.
-3. `## Comparison`: a table, one row per capability, one column per product (us first). Cells are short facts with source IDs, or "unknown".
-4. `## Implications`: 3–5 bullets, each with source IDs: what this means for our roadmap or positioning.
+3. `## Comparison`: a table, one row per capability, one column per alternative (us first, and the customer's current
+   workaround or doing nothing last). Cells are short facts with source IDs, or "unknown".
+4. `## Switching bar`: what a customer would have to gain to move from what they use today to us (time, money, risk
+   removed), what switching costs them (migration, retraining, a new vendor review), and whether we clear the bar.
+   Cite source IDs; mark anything uncited as *Assumption:*.
+5. `## Implications`: 3–5 bullets, each with source IDs: what this means for our product or positioning. Decisions
+   are options marked **PM decides**.
 
 Then reply with one line for the tracker comment.
+
+## Drafting rules
+
+- Problem first: who has it, how often and what it costs them, with source IDs, before any solution.
+- What users ask for is a signal about their problem, never the requirement.
+- Every claim cites a source ID, or is marked *Assumption:* with what would confirm it.
+- Commitment over compliments: only a payment or a formal commitment (a signed pilot, a procurement review started) validates anything. Praise, interest and sign-ups are weak signals; say so.
+- Decisions (go or no-go, price, scope, kill) are options with a recommendation, marked **PM decides**. Never write them as settled.
+- No market figure, price or forecast without a source or a stated method. Use ranges.
+- End with the decision the draft supports or the questions blocking it.
 
 ## Quality checklist
 
 - [ ] Every non-"unknown" fact cites a source ID.
 - [ ] No claims from general knowledge about competitors.
+- [ ] The customer's current workaround is one of the alternatives.
+- [ ] The switching bar says plainly whether we clear it.
+- [ ] Follows the drafting rules.
 - [ ] Nothing external-facing: this is an internal draft (REV-1).

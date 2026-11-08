@@ -4,7 +4,7 @@ import type { RunLogEntry } from "../core/runlog.js";
 import { acceptStats } from "../review/queue.js";
 import type { SizeRubric } from "../core/skillcheck.js";
 import type { SkillInfo } from "../core/skills.js";
-import { SIZES, type Size } from "../core/types.js";
+import { SIZES, STAGES, type Size, type Stage } from "../core/types.js";
 import type { Proposal } from "../synth/proposals.js";
 import type { FlowCheck } from "./graph.js";
 
@@ -50,6 +50,8 @@ export interface PipelineCategory {
   name: string;
   /** The rest of the skill description: what a draft is. */
   produces: string;
+  /** The lifecycle stage from the skill's `pmx:` line (CAT-2), or null for a skill that doesn't say. */
+  stage: Stage | null;
   skill: { name: string; version: string | null; copy: string | null; missing: boolean };
   output: string | null;
   sections: string[];
@@ -174,6 +176,7 @@ function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "
     const mine = runs.filter((e) => e.category === id);
     return {
       id, name, produces,
+      stage: STAGES.find((s) => s === sk?.check?.stage) ?? null,
       skill: { name: c.skill, version: sk?.version ?? null, copy: sk ? (sk.runs === "team" ? "team's copy" : "built-in") : null, missing: !sk },
       output: sk?.check?.output ?? null, sections: sk?.check?.sections ?? [], minCitations: sk?.check?.minCitations ?? 0,
       externalFacing: !!c.externalFacing,

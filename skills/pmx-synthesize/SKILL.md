@@ -35,7 +35,8 @@ A single JSON object and nothing else:
 ## Rules
 
 - Propose at most 10 tasks, highest value first. Merge duplicates.
-- Only propose work an agent can finish with a repo checkout and the cited sources: research synthesis,
-  competitive analysis, tracking hygiene or spec drafts. No code changes, no outreach.
+- Only propose work an agent can finish as a written draft with a repo checkout and the cited sources, in one
+  of the categories listed in the prompt. Choose the category by its description. No code changes, no outreach.
+- Frame each task around the customer's problem, not the solution someone asked for.
 - Never propose anything about a colleague's performance, pay, health or 1:1s.
 - Redaction placeholders like `[PERSON-2]` stay as they are.

@@ -1,9 +1,11 @@
 import { citedIds } from "./citations.js";
-import { SIZES, type Size } from "./types.js";
+import { SIZES, type Size, type Stage } from "./types.js";
 
 export interface SkillMeta {
   kind: "core" | "category";
   category?: string;
+  /** Where in the product lifecycle the category's work sits (CAT-2). */
+  stage?: Stage;
   output?: string;
   requiredHeadings?: string[];
   minCitations?: number;

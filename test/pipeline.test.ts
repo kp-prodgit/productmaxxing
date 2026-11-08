@@ -320,17 +320,16 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
 
   it("the page has a Categories tab with its own route, and the skills link to their category", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    expect(page).toMatch(/<a href="#categories" data-tab="categories">Categories<\/a>/);
-    expect(page).toMatch(/const TABS = \["connections", "categories", "rules", "schedules", "skills"\]/);
-    expect(page).toMatch(/tab === "categories" && sub/);
-    expect(page).toMatch(/`Category: \$\{/);
+    // 0.20.0 (BOARD-5): categories live under Agent work, with their skills; old #categories links still land there.
+    expect(page).toMatch(/<a href="#work" data-tab="work">Agent work<\/a>/);
+    expect(page).toMatch(/const OLD = \{ connections: "flow", categories: "work", skills: "work", schedules: "automations", rules: "privacy" \}/);
+    expect(page).toMatch(/tab === "work" && sub/);
   });
 
   it("0.19.0: categories are grouped by lifecycle stage, in order, with unstaged ones last (CAT-2)", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
     const order = [...page.matchAll(/^\s+\["(identify|build|validate|productionize|operate)", "/gm)].map((m) => m[1]);
     expect(order).toEqual([...STAGES]);
-    expect(page).toMatch(/cats\.length \? lifecycleGroups\(cats\)/);
-    expect(page).toMatch(/k: "other", l: "Other categories"/);
+    expect(page).toMatch(/groups\.push\(\{ k: "other", l: "Other kinds of work"/);
   });
 });

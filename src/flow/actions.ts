@@ -24,7 +24,9 @@ export type Change =
   | { kind: "team-domain"; op: "add" | "remove"; value: string }
   | { kind: "size"; size: Size; minutes?: number; usd?: number }
   | { kind: "rubric"; category: string; size: Size; text: string }
-  | { kind: "review-cap"; value: number };
+  | { kind: "review-cap"; value: number }
+  | { kind: "digest-day"; value: number }
+  | { kind: "digest-dm"; value: string | null };
 
 const RANK = { off: 0, mine: 1, linear: 2 } as const;
 const FIELD = { title: "meetingTitles", person: "people", channel: "channels" } as const;
@@ -75,6 +77,14 @@ export function checkChange(c: any, team: TeamConfig): Change {
     case "review-cap":
       if (!(Number.isInteger(c.value) && c.value >= 1 && c.value <= 10)) fail("The review cap is 1 to 10.");
       return { kind: "review-cap", value: c.value };
+    case "digest-day":
+      if (!(Number.isInteger(c.value) && c.value >= 0 && c.value <= 6)) fail("The digest day is a day of the week.");
+      return { kind: "digest-day", value: c.value };
+    case "digest-dm": {
+      const v = c.value === null || c.value === "" ? null : String(c.value).trim().toUpperCase();
+      if (v !== null && !/^[UW][A-Z0-9]{6,14}$/.test(v)) fail("A Slack member ID looks like U0123ABCD. In Slack, open your profile, click ⋮ and copy member ID.");
+      return { kind: "digest-dm", value: v };
+    }
   }
   return fail(`Unknown change "${c?.kind}".`);
 }
@@ -95,6 +105,8 @@ export async function applyPersonal(personal: PersonalConfig, changes: Change[])
       personal.companyDomains = c.op === "add" ? [...new Set([...cur, c.value])] : cur.filter((d) => d !== c.value);
     } else if (c.kind === "budget") personal.budget = { ...personal.budget, dailyUsd: c.value };
     else if (c.kind === "category") personal.categories = c.accepted ? [...new Set([...personal.categories, c.name])] : personal.categories.filter((x) => x !== c.name);
+    else if (c.kind === "digest-day") personal.digest = { ...personal.digest, weekday: c.value };
+    else if (c.kind === "digest-dm") personal.digest = { ...personal.digest, slackDmUserId: c.value };
     else continue;
     out.push(describe(c));
   }
@@ -113,6 +125,8 @@ export function describe(c: Change): string {
     case "size": return `Size ${c.size}: ${[c.minutes !== undefined ? `${c.minutes} min` : "", c.usd !== undefined ? `~$${c.usd}` : ""].filter(Boolean).join(", ")}`;
     case "rubric": return `${c.category} ${c.size}: "${c.text}"`;
     case "review-cap": return `Stop pulling at ${c.value} drafts waiting for review`;
+    case "digest-day": return `Build the digest on ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][c.value]}s`;
+    case "digest-dm": return c.value ? `Send the approved digest to Slack member ${c.value}` : "Don't send the digest to Slack";
   }
 }
 

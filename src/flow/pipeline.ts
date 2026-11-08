@@ -7,6 +7,9 @@ import type { SkillInfo } from "../core/skills.js";
 import { SIZES, STAGES, type Size, type Stage } from "../core/types.js";
 import type { Proposal } from "../synth/proposals.js";
 import type { FlowCheck } from "./graph.js";
+import type { ActivityItem, Automation } from "./automations.js";
+import type { DigestBoard } from "./digests.js";
+import type { Job } from "./jobs.js";
 
 /**
  * The pipeline board's data (BOARD-3): what PMX read, held, sent to Claude and Linear, and what happened next, plus the
@@ -37,6 +40,8 @@ export interface HealthProblem {
   text: string;
   cmd?: string;
   fix?: string;
+  /** Something the local page can do about it with one click (BOARD-5), like "install-job". */
+  action?: string;
 }
 
 /**
@@ -92,8 +97,21 @@ export interface PipelineData {
   categories: PipelineCategory[];
   /** Category labels on Linear tasks that no skill handles: agents skip these tasks. */
   unknownCategories: { id: string; tasks: number }[];
-  schedules: { name: string; where: "Claude app" | "This Mac"; when: string; last: string | null; next: string | null; ok: boolean; detail: string; node: string | null; hours: number[] }[];
+  /** `days` (0 = Sunday) from 0.20.0: the timeline draws a task only on days it runs. */
+  schedules: { name: string; where: "Claude app" | "This Mac"; when: string; last: string | null; next: string | null; ok: boolean; detail: string; node: string | null; hours: number[]; days?: number[] }[];
   rules: PipelineRules;
+  /** BOARD-5: every automated step and every point that waits for the PM. Optional: boards before 0.20.0 lack it. */
+  automations?: Automation[];
+  /** What happened in the window, newest first: counts and task IDs only. */
+  activity?: ActivityItem[];
+  /** The weekly digest. Its text only on this Mac's own page. */
+  digest?: DigestBoard | null;
+  /** Steps started with "Run now" on this page. Local level only. */
+  jobs?: Job[];
+  /** The team's emergency stop. */
+  killSwitch?: { on: boolean; reason: string | null };
+  /** The pmx version this board's data came from. */
+  version?: string;
 }
 
 export interface PipelineRules {
@@ -138,6 +156,12 @@ export interface PipelineInputs {
   autoPause?: { windowDays: number; threshold: number; minVerdicts: number };
   schedules: PipelineData["schedules"];
   rules: PipelineRules;
+  automations?: Automation[];
+  activity?: ActivityItem[];
+  digest?: DigestBoard | null;
+  jobs?: Job[];
+  killSwitch?: { on: boolean; reason: string | null };
+  version?: string;
 }
 
 const CONNECTOR_LABEL: Record<string, string> = { granola: "Granola", fireflies: "Fireflies", otter: "Otter", fathom: "Fathom", tldv: "tl;dv", zoom: "Zoom", "google-meet": "Google Meet", file: "Transcript folder" };
@@ -153,6 +177,15 @@ function skillNode(s: SkillInfo): { node: string | null; where: string } {
   if (s.name === "pmx-brain") return { node: null, where: "pmx brain (Team plan)" };
   return { node: null, where: "Your own Claude Code session" };
 }
+
+/**
+ * The stage of PMX's own categories, for a team copy of a skill written before skills named their stage (CAT-2), so
+ * the board still groups them by where the work sits in the product's life.
+ */
+const DEFAULT_STAGE: Record<string, Stage> = {
+  "research-synthesis": "identify", "competitive-analysis": "identify", "problem-brief": "identify",
+  spec: "build", "build-brief": "build", "validation-plan": "validate", "validation-readout": "validate", "tracking-hygiene": "operate",
+};
 
 /** "Research synthesis. Turns …" → ["Research synthesis", "Turns …"]. */
 export function splitDescription(id: string, description: string): { name: string; produces: string } {
@@ -176,7 +209,7 @@ function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "
     const mine = runs.filter((e) => e.category === id);
     return {
       id, name, produces,
-      stage: STAGES.find((s) => s === sk?.check?.stage) ?? null,
+      stage: STAGES.find((s) => s === sk?.check?.stage) ?? DEFAULT_STAGE[id] ?? null,
       skill: { name: c.skill, version: sk?.version ?? null, copy: sk ? (sk.runs === "team" ? "team's copy" : "built-in") : null, missing: !sk },
       output: sk?.check?.output ?? null, sections: sk?.check?.sections ?? [], minCitations: sk?.check?.minCitations ?? 0,
       externalFacing: !!c.externalFacing,
@@ -308,6 +341,12 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     unknownCategories: cats.unknown,
     schedules: i.schedules,
     rules: sharedRules,
+    automations: i.automations ?? [],
+    activity: i.activity ?? [],
+    digest: i.digest ? { ...i.digest, waiting: i.digest.waiting.map((w) => ({ ...w, markdown: local ? w.markdown : null })), dm: { on: i.digest.dm.on, user: local ? i.digest.dm.user : null }, slackChannel: local ? i.digest.slackChannel : null } : null,
+    jobs: local ? i.jobs ?? [] : [],
+    killSwitch: i.killSwitch ?? { on: false, reason: null },
+    version: i.version,
   };
 }
 

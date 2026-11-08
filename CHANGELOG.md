@@ -2,6 +2,17 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.20.0: the board is your PMX home
+
+BOARD-5. The pipeline board, rebuilt around a PM's day after four reviewers (a first-time PM, a daily user, a head of product and a designer) went through it, and checked again by three more.
+
+- **Today first.** One status sentence says what needs you. Below it: setup steps with a button each, tasks to approve, drafts to review, your digest, and your to-dos (tick them done on the page). Beside them: this week's numbers, which automations need a look, and whether your privacy is intact. A "What happened" feed lists the week in counts and task IDs.
+- **Digest tab.** The weekly digest had no UI. Now it has a reader with citations that jump to their source, Edit, Approve and share (a pull request in your team's repo, and your Slack DMs if set) and Reject, the next build date, past weeks and how each ended, and a Build it now button. Its day and Slack member ID are settings on the board.
+- **Automations tab.** Every interaction point, automated or not, as one status row: collection, to-dos, task proposals, your approvals, the Linear sync, the digest, agent pick-up, your reviews, auto-pause, freeing stuck tasks, the company roll-up, automatic runs, updates, analytics and team settings in review. Each says what it's for, who does it, when it last ran and what came of it, when it runs next and how it's doing. Steps this Mac can run have Run now; Turn on automatic runs registers the background job without Terminal.
+- **Agent work, Privacy, Settings.** Categories and skills are one tab, with each kind of work's quality (accept rate against the pause bar) and a switch for whether your agent takes it; ids and file paths sit behind Details. Rules is split into Privacy (checks, sources, customers, do-not-read, always private, what Linear gets) and Settings (just you, then your team). Team changes are worded as a proposal a teammate approves.
+- **Product words, not commands.** Problems say what's wrong and offer a button; Terminal commands sit behind "Prefer Terminal?". The Linear sync warning no longer names pmx commands. The map hides zero counts and its legend folds away. Old links (#rules, #categories, #schedules, #skills) land on their new tab.
+- **Fixes.** Reviewing a teammate's draft from the board no longer says it isn't waiting (the board now loads every draft in review, as `pmx review --all` does). Team copies of skills written before stages group by their known stage instead of "Other".
+
 ## 0.19.0: categories follow the product's life, from problem to production
 
 CAT-2 to CAT-5. The categories now follow one product philosophy: fall in love with the problem, build the real thing, and count only paid commitments as validation.

@@ -19,6 +19,15 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.20.0", date: "2026-11-08", headline: "The board is your PMX home: Today, your digest, and every step PMX takes",
+    items: [
+      { what: "Today opens first: tasks to approve, drafts to review, your digest and your to-dos in one place, with what happened this week beside them. Tick a to-do done right there.", try: "pmx flow --web" },
+      { what: "Your weekly digest has its own tab: read it with clickable citations, edit it, then approve it to share with your team, or reject it. Choose its day and Slack DM under Settings." },
+      { what: "Automations lists every step PMX takes, automatic or yours, with when it last ran, what came of it and when it runs next. Run a step now, or turn on automatic runs, with one click instead of Terminal." },
+      { what: "Agent work shows each kind of work with its quality and a switch for whether your agent takes it; Privacy and Settings split the old Rules tab. Old links still work." },
+    ],
+  },
+  {
     version: "0.19.0", date: "2026-11-08", headline: "Categories follow the product's life, from problem to production",
     items: [
       { what: "Four new categories: problem brief, build brief, validation plan and validation readout. A build brief ends in a prompt you can hand to Claude Code; validation counts only paid pilots and subscriptions. New teams get them by default; existing teams add a category's line to pmx.config.json by pull request.", try: "pmx flow --web" },

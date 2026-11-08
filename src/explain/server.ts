@@ -45,6 +45,11 @@ export async function startExplainServer(o: {
     changes(changes: unknown[], confirmLoosening: boolean): Promise<{ status: number; body: unknown }>;
     whatIf(kind: string, value: string): Promise<unknown>;
     review(identifier: string, verdict: string, note: string): Promise<{ status: number; body: unknown }>;
+    digest?(action: string, week: string, markdown?: string): Promise<{ status: number; body: unknown }>;
+    run?(step: string): Promise<{ status: number; body: unknown }>;
+    todoDone?(id: string): Promise<{ status: number; body: unknown }>;
+    setup?(action: string): Promise<{ status: number; body: unknown }>;
+    resume?(category: string): Promise<{ status: number; body: unknown }>;
   };
 }): Promise<ExplainServer> {
   const token = randomBytes(24).toString("base64url");
@@ -80,6 +85,28 @@ export async function startExplainServer(o: {
     if (o.pipeline && path === "/api/pipeline/review" && body) {
       if (typeof body.identifier !== "string" || typeof body.verdict !== "string") return [400, { error: "identifier and verdict are required" }];
       const r = await o.pipeline.review(body.identifier, body.verdict, typeof body.note === "string" ? body.note.slice(0, 2000) : "");
+      return [r.status, r.body];
+    }
+    if (o.pipeline?.digest && path === "/api/pipeline/digest" && body) {
+      if (typeof body.action !== "string" || typeof body.week !== "string") return [400, { error: "action and week are required" }];
+      const r = await o.pipeline.digest(body.action, body.week, typeof body.markdown === "string" ? body.markdown : undefined);
+      return [r.status, r.body];
+    }
+    if (o.pipeline?.run && path === "/api/pipeline/run" && body) {
+      if (typeof body.step !== "string") return [400, { error: "step is required" }];
+      const r = await o.pipeline.run(body.step);
+      return [r.status, r.body];
+    }
+    if (o.pipeline?.todoDone && path === "/api/pipeline/todo" && body) {
+      const r = await o.pipeline.todoDone(String(body.id ?? ""));
+      return [r.status, r.body];
+    }
+    if (o.pipeline?.resume && path === "/api/pipeline/resume" && body) {
+      const r = await o.pipeline.resume(String(body.category ?? ""));
+      return [r.status, r.body];
+    }
+    if (o.pipeline?.setup && path === "/api/pipeline/setup" && body) {
+      const r = await o.pipeline.setup(String(body.action ?? ""));
       return [r.status, r.body];
     }
     if (path === "/api/flow") {

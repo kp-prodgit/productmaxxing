@@ -30,7 +30,7 @@ export async function runDigest(ctx: Ctx, ask: Asker, o: { stage?: boolean; revi
     const held = totalHeld(draft.held);
     ctx.out.info(receiptSummary(draft.receipt));
     await log.record({
-      type: "digest", agent: ctx.agent, machine: ctx.personal.machineId, receipt: draft.receipt.id, outcome: "staged", items: draft.items, held,
+      type: "digest", agent: ctx.agent, machine: ctx.personal.machineId, receipt: draft.receipt.id, week, outcome: "staged", items: draft.items, held,
       durationMs: draft.result.durationMs, tokens: draft.result.tokens, costUsd: draft.result.costUsd,
     });
     await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), draft.result.costUsd));
@@ -51,12 +51,12 @@ export async function runDigest(ctx: Ctx, ask: Asker, o: { stage?: boolean; revi
   }
   if (choice === "reject") {
     await discardStaged(week);
-    await log.record({ type: "digest", agent: ctx.agent, machine: ctx.personal.machineId, outcome: "rejected", items: 0, held: 0, durationMs: 0, tokens: null, costUsd: null });
+    await log.record({ type: "digest", agent: ctx.agent, machine: ctx.personal.machineId, week, outcome: "rejected", items: 0, held: 0, durationMs: 0, tokens: null, costUsd: null });
     return "Rejected. The draft was deleted and nothing reached git.";
   }
   const pr = await publishDigest(ctx, week, markdown);
   await discardStaged(week);
-  await log.record({ type: "digest", agent: ctx.agent, machine: ctx.personal.machineId, outcome: "approved", items: 0, held: 0, durationMs: 0, tokens: null, costUsd: null });
+  await log.record({ type: "digest", agent: ctx.agent, machine: ctx.personal.machineId, week, outcome: "approved", items: 0, held: 0, durationMs: 0, tokens: null, costUsd: null });
   const dm = await dmDigest(ctx, markdown).catch((e) => (ctx.out.warn(`Slack DM failed: ${e.message}`), false));
   return `Approved. ${pr.url.startsWith("branch:") ? `Committed on ${pr.url.slice(7)}` : `PR: ${pr.url}`}${dm ? " · sent to your Slack DMs" : ""}`;
 }

@@ -20,6 +20,12 @@ import { buildFlowGraph } from "./graph.js";
 import { buildPipeline, rubricFor, type HealthProblem, type PipelineData, type PipelineLevel } from "./pipeline.js";
 import { pendingTeamPrs } from "./team-prs.js";
 import { pausedCategories } from "../core/services.js";
+import { analyticsOn, cloudTarget } from "../cloud/account.js";
+import { killSwitchOn } from "../core/killswitch.js";
+import { currentVersion } from "../core/version.js";
+import { buildActivity, buildAutomations } from "./automations.js";
+import { loadDigestBoard } from "./digests.js";
+import { jobList } from "./jobs.js";
 
 // The run log lives on a git branch; the artifact polls every minute, so it's fetched at most once a minute.
 let runlogCache: { at: number; repo: string; entries: RunLogEntry[] | null } | null = null;
@@ -35,8 +41,27 @@ const hm = (iso: string | null) => (iso ? new Date(iso).toTimeString().slice(0, 
 /** Messages written for Terminal carry `code` marks; the board shows commands as their own chips instead. */
 const plain = (t: string) => { const x = t.replace(/`([^`]+)`/g, "$1").trim(); return x.charAt(0).toUpperCase() + x.slice(1); };
 
+/** A cron day-of-week field ("1-5", "*", "0,6") as the days it runs, 0 = Sunday. */
+export function cronDays(f: string): number[] {
+  if (f === "*") return [0, 1, 2, 3, 4, 5, 6];
+  const out = new Set<number>();
+  for (const p of f.split(",")) { const [a, b = a] = p.split("-").map(Number); for (let d = a!; d <= b!; d++) out.add(d % 7); }
+  return [...out].sort();
+}
+
+/** The Linear sync's health, in a PM's words (BOARD-5): what's wrong and where to look, without PMX's command names. */
+export function relayWords(detail: string, waiting: number): { text: string; cmd?: string } {
+  const queued = waiting ? ` ${waiting} change${waiting === 1 ? " is" : "s are"} waiting to go to Linear.` : "";
+  if (/not synced yet/.test(detail)) return { text: `Linear hasn't synced yet. PMX reaches Linear through a task in your Claude app; type /pmx-schedule there to set it up.${queued}`, cmd: "/pmx-schedule" };
+  const h = detail.match(/last synced (\d+)h ago/);
+  if (h) return { text: `Linear last synced ${h[1]} hours ago. The "Sync Linear" task in your Claude app runs hourly on weekdays while the app is open; open Claude and check it ran.${queued}`, cmd: "/pmx-schedule" };
+  if (/label\(s\) missing/.test(detail)) return { text: "Some of PMX's labels are missing in Linear, so cards can't move yet. The next Linear sync in your Claude app creates them." };
+  if (/not this team's/.test(detail)) return { text: "The last Linear sync read a different project than your team's. Check your team's Linear settings, then let the next sync run.", cmd: "pmx doctor" };
+  return { text: plain(detail.replace(/^Linear through Claude: /, "Linear sync: ")) };
+}
+
 /** Reads everything the pipeline board shows from this Mac and the PMX repo (BOARD-3). */
-export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" | "exec" | "agent" | "now" | "launchd" | "fetch">, o: { level: PipelineLevel; hours?: number; keychain: Keychain }): Promise<PipelineData> {
+export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" | "exec" | "agent" | "now" | "launchd" | "fetch" | "keychain">, o: { level: PipelineLevel; hours?: number; keychain: Keychain }): Promise<PipelineData> {
   const now = ctx.now();
   const hours = Math.max(1, Math.min(336, o.hours ?? 168));
   const receipts: RunReceipt[] = [];
@@ -65,16 +90,16 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const problems: HealthProblem[] = [];
   const facts: string[] = [];
   const tick = tickHealth(state.lastTick);
-  if (tick && !tick.ok) problems.push({ text: plain(tick.detail), fix: "tab:schedules" });
+  if (tick && !tick.ok) problems.push({ text: plain(tick.detail), fix: "tab:automations" });
   const job = await ctx.launchd.installed().catch(() => null);
-  if (!job) problems.push({ text: "PMX isn't set to run on its own on this Mac, so nothing happens until you run it. In Terminal, run pmx init and answer yes to the background job.", cmd: "pmx init" });
+  if (!job) problems.push({ text: "Automatic runs are off, so PMX only works while you have it open. Turn them on and it checks for new meetings every 30 minutes.", cmd: "pmx init", action: "install-job", fix: "tab:automations" });
   const tasks = await neededTasks(ctx.team, o.keychain);
   const schedules: PipelineData["schedules"] = [];
   for (const t of tasks) {
     const st = await taskState(t);
     const ran = st === "missing" ? null : await taskRunHealth(t, now);
-    if (st === "missing") problems.push({ text: `The Claude task "${t.title}" isn't set up. Type /pmx-schedule in the Claude app.`, cmd: "/pmx-schedule", fix: "tab:schedules" });
-    else if (ran && !ran.ok) problems.push({ text: plain(`"${t.title}" ${ran.detail}`), fix: "tab:schedules" });
+    if (st === "missing") problems.push({ text: `"${t.title.replace(/^PMX: /, "")}" isn't set up in your Claude app yet. Type /pmx-schedule there and Claude sets it up.`, cmd: "/pmx-schedule", fix: "tab:automations" });
+    else if (ran && !ran.ok) problems.push({ text: plain(`"${t.title.replace(/^PMX: /, "")}" ${ran.detail}`), fix: "tab:automations" });
     const run = state.taskRuns[t.id];
     const cronHours = t.cron.split(/\s+/)[1] ?? "*";
     const mins = Number(t.cron.split(/\s+/)[0]) || 0;
@@ -82,23 +107,29 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     schedules.push({
       name: t.title.replace(/^PMX: /, ""), where: "Claude app", when: t.schedule, last: run?.finishedAt ?? run?.startedAt ?? null, next: nextCronTime(t.cron, now)?.toISOString() ?? null,
       ok: st !== "missing" && !!ran?.ok, detail: st === "missing" ? "not set up" : st === "outdated" ? "set up with an older prompt" : ran?.detail ?? "", node: t.id === "pmx-collect-meetings" ? "collect" : "inbox",
-      hours: hrs.map((h) => h + mins / 60),
+      hours: hrs.map((h) => h + mins / 60), days: cronDays(t.cron.split(/\s+/)[4] ?? "*"),
     });
   }
   schedules.push({
     name: "Background job", where: "This Mac", when: "every 30 minutes while this Mac is awake", last: state.lastTick?.at ?? null,
     next: state.lastTick ? new Date(Date.parse(state.lastTick.at) + 30 * 60000).toISOString() : null, ok: !!job && (!tick || tick.ok),
-    detail: !job ? "not registered" : tick?.detail ?? "hasn't run yet", node: null, hours: [...Array(48).keys()].map((h) => h / 2),
+    detail: !job ? "not registered" : tick?.detail ?? "hasn't run yet", node: null, hours: [...Array(48).keys()].map((h) => h / 2), days: [0, 1, 2, 3, 4, 5, 6],
   });
-  if ((await linearAccess(ctx.team, o.keychain)) === "relay") {
+  const access = await linearAccess(ctx.team, o.keychain).catch(() => "none" as const);
+  let relay: { ok: boolean; problem?: string } = { ok: true };
+  if (access === "relay") {
     const r = await relayHealth(ctx.team, now);
-    if (!r.ok) problems.push({ text: plain(r.detail) });
+    if (!r.ok) {
+      const w = relayWords(r.detail, outbox.ops.length);
+      problems.push({ ...w, fix: "tab:automations" });
+      relay = { ok: false, problem: w.text };
+    }
   }
   const b = budget(ctx.personal, ctx.team, state, now);
   const blocked = budgetBlock(b);
   if (blocked) problems.push({ text: plain(blocked), fix: "rule:budget" });
   const rules0 = privacyRules(ctx);
-  if (!rules0.internalDomains.length) problems.push({ text: "PMX doesn't know your company's email domain, so it keeps every meeting private. Add it under Who counts as a customer.", cmd: "pmx domains add <your domain>", fix: "rule:domains" });
+  if (!rules0.internalDomains.length) problems.push({ text: "PMX doesn't know your company's email domain yet, so it keeps every meeting private and can't spot customer calls. Add your domain under Privacy.", cmd: "pmx domains add <your domain>", fix: "rule:domains" });
   const collect = state.collectReports.at(-1)?.at ?? null;
   if (collect) facts.push(`collection ${hm(collect)}`);
   if (snap) facts.push(`Linear synced ${hm(snap.syncedAt)}`);
@@ -115,12 +146,36 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const cats = Object.keys(ctx.team.categories);
   const ni = ctx.personal.neverIngest;
   const todos = (await loadTodos()).items;
+  const local = o.level === "local";
+  const proposals = await readProposals();
+  const paused = await pausedCategories(ctx as Ctx).catch(() => new Map<string, string>());
+  const ks = await killSwitchOn(ctx.repo).catch(() => ({ on: false, reason: null }));
+  if (ks.on) problems.unshift({ text: `Your team turned on the emergency stop${ks.reason ? ` (${ks.reason})` : ""}. Nothing runs until they turn it off.` });
+  const digest = await loadDigestBoard(ctx, { local, receipts, runlog: log, lastDigestWeek: state.lastDigestWeek }).catch(() => null);
+  const jobs = local ? jobList() : [];
+  const tasksNow = issues.filter((x) => !x.meeting);
+  const automations = buildAutomations({
+    now, agent: ctx.agent, handle: ctx.personal.handle, installedAt: ctx.personal.installedAt, jobInstalled: !!job, lastTick: state.lastTick, tickOk: !tick || tick.ok,
+    schedules, collectReports: state.collectReports, receipts, runlog: log, tracker: ctx.team.tracker.kind !== "none", synthesizer: ctx.team.synthesizer,
+    company: ctx.team.company?.teams.length ? { machine: ctx.team.company.machine } : null, lastSynthAt: state.lastSynthAt, lastRollupAt: state.lastRollupAt,
+    lastEventSyncAt: state.lastEventSyncAt, analytics: !!cloudTarget(ctx.team, ctx.personal) && analyticsOn(ctx.personal),
+    autoUpdate: { on: !!ctx.team.cli?.autoUpdate, state: state.autoUpdate, version: currentVersion() },
+    linear: { mode: access, syncedAt: snap?.syncedAt ?? null, waiting: outbox.ops.length, ...relay },
+    proposals: proposals.length, drafts: tasksNow.filter((x) => x.status === "review").length, reviewCap: ctx.team.reviewQueueCap, todos: todos.filter((t) => t.status === "open").length,
+    paused: [...paused.keys()], digest, pendingTeam: 0, killSwitch: ks, jobs,
+  });
+  const pendingTeam = await pendingTeamPrs({ ...ctx, keychain: o.keychain }).catch(() => []);
+  const tc = automations.find((a) => a.id === "team-changes");
+  if (tc && pendingTeam.length) { tc.status = "waiting"; tc.statusText = `${pendingTeam.length} in review`; }
+  if (digest?.waiting.length) facts.push(`digest waiting`);
   return buildPipeline({
     level: o.level, now, hours, agent: ctx.agent, receipts, runlog: log, issues, linearSyncedAt: snap?.syncedAt ?? null,
-    collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals: await readProposals(),
-    openTodos: todos.filter((t) => t.status === "open"), pendingTeam: await pendingTeamPrs({ ...ctx, keychain: o.keychain }).catch(() => []),
+    collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals,
+    openTodos: todos.filter((t) => t.status === "open"), pendingTeam,
     checks: graph.checks, health: { problems, facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
-    teamCategories: ctx.team.categories, paused: await pausedCategories(ctx as Ctx).catch(() => new Map()), autoPause: ctx.team.autoPause,
+    teamCategories: ctx.team.categories, paused, autoPause: ctx.team.autoPause,
+    automations, activity: buildActivity({ now, hours, agent: ctx.agent, receipts, runlog: log, collectReports: state.collectReports, lastTick: state.lastTick }),
+    digest, jobs, killSwitch: ks, version: currentVersion(),
     rules: {
       routes: { ...(ctx.personal.sources.routes ?? {}) },
       teamDomains: ctx.team.internalDomains, myDomains: ctx.personal.companyDomains ?? [],

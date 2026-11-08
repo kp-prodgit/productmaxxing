@@ -17,8 +17,9 @@ export type RunLogEntry =
   | ({ type: "run"; taskId: string; category: string; size: string; skill: string; skillVersion: string;
       outcome: "ok" | "failed" | "capped" | "refused"; durationMs: number; tokens: number | null; costUsd: number | null;
       runtime: string; fencingToken?: number } & Base)
+  /** `week` (from 0.20.0) is the digest's own week, like 2026-W45: a digest approved late still belongs to its week. */
   | ({ type: "digest"; outcome: "approved" | "rejected" | "staged"; items: number; held: number; durationMs: number;
-      tokens: number | null; costUsd: number | null; receipt?: string } & Base)
+      tokens: number | null; costUsd: number | null; receipt?: string; week?: string } & Base)
   /** `receipt` is the run's receipt ID on the machine that ran it (FLOW-1): a timestamp, no content. */
   | ({ type: "synthesize"; posted: number; held: number; durationMs: number; tokens: number | null; costUsd: number | null; receipt?: string } & Base)
   | ({ type: "verdict"; taskId: string; category: string; size: string; verdict: "accepted" | "rejected" | "redo";

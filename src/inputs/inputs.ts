@@ -30,12 +30,13 @@ export interface ChannelInput {
 }
 
 /** Connectors people pick most, so the board can suggest them. Any other connector's name works too. */
-export const SUGGESTED: { connector: string; shape: InputShape; note: string }[] = [
+export const SUGGESTED: { connector: string; shape: InputShape; note: string; via?: string }[] = [
   { connector: "Slack", shape: "channels", note: "Channels your team approves" },
   { connector: "Microsoft Teams", shape: "channels", note: "Team channels" },
   { connector: "Discord", shape: "channels", note: "Community channels" },
   { connector: "Intercom", shape: "channels", note: "Customer conversations" },
   { connector: "Zendesk", shape: "channels", note: "Support tickets in a view" },
+  { connector: "Google Meet", shape: "calls", note: "Gemini notes and Meet transcripts, through Google Drive", via: "Google Drive" },
   { connector: "Momentum", shape: "calls", note: "Recorded customer calls" },
   { connector: "Gong", shape: "calls", note: "Recorded sales calls" },
   { connector: "Sybill", shape: "calls", note: "Recorded sales calls" },
@@ -44,8 +45,22 @@ export const SUGGESTED: { connector: string; shape: InputShape; note: string }[]
   { connector: "Read.ai", shape: "calls", note: "Recorded meetings" },
 ];
 
-/** The meeting apps PMX looks for without being told, in order: the first one connected is used (COLLECT-1). */
-export const MEETING_CONNECTORS = ["Granola", "Fireflies", "Otter", "Fathom", "tl;dv", "Zoom", "Google Drive (Google Meet transcripts)"];
+/**
+ * The meeting apps PMX looks for without being told, in order: the first one connected is used (COLLECT-1). One the
+ * PM adds as a recorder is read on every run instead, alongside the first one connected.
+ */
+export const MEETING_CONNECTORS = ["Granola", "Fireflies", "Otter", "Fathom", "tl;dv", "Zoom", "Google Meet"];
+
+/**
+ * Sources with no connector of their own, read through another one. Google Meet's notetaker ("Take notes for me")
+ * and its transcripts are Google Docs in Drive, so the Google Drive connector reads them.
+ */
+export const READ_VIA: Record<string, { via: string; how: string }> = {
+  "google-meet": {
+    via: "Google Drive",
+    how: `Google Meet has no connector of its own: read it through the Google Drive connector, and report it as "Google Meet". Search Drive, including files shared with me, for Google Docs whose names end in "Notes by Gemini" or "Transcript": Meet saves them for each meeting in the organizer's "Meet Recordings" folder and shares them with the invitees. Copy only the transcript: the "Transcript" doc, or the Transcript tab or section of the "Notes by Gemini" doc. Gemini's summary, details and suggested next steps are AI notes, not a transcript; if a meeting has only those, skip it as no-transcript. When one meeting has both docs, save it once. Use the doc's file ID as source_id, the meeting's date and title from the doc, and the invitees' email addresses from the doc or the meeting's calendar event.`,
+  },
+};
 
 const BUILTIN_IDS: Record<string, string> = { "tl;dv": "tldv", "google drive (google meet transcripts)": "google-meet", "google meet": "google-meet" };
 
@@ -91,10 +106,17 @@ export function checkLook(l: unknown): string | null {
   return v;
 }
 
-/** The recorders this PM added (Momentum…), skipping any the team's built-in list already covers. */
+/**
+ * The recorders this PM added (Momentum, Google Meet…), once each. A built-in meeting app added here is read on every
+ * run, not only when it's the first one connected.
+ */
 export function callInputs(personal: Pick<PersonalConfig, "sources">): CallInput[] {
-  const builtin = new Set(MEETING_CONNECTORS.map(connectorId));
-  return (personal.sources.calls ?? []).filter((c) => valid(() => (checkConnector(c.connector), checkLook(c.look))) && !builtin.has(connectorId(c.connector)));
+  const seen = new Set<string>();
+  return (personal.sources.calls ?? []).filter((c) => {
+    if (!valid(() => (checkConnector(c.connector), checkLook(c.look)))) return false;
+    const id = connectorId(c.connector);
+    return !seen.has(id) && !!seen.add(id);
+  });
 }
 
 /**

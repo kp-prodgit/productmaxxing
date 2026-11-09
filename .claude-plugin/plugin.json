@@ -1,9 +1,9 @@
 {
   "name": "productmaxxing",
-  "version": "0.21.1",
+  "version": "0.22.0",
   "description": "ProductMaxxing skills: weekly signal digest, synthesis into sized tasks, and drafting skills across the product lifecycle: problem briefs, research synthesis, competitive analysis, build briefs, validation plans and readouts, specs and tracking hygiene. Every claim cited.",
-  "author": { "name": "ProductMaxxing", "email": "kp@productmaxxing.com", "url": "https://productmaxxing.com" },
-  "homepage": "https://productmaxxing.com",
+  "author": { "name": "ProductMaxxing", "email": "kp@productmaxxing.com", "url": "https://productmaxxing.ai" },
+  "homepage": "https://productmaxxing.ai",
   "repository": "https://github.com/kp-prodgit/productmaxxing",
   "license": "Apache-2.0",
   "keywords": ["product-management", "research", "spec", "competitive-analysis", "digest"]

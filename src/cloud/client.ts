@@ -3,7 +3,7 @@ import { updateState } from "../core/state.js";
 import { currentVersion, UPDATE_HINT } from "../core/version.js";
 import type { Fetch } from "../sources/slack.js";
 
-export const DEFAULT_CONTROL_PLANE = "https://api.productmaxxing.com/v1";
+export const DEFAULT_CONTROL_PLANE = "https://api.productmaxxing.ai/v1";
 
 export class CloudError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly body: any = null) {

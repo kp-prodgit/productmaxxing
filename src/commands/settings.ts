@@ -1,7 +1,7 @@
 import { companyDomains } from "../core/filter.js";
 import { applyPersonal, checkChange, type Change } from "../flow/actions.js";
 import type { Command } from "./index.js";
-import { callInputs, channelInputs, collectsChannels, connectorId, MEETING_CONNECTORS } from "../inputs/inputs.js";
+import { callInputs, channelInputs, collectsChannels, connectorId, MEETING_CONNECTORS, READ_VIA } from "../inputs/inputs.js";
 
 /** Personal settings the pipeline board also changes (BOARD-3), for Terminal and scripts. */
 export const settingsCommands: Command[] = [
@@ -22,15 +22,16 @@ export const settingsCommands: Command[] = [
       if (op === "add" || op === "remove") {
         const c = checkChange({ kind: "call-input", op, connector: rest.join(" "), look: a.values.only }, ctx.team);
         console.log((await applyPersonal(ctx.personal, [c])).join("\n"));
-        if (op === "add") console.log(`PMX's collection task in your Claude app reads it from its next run. Make sure ${c.kind === "call-input" ? c.connector : ""} is connected in the Claude app (Settings → Connectors).`);
+        if (op === "add") console.log(`PMX's collection task in your Claude app reads it from its next run. Make sure ${c.kind === "call-input" ? READ_VIA[connectorId(c.connector)]?.via ?? c.connector : ""} is connected in the Claude app (Settings → Connectors).`);
         return 0;
       }
       if (op) throw new Error(`Unknown subcommand "${op}". Use add, remove or set.`);
       const routes = ctx.personal.sources.routes ?? {};
       const feeds = (id: string) => ({ off: "off", mine: "your to-dos only", linear: "your to-dos and team tasks" })[routes[id] ?? "linear"];
-      console.log(`Meeting apps (PMX uses the first one connected): ${MEETING_CONNECTORS.join(", ")}`);
       const calls = callInputs(ctx.personal);
-      console.log(calls.length ? `Your recorders: ${calls.map((c) => `${c.connector}${c.look ? ` (only ${c.look})` : ""}: ${feeds(connectorId(c.connector))}`).join("; ")}` : "Your recorders: none. Add one: pmx sources add Momentum");
+      const fallback = MEETING_CONNECTORS.filter((m) => !calls.some((c) => connectorId(c.connector) === connectorId(m)));
+      if (fallback.length) console.log(`Meeting apps (PMX uses the first one connected): ${fallback.join(", ")}`);
+      console.log(calls.length ? `Your recorders: ${calls.map((c) => `${c.connector}${READ_VIA[connectorId(c.connector)] ? ` (through ${READ_VIA[connectorId(c.connector)]!.via})` : ""}${c.look ? ` (only ${c.look})` : ""}: ${feeds(connectorId(c.connector))}`).join("; ")}` : "Your recorders: none. Add one: pmx sources add Momentum, or pmx sources add \"Google Meet\"");
       const ch = channelInputs(ctx.team);
       console.log(ch.length ? `Your team's channels: ${ch.map((c) => `${c.connector}: ${c.places.join(", ")}`).join("; ")}${collectsChannels(ctx.team, ctx.personal, ctx.agent) ? " (collected on this Mac)" : ` (collected on ${ctx.team.synthesizer ?? "the synthesis Mac"}'s Mac)`}` : "Your team's channels: none. Propose some on the board's Sources tab.");
       if (Object.keys(routes).length) console.log(`What each feeds: ${Object.keys(routes).map((k) => `${k}: ${feeds(k)}`).join(", ")}`);

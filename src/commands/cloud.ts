@@ -8,7 +8,7 @@ import { macKeychain } from "../core/keychain.js";
 import { machineId } from "./init.js";
 import type { Command } from "./index.js";
 
-const APP = "https://app.productmaxxing.com";
+const APP = "https://app.productmaxxing.ai";
 
 async function openUrl(url: string) {
   await exec("open", [url]);

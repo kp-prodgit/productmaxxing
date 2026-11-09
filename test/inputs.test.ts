@@ -71,6 +71,33 @@ describe("connector inputs (INPUT-1)", () => {
     expect(r).not.toMatch(/Channels your team approved/);
   });
 
+  it("reads Google Meet's notetaker through Google Drive: the transcript only, every run once the PM adds it", async () => {
+    const { repo } = await pmxRepo();
+    // Built in, it's the last meeting app tried, and the run is told how to find Meet's docs in Drive.
+    const base = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [], slackChannel: null } } });
+    const p = await collectPrompt(base, { scope: "mine" });
+    expect(p).toMatch(/in this order: Granola, Fireflies, Otter, Fathom, tl;dv, Zoom, Google Meet\. Use the first one that works/);
+    expect(p).toMatch(/Google Meet has no connector of its own: read it through the Google Drive connector, and report it as "Google Meet"/);
+    expect(p).toMatch(/"Notes by Gemini" or "Transcript"/);
+    expect(p).toMatch(/Gemini's summary, details and suggested next steps are AI notes, not a transcript; if a meeting has only those, skip it as no-transcript/);
+
+    // Added by the PM, it's read every run alongside the first meeting app connected, and leaves the fallback list.
+    const added = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [], slackChannel: null, calls: [{ connector: "Google Meet", look: null }, { connector: "google meet" }] } } });
+    const q = await collectPrompt(added, { scope: "mine" });
+    expect(q).toMatch(/in this order: Granola, Fireflies, Otter, Fathom, tl;dv, Zoom\. Use the first one that works/);
+    expect(q).toMatch(/- "Google Meet" \(through Google Drive, see below\)\n   A quoted note/);
+    expect(q.match(/Google Meet has no connector of its own/g)).toHaveLength(1);
+    expect(q).toMatch(/source: <granola \| fireflies \| otter \| fathom \| tldv \| zoom \| google-meet>/);
+
+    // The report names it "Google Meet"; the board shows it as the PM's recorder, read through Google Drive.
+    await writeFile(reportFile(), JSON.stringify({ connectors: [{ name: "Google Meet", status: "used" }, { name: "Google Drive", status: "used" }], skipped: { "no-transcript": 2 } }));
+    expect(await takeCollectReport(["Google Meet"])).toMatchObject({ connector: "google-meet", connectors: [{ id: "google-meet", status: "used" }], skipped: { "no-transcript": 2 } });
+    const board = buildInputsBoard({ team: added.team, personal: added.personal, agent: "a", state: { collectReports: [{ at: NOW.toISOString(), connector: "google-meet", saved: 1, skipped: {} as any, inputs: [{ id: "google-meet", shape: "calls", status: "used", saved: 1 }] }] as any }, receipts: [], now: NOW, hours: 168, local: true });
+    expect(board.rows).toEqual([expect.objectContaining({ id: "google-meet", connector: "Google Meet", owner: "you", via: "Google Drive", status: "reading", n: 1 })]);
+    expect(board.usedApp).toBeNull();
+    expect(board.suggested.find((x) => x.connector === "Google Meet")).toMatchObject({ shape: "calls", via: "Google Drive" });
+  });
+
   it("deletes threads from places the team didn't approve, and records how each connector went", async () => {
     const { repo } = await pmxRepo();
     const ctx = await testCtx({ repo, now: NOW, team: { synthesizer: "ana", inputs: [{ connector: "Slack", places: ["#product-feedback"] }] }, personal: { handle: "ana", sources: { transcriptDirs: [], slackChannel: null, calls: [{ connector: "Momentum" }] } } });
@@ -141,7 +168,8 @@ describe("connector inputs (INPUT-1)", () => {
     const add = checkChange({ kind: "call-input", op: "add", connector: " Momentum ", look: "calls tagged `Discovery`" }, ctx.team);
     expect(add).toEqual({ kind: "call-input", op: "add", connector: "Momentum", look: "calls tagged Discovery" });
     expect(loosens(add, ctx.personal, ctx.team)).toBe(true);
-    expect(() => checkChange({ kind: "call-input", op: "add", connector: "Granola" }, ctx.team)).toThrow(/already looks for Granola/);
+    // A built-in meeting app can be added too: it's then read every run, not only when it's the first one connected.
+    expect(checkChange({ kind: "call-input", op: "add", connector: "Google Meet" }, ctx.team)).toEqual({ kind: "call-input", op: "add", connector: "Google Meet", look: null });
     await applyPersonal(ctx.personal, [add]);
     expect(ctx.personal.sources.calls).toEqual([{ connector: "Momentum", look: "calls tagged Discovery" }]);
     expect(loosens(add, ctx.personal, ctx.team)).toBe(false);

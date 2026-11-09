@@ -18,7 +18,7 @@ export interface LicenseClaims {
   exp: number;
 }
 
-export const ISSUER = "https://api.productmaxxing.com";
+export const ISSUER = "https://api.productmaxxing.ai";
 const jwksPath = () => join(paths.home(), "jwks.json");
 
 /**

@@ -19,6 +19,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.22.0", date: "2026-11-09", headline: "Google Meet's notetaker is an input, and links point to productmaxxing.ai",
+    items: [
+      { what: "PMX reads Google Meet calls through your Google Drive connector: the transcript in each meeting's \"Notes by Gemini\" or \"Transcript\" doc, word for word. Gemini's summary alone isn't a transcript, so turn on transcripts in Meet to have a call read.", try: "pmx sources add \"Google Meet\"" },
+      { what: "A meeting app you add (Google Meet, Granola…) is read every time, alongside the first one connected, instead of only when nothing earlier in the list is connected." },
+      { what: "PMX's links now go to https://productmaxxing.ai: the docs link in pmx --help, the Claude plugin's homepage, a new team repo's README and the PMX cloud sign-in." },
+    ],
+  },
+  {
     version: "0.21.1", date: "2026-11-09", headline: "The npm page links to productmaxxing.ai",
     items: [
       { what: "The Homepage link on PMX's npm page now goes to https://productmaxxing.ai. Nothing else changed." },

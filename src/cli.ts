@@ -28,7 +28,7 @@ Usage: pmx <command> [options]
 Commands:
 ${commands.map((c) => `  ${c.name.padEnd(14)} ${c.summary}`).join("\n")}
 
-Run \`pmx <command> --help\` for options. Docs: https://productmaxxing.com`;
+Run \`pmx <command> --help\` for options. Docs: https://productmaxxing.ai`;
 
 export async function realCtx(): Promise<Ctx> {
   const personal: PersonalConfig = await loadPersonalConfig();

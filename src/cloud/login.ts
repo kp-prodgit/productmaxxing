@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Keychain } from "../core/keychain.js";
 
-const APP = "https://app.productmaxxing.com";
+const APP = "https://app.productmaxxing.ai";
 
 export interface LoginOpts {
   keychain: Keychain;

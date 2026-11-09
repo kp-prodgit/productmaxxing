@@ -1,6 +1,6 @@
 import type { RunReceipt } from "../core/receipt.js";
 import type { State } from "../core/state.js";
-import { callInputs, channelInputs, connectorId, MEETING_CONNECTORS, SUGGESTED, type InputShape } from "./inputs.js";
+import { callInputs, channelInputs, connectorId, MEETING_CONNECTORS, READ_VIA, SUGGESTED, type InputShape } from "./inputs.js";
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
 
 export type InputStatus = "reading" | "not-connected" | "failed" | "waiting" | "elsewhere";
@@ -15,6 +15,8 @@ export interface InputRow {
   places: string[];
   placesN: number;
   look: string | null;
+  /** The connector it's read through, when it has none of its own (Google Meet through Google Drive). */
+  via: string | null;
   status: InputStatus;
   /** Calls or threads saved from it in the window. */
   n: number;
@@ -59,18 +61,21 @@ export function buildInputsBoard(i: {
   };
   const here = !!i.team.synthesizer && (i.team.synthesizer === i.personal.handle || i.team.synthesizer === i.agent);
   const rows: InputRow[] = [];
-  for (const c of callInputs(i.personal)) {
-    const s = stats(connectorId(c.connector));
-    rows.push({ id: connectorId(c.connector), connector: c.connector, shape: "calls", owner: "you", places: [], placesN: 0, look: i.local ? c.look ?? null : null, status: s.status ?? "waiting", n: s.n, last: s.last });
+  const added = callInputs(i.personal);
+  for (const c of added) {
+    const id = connectorId(c.connector), s = stats(id);
+    rows.push({ id, connector: c.connector, shape: "calls", owner: "you", places: [], placesN: 0, look: i.local ? c.look ?? null : null, via: READ_VIA[id]?.via ?? null, status: s.status ?? "waiting", n: s.n, last: s.last });
   }
   for (const c of channelInputs(i.team)) {
     const s = stats(connectorId(c.connector));
     rows.push({
-      id: connectorId(c.connector), connector: c.connector, shape: "channels", owner: "team", places: i.local ? c.places : [], placesN: c.places.length, look: i.local ? c.look ?? null : null,
+      id: connectorId(c.connector), connector: c.connector, shape: "channels", owner: "team", places: i.local ? c.places : [], placesN: c.places.length, look: i.local ? c.look ?? null : null, via: null,
       status: !here ? "elsewhere" : s.status ?? "waiting", n: s.n, last: s.last,
     });
   }
-  const usedApp = [...reports].reverse().map((r) => r.inputs?.find((x) => x.shape === "calls" && x.status === "used" && MEETING_CONNECTORS.some((m) => connectorId(m) === x.id))?.id ?? r.connector).find(Boolean) ?? null;
+  // The first-one-connected meeting app the last run used; one the PM added has its own row.
+  const fallback = (id: string) => MEETING_CONNECTORS.some((m) => connectorId(m) === id) && !added.some((c) => connectorId(c.connector) === id);
+  const usedApp = [...reports].reverse().map((r) => r.inputs?.find((x) => x.shape === "calls" && x.status === "used" && fallback(x.id))?.id ?? (r.connector && fallback(r.connector) ? r.connector : null)).find(Boolean) ?? null;
 
   // Duplicates, from the run receipts: counts and the open task's ID, never what was said.
   const inWin = i.receipts.filter((r) => r.at >= since);

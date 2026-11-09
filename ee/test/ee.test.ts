@@ -24,7 +24,7 @@ function keys() {
 }
 
 const now = new Date("2026-11-04T00:00:00Z");
-const claims = { iss: "https://api.productmaxxing.com", sub: "org_abc", aud: "pmx-cli", plan: "team", seats: 5, features: ["lease"], iat: now.getTime() / 1000, exp: now.getTime() / 1000 + 30 * 86400 };
+const claims = { iss: "https://api.productmaxxing.ai", sub: "org_abc", aud: "pmx-cli", plan: "team", seats: 5, features: ["lease"], iat: now.getTime() / 1000, exp: now.getTime() / 1000 + 30 * 86400 };
 
 describe("license (ADMIN-4)", () => {
   it("verifies a KMS-style ES256 license offline", () => {

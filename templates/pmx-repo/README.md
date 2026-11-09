@@ -1,6 +1,6 @@
 # PMX repo
 
-The team's shared PMX repo, managed by [ProductMaxxing](https://productmaxxing.com).
+The team's shared PMX repo, managed by [ProductMaxxing](https://productmaxxing.ai).
 
 | Path | What |
 |---|---|

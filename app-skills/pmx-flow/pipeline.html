@@ -1867,14 +1867,18 @@ body.has-tray .toast { bottom: 76px }
     const pill = (r) => { const [k, t] = inputStatus(r); return h("span", { class: `pill ${k}` }, t); };
 
     // ---- Calls ----
+    // A source read through another connector (Google Meet through Google Drive).
+    const viaOf = (id) => (byId[id] && byId[id].via) || (I.suggested.find((x) => cid(x.connector) === id) || {}).via || null;
+    // Meeting apps the PM added are read every run; the rest are tried in order and the first one connected is used.
+    const fallbackApps = I.meetingApps.filter((m) => !state.calls.some((c) => cid(c.connector) === m.id));
     const callRows = state.calls.map((c) => {
       const id = cid(c.connector), r = byId[id], isNew = !original.calls.some((x) => cid(x.connector) === id);
       return h("div", { class: "inp", id: `s-call-${id}` },
         h("div", null, h("div", { class: "nm" }, c.connector, h("span", { class: "scope" }, "Your recorder"), isNew ? h("span", { class: "chip pending" }, "Not saved yet") : null),
-          LOCAL ? h("p", { class: "sub" }, c.look ? `Only ${c.look}.` : "Every call it recorded that has a transcript.") : null),
+          LOCAL ? h("p", { class: "sub" }, `${c.look ? `Only ${c.look}.` : "Every call it recorded that has a transcript."}${viaOf(id) ? ` Read through your ${viaOf(id)} connector.` : ""}`) : null),
         h("div", { class: "side" }, r && !isNew ? pill(r) : null, r && !isNew ? feeds(id) : null,
           h("button", { type: "button", class: "btn quiet", onclick: () => { state.calls = state.calls.filter((x) => cid(x.connector) !== id); update(); } }, isNew ? "Cancel" : "Remove")),
-        r && r.status === "not-connected" && !isNew ? h("div", { class: "fix" }, `The last collection couldn't find ${c.connector} among your Claude connectors. ${connectHelp(c.connector)}`) : null);
+        r && r.status === "not-connected" && !isNew ? h("div", { class: "fix" }, `The last collection couldn't find ${viaOf(id) || c.connector} among your Claude connectors. ${connectHelp(viaOf(id) || c.connector)}`) : null);
     });
     const callName = srcField("add-call", "Recorder's name, like Momentum", "Name of the recorder to add", { list: "dl-calls", basis: 200 });
     const callLook = srcField("add-call-look", "Only read… (optional), like calls tagged Discovery", "Which of its calls to read (optional)", { grow: 2, basis: 240 });
@@ -1884,7 +1888,6 @@ body.has-tray .toast { bottom: 76px }
       const name = callName.value.trim().replace(/\s+/g, " "), look = callLook.value.trim();
       const fail = (t) => { srcMsg.call = { text: t, err: true }; callSay.className = "err"; callSay.textContent = t; callName.focus(); };
       if (!NAME_OK.test(name) || !/^[a-z][a-z-]{1,30}$/.test(cid(name))) return fail("Give the connector's name as Claude shows it, like Momentum or Gong.");
-      if (I.meetingApps.some((m) => m.id === cid(name))) return fail(`PMX already looks for ${name} by itself. Choose what it feeds under Privacy → Sources.`);
       if (state.inputs.some((x) => cid(x.connector) === cid(name))) return fail(`${name} is already one of your team's channel sources.`);
       if (state.calls.some((x) => cid(x.connector) === cid(name))) return fail(`${name} is already on the list.`);
       if (look.length > 200) return fail("Keep the note under 200 characters.");
@@ -1896,7 +1899,7 @@ body.has-tray .toast { bottom: 76px }
       h("div", { class: "card-h" }, h("div", null, h("h2", null, "Calls"), h("p", null, "Recorded conversations. A call becomes a team task only if someone from outside your company was in it.")), h("span", { class: "scope me" }, "Just you")),
       h("div", { class: "inp" },
         h("div", null, h("div", { class: "nm" }, "Meeting apps", h("span", { class: "scope" }, "Built in")),
-          h("p", { class: "sub" }, `PMX uses the first one connected in Claude: ${I.meetingApps.map((m) => m.label).join(", ")}.`)),
+          h("p", { class: "sub" }, fallbackApps.length ? `PMX uses the first one connected in Claude: ${fallbackApps.map((m) => m.label).join(", ")}. Add one below to read it every time.` : "You added every one of them below, so each is read every time.")),
         h("div", { class: "side" }, h("span", { class: `pill ${appLabel ? "ok" : ""}` }, appLabel ? `Using ${appLabel}` : "None connected yet"), I.usedApp || seenApp ? feeds(I.usedApp || seenApp.id) : null)),
       callRows,
       h("form", { class: "addbox", onsubmit: addCall, "aria-label": "Add a recorder" },

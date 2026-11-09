@@ -2,6 +2,14 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.22.0: Google Meet's notetaker as an input, and links point to productmaxxing.ai
+
+INPUT-1.
+
+- **Google Meet's notetaker.** When someone in a Google Meet uses Gemini's "Take notes for me" or turns on transcripts, Meet saves Google Docs in Drive. PMX now reads them through your Google Drive connector: it finds each meeting's "Notes by Gemini" or "Transcript" doc and copies the transcript word for word. Gemini's summary and next steps are AI notes, not what people said, so a meeting with only those is skipped (it's counted as "no transcript"; turn on transcripts in Meet to have it read). Add it with `pmx sources add "Google Meet"` or the board's Sources tab; it says it's read through Google Drive and, if Drive isn't connected, asks you to connect Drive.
+- **A meeting app you add is read every time.** The built-in meeting apps (Granola, Fireflies, Otter, Fathom, tl;dv, Zoom, Google Meet) are still tried in order, using the first one connected. Add one as a recorder and it's read on every run alongside that one, so Google Meet calls come in even when you also use Granola. A meeting both saved is read once.
+- **Links point to productmaxxing.ai**: the docs link in `pmx --help`, the Claude plugin's homepage, the README of a new team repo, and the cloud addresses `pmx login` and `pmx cloud` use (api.productmaxxing.ai, app.productmaxxing.ai). Email addresses are unchanged.
+
 ## 0.21.1: the npm page links to productmaxxing.ai
 
 - **The package's homepage is now https://productmaxxing.ai**, so the Homepage link on npm goes to the site. Nothing else changed.

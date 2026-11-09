@@ -9,7 +9,7 @@ import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
 import { loadSkill, teamSkillPath } from "../core/skills.js";
 import { SIZES, type Size } from "../core/types.js";
 import { addNeverIngest, checkNeverIngest, type NeverIngestKind } from "./edit.js";
-import { channelInputs, checkConnector, checkLook, checkPlace, connectorId, MEETING_CONNECTORS } from "../inputs/inputs.js";
+import { channelInputs, checkConnector, checkLook, checkPlace, connectorId } from "../inputs/inputs.js";
 
 /**
  * What the pipeline board's Rules tab can change (BOARD-3). Personal settings apply on this Mac at once; team settings
@@ -105,7 +105,6 @@ export function checkChange(c: any, team: TeamConfig): Change {
     case "call-input": {
       if (c.op !== "add" && c.op !== "remove") fail("Add or remove a recorder.");
       const connector = checkConnector(c.connector);
-      if (MEETING_CONNECTORS.some((m) => connectorId(m) === connectorId(connector))) fail(`PMX already looks for ${connector} by itself. Turn it on or off under Sources.`);
       return { kind: "call-input", op: c.op, connector, ...(c.op === "add" ? { look: checkLook(c.look) } : {}) };
     }
     case "synthesizer":

@@ -26,6 +26,7 @@ import { currentVersion } from "../core/version.js";
 import { buildActivity, buildAutomations } from "./automations.js";
 import { loadDigestBoard } from "./digests.js";
 import { jobList } from "./jobs.js";
+import { buildInputsBoard } from "../inputs/board.js";
 
 // The run log lives on a git branch; the artifact polls every minute, so it's fetched at most once a minute.
 let runlogCache: { at: number; repo: string; entries: RunLogEntry[] | null } | null = null;
@@ -168,6 +169,9 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const tc = automations.find((a) => a.id === "team-changes");
   if (tc && pendingTeam.length) { tc.status = "waiting"; tc.statusText = `${pendingTeam.length} in review`; }
   if (digest?.waiting.length) facts.push(`digest waiting`);
+  const inputs = buildInputsBoard({ team: ctx.team, personal: ctx.personal, agent: ctx.agent, state, receipts, now, hours, local });
+  const unplugged = inputs.rows.filter((r) => r.status === "not-connected");
+  if (unplugged.length) problems.push({ text: `${unplugged.map((r) => r.connector).join(" and ")} ${unplugged.length === 1 ? "isn't" : "aren't"} connected in your Claude app, so PMX can't read ${unplugged.length === 1 ? "it" : "them"}. Add ${unplugged.length === 1 ? "it" : "them"} under Settings → Connectors in the Claude app.`, fix: "tab:sources" });
   return buildPipeline({
     level: o.level, now, hours, agent: ctx.agent, receipts, runlog: log, issues, linearSyncedAt: snap?.syncedAt ?? null,
     collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals,
@@ -176,6 +180,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     teamCategories: ctx.team.categories, paused, autoPause: ctx.team.autoPause,
     automations, activity: buildActivity({ now, hours, agent: ctx.agent, receipts, runlog: log, collectReports: state.collectReports, lastTick: state.lastTick }),
     digest, jobs, killSwitch: ks, version: currentVersion(),
+    inputs,
     rules: {
       routes: { ...(ctx.personal.sources.routes ?? {}) },
       teamDomains: ctx.team.internalDomains, myDomains: ctx.personal.companyDomains ?? [],

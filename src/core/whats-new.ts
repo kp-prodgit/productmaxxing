@@ -19,6 +19,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.21.0", date: "2026-11-08", headline: "Any Claude connector feeds PMX: Slack channels, Momentum and more, with no duplicate tasks",
+    items: [
+      { what: "A new Sources tab shows where PMX listens and whether each source works. Add a recorder like Momentum or Gong, or propose Slack channels for your team, with no token: Claude reads them through the connectors you already have.", try: "pmx flow --web" },
+      { what: "Slack is read through your Slack connector in Claude, only in the channels your team approved and never DMs. PMX deletes anything the collection saved from another place.", try: "pmx sources" },
+      { what: "No duplicates: a call saved by two recorders is read once, and a need that's already open or waiting for you gets the new sources instead of a second task." },
+    ],
+  },
+  {
     version: "0.20.0", date: "2026-11-08", headline: "The board is your PMX home: Today, your digest, and every step PMX takes",
     items: [
       { what: "Today opens first: tasks to approve, drafts to review, your digest and your to-dos in one place, with what happened this week beside them. Tick a to-do done right there.", try: "pmx flow --web" },

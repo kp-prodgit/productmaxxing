@@ -2,6 +2,17 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.21.0: any Claude connector feeds PMX, with no duplicate tasks
+
+INPUT-1, INPUT-2. Slack through the Claude connector instead of a token, a recorder like Momentum, and one pattern for every other connector.
+
+- **One pattern for every connector.** PMX still never connects to anything. The collection task in your Claude app reads each source through your own connector, following instructions PMX writes for every run, and saves what it reads word for word. A source is either **calls** (recorded conversations: Granola, Momentum, Gong…) or **channels** (conversations in places: Slack or Teams channels, a support inbox). Name the connector as Claude shows it and PMX does the rest.
+- **Sources tab.** Where PMX listens, whether each source is connected in Claude and what it read this week, with the same four steps for every source. Add a recorder (just you) with an optional "only read…" note; add channels and pick the Mac that reads them (your team approves, as one proposal). A source that isn't connected in Claude says so, on Sources and on Today.
+- **Slack through your connector.** Team channels are listed in `pmx.config.json` as `inputs` (Slack channels approved the old way still count, and move into `inputs` the first time someone changes them on the board). Only the team's synthesis Mac reads them, one file per thread, never DMs or group DMs, and private channels only if your team allows them. `pmx collect --check` deletes any thread from a place that isn't approved. `pmx init` no longer asks for a Slack token to read channels; a token is only for the optional digest DM.
+- **Recorders of your own.** `pmx sources add Momentum --only "calls tagged Discovery"`, or the Sources tab. Every recorder you add is collected each run, alongside the first built-in meeting app that's connected.
+- **No duplicate meetings.** Two recorders rarely agree on a meeting's title, so PMX also recognizes a meeting by who was there and when it started (give or take 20 minutes), and keeps the fullest copy. To-dos, digests and team tasks all read it once.
+- **No duplicate tasks.** Each run makes one task per need, citing every call and thread that raised it. Claude sees what's open in Linear and waiting for you, and says when a need is the same; PMX checks near-identical titles too. A repeat adds its sources to the waiting proposal ("Heard again in 2 more sources") or is recorded as heard again for the open task, on your Mac only.
+
 ## 0.20.0: the board is your PMX home
 
 BOARD-5. The pipeline board, rebuilt around a PM's day after four reviewers (a first-time PM, a daily user, a head of product and a designer) went through it, and checked again by three more.

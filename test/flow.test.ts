@@ -168,7 +168,7 @@ describe("0.11.0: recording the links (FLOW-1)", () => {
     await mkdir(join(reportFile(), ".."), { recursive: true });
     await writeFile(reportFile(), JSON.stringify({ connector: "Granola", skipped: { "never-ingest-title": 2, "no-transcript": "x", sneaky: 5, "already-collected": 1.5 }, titles: ["Secret"] }));
     const r = await takeCollectReport();
-    expect(r).toEqual({ connector: "granola", skipped: { "never-ingest-title": 2, "never-ingest-person": 0, "no-transcript": 0, "already-collected": 0, "outside-window": 0 } });
+    expect(r).toEqual({ connector: "granola", connectors: [], skipped: { "never-ingest-title": 2, "never-ingest-person": 0, "no-transcript": 0, "already-collected": 0, "outside-window": 0, "not-approved-place": 0, "too-short": 0 } });
     expect(JSON.stringify(r)).not.toContain("Secret");
     expect(await takeCollectReport()).toBeNull();
   });

@@ -1,28 +1,40 @@
 import { companyDomains } from "../core/filter.js";
 import { applyPersonal, checkChange, type Change } from "../flow/actions.js";
 import type { Command } from "./index.js";
+import { callInputs, channelInputs, collectsChannels, connectorId, MEETING_CONNECTORS } from "../inputs/inputs.js";
 
 /** Personal settings the pipeline board also changes (BOARD-3), for Terminal and scripts. */
 export const settingsCommands: Command[] = [
   {
     name: "sources",
-    summary: "What each source may feed: off, your to-dos only, or your to-dos and Linear tasks",
-    usage: "pmx sources | pmx sources set <granola | fireflies | otter | fathom | tldv | zoom | google-meet | file | slack> <off | mine | linear>",
-    options: {},
+    summary: "Where PMX listens: your meeting apps and recorders, your team's channels, and what each may feed",
+    usage: "pmx sources | pmx sources add <connector> [--only <which calls>] | pmx sources remove <connector> | pmx sources set <source> <off | mine | linear>",
+    options: { only: { type: "string" } },
     async run(a) {
       const ctx = await a.ctx();
-      if (a.positionals[0] === "set") {
-        const [, source, value] = a.positionals;
+      const [op, ...rest] = a.positionals;
+      if (op === "set") {
+        const [source, value] = rest;
         const c = checkChange({ kind: "route", source, value }, ctx.team);
         console.log((await applyPersonal(ctx.personal, [c])).join("\n"));
         return 0;
       }
-      if (a.positionals[0]) throw new Error(`Unknown subcommand "${a.positionals[0]}". Use set.`);
+      if (op === "add" || op === "remove") {
+        const c = checkChange({ kind: "call-input", op, connector: rest.join(" "), look: a.values.only }, ctx.team);
+        console.log((await applyPersonal(ctx.personal, [c])).join("\n"));
+        if (op === "add") console.log(`PMX's collection task in your Claude app reads it from its next run. Make sure ${c.kind === "call-input" ? c.connector : ""} is connected in the Claude app (Settings → Connectors).`);
+        return 0;
+      }
+      if (op) throw new Error(`Unknown subcommand "${op}". Use add, remove or set.`);
       const routes = ctx.personal.sources.routes ?? {};
-      console.log(Object.keys(routes).length
-        ? Object.entries(routes).map(([k, v]) => `${k}: ${{ off: "off", mine: "your to-dos only", linear: "your to-dos and Linear tasks" }[v]}`).join("\n")
-        : "Every source feeds your to-dos and, after the privacy rules and your approval, Linear tasks.");
-      console.log("Change one: pmx sources set granola mine");
+      const feeds = (id: string) => ({ off: "off", mine: "your to-dos only", linear: "your to-dos and team tasks" })[routes[id] ?? "linear"];
+      console.log(`Meeting apps (PMX uses the first one connected): ${MEETING_CONNECTORS.join(", ")}`);
+      const calls = callInputs(ctx.personal);
+      console.log(calls.length ? `Your recorders: ${calls.map((c) => `${c.connector}${c.look ? ` (only ${c.look})` : ""}: ${feeds(connectorId(c.connector))}`).join("; ")}` : "Your recorders: none. Add one: pmx sources add Momentum");
+      const ch = channelInputs(ctx.team);
+      console.log(ch.length ? `Your team's channels: ${ch.map((c) => `${c.connector}: ${c.places.join(", ")}`).join("; ")}${collectsChannels(ctx.team, ctx.personal, ctx.agent) ? " (collected on this Mac)" : ` (collected on ${ctx.team.synthesizer ?? "the synthesis Mac"}'s Mac)`}` : "Your team's channels: none. Propose some on the board's Sources tab.");
+      if (Object.keys(routes).length) console.log(`What each feeds: ${Object.keys(routes).map((k) => `${k}: ${feeds(k)}`).join(", ")}`);
+      console.log("Change what one feeds: pmx sources set granola mine");
       return 0;
     },
   },

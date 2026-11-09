@@ -14,6 +14,8 @@ interface Canary {
   /** The rule that must stop it: the whole item, or one passage. */
   expect: { item: HoldReason | HoldReason[] } | { passage: HoldReason };
   item: Omit<SignalItem, "id" | "kind" | "ref">;
+  /** Threads (INPUT-1): a canary posted in a place no team approves. */
+  kind?: SignalItem["kind"];
   /** Whether these rules are meant to stop it at all (1:1s are allowed for private to-dos, for example). */
   applies: (r: FilterRules) => boolean;
 }
@@ -41,6 +43,9 @@ function canaries(r: FilterRules): Canary[] {
     { name: "health passage", expect: { passage: "health" }, applies: () => true,
       item: { title: `Customer call ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk(`I'm on sick leave after the surgery. ${CANARY_MARKER}`) } },
   ];
+  // A thread from a place nobody approved (INPUT-1), whenever this run reads threads.
+  if (r.approvedPlace) list.push({ name: "unapproved channel", expect: { item: "place-not-approved" }, applies: () => true, kind: "thread",
+    item: { title: "#pmx-canary-unapproved", at, participants: [OUTSIDE], text: `Lee: Please add SCIM. ${CANARY_MARKER}`, origin: { source: "slack", sourceId: "canary" }, place: "#pmx-canary-unapproved" } });
   // The PM's own do-not-read list, used in memory only: the first title and the first person on it.
   const title = r.neverIngest.meetingTitles[0];
   if (title) list.push({ name: "do-not-read title", expect: { item: "never-ingest" }, applies: () => true,
@@ -56,7 +61,7 @@ export function runCanaries(r: FilterRules): { total: number; held: number; fail
   const list = canaries(r).filter((c) => c.applies(r));
   const failed: string[] = [];
   for (const [i, c] of list.entries()) {
-    const item: SignalItem = { ...c.item, id: `C${i + 1}`, kind: "transcript", ref: `canary:${i}` };
+    const item: SignalItem = { ...c.item, id: `C${i + 1}`, kind: c.kind ?? "transcript", ref: `canary:${i}` };
     const d = filterItems([item], r).decisions[0];
     const ok = "item" in c.expect
       ? d?.decision === "held" && [c.expect.item].flat().includes(d.rule as HoldReason)

@@ -9,6 +9,7 @@ import type { Proposal } from "../synth/proposals.js";
 import type { FlowCheck } from "./graph.js";
 import type { ActivityItem, Automation } from "./automations.js";
 import type { DigestBoard } from "./digests.js";
+import type { InputsBoard } from "../inputs/board.js";
 import type { Job } from "./jobs.js";
 
 /**
@@ -112,6 +113,8 @@ export interface PipelineData {
   killSwitch?: { on: boolean; reason: string | null };
   /** The pmx version this board's data came from. */
   version?: string;
+  /** INPUT-1, INPUT-2 (0.21.0): every connector PMX reads through, and the duplicates it caught. */
+  inputs?: InputsBoard | null;
 }
 
 export interface PipelineRules {
@@ -131,6 +134,7 @@ export interface PipelineRules {
 
 export interface PipelineInputs {
   level: PipelineLevel;
+  inputs?: InputsBoard | null;
   now: Date;
   hours: number;
   agent: string;
@@ -139,7 +143,7 @@ export interface PipelineInputs {
   /** Linear as PMX sees it (relay snapshot with queued changes, or the API). */
   issues: { identifier: string; title: string; url?: string; createdAt?: string; status: string | null; meeting: boolean; category?: string | null }[];
   linearSyncedAt: string | null;
-  collectReports: { at: string; connector: string | null; saved: number }[];
+  collectReports: { at: string; connector: string | null; saved: number; inputs?: { id: string; shape: "calls" | "channels"; saved: number }[] }[];
   todosCreated: string[];
   /** Open to-dos on this Mac. */
   openTodos?: { id: string; text: string; due: string | null; source: { title: string; at: string } }[];
@@ -251,23 +255,31 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
 
   // Sources: each connector seen in collection reports or receipts, plus Slack when the team approved channels.
   const bySource = new Map<string, { n: number; last: string | null }>();
-  for (const c of i.collectReports.filter((c) => inWin(c.at))) {
-    const k = c.connector ?? "file";
+  const count = (k: string, n: number, at: string) => {
     const cur = bySource.get(k) ?? { n: 0, last: null };
-    bySource.set(k, { n: cur.n + c.saved, last: latest([cur.last, c.at]) });
+    bySource.set(k, { n: cur.n + n, last: latest([cur.last, at]) });
+  };
+  for (const c of i.collectReports.filter((c) => inWin(c.at))) {
+    // From 0.21.0 a run reports each connector it read calls from (INPUT-1); threads have their own node.
+    const calls = c.inputs?.filter((x) => x.shape === "calls" && x.saved);
+    if (calls?.length) for (const x of calls) count(x.id, x.saved, c.at);
+    else if (!c.inputs) count(c.connector ?? "file", c.saved, c.at);
   }
   if (!bySource.size) for (const r of receipts) for (const s of r.sources) if (s.kind === "transcript") {
     const k = s.origin ?? "file";
     const cur = bySource.get(k) ?? { n: 0, last: null };
     bySource.set(k, { n: cur.n + 1, last: latest([cur.last, r.at]) });
   }
-  const sources: PipelineData["sources"] = [...bySource].map(([id, v]) => ({ id, label: CONNECTOR_LABEL[id] ?? id, connected: true, ...v }));
+  // Recorders the PM added show on the map even before they've saved a call.
+  for (const r of i.inputs?.rows ?? []) if (r.shape === "calls" && !bySource.has(r.id)) bySource.set(r.id, { n: 0, last: null });
+  const named = new Map((i.inputs?.rows ?? []).map((r) => [r.id, r.connector]));
+  const sources: PipelineData["sources"] = [...bySource].map(([id, v]) => ({ id, label: CONNECTOR_LABEL[id] ?? named.get(id) ?? id, connected: true, ...v }));
   if (!sources.length) sources.push({ id: "granola", label: "Meeting connector", connected: false, n: 0, last: null });
 
   const tasks = synth.flatMap((r) => (r.synth?.tasks ?? []).map((t) => ({ t, at: r.at })));
   const posted = tasks.filter(({ t }) => t.posted && "identifier" in t.posted);
   const dropped = tasks.filter(({ t }) => t.posted && "dropped" in t.posted);
-  const proposed = tasks.filter(({ t }) => t.posted && !("duplicateOf" in t.posted) && !("dryRun" in t.posted));
+  const proposed = tasks.filter(({ t }) => t.posted && !("duplicateOf" in t.posted) && !("dryRun" in t.posted) && !("mergedInto" in t.posted));
   const runs = (i.runlog ?? []).filter((e): e is Extract<RunLogEntry, { type: "run" }> => e.type === "run" && e.agent === i.agent && inWin(e.ts));
   const verdicts = (i.runlog ?? []).filter((e): e is Extract<RunLogEntry, { type: "verdict" }> => e.type === "verdict" && inWin(e.ts));
   const tasksNow = i.issues.filter((x) => !x.meeting);
@@ -276,7 +288,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
 
   const edges: Record<EdgeId, PipelineEdge> = {
     "c-f": { ...distinct(receipts, (s) => s.kind === "transcript"), unit: "meetings" },
-    "s-f": { ...distinct(receipts, (s) => s.kind === "slack"), unit: "threads" },
+    "s-f": { ...distinct(receipts, (s) => s.kind !== "transcript"), unit: "threads" },
     "f-h": { ...distinct(team, (s) => s.decision === "left-out"), unit: "meetings" },
     "f-t": { ...distinct(todo, (s) => s.decision === "used"), unit: "meetings", tokens: tokens(todo) },
     "f-d": { ...distinct(synth, (s) => s.decision === "used"), unit: "meetings and threads", tokens: tokens(synth) },
@@ -343,6 +355,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     rules: sharedRules,
     automations: i.automations ?? [],
     activity: i.activity ?? [],
+    inputs: i.inputs ?? null,
     digest: i.digest ? { ...i.digest, waiting: i.digest.waiting.map((w) => ({ ...w, markdown: local ? w.markdown : null })), dm: { on: i.digest.dm.on, user: local ? i.digest.dm.user : null }, slackChannel: local ? i.digest.slackChannel : null } : null,
     jobs: local ? i.jobs ?? [] : [],
     killSwitch: i.killSwitch ?? { on: false, reason: null },

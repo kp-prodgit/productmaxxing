@@ -206,7 +206,7 @@ describe("0.20.0: every interaction point on the board, in a PM's words (BOARD-5
 
   it("the page: Today first, every tab routed, old links land on their new home, and Terminal is never the first fix", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    expect(page).toMatch(/const TABS = \["today", "flow", "digest", "work", "automations", "privacy", "settings"\]/);
+    expect(page).toMatch(/const TABS = \["today", "flow", "sources", "digest", "work", "automations", "privacy", "settings"\]/);
     for (const t of ["today", "flow", "digest", "work", "automations", "privacy", "settings"]) expect(page).toContain(`<section id="v-${t}"`);
     expect(page).toMatch(/show\(store\.get\("pmx-board-tab"\) \|\| "today"\)/);
     // Commands sit behind a "Prefer Terminal?" disclosure; the visible control is a button.

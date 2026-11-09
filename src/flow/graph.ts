@@ -210,9 +210,9 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
         for (const p of s.passagesCut) cut[p.rule] = (cut[p.rule] ?? 0) + 1;
         add({
           // PRIV-7: a meeting's title can be private on its own, so only this Mac's page shows it.
-          id, kind: "source", stage: 0, label: local ? s.title ?? s.file ?? "Source" : `${s.kind === "slack" ? "Slack thread" : "Meeting"} ${usedSeq.get(s.refHash)}`, at: s.at ?? null, status: "used",
+          id, kind: "source", stage: 0, label: local ? s.title ?? s.file ?? "Source" : `${s.kind === "transcript" ? "Meeting" : "Thread"} ${usedSeq.get(s.refHash)}`, at: s.at ?? null, status: "used",
           meta: {
-            origin: s.origin ?? (s.kind === "slack" ? "slack" : "file"), channel: s.channel ?? null, passagesUsed: s.passagesUsed,
+            origin: s.origin ?? (s.kind === "slack" ? "slack" : "file"), channel: s.channel ?? null, ...(local ? { place: s.place ?? null } : {}), passagesUsed: s.passagesUsed,
             passagesCut: s.passagesCut.length, cutRules: Object.keys(cut).map(label).join(", ") || null,
             ledger: s.ledger?.state ?? null, ...(local ? { detail: s.detail, file: s.file ?? null } : {}),
           },
@@ -244,7 +244,7 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
       add({
         // A task the PM hasn't approved stays theirs: shared views show its title only once it's in Linear.
         id, kind: "task", stage: 3, run: r.id, label: local || (st && ("identifier" in st || "duplicateOf" in st)) ? t.title : `Proposed task ${idx + 1}`, at: r.at,
-        status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : "proposed",
+        status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : st && "mergedInto" in st ? "added to a waiting proposal" : st && "duplicateOf" in st ? "heard again" : "proposed",
         meta: { category: t.category, size: t.size, why: t.sizing?.why ?? null, flags: t.sizing?.flags.join(", ") || null, sources: t.sources.length },
       });
       link(runId, id, "synthesized");

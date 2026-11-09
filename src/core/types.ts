@@ -30,8 +30,9 @@ export interface Task {
 export interface SignalItem {
   /** Stable citation ID, e.g. `T3` or `S12`. */
   id: string;
-  kind: "transcript" | "slack";
-  /** Where it came from: a file path or a Slack permalink. */
+  /** "thread": a conversation from an approved channel, collected through a connector (INPUT-1). "slack": the same, read with a Slack token before 0.21.0. */
+  kind: "transcript" | "slack" | "thread";
+  /** Where it came from: a file path or a permalink. */
   ref: string;
   title: string;
   at: string;
@@ -43,7 +44,12 @@ export interface SignalItem {
   legacyKeys?: string[];
   /** Where a connector-collected transcript came from (COLLECT-1), e.g. granola + its note ID. */
   origin?: { source: string; sourceId: string | null };
+  /** Threads only: the approved place it was posted in, as the team listed it. */
+  place?: string;
 }
+
+/** A conversation from a channel, whichever way it was read. */
+export const isThread = (i: { kind: string }) => i.kind === "thread" || i.kind === "slack";
 
 export interface CandidateTask {
   title: string;
@@ -55,4 +61,6 @@ export interface CandidateTask {
   support?: Record<string, string>;
   /** Why this size: the rubric cell, the reason and any checks that disagree (`pmx explain`). */
   sizing?: import("./receipt.js").Sizing;
+  /** The open task or waiting proposal this is the same need as, by Claude's word (INPUT-2). */
+  sameAs?: string | null;
 }

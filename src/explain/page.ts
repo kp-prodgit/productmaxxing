@@ -188,7 +188,7 @@ function renderRun(el, { receipt: r, live }) {
 
   const list = r.sources.map((s, i) => {
     const l = live[i] || { file: null, title: null, cuts: [] };
-    const name = s.file || l.file || (s.kind === "slack" ? "A Slack message" : "A file that's no longer in your folder");
+    const name = s.file || l.file || (s.kind !== "transcript" ? "A channel thread" + (s.place ? " in " + s.place : "") : "A file that's no longer in your folder");
     const title = s.title || l.title;
     const card = h("div", "src " + (s.decision === "used" ? "used" : "out"),
       h("div", "row", s.decision === "used" ? chip("Used · " + s.id, "ok") : chip("Left out", "out"), h("span", "name", name)),

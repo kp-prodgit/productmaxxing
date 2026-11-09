@@ -13,7 +13,8 @@ import { checkBudget, recordSpend } from "../budget/provider.js";
 import { gather } from "../digest/gather.js";
 import { planMeetings, startOfDay } from "../meetings/ledger.js";
 import type { MeetingEntry } from "../tracker/types.js";
-import { stageProposals } from "./proposals.js";
+import { addEvidence, readProposals, stageProposals } from "./proposals.js";
+import { knownBlock, matchKnown, sameTitle, type Known } from "./dedup.js";
 
 export interface SynthResult {
   /** Dry run: what would be proposed. */
@@ -29,7 +30,6 @@ export interface SynthResult {
 /** Model output derived from source text stays on one line, so it can never start a `pmx:` control line. */
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 const cellKey = (s: string) => s.toLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
 
@@ -116,7 +116,8 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
     const dropped = cited.filter((id) => !sources.includes(id));
     if (dropped.length) skipped.push(`${title}: dropped source(s) ${dropped.join(", ")} with no reason they support it`);
     const sizing = checkSizing({ category: t.category, size: t.size, sources }, t.sizing, rubric);
-    tasks.push({ title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])) });
+    const sameAs = typeof t.sameAs === "string" && /^[\w-]{2,40}$/.test(t.sameAs) ? t.sameAs : null;
+    tasks.push({ title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])), ...(sameAs ? { sameAs } : {}) });
   }
   return { tasks, skipped };
 }
@@ -130,7 +131,7 @@ export function describe(c: CandidateTask, items: SignalItem[], receiptId?: stri
   const srcs = c.sources.map((id) => byId.get(id)!);
   const meetings = srcs.filter((i) => i.kind === "transcript").length;
   const threads = srcs.length - meetings;
-  const kinds = [meetings ? `${meetings === 1 ? "one meeting" : `${meetings} meetings`}` : "", threads ? `${threads === 1 ? "one Slack thread" : `${threads} Slack threads`}` : ""].filter(Boolean).join(" and ");
+  const kinds = [meetings ? `${meetings === 1 ? "one meeting" : `${meetings} meetings`}` : "", threads ? `${threads === 1 ? "one channel thread" : `${threads} channel threads`}` : ""].filter(Boolean).join(" and ");
   const days = [...new Set(srcs.map((i) => i.at.slice(0, 10)))].sort().join(", ");
   const sz = c.sizing;
   const why = sz
@@ -209,6 +210,12 @@ export async function synthesize(
   ];
   const categories = Object.keys(ctx.team.categories);
   const { tag, block } = dataBlock(work);
+  // What's already open or waiting, so a need heard again from another source isn't a second task (INPUT-2).
+  const open = (await svc.tracker.list()).filter((t) => t.status !== "done");
+  const known: Known[] = [
+    ...(await readProposals()).map((p) => ({ id: p.id, title: p.title, where: "waiting" as const })),
+    ...[...open].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).map((t) => ({ id: t.identifier, title: t.title, where: "tracker" as const })),
+  ];
   const prompt = [
     skillBody(synth.text),
     "",
@@ -217,6 +224,7 @@ export async function synthesize(
     "",
     await categoryMenu(ctx.personal.repoPath, ctx.team.categories),
     OUTPUT_RULES,
+    knownBlock(known),
     DATA_RULES(tag),
     "",
     block,
@@ -236,23 +244,31 @@ export async function synthesize(
   }
 
   const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])));
-  const existing = new Map((await svc.tracker.list()).filter((t) => t.status !== "done").map((t) => [norm(t.title), t.identifier]));
   const posted: SynthResult["posted"] = [];
   const bySource = new Map<string, number>();
   // Where each task went, for the receipt and the flow view (FLOW-1).
   const went = new Map<CandidateTask, NonNullable<TaskReceipt["posted"]>>();
   const fresh: CandidateTask[] = [];
+  const folded = new Set<CandidateTask>();
+  const byId = new Map(work.map((i) => [i.id, i]));
+  const fromOf = (c: CandidateTask) => c.sources.map((id) => ({ id, title: byId.get(id)!.title, at: byId.get(id)!.at, why: c.support?.[id] ?? "" }));
   for (const c of tasks) {
-    const dup = existing.get(norm(c.title));
-    if (dup) { skipped.push(`${c.title}: already in the PMX project`); went.set(c, { duplicateOf: dup }); continue; }
+    // Two tasks from this run for one need become one: the second's sources go to the first.
+    const twin = fresh.find((f) => sameTitle(f.title, c.title));
+    if (twin) { twin.sources = [...new Set([...twin.sources, ...c.sources])]; twin.support = { ...c.support, ...twin.support }; folded.add(c); skipped.push(`${c.title}: the same need as "${twin.title}" in this run, so its sources were added there`); continue; }
+    const hit = matchKnown(c, known);
+    if (hit?.where === "tracker") { skipped.push(`${c.title}: already open as ${hit.id}; heard again in ${c.sources.length} more source(s)`); went.set(c, { duplicateOf: hit.id }); continue; }
+    if (hit?.where === "waiting" && !o.dryRun) {
+      const merged = await addEvidence(hit.id, { receipt: receipt.id, from: fromOf(c), days: c.sources.map((id) => byId.get(id)!.at.slice(0, 10)) });
+      if (merged) { skipped.push(`${c.title}: the same need as a proposal already waiting, so its sources were added to it`); went.set(c, { mergedInto: hit.id }); continue; }
+    }
     if (o.dryRun) { posted.push({ identifier: "(dry run)", title: c.title }); went.set(c, { dryRun: true }); continue; }
     fresh.push(c);
   }
   // APPROVE-1: proposals wait on this Mac, exactly as they'd be written, until the PM approves them.
-  const byId = new Map(work.map((i) => [i.id, i]));
   const staged = await stageProposals(fresh.map((c) => ({
     at: ctx.now().toISOString(), receipt: receipt.id, title: c.title, description: describe(c, work, receipt.id), category: c.category, size: c.size, sources: c.sources,
-    from: c.sources.map((id) => ({ id, title: byId.get(id)!.title, at: byId.get(id)!.at, why: c.support?.[id] ?? "" })),
+    from: fromOf(c),
   })));
   for (const c of fresh) {
     const s = staged.find((p) => p.title === c.title);
@@ -269,7 +285,7 @@ export async function synthesize(
   await release();
 
   receipt.outcome = o.dryRun ? "dry-run" : staged.length ? "staged" : "posted";
-  receipt.synth = { tasks: tasks.map((c) => ({ title: c.title, category: c.category, size: c.size, sources: c.sources, sizing: c.sizing ?? null, ...(went.get(c) ? { posted: went.get(c) } : {}) })), skipped };
+  receipt.synth = { tasks: tasks.filter((c) => !folded.has(c)).map((c) => ({ title: c.title, category: c.category, size: c.size, sources: c.sources, sizing: c.sizing ?? null, ...(went.get(c) ? { posted: went.get(c) } : {}) })), skipped };
   await writeReceipt(receipt, ctx.now());
   if (!o.dryRun) {
     await updateState((s) => (s.lastSynthAt = ctx.now().toISOString()));

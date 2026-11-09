@@ -31,7 +31,7 @@ export function pipelineHandlers(ctx: Ctx) {
     async changes(raw: unknown[], confirmLoosening: boolean) {
       let list;
       try { list = raw.map((c) => checkChange(c, ctx.team)); } catch (e: any) { return { status: 400, body: { error: e.message } }; }
-      const loose = list.filter((c) => loosens(c, ctx.personal));
+      const loose = list.filter((c) => loosens(c, ctx.personal, ctx.team));
       if (loose.length && !confirmLoosening) return { status: 409, body: { error: "Some changes let more of your meetings through. Confirm them first.", loosening: loose.map(describe) } };
       const applied = await applyPersonal(ctx.personal, list.filter((c) => !isTeamChange(c)));
       const team = list.filter(isTeamChange);

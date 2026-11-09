@@ -38,7 +38,7 @@ function sourceList(items: SignalItem[], used: string[]): string {
   return used
     .map((id) => {
       const i = byId.get(id)!;
-      const where = i.kind === "slack" ? i.ref : basename(i.ref);
+      const where = i.ref.startsWith("http") ? i.ref : basename(i.ref);
       return `- **[${id}]** ${i.title} (${i.at.slice(0, 10)}) — ${where}`;
     })
     .join("\n");

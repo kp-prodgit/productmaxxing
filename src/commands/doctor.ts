@@ -195,8 +195,8 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   }
   add("secrets.not-in-config", !leaked, "no tokens in plain-text config (SEC-10)");
   const have = new Set(await d.keychain.list());
-  const slackNeeded = d.team.allowedSources.includes("slack") && (!!d.personal.sources.slackChannel || d.team.synthesizer !== null);
-  if (slackNeeded) add("secrets.slack", have.has("slack-token"), "Slack token in the keychain");
+  // Slack channels come through the PM's Slack connector in Claude (INPUT-1); a token is only for the digest DM.
+  if (d.personal.digest.slackDmUserId) add("secrets.slack", have.has("slack-token"), "Slack token in the keychain, for the digest DM");
   // Linear is checked the way this Mac reaches it (LINEAR-1, LINEAR-2): the relay needs no token, so it can't fail here.
   const access = await linearAccess(d.team, d.keychain);
   if (access === "key") add("secrets.linear", true, "Linear API key in the keychain");

@@ -29,7 +29,12 @@ export interface State {
    * What each collection run skipped before saving anything (FLOW-1), as counts only: meetings the Claude task
    * never wrote because of the do-not-read list leave no other trace on this Mac. Newest last, 14 days.
    */
-  collectReports: { at: string; connector: string | null; saved: number; skipped: Record<CollectSkip, number> }[];
+  collectReports: {
+    at: string; connector: string | null; saved: number; skipped: Record<CollectSkip, number>;
+    /** From 0.21.0 (INPUT-1): threads saved from approved channels, and how each connector the run used went. */
+    threads?: number;
+    inputs?: { id: string; shape: "calls" | "channels"; status: "used" | "not-connected" | "failed" | null; saved: number }[];
+  }[];
   /**
    * What's new (NEW-1): `seen` is the last version this Mac was told about; `since` is the version an update
    * replaced, so the new pmx can say what changed since then.
@@ -44,7 +49,7 @@ export interface State {
 const EMPTY: State = { lastDigestWeek: null, lastSynthAt: null, ledger: {}, eeTrialStartedAt: null, lastEventSyncAt: null, lastPipelineSyncAt: null, lastBrainAt: null, lastCollectAt: null, lastRollupAt: null, cloudVersions: null, autoUpdate: null, lastTick: null, taskRuns: {}, taskRunsSince: null, caps: {}, collectReports: [], whatsNew: null };
 
 /** Why the collection task skipped a meeting without saving it. */
-export const COLLECT_SKIPS = ["never-ingest-title", "never-ingest-person", "no-transcript", "already-collected", "outside-window"] as const;
+export const COLLECT_SKIPS = ["never-ingest-title", "never-ingest-person", "no-transcript", "already-collected", "outside-window", "not-approved-place", "too-short"] as const;
 export type CollectSkip = (typeof COLLECT_SKIPS)[number];
 
 export async function loadState(): Promise<State> {

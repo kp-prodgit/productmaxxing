@@ -1,7 +1,6 @@
 import { utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readSlack } from "../src/sources/slack.js";
 import { parseTranscript, readTranscripts } from "../src/sources/transcripts.js";
 import { tmp, writeTranscript } from "./helpers.js";
 
@@ -27,35 +26,3 @@ describe("transcripts (SIG-1)", () => {
   });
 });
 
-function fakeSlack(info: object, pages: object[][]): typeof fetch {
-  let page = 0;
-  return (async (url: string) => {
-    const u = new URL(url);
-    const body =
-      u.pathname.endsWith("conversations.info")
-        ? { ok: true, channel: { name: "feedback", ...info } }
-        : { ok: true, messages: pages[page], response_metadata: { next_cursor: ++page < pages.length ? "c" : "" } };
-    return new Response(JSON.stringify(body));
-  }) as any;
-}
-
-describe("slack (SIG-1, B2)", () => {
-  const base = { token: "t", allowedChannels: ["C1"], allowPrivate: false, sinceMs: 0 };
-
-  it("refuses DMs, unlisted channels and private channels without opt-in", async () => {
-    await expect(readSlack({ ...base, channel: "D1" })).rejects.toThrow(/DMs are never ingested/);
-    await expect(readSlack({ ...base, channel: "C2", fetch: fakeSlack({}, [[]]) })).rejects.toThrow(/not on the team allowlist/);
-    await expect(readSlack({ ...base, channel: "C1", fetch: fakeSlack({ is_im: true }, [[]]) })).rejects.toThrow(/DMs/);
-    await expect(readSlack({ ...base, channel: "C1", fetch: fakeSlack({ is_private: true }, [[]]) })).rejects.toThrow(/private/);
-  });
-
-  it("pages through history oldest first and skips joins", async () => {
-    const f = fakeSlack({}, [
-      [{ ts: "1700000003.0001", user: "U1", text: "third" }, { ts: "1700000002.0001", subtype: "channel_join", text: "joined" }],
-      [{ ts: "1700000001.0001", user: "U2", text: "first" }],
-    ]);
-    const items = await readSlack({ ...base, channel: "C1", fetch: f });
-    expect(items.map((i) => [i.id, i.text])).toEqual([["S1", "first"], ["S2", "third"]]);
-    expect(items[0]!.ref).toBe("https://slack.com/archives/C1/p17000000010001");
-  });
-});

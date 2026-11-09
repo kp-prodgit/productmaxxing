@@ -167,6 +167,26 @@ nav.tabs .n:empty { display: none }
 .chip button { border: 0; background: none; cursor: pointer; color: var(--ink-3); padding: 0 2px; font-size: 14px; line-height: 1; min-width: 24px; min-height: 24px }
 .lock { font-size: 12px; color: var(--mac); display: inline-flex; gap: 4px; align-items: center }
 
+/* Sources (INPUT-1) */
+.how { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; counter-reset: how }
+@media (max-width: 760px) { .how { grid-template-columns: minmax(0, 1fr) } }
+.how > div { background: var(--panel-2); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--ink-2); display: grid; gap: 4px; align-content: start }
+.how > div strong { color: var(--ink); font-size: 13px }
+.how > div strong::before { counter-increment: how; content: counter(how); display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--panel); border: 1px solid var(--line-strong); font-size: 11px; margin-right: 6px }
+.inp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; padding: 14px 0; border-top: 1px solid var(--line); align-items: start }
+.inp:first-of-type { border-top: 0 }
+.inp .nm { font-weight: 600; display: flex; flex-wrap: wrap; gap: 6px; align-items: center }
+.inp .sub { font-size: 13px; color: var(--ink-2); margin-top: 2px }
+.inp .side { display: grid; gap: 8px; justify-items: end }
+.inp .fix { grid-column: 1 / -1; background: var(--bad-soft); border-radius: 8px; padding: 8px 10px; font-size: 13px }
+.inp .wide { grid-column: 1 / -1 }
+@media (max-width: 700px) { .inp { grid-template-columns: minmax(0, 1fr) } .inp .side { justify-items: start } }
+.addbox { border-top: 1px dashed var(--line-strong); padding-top: 12px; margin-top: 4px; display: grid; gap: 8px }
+.addbox .addrow { margin: 0 }
+.dd { display: grid; gap: 8px; margin-top: 6px }
+.dd .fact { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: 13px }
+.dd .fact b { font-size: 20px; font-weight: 600; text-align: right }
+
 /* Today */
 .today { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start }
 @media (min-width: 1100px) { .today { grid-template-columns: minmax(0, 1fr) 340px } .rail { position: sticky; top: 56px } }
@@ -473,6 +493,7 @@ body.has-tray .toast { bottom: 76px }
   <nav class="tabs" aria-label="Sections">
     <a href="#today" data-tab="today">Today <span class="n" id="n-today"></span></a>
     <a href="#flow" data-tab="flow">Flow</a>
+    <a href="#sources" data-tab="sources">Sources <span class="n bad" id="n-sources"></span></a>
     <a href="#digest" data-tab="digest">Digest <span class="n" id="n-digest"></span></a>
     <a href="#work" data-tab="work">Agent work</a>
     <a href="#automations" data-tab="automations">Automations <span class="n" id="n-auto"></span></a>
@@ -508,6 +529,7 @@ body.has-tray .toast { bottom: 76px }
       <aside class="detail" id="detail" aria-label="Selected step"><p class="loading">Loading from PMX…</p></aside>
     </div>
   </section>
+  <section id="v-sources" hidden><p class="loading">Loading from PMX…</p></section>
   <section id="v-digest" hidden><p class="loading">Loading from PMX…</p></section>
   <section id="v-work" hidden><p class="loading">Loading from PMX…</p></section>
   <section id="v-automations" hidden><p class="loading">Loading from PMX…</p></section>
@@ -699,7 +721,7 @@ body.has-tray .toast { bottom: 76px }
   // #privacy, #privacy/<section>, #settings, #settings/<section>. Links from before 0.20.0 (#connections, #categories,
   // #rules, #schedules, #skills) land on their new home. The local page adds a history entry per click so Back works;
   // inside the Claude app the page only replaces it, so Back leaves the page.
-  const TABS = ["today", "flow", "digest", "work", "automations", "privacy", "settings"];
+  const TABS = ["today", "flow", "sources", "digest", "work", "automations", "privacy", "settings"];
   const OLD = { connections: "flow", categories: "work", skills: "work", schedules: "automations", rules: "privacy" };
   const PRIVACY_SECTIONS = ["checks", "routes", "domains", "fixed", "dnr", "gets"];
   const SETTINGS_SECTIONS = ["agent", "budget", "digest", "sizes", "review-cap", "team"];
@@ -723,13 +745,14 @@ body.has-tray .toast { bottom: 76px }
     if ((tab === "privacy" || tab === "settings") && sub) show(tab, `r-${sub}`);
     else if (tab === "work" && sub) show("work", `cat-${sub}`);
     else if (tab === "automations" && sub) show("automations", `auto-${sub}`);
+    else if (tab === "sources" && sub) show("sources", `s-${sub}`);
     else show(tab);
     if (tab === "flow" && sub && D && nodes[sub]) select("node", sub, { quiet: true });
   }
   window.addEventListener("hashchange", route);
   window.addEventListener("popstate", route);
   document.querySelectorAll("nav.tabs a").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); show(a.dataset.tab); setRoute(a.dataset.tab, true); }));
-  const go = (tab, sub) => { if (tab === "privacy" || tab === "settings") return goRule(sub); show(tab, sub ? `${tab === "work" ? "cat" : tab === "automations" ? "auto" : tab}-${sub}` : null); setRoute(sub ? `${tab}/${sub}` : tab, true); };
+  const go = (tab, sub) => { if (tab === "privacy" || tab === "settings") return goRule(sub); show(tab, sub ? `${tab === "work" ? "cat" : tab === "automations" ? "auto" : tab === "sources" ? "s" : tab}-${sub}` : null); setRoute(sub ? `${tab}/${sub}` : tab, true); };
   const goRule = (id) => { const tab = id && SETTINGS_SECTIONS.includes(id) ? "settings" : "privacy"; if (D && state) { rulesSig = ""; drawRules(); } show(tab, id ? `r-${id}` : null); setRoute(id ? `${tab}/${id}` : tab, true); };
   const goCategory = (id) => go("work", id);
   const goToday = (id) => { show("today", id || null); setRoute("today", true); };
@@ -1049,7 +1072,7 @@ body.has-tray .toast { bottom: 76px }
   const FLOW = ["collect", "filter", "held", "findtodo", "todos", "draft", "approve", "dropped", "inbox", "ready", "agent", "review", "done"];
   const FIXED_EDGES = [
     ["c-f", "collect", "filter", "full", "Transcript files on this Mac. Nothing has left it at this point."],
-    ["s-f", "slack", "filter", "status", "Messages from the Slack channels your team approved, read every 6 hours on the team's synthesis Mac. Never DMs."],
+    ["s-f", "slack", "filter", "status", "Threads from the channels your team approved, copied by your Claude app through your own connector. Never DMs."],
     ["f-h", "filter", "held", "held", "Meetings kept private aren't sent to Claude or Linear. The transcript stays on this Mac; PMX's record keeps only which rule kept it private."],
     ["f-t", "filter", "findtodo", "model", "Your own meetings, 1:1s included, with emails, phone numbers and names on your CRM list removed, and pay, performance and health passages cut. Sent to Claude with no tools; the to-dos it finds stay on this Mac."],
     ["f-d", "filter", "draft", "model", "Customer calls and approved Slack threads, with private details removed, sent to Claude with no tools. 1:1s, hiring, internal-only meetings and anything on your do-not-read list never get here."],
@@ -1066,7 +1089,12 @@ body.has-tray .toast { bottom: 76px }
   function shape() {
     nodes = {};
     const srcs = [...D.sources.map((x) => ({ id: `src-${x.id}`, title: x.label, sub: !x.connected ? "not connected" : x.id === "file" ? "files you add" : "via Claude connector", kind: x.connected ? "app" : "off", tag: x.connected ? (x.id === "file" ? "FOLDER" : "APP") : "", n: x.n, last: x.last }))];
-    if (D.rules.allowedSources.includes("slack")) srcs.push({ id: "slack", title: "Slack", sub: D.rules.slackChannels.length ? plural(D.rules.slackChannels.length, "approved channel") : "no channel approved", kind: D.rules.slackChannels.length ? "app" : "off", tag: "APP" });
+    // Every channel connector the team approved shares one node: threads from approved places (INPUT-1).
+    const chans = D.inputs ? D.inputs.rows.filter((x) => x.shape === "channels") : [];
+    if (chans.length || D.rules.allowedSources.includes("slack")) {
+      const nPl = chans.length ? chans.reduce((a, x) => a + x.placesN, 0) : D.rules.slackChannels.length;
+      srcs.push({ id: "slack", title: chans.length > 1 ? "Channels" : chans.length ? chans[0].connector : "Slack", sub: nPl ? plural(nPl, "approved channel") : "no channel approved", kind: nPl ? "app" : "off", tag: "APP" });
+    }
     srcs.push({ id: "email", title: "Email", sub: "PMX can't read email", kind: "off", tag: "" });
     const step = Math.min(80, 300 / Math.max(1, srcs.length - 1));
     srcs.slice(0, 5).forEach((x, i) => (nodes[x.id] = { ...x, col: 0, y: 60 + i * step }));
@@ -1277,7 +1305,7 @@ body.has-tray .toast { bottom: 76px }
     agent: ["Your agent takes one Ready task per pass, if it fits your budget and fewer drafts than your review limit are waiting. Each kind of work has its own instructions under Agent work.", ["agent", "budget"], "pull"],
     review: ["Drafts made by agents, in your team's repo. Accept, ask for a redo, or reject.", ["agent"], "review", "today-review"],
     done: ["Accepted drafts. Each one's record shows how it was made and what it cost.", []],
-    slack: ["Only channels your team approved, never DMs. Read every 6 hours on the team's synthesis Mac.", ["routes", "dnr"]],
+    slack: ["Threads from the places your team approved (Slack, Teams…), never DMs. Your Claude app's collection task copies them on the team's synthesis Mac, through your own connector; PMX reads them through the privacy filter.", ["routes", "dnr"], "collect"],
     email: ["PMX doesn't read email.", []],
   };
   const RULELABEL = { routes: "Sources", fixed: "Always private", domains: "Who counts as a customer", dnr: "Do-not-read list", sizes: "Task sizes", gets: "What Linear gets", agent: "Your agent", budget: "Budget", digest: "Digest", checks: "Privacy checks", team: "Team changes" };
@@ -1605,8 +1633,10 @@ body.has-tray .toast { bottom: 76px }
 
   // ================= privacy and settings =================
   const SOURCE_NAMES = { granola: "Granola", fireflies: "Fireflies", otter: "Otter", fathom: "Fathom", tldv: "tl;dv", zoom: "Zoom", "google-meet": "Google Meet", file: "Transcript folder", slack: "Slack" };
-  const sourceName = (k) => SOURCE_NAMES[k] || (D.sources.find((x) => x.id === k) || { label: k }).label;
+  const sourceName = (k) => SOURCE_NAMES[k] || (D.inputs && (D.inputs.rows.find((x) => x.id === k) || {}).connector) || (D.sources.find((x) => x.id === k) || { label: k }).label;
   const ROUTE_OPTS = [["off", "Off"], ["mine", "Your to-dos only"], ["linear", "To-dos and team tasks"]];
+  const CHAN_OPTS = [["off", "Off"], ["linear", "Digest and team tasks"]];
+  const isChan = (k) => k === "slack" || !!(D.inputs && D.inputs.rows.some((x) => x.id === k && x.shape === "channels"));
   const RANK = { off: 0, mine: 1, linear: 2 };
   const SZ = ["S", "M", "L", "XL"];
   let original = null, state = null, cellEdit = null;
@@ -1614,12 +1644,16 @@ body.has-tray .toast { bottom: 76px }
   function initRules() {
     const r = D.rules;
     const base = {
-      routes: Object.fromEntries([...D.sources.map((x) => x.id), ...(r.allowedSources.includes("slack") ? ["slack"] : [])].map((k) => [k, r.routes[k] || "linear"])),
+      routes: Object.fromEntries([...new Set([...D.sources.map((x) => x.id), ...(D.inputs ? D.inputs.rows.map((x) => x.id) : []), ...(r.allowedSources.includes("slack") ? ["slack"] : [])])].map((k) => [k, r.routes[k] || "linear"])),
       teamDomains: r.teamDomains, myDomains: r.myDomains,
       people: Array.isArray(r.neverIngest.people) ? r.neverIngest.people : [], titles: Array.isArray(r.neverIngest.titles) ? r.neverIngest.titles : [], channels: Array.isArray(r.neverIngest.channels) ? r.neverIngest.channels : [],
       budget: r.budget.dailyUsd, accept: Object.fromEntries(r.categories.map((c) => [c.name, c.accepted])), reviewCap: r.reviewCap,
       minutes: Object.fromEntries(SZ.map((z) => [z, r.sizes[z].minutes])), usd: Object.fromEntries(SZ.map((z) => [z, r.sizes[z].usd])), rubric: clone(r.rubric),
       digestDay: D.digest ? D.digest.weekday : 5, digestDm: D.digest ? D.digest.dm.user : null,
+      // Sources (INPUT-1): the PM's own recorders and the team's approved channels.
+      calls: D.inputs ? D.inputs.rows.filter((x) => x.owner === "you").map((x) => ({ connector: x.connector, look: x.look || null })) : [],
+      inputs: D.inputs ? D.inputs.rows.filter((x) => x.owner === "team").map((x) => ({ connector: x.connector, places: [...x.places], look: x.look || null })) : [],
+      synth: D.inputs ? D.inputs.synthesizer : null,
     };
     if (!original || JSON.stringify(original) === JSON.stringify(state)) { original = base; state = clone(base); }
     else original = base; // keep the PM's unsaved edits across refreshes
@@ -1734,7 +1768,7 @@ body.has-tray .toast { bottom: 76px }
       rb("routes", "Sources", ["me"], "What each meeting source may feed. Off reads nothing from it. Your to-dos only keeps it out of team tasks. Team tasks reach Linear only after you approve them.",
         ...Object.keys(state.routes).map((k) => h("div", { class: "ctl" },
           h("div", { class: "lab2" }, h("strong", null, sourceName(k)), RANK[state.routes[k]] > RANK[original.routes[k]] ? h("span", { class: "scope loosen", style: "justify-self:start" }, "Lets more through") : null),
-          seg(k === "slack" ? [["off", "Off"], ["linear", "Digest and team tasks"]] : ROUTE_OPTS, state.routes[k], (v) => { state.routes[k] = v; update(); }, `What ${sourceName(k)} may feed`, k === "slack" && TEAM_RO))),
+          seg(isChan(k) ? CHAN_OPTS : ROUTE_OPTS, state.routes[k], (v) => { state.routes[k] = v; update(); }, `What ${sourceName(k)} may feed`, isChan(k) && TEAM_RO))),
         h("div", { class: "ctl" }, h("div", { class: "lab2" }, h("strong", null, "Email")), h("span", { class: "faint small" }, "PMX can't read email. Forward customer emails to an approved Slack channel."))),
       rb("domains", "Who counts as a customer", [], "A meeting can become a team task only if someone outside these domains was in it. Removing a domain lets more through: its people start to count as customers.",
         h("div", { class: "ctl" }, h("div", { class: "lab2" }, h("strong", null, "Your company's domains"), h("span", { class: "faint tiny" }, "for the whole team")), domainList("teamDomains", TEAM_RO)),
@@ -1780,6 +1814,191 @@ body.has-tray .toast { bottom: 76px }
     if (focusedId) requestAnimationFrame(() => $(focusedId)?.focus());
   }
 
+  // ================= sources (INPUT-1, INPUT-2) =================
+  // Every connector PMX reads through, whether each is working, and the duplicates PMX caught. Recorders are the PM's
+  // own and save on this Mac; channels are the team's and go to the team as one proposal, like other team settings.
+  const cid = (n) => ({ "tl;dv": "tldv", "google drive (google meet transcripts)": "google-meet", "google meet": "google-meet" })[String(n).trim().toLowerCase()]
+    ?? String(n).trim().toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30).replace(/-+$/, "");
+  const NAME_OK = /^[\p{L}\p{N}][\p{L}\p{N} .&;()'-]{0,39}$/u;
+  // Same rule as the server's: a Slack DM ID or a name that says it's a direct message.
+  const isDm = (p) => /^D(?=[A-Z0-9]*\d)[A-Z0-9]{8,10}$/.test(p.trim()) || /^(dm|im|mpim)([:\s-]|$)|\bdirect messages?\b|\bgroup dms?\b/i.test(p.trim());
+  const srcTyped = {}, srcMsg = {};
+  function srcField(id, ph, label, o = {}) {
+    const inp = h("input", { class: "in", id, type: "text", placeholder: ph, "aria-label": label, autocomplete: "off", style: `flex:${o.grow || 1} 1 ${o.basis || 180}px`, ...(o.list ? { list: o.list } : {}) });
+    inp.value = srcTyped[id] || "";
+    inp.addEventListener("input", () => { srcTyped[id] = inp.value; });
+    return inp;
+  }
+  function inputStatus(r) {
+    const n = r.n ? `${plural(r.n, r.shape === "calls" ? "call" : "thread")} ${winText()}` : "";
+    if (r.status === "reading") return ["ok", n ? `Reading · ${n}` : "Connected · nothing new yet"];
+    if (r.status === "not-connected") return ["bad", "Not connected in Claude"];
+    if (r.status === "failed") return ["warn", "The last collection couldn't read it"];
+    if (r.status === "elsewhere") return ["", `Read on ${D.inputs.synthesizer ? `${D.inputs.synthesizer}'s` : "the synthesis"} Mac`];
+    return ["", "Starts with the next collection"];
+  }
+  const connectHelp = (name) => `Connect ${name} in the Claude app: Settings → Connectors. If it isn't in Claude's directory, add it as a custom connector with the address ${name} gives you.`;
+  function drawSources() {
+    const box = $("v-sources");
+    if (!D) return;
+    const I = D.inputs;
+    if (!I) { put(box, h("p", { class: "muted" }, "This PMX is too old to list its sources. Update it to add Slack channels, Momentum and other connectors.")); return; }
+    if (!state) return;
+    const focusedId = document.activeElement?.id;
+    const TEAM_RO = !LOCAL;
+    const byId = Object.fromEntries(I.rows.map((x) => [x.id, x]));
+    const notConn = I.rows.filter((x) => x.status === "not-connected");
+    $("n-sources").textContent = notConn.length ? String(notConn.length) : "";
+    const collect = (D.automations || []).find((a) => a.id === "collect");
+    // The meeting app in use: the last collection's, or the one calls came from before PMX recorded which.
+    const seenApp = D.sources.find((x) => x.connected && x.n && I.meetingApps.some((m) => m.id === x.id));
+    const appLabel = I.usedApp ? (I.meetingApps.find((m) => m.id === I.usedApp) || { label: sourceName(I.usedApp) }).label : seenApp ? seenApp.label : null;
+    const calls = I.rows.filter((x) => x.shape === "calls"), chans = I.rows.filter((x) => x.shape === "channels");
+    const nCalls = D.sources.reduce((a, x) => a + x.n, 0), nThreads = n0("s-f");
+    // Where calls came from: the meeting app in use, any other source that saved calls (like the transcript folder), and the PM's recorders.
+    const fromSeen = D.sources.filter((x) => x.n && x.label !== appLabel).map((x) => (x.id === "file" ? "your transcript folder" : x.label));
+    const names = [...new Set([...(appLabel ? [appLabel] : []), ...fromSeen, ...calls.map((x) => x.connector)])];
+    if (!names.length) names.push("your meeting app");
+    const placesN = chans.reduce((a, x) => a + x.placesN, 0);
+    const and = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]);
+    const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+    const listen = `${cap(`calls from ${and(names)}`)}${placesN ? `, and threads from ${plural(placesN, "approved channel")} in ${and(chans.map((x) => x.connector))}` : ""}: ${plural(nCalls, "call")} and ${plural(nThreads, "thread")} ${winText()}.`;
+    const feeds = (id) => (state.routes[id] !== undefined ? seg(isChan(id) ? CHAN_OPTS : ROUTE_OPTS, state.routes[id], (v) => { state.routes[id] = v; update(); }, `What ${sourceName(id)} may feed`, isChan(id) && TEAM_RO) : null);
+    const pill = (r) => { const [k, t] = inputStatus(r); return h("span", { class: `pill ${k}` }, t); };
+
+    // ---- Calls ----
+    const callRows = state.calls.map((c) => {
+      const id = cid(c.connector), r = byId[id], isNew = !original.calls.some((x) => cid(x.connector) === id);
+      return h("div", { class: "inp", id: `s-call-${id}` },
+        h("div", null, h("div", { class: "nm" }, c.connector, h("span", { class: "scope" }, "Your recorder"), isNew ? h("span", { class: "chip pending" }, "Not saved yet") : null),
+          LOCAL ? h("p", { class: "sub" }, c.look ? `Only ${c.look}.` : "Every call it recorded that has a transcript.") : null),
+        h("div", { class: "side" }, r && !isNew ? pill(r) : null, r && !isNew ? feeds(id) : null,
+          h("button", { type: "button", class: "btn quiet", onclick: () => { state.calls = state.calls.filter((x) => cid(x.connector) !== id); update(); } }, isNew ? "Cancel" : "Remove")),
+        r && r.status === "not-connected" && !isNew ? h("div", { class: "fix" }, `The last collection couldn't find ${c.connector} among your Claude connectors. ${connectHelp(c.connector)}`) : null);
+    });
+    const callName = srcField("add-call", "Recorder's name, like Momentum", "Name of the recorder to add", { list: "dl-calls", basis: 200 });
+    const callLook = srcField("add-call-look", "Only read… (optional), like calls tagged Discovery", "Which of its calls to read (optional)", { grow: 2, basis: 240 });
+    const callSay = h("div", { class: srcMsg.call && srcMsg.call.err ? "err" : "hint", role: "status" }, srcMsg.call ? srcMsg.call.text : connectHelp("it"));
+    const addCall = (ev) => {
+      ev.preventDefault();
+      const name = callName.value.trim().replace(/\s+/g, " "), look = callLook.value.trim();
+      const fail = (t) => { srcMsg.call = { text: t, err: true }; callSay.className = "err"; callSay.textContent = t; callName.focus(); };
+      if (!NAME_OK.test(name) || !/^[a-z][a-z-]{1,30}$/.test(cid(name))) return fail("Give the connector's name as Claude shows it, like Momentum or Gong.");
+      if (I.meetingApps.some((m) => m.id === cid(name))) return fail(`PMX already looks for ${name} by itself. Choose what it feeds under Privacy → Sources.`);
+      if (state.inputs.some((x) => cid(x.connector) === cid(name))) return fail(`${name} is already one of your team's channel sources.`);
+      if (state.calls.some((x) => cid(x.connector) === cid(name))) return fail(`${name} is already on the list.`);
+      if (look.length > 200) return fail("Keep the note under 200 characters.");
+      state.calls.push({ connector: name, look: look || null });
+      srcTyped["add-call"] = srcTyped["add-call-look"] = ""; srcMsg.call = { text: `Added ${name}. Save it from the bar below; collection starts on its next run.` };
+      update(); requestAnimationFrame(() => $("add-call")?.focus());
+    };
+    const callsCard = h("section", { class: "card", id: "s-calls", tabindex: "-1" },
+      h("div", { class: "card-h" }, h("div", null, h("h2", null, "Calls"), h("p", null, "Recorded conversations. A call becomes a team task only if someone from outside your company was in it.")), h("span", { class: "scope me" }, "Just you")),
+      h("div", { class: "inp" },
+        h("div", null, h("div", { class: "nm" }, "Meeting apps", h("span", { class: "scope" }, "Built in")),
+          h("p", { class: "sub" }, `PMX uses the first one connected in Claude: ${I.meetingApps.map((m) => m.label).join(", ")}.`)),
+        h("div", { class: "side" }, h("span", { class: `pill ${appLabel ? "ok" : ""}` }, appLabel ? `Using ${appLabel}` : "None connected yet"), I.usedApp || seenApp ? feeds(I.usedApp || seenApp.id) : null)),
+      callRows,
+      h("form", { class: "addbox", onsubmit: addCall, "aria-label": "Add a recorder" },
+        h("strong", { class: "small" }, "Add a recorder"),
+        h("datalist", { id: "dl-calls" }, I.suggested.filter((x) => x.shape === "calls").map((x) => h("option", { value: x.connector }, x.note))),
+        h("div", { class: "addrow" }, callName, callLook, h("button", { type: "submit", class: "btn" }, "Add recorder")), callSay));
+
+    // ---- Channels ----
+    const chanRows = state.inputs.map((c) => {
+      const id = cid(c.connector), r = byId[id], o = original.inputs.find((x) => cid(x.connector) === id);
+      const placeIn = TEAM_RO ? null : srcField(`add-place-${id}`, "Add a place, like #customer-feedback", `Add a place in ${c.connector}`, { basis: 220 });
+      const addPlace = (ev) => {
+        ev.preventDefault();
+        const v = placeIn.value.trim();
+        if (v.length < 2 || v.length > 80 || /[|`<>"]/.test(v) || isDm(v)) { placeIn.classList.add("bad"); return; }
+        if (!c.places.some((p) => p.toLowerCase() === v.toLowerCase())) c.places.push(v);
+        srcTyped[`add-place-${id}`] = ""; update(); requestAnimationFrame(() => $(`add-place-${id}`)?.focus());
+      };
+      return h("div", { class: "inp", id: `s-chan-${id}` },
+        h("div", null, h("div", { class: "nm" }, c.connector, !o ? h("span", { class: "chip pending" }, "Not proposed yet") : null),
+          LOCAL ? h("p", { class: "sub" }, c.look ? `Only ${c.look}.` : "Every thread in these places.") : null),
+        h("div", { class: "side" }, r && o ? pill(r) : null, r && o ? feeds(id) : null,
+          TEAM_RO ? null : h("button", { type: "button", class: "btn quiet", onclick: () => { state.inputs = state.inputs.filter((x) => cid(x.connector) !== id); update(); } }, o ? "Stop reading" : "Cancel")),
+        h("div", { class: "wide" },
+          LOCAL ? h("div", { class: "chips" }, c.places.map((p) => h("span", { class: `chip${o && o.places.some((q) => q.toLowerCase() === p.toLowerCase()) ? "" : " pending pop"}` }, p,
+            TEAM_RO ? null : h("button", { type: "button", "aria-label": `Stop reading ${p}`, onclick: () => { c.places = c.places.filter((x) => x !== p); if (!c.places.length) state.inputs = state.inputs.filter((x) => x !== c); update(); } }, "×"))))
+            : h("p", { class: "faint small" }, `${plural(r ? r.placesN : 0, "approved place")}. Only this Mac's own page lists them.`),
+          placeIn ? h("form", { class: "addrow", onsubmit: addPlace }, placeIn, h("button", { type: "submit", class: "btn" }, "Add place")) : null),
+        r && r.status === "not-connected" && o ? h("div", { class: "fix" }, `The last collection couldn't find ${c.connector} among the Claude connectors on ${I.synthesizer || "the synthesis"}'s Mac. ${connectHelp(c.connector)}`) : null);
+    });
+    const chName = TEAM_RO ? null : srcField("add-chan", "Connector, like Slack", "Name of the channel connector to add", { list: "dl-chans", basis: 160 });
+    const chPlaces = TEAM_RO ? null : srcField("add-chan-places", "Places, comma-separated: #product-feedback, #sales-asks", "Places to read, comma-separated", { grow: 2, basis: 260 });
+    const chSay = h("div", { class: srcMsg.chan && srcMsg.chan.err ? "err" : "hint", role: "status" }, srcMsg.chan ? srcMsg.chan.text : "Use the channel names or IDs as they appear in the app. A teammate who looks after the settings approves the proposal.");
+    const addChan = (ev) => {
+      ev.preventDefault();
+      const name = chName.value.trim().replace(/\s+/g, " ");
+      const places = [...new Set(chPlaces.value.split(",").map((x) => x.trim()).filter(Boolean))];
+      const fail = (t) => { srcMsg.chan = { text: t, err: true }; chSay.className = "err"; chSay.textContent = t; };
+      if (!NAME_OK.test(name) || !/^[a-z][a-z-]{1,30}$/.test(cid(name))) return fail("Give the connector's name as Claude shows it, like Slack or Microsoft Teams.");
+      if (!places.length) return fail("Name at least one place to read, like #product-feedback.");
+      if (places.some((p) => p.length < 2 || p.length > 80 || /[|`<>"]/.test(p))) return fail("Each place is a channel name or ID, 2 to 80 characters.");
+      if (places.some(isDm)) return fail("PMX never reads direct messages. Name channels only.");
+      const cur = state.inputs.find((x) => cid(x.connector) === cid(name));
+      if (cur) cur.places = [...new Set([...cur.places, ...places])];
+      else state.inputs.push({ connector: name, places, look: null });
+      srcTyped["add-chan"] = srcTyped["add-chan-places"] = ""; srcMsg.chan = { text: `Added ${name}. Propose it to your team from the bar below.` };
+      update(); requestAnimationFrame(() => $("add-chan")?.focus());
+    };
+    const here = I.channelsHere;
+    const chansCard = h("section", { class: "card", id: "s-channels", tabindex: "-1" },
+      h("div", { class: "card-h" }, h("div", null, h("h2", null, "Channels and feeds"), h("p", null, "Conversations in places your team approved: Slack or Teams channels, a support inbox. Only the places listed, never direct messages.")), h("span", { class: "scope team" }, "Team setting · a teammate approves")),
+      h("div", { class: "inp", id: "s-synth" },
+        h("div", null, h("div", { class: "nm" }, "Who reads them", state.synth !== original.synth ? h("span", { class: "chip pending" }, "Not proposed yet") : null),
+          h("p", { class: "sub" }, state.synth && state.synth === I.me ? "This Mac. It also proposes your team's tasks, so every call and thread is read once for everyone. Its connector needs access to these places."
+            : state.synth ? `The Claude app on ${state.synth}'s Mac, which also proposes your team's tasks. Its connector needs access to these places.`
+            : "Nobody yet. One Mac on your team proposes tasks for everyone and reads these places; until your team picks it, channels aren't read and tasks aren't proposed on their own."),
+          h("p", { class: "sub faint" }, `Private channels: ${I.allowPrivate ? "allowed by your team" : "never read"}.`)),
+        h("div", { class: "side" }, LOCAL && I.me && state.synth !== I.me ? h("button", { type: "button", class: state.synth ? "btn" : "btn primary", onclick: () => { state.synth = I.me; update(); } }, "Use this Mac")
+          : state.synth !== original.synth ? h("button", { type: "button", class: "btn quiet", onclick: () => { state.synth = original.synth; update(); } }, "Cancel") : null)),
+      chanRows.length ? chanRows : h("p", { class: "empty" }, "No channels yet. Add the places where customers' needs come up."),
+      TEAM_RO ? h("p", { class: "faint small" }, "Team sources change on your Mac's own PMX page.") : h("form", { class: "addbox", onsubmit: addChan, "aria-label": "Add a channel source" },
+        h("strong", { class: "small" }, "Add channels"),
+        h("datalist", { id: "dl-chans" }, I.suggested.filter((x) => x.shape === "channels").map((x) => h("option", { value: x.connector }, x.note))),
+        h("div", { class: "addrow" }, chName, chPlaces, h("button", { type: "submit", class: "btn" }, "Add")), chSay));
+
+    // ---- Duplicates ----
+    const dd = I.dedup;
+    const fact = (n, text) => h("div", { class: "fact" }, h("b", { class: "num" }, String(n)), h("span", null, text));
+    const dupCard = h("section", { class: "card", id: "s-dedup", tabindex: "-1" },
+      h("div", { class: "card-h" }, h("div", null, h("h2", null, "One task per need"), h("p", null, `The same call can sit in two recorders, and the same ask can come up in a call and in Slack. ${winWord()}:`))),
+      !dd.twins && !dd.merged && !dd.again.length ? h("p", { class: "small muted" }, `Nothing came in twice ${winText()}.`) : h("div", { class: "dd" },
+        fact(dd.twins, `${dd.twins === 1 ? "meeting was" : "meetings were"} saved by two recorders and read once`),
+        fact(dd.merged, `${dd.merged === 1 ? "need was" : "needs were"} heard again and added to a task waiting for your approval`),
+        fact(dd.again.reduce((a, x) => a + x.n, 0), dd.again.length ? `more ${dd.again.reduce((a, x) => a + x.n, 0) === 1 ? "source" : "sources"} for tasks already open: ${dd.again.slice(0, 6).map((x) => `${x.identifier} (+${x.n})`).join(", ")}` : "more sources for tasks already open")),
+      h("details", { class: "more", "data-k": "dedup-how", style: "margin-top:10px" }, h("summary", null, "How PMX tells"),
+        h("ul", { class: "small muted" },
+          h("li", null, "The same meeting: the recorder's own ID, or the same people starting within 20 minutes of each other, whatever each recorder called it. PMX keeps the fullest copy."),
+          h("li", null, "The same need: one task per need in each run, citing every call and thread that raised it. Before proposing, Claude checks what's open in Linear and waiting for you; a repeat adds its sources there instead."),
+          h("li", null, "Nothing is written to Linear for a repeat. A task waiting for you shows how often it was heard again."))));
+
+    const rail = h("aside", { class: "rail" },
+      h("section", { class: "card" }, h("div", { class: "card-h" }, h("h2", null, "Any Claude connector works")),
+        h("p", { class: "small muted" }, "If it's connected in your Claude app, PMX can read it: choose Calls for recorded conversations, Channels for conversations in places. Type its name as Claude shows it."),
+        h("p", { class: "small muted", style: "margin-top:8px" }, "PMX never holds a password or token for it. Claude reads it with your own connector, copies new material word for word into a private folder on this Mac, and PMX takes it from there.")),
+      collect ? h("section", { class: "card" }, h("div", { class: "card-h" }, h("h2", null, "Collection")),
+        h("dl", { class: "kv small" }, h("dt", null, "Last run"), h("dd", null, I.lastCollect ? ago(I.lastCollect) : "none in 2 weeks"), h("dt", null, "Next"), h("dd", null, collect.next ? when(collect.next) : "—"), h("dt", null, "Runs"), h("dd", null, collect.cadence)),
+        collect.fix && collect.status !== "ok" ? h("div", { style: "margin-top:8px" }, h("p", { class: "small" }, collect.fix.text), fixControls(collect.fix)) : null,
+        h("button", { type: "button", class: "textlink small", style: "margin-top:8px", onclick: () => go("automations", "collect") }, "See in Automations →")) : null);
+
+    put(box, h("div", { style: "display:grid;gap:14px" },
+      h("div", { class: "section-h" }, h("div", null, h("h2", null, "Where PMX listens"), h("p", null, listen))),
+      notConn.length ? h("div", { class: "banner error", role: "note" }, `${notConn.map((x) => x.connector).join(" and ")} ${notConn.length === 1 ? "isn't" : "aren't"} connected in Claude, so PMX can't read ${notConn.length === 1 ? "it" : "them"}. ${connectHelp(notConn.length === 1 ? notConn[0].connector : "each one")}`) : null,
+      h("section", { class: "card" }, h("div", { class: "card-h" }, h("div", null, h("h2", null, "How it works"), h("p", null, "The same four steps for every source."))),
+        h("div", { class: "how" },
+          h("div", null, h("strong", null, "Your connectors"), "Granola, Momentum, Slack… connected in your Claude app, with your own access."),
+          h("div", null, h("strong", null, "Claude copies"), "A scheduled task in your Claude app copies new calls and threads word for word, following instructions PMX writes for each run."),
+          h("div", null, h("strong", null, "PMX filters"), "Private material and anything from a place your team didn't approve is held back before Claude reads it for tasks."),
+          h("div", null, h("strong", null, "You approve"), "A need heard twice is one task, and nothing reaches Linear until you approve it."))),
+      h("div", { class: "today" }, h("div", { style: "display:grid;gap:14px;min-width:0" }, callsCard, chansCard, dupCard), rail)));
+    if (focusedId) requestAnimationFrame(() => $(focusedId)?.focus());
+  }
+
   // ================= changes =================
   // Worked out from the settings as loaded vs as edited, every time, so the tray can never disagree with the screen.
   function diff() {
@@ -1802,10 +2021,23 @@ body.has-tray .toast { bottom: 76px }
     for (const c of Object.keys(state.accept)) if (state.accept[c] !== original.accept[c]) add({ kind: "category", name: c, accepted: state.accept[c] }, `${state.accept[c] ? "Take on" : "Stop taking"} ${catName(c)}`, "me", `pmx categories ${state.accept[c] ? "add" : "remove"} ${c}`);
     if (state.reviewCap !== original.reviewCap) add({ kind: "review-cap", value: state.reviewCap }, `Agents wait at ${state.reviewCap} drafts`, "team", `pmx.config.json: reviewQueueCap`);
     if (state.digestDay !== original.digestDay) add({ kind: "digest-day", value: state.digestDay }, `Build the digest on ${DAYS[state.digestDay]}s`, "me", `~/.pmx/config.json: digest.weekday = ${state.digestDay}`);
+    const ck = (x) => cid(x.connector), pk = (x) => JSON.stringify(x.places.map((p) => p.toLowerCase()).sort());
+    for (const c of state.calls) {
+      const o = original.calls.find((x) => ck(x) === ck(c));
+      if (!o || (o.look || null) !== (c.look || null)) add({ kind: "call-input", op: "add", connector: c.connector, look: c.look || null }, `Collect calls from ${c.connector}${c.look ? ` (only ${c.look})` : ""}`, "me", `pmx sources add "${c.connector}"${c.look ? ` --only "${c.look}"` : ""}`, !o || (o.look || null) !== (c.look || null));
+    }
+    for (const o of original.calls) if (!state.calls.some((x) => ck(x) === ck(o))) add({ kind: "call-input", op: "remove", connector: o.connector }, `Stop collecting calls from ${o.connector}`, "me", `pmx sources remove "${o.connector}"`);
+    for (const c of state.inputs) {
+      const o = original.inputs.find((x) => ck(x) === ck(c));
+      if (!o || pk(o) !== pk(c) || (o.look || null) !== (c.look || null))
+        add({ kind: "team-input", connector: c.connector, places: c.places, look: c.look || null }, `Read ${c.connector}: ${c.places.join(", ")}`, "team", `pmx.config.json: inputs, ${c.connector}`, c.places.some((p) => !(o ? o.places : []).some((q) => q.toLowerCase() === p.toLowerCase())) || (!!o && (o.look || null) !== (c.look || null)));
+    }
+    for (const o of original.inputs) if (!state.inputs.some((x) => ck(x) === ck(o))) add({ kind: "team-input", connector: o.connector, places: [], look: null }, `Stop reading ${o.connector}`, "team", `pmx.config.json: inputs, without ${o.connector}`);
+    if (state.synth !== original.synth && state.synth) add({ kind: "synthesizer", value: state.synth }, `${state.synth === (D.inputs && D.inputs.me) ? "This Mac" : `${state.synth}'s Mac`} proposes team tasks and reads the team's channels`, "team", `pmx.config.json: synthesizer = "${state.synth}"`);
     if (state.digestDm !== original.digestDm) add({ kind: "digest-dm", value: state.digestDm }, state.digestDm ? `Send the approved digest to Slack (${state.digestDm})` : "Stop sending the digest to Slack", "me", `~/.pmx/config.json: digest.slackDmUserId`);
     return out;
   }
-  function update(redraw = true) { if (redraw) drawRules(); drawTray(); if ($("review").childElementCount) drawReview(); }
+  function update(redraw = true) { if (redraw) { drawRules(); drawSources(); } drawTray(); if ($("review").childElementCount) drawReview(); }
   function drawTray() {
     const ch = diff(), bad = Object.values(invalid).some(Boolean);
     $("tray").hidden = !ch.length && !bad;
@@ -1841,11 +2073,13 @@ body.has-tray .toast { bottom: 76px }
     const k = { route: () => (state.routes[c.source] = original.routes[c.source]), "team-domain": () => togg("teamDomains"), "my-domain": () => togg("myDomains"), never: () => togg({ person: "people", title: "titles", channel: "channels" }[c.list]),
       size: () => { state.minutes[c.size] = original.minutes[c.size]; state.usd[c.size] = original.usd[c.size]; }, rubric: () => (state.rubric[c.category][c.size] = original.rubric[c.category][c.size]),
       budget: () => (state.budget = original.budget), category: () => (state.accept[c.name] = original.accept[c.name]), "review-cap": () => (state.reviewCap = original.reviewCap),
-      "digest-day": () => (state.digestDay = original.digestDay), "digest-dm": () => (state.digestDm = original.digestDm) }[c.kind];
+      "digest-day": () => (state.digestDay = original.digestDay), "digest-dm": () => (state.digestDm = original.digestDm),
+      "call-input": () => back("calls"), "team-input": () => back("inputs"), synthesizer: () => (state.synth = original.synth) }[c.kind];
+    function back(key) { const o = original[key].find((x) => cid(x.connector) === cid(c.connector)); state[key] = state[key].filter((x) => cid(x.connector) !== cid(c.connector)); if (o) state[key].push(clone(o)); }
     function togg(key) { state[key] = c.op === "add" ? state[key].filter((x) => x !== c.value) : [...state[key], c.value]; }
     k(); workSig = ""; update();
   }
-  const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept", "digestDay", "digestDm"];
+  const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept", "digestDay", "digestDm", "calls"];
   async function apply(confirmed) {
     if (applying) return;
     const ch = diff(), before = clone(original);
@@ -1862,7 +2096,7 @@ body.has-tray .toast { bottom: 76px }
       original = null; state = null;
       applying = false;
       await load();
-      if (keepTeam && state) { for (const k of ["teamDomains", "minutes", "usd", "rubric", "reviewCap"]) state[k] = keepTeam[k]; update(); }
+      if (keepTeam && state) { for (const k of ["teamDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth"]) state[k] = keepTeam[k]; update(); }
       toast(r.prError ? "Saved your own changes. The team proposal failed." : r.pr ? "Saved. Your team's proposal is waiting for approval." : "Saved.");
     } catch (e) {
       applied = e.status === 409 ? "Tick the box first: some changes let more of your meetings through." : `Couldn't save: ${e.message}`;
@@ -1880,7 +2114,7 @@ body.has-tray .toast { bottom: 76px }
     drawReview({ focus: true });
   }
   $("tray-review").addEventListener("click", () => { applied = null; undoBase = null; drawReview({ focus: true }); $("review").scrollIntoView({ behavior: reduced() ? "auto" : "smooth" }); });
-  $("tray-discard").addEventListener("click", () => { state = clone(original); cellEdit = null; for (const k in invalid) invalid[k] = false; applied = null; $("review").replaceChildren(); workSig = ""; drawWork(); update(); });
+  $("tray-discard").addEventListener("click", () => { for (const k in srcMsg) delete srcMsg[k]; state = clone(original); cellEdit = null; for (const k in invalid) invalid[k] = false; applied = null; $("review").replaceChildren(); workSig = ""; drawWork(); update(); });
 
   // ================= render =================
   let built = false, routed = false;
@@ -1900,9 +2134,9 @@ body.has-tray .toast { bottom: 76px }
     initRules();
     drawHero(); drawToday(); drawDetail(); drawDigest(); drawWork(); drawAutomations();
     // Privacy and Settings redraw only when the settings themselves changed and the PM isn't in the middle of using them.
-    const sig = JSON.stringify([D.rules, D.held, D.pendingTeam, D.checks, hours, D.digest && [D.digest.weekday, D.digest.dm]]);
-    const using = $("v-privacy").contains(document.activeElement) || $("v-settings").contains(document.activeElement);
-    if (!cellEdit && sig !== rulesSig && !using) { rulesSig = sig; drawRules(); }
+    const sig = JSON.stringify([D.rules, D.held, D.pendingTeam, D.checks, hours, D.digest && [D.digest.weekday, D.digest.dm], D.inputs, (D.automations || []).find((a) => a.id === "collect")]);
+    const using = ["v-privacy", "v-settings", "v-sources"].some((v) => $(v).contains(document.activeElement));
+    if (!cellEdit && sig !== rulesSig && !using) { rulesSig = sig; drawRules(); drawSources(); }
     drawTray();
     jobNews();
     asof();

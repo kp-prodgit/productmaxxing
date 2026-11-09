@@ -202,7 +202,7 @@ describe("synthesis (SIG-2, SIG-4, SEC-1)", () => {
     // APPROVE-1: nothing reaches the tracker yet.
     expect(r.staged.map((p) => p.title)).toEqual(["Synthesize onboarding friction"]);
     expect(r.skipped[0]).toMatch(/Quote the call: its text repeats a meeting word for word/);
-    expect(r.skipped[1]).toMatch(/already in the PMX project/);
+    expect(r.skipped[1]).toMatch(/already open as PMX-14; heard again/);
     expect(tracker.tasks.size).toBe(1);
     const [p] = await readProposals();
     expect(p!.from).toEqual([{ id: "T1", title: "Acme", at: expect.any(String), why: "Setup takes a weekly manual step." }]);

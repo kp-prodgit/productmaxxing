@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { SignalItem } from "./types.js";
+import { isThread, type SignalItem } from "./types.js";
 
 /**
  * The personal-content filter (B2, PRIV-2). Fixed rules only (Q10, decided 2026-11-03):
@@ -19,7 +19,8 @@ export type HoldReason =
   | "no-external-participant"
   | "no-company-domain"
   | "source-off"
-  | "unknown-participants";
+  | "unknown-participants"
+  | "place-not-approved";
 
 type Topic = "performance" | "compensation" | "health" | "hiring" | "one-on-one";
 
@@ -81,6 +82,7 @@ export const HOLD_LABELS: Record<HoldReason | "all-passages-held", string> = {
   "no-company-domain": "Company email domain not set",
   "source-off": "A source you turned off for this",
   "unknown-participants": "No participant list",
+  "place-not-approved": "A channel your team hasn't approved",
   "all-passages-held": "Every passage was cut",
 };
 
@@ -101,6 +103,11 @@ export interface FilterRules {
   wholeMeeting?: boolean;
   /** Sources (connector names, "file", "slack") this run may not read, from the PM's routes (BOARD-3). */
   blockedSources?: string[];
+  /**
+   * Threads only (INPUT-1): whether the place a thread was posted in is one the team approves now. A thread from a
+   * place taken off the list, or never on it, is held whole. Without it no thread is read.
+   */
+  approvedPlace?: (source: string, place: string) => boolean;
 }
 
 /** Which source an item came from, as routes name it. */
@@ -145,7 +152,7 @@ export interface FilterResult {
 
 const emptyCounts = (): Record<HoldReason, number> => ({
   "one-on-one": 0, performance: 0, compensation: 0, health: 0, hiring: 0, "never-ingest": 0,
-  "no-external-participant": 0, "no-company-domain": 0, "source-off": 0, "unknown-participants": 0,
+  "no-external-participant": 0, "no-company-domain": 0, "source-off": 0, "unknown-participants": 0, "place-not-approved": 0,
 });
 
 /** "Sam / Priya", "Ana <> Raj", "Lee & Kim": two people's names, the shape of a 1:1's calendar title. */
@@ -177,6 +184,8 @@ export function itemHoldReason(item: SignalItem, r: FilterRules): HoldReason | n
 export function itemDecision(item: SignalItem, r: FilterRules): { reason: HoldReason | null; detail: string } {
   const ni = r.neverIngest;
   if (r.blockedSources?.includes(sourceOf(item))) return { reason: "source-off", detail: `you set ${sourceOf(item)} not to feed this` };
+  if (item.kind === "thread" && !(item.place && !/^D(?=[A-Z0-9]*\d)[A-Z0-9]{8,10}$/.test(item.place) && r.approvedPlace?.(sourceOf(item), item.place)))
+    return { reason: "place-not-approved", detail: "it was posted in a place your team hasn't approved, or no longer approves" };
   // A meeting's title names what it's about: any sensitive topic there holds the whole meeting.
   for (const [topic, re] of Object.entries(TOPICS) as [Topic, RegExp][]) {
     if (topic === "one-on-one" && r.allowOneOnOne) continue;
@@ -187,7 +196,8 @@ export function itemDecision(item: SignalItem, r: FilterRules): { reason: HoldRe
   if (!r.allowOneOnOne && item.kind === "transcript" && people.size <= 2 && NAME_PAIR.test(item.title))
     return { reason: "one-on-one", detail: "two people and a title naming two people: a 1:1" };
   if (ni.meetingTitles.some((t) => lc(item.title).includes(lc(t)))) return { reason: "never-ingest", detail: "the title matches your do-not-read list" };
-  if (ni.channels.some((c) => lc(c).replace(/^#/, "") === lc(item.ref).replace(/^#/, "") || lc(item.title) === lc(c).replace(/^#/, "")))
+  const bare = (x: string) => lc(x).replace(/^#/, "");
+  if (ni.channels.some((c) => bare(c) === bare(item.ref) || bare(item.title) === bare(c) || (item.place && bare(item.place) === bare(c))))
     return { reason: "never-ingest", detail: "the channel is on your do-not-read list" };
   if (item.participants.some((p) => ni.people.some((x) => lc(p) === lc(x) || mentions(p, x))))
     return { reason: "never-ingest", detail: "a participant is on your do-not-read list" };
@@ -203,7 +213,7 @@ export function itemDecision(item: SignalItem, r: FilterRules): { reason: HoldRe
     }
     return { reason: null, detail: `has someone from outside the company (${outside.join(", ")})` };
   }
-  return { reason: null, detail: item.kind === "slack" ? "a message in an approved channel" : "passed every rule" };
+  return { reason: null, detail: isThread(item) ? "a thread in an approved channel" : "passed every rule" };
 }
 
 /** Utterances or paragraphs: the unit the topic rules judge. Shared with `pmx explain` to locate holds. */

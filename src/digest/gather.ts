@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
 import type { Ctx } from "../core/context.js";
-import { companyDomains, filterItems, type FilterResult } from "../core/filter.js";
+import { companyDomains, filterItems, sourceOf, type FilterResult } from "../core/filter.js";
 import { makeRedactor } from "../core/redact.js";
 import { sourceReceipts, topicRulesHash, type RunReceipt } from "../core/receipt.js";
 import type { SignalItem } from "../core/types.js";
-import { readSlack } from "../sources/slack.js";
-import { readTranscripts } from "../sources/transcripts.js";
-import { meetingKeys, teamSalt } from "../meetings/ledger.js";
+import { readThreads, readTranscripts } from "../sources/transcripts.js";
+import { channelInputs, placeApproved } from "../inputs/inputs.js";
+import { paths } from "../core/paths.js";
+import { collapseTwins, meetingKeys, teamSalt } from "../meetings/ledger.js";
 import { runCanaries } from "../core/canary.js";
 
 /**
@@ -20,6 +21,8 @@ export function privacyRules(ctx: Pick<Ctx, "team" | "personal">, individual = f
     requireExternalParticipant: !individual, neverIngest: personal.neverIngest, allowOneOnOne: individual, wholeMeeting: !individual,
     // "off" blocks a source everywhere; "mine" lets it feed only the PM's own to-dos.
     blockedSources: Object.entries(personal.sources?.routes ?? {}).filter(([, v]) => v === "off" || (v === "mine" && !individual)).map(([k]) => k),
+    // Threads only from places the team approves today (INPUT-1).
+    approvedPlace: (source: string, place: string) => placeApproved(channelInputs(team), source, place),
   };
 }
 
@@ -29,7 +32,7 @@ export interface Gathered {
   heldItems: number;
   read: number;
   /** The parts of the run receipt that gathering decides (PRIV-4). */
-  receipt: Pick<RunReceipt, "window" | "rules" | "skippedSources" | "sources" | "masked" | "canaries">;
+  receipt: Pick<RunReceipt, "window" | "rules" | "skippedSources" | "sources" | "masked" | "canaries" | "twins">;
 }
 
 /**
@@ -52,29 +55,19 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
     raw.push(...(await readTranscripts({ dirs: personal.sources.transcriptDirs, sinceMs, idPrefix: "T" })));
   }
 
-  if (team.allowedSources.includes("slack")) {
-    const channels = o.scope === "team" ? team.slackChannels : personal.sources.slackChannel ? [personal.sources.slackChannel] : [];
-    const token = channels.length ? await ctx.keychain.get("slack-token") : null;
-    if (channels.length && !token) {
-      ctx.out.warn("Slack is configured but no Slack token is in the keychain. Skipping Slack.");
-      skippedSources.push("Slack: no token in the keychain");
-    }
-    let n = 0;
-    for (const channel of token ? channels : []) {
-      const items = await readSlack({
-        token: token!, channel, allowedChannels: team.slackChannels, allowPrivate: team.allowPrivateChannels,
-        sinceMs, fetch: ctx.fetch, idPrefix: "S",
-      });
-      raw.push(...items.map((it) => ({ ...it, id: `S${++n}` })));
-    }
-  }
+  // Threads from the team's approved channels (INPUT-1), saved by the collection task through the PM's own connectors.
+  // Team runs and the digest read them; private to-dos come from meetings only.
+  const channels = channelInputs(team);
+  if (channels.length && o.scope !== "individual") raw.push(...(await readThreads({ dir: paths.threads(), sinceMs, idPrefix: "C" })));
 
   // Meeting identities come from participants and IDs, so they're worked out before redaction (MEET-1).
   const salt = await teamSalt(ctx.repo);
   for (const it of raw) if (it.kind === "transcript") { it.keys = meetingKeys(it, salt); it.legacyKeys = meetingKeys(it); }
   const individual = o.scope === "individual";
   const rules = privacyRules(ctx, individual);
-  const filtered = filterItems(raw, rules);
+  // One meeting saved from two recorders is read once (INPUT-2), from a copy this run may read.
+  const { items: once, twins } = collapseTwins(raw, (i) => !!rules.blockedSources?.includes(sourceOf(i)));
+  const filtered = filterItems(once, rules);
 
   const names = personal.crmNamesFile ? (await readFile(personal.crmNamesFile, "utf8").catch(() => "")).split("\n") : [];
   const r = makeRedactor(names);
@@ -91,6 +84,7 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
         folders: team.allowedSources.includes("transcripts") ? personal.sources.transcriptDirs : [],
       },
       skippedSources,
+      ...(twins ? { twins } : {}),
       sources: sourceReceipts(filtered.decisions, (t) => titles.redact(t)),
       masked: { ...r.counts },
       canaries: runCanaries(rules),

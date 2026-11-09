@@ -21,6 +21,7 @@ import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
 import type { Out } from "../core/context.js";
 import { desktopAppPresent, installMcp, mcpInstalled } from "../mcp/server.js";
 import { cleanDomain, companyDomains } from "../core/filter.js";
+import { channelInputs, connectorId } from "../inputs/inputs.js";
 import { linearRef } from "../core/config.js";
 
 export interface InviteFile {
@@ -182,15 +183,12 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
   const transcriptDirs = team.allowedSources.includes("transcripts")
     ? split(await askValid(d, "Folders with call transcripts to include (comma-separated)", (existing?.sources.transcriptDirs ?? [paths.transcripts()]).join(", "), (a) => (split(a).some(looksLikeCommand) ? "That looks like a command, not a folder" : null))).map(expand)
     : [];
-  let slackChannel: string | null = null;
-  if (team.allowedSources.includes("slack") && team.slackChannels.length) {
-    const ch = await askValid(d, `Slack channel ID for your digest (one of ${team.slackChannels.join(", ")}, blank for none)`, existing?.sources.slackChannel ?? "", (a) => (!a || team.slackChannels.includes(a) ? null : `Pick one of ${team.slackChannels.join(", ")}`));
-    slackChannel = ch || null;
-  }
+  // Slack channels are read through the PM's Slack connector in Claude (INPUT-1), so there's no channel or token to ask for.
+  const slackTeam = channelInputs(team).some((c) => connectorId(c.connector) === "slack");
   const people = split(await ask.text("Never ingest anything involving these people (names or emails, comma-separated)", existing?.neverIngest.people.join(", ") ?? ""));
   const meetingTitles = split(await ask.text("Never ingest meetings whose titles contain (comma-separated)", existing?.neverIngest.meetingTitles.join(", ") ?? ""));
   const channels = split(await ask.text("Never ingest these channels (comma-separated)", existing?.neverIngest.channels.join(", ") ?? ""));
-  const dm = slackChannel ? await askValid(d, "Your Slack user ID, to DM you the digest (blank to skip)", existing?.digest.slackDmUserId ?? "", (a) => (!a || /^[UW][A-Z0-9]{6,}$/.test(a) ? null : "A Slack user ID looks like U012AB3CD")) : "";
+  const dm = slackTeam ? await askValid(d, "Your Slack member ID, to DM you the approved digest (blank to skip)", existing?.digest.slackDmUserId ?? "", (a) => (!a || /^[UW][A-Z0-9]{6,}$/.test(a) ? null : "A Slack user ID looks like U012AB3CD")) : "";
 
   const personal: PersonalConfig = {
     version: 1,
@@ -203,7 +201,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     workingHours: ALWAYS,
     budget: { dailyUsd, resetHour: existing?.budget.resetHour ?? 0, overrideUsd: null },
     companyDomains: domains,
-    sources: { transcriptDirs, slackChannel },
+    sources: { transcriptDirs, slackChannel: null, ...(existing?.sources.calls?.length ? { calls: existing.sources.calls } : {}), ...(existing?.sources.routes ? { routes: existing.sources.routes } : {}) },
     neverIngest: { people, channels, meetingTitles },
     crmNamesFile: existing?.crmNamesFile ?? null,
     digest: { weekday: existing?.digest.weekday ?? 5, slackDmUserId: dm || null },
@@ -221,7 +219,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     `  Spend          ${dailyUsd === null ? `no cap of your own (team cap $${cap} a day, estimated at list prices)` : `up to $${dailyUsd} a day${dailyUsd === 0 ? " (paused)" : ""}`}; PMX works whenever this Mac is on and awake`,
     `  Company        ${domains.join(", ") || "no domain set: every meeting is held from team tasks"}`,
     `  Transcripts    ${transcriptDirs.join(", ") || "none"}`,
-    ...(team.allowedSources.includes("slack") ? [`  Slack digest   ${slackChannel ?? "none"}`] : []),
+    ...(slackTeam ? [`  Slack DM       ${dm || "none"} (channels come through your Slack connector in Claude)`] : []),
     `  Never ingest   ${count(people.length, "person", "people")}, ${count(meetingTitles.length, "meeting title")}, ${count(channels.length, "channel")}`,
     `  Saved to       ${paths.config()}`,
   ].join("\n"));
@@ -256,7 +254,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
 
   // Secrets go to the keychain only (SEC-10).
   const secrets: [Parameters<Keychain["set"]>[0], string, boolean][] = [
-    ["slack-token", "Slack bot token, read-only scopes plus chat:write for DMs (blank to skip)", !!slackChannel || team.synthesizer === handle],
+    ["slack-token", "Slack bot token with chat:write, only to DM you the approved digest (blank to skip)", !!dm],
     ["github-token", "GitHub token for opening PRs in the PMX repo (blank to use `gh`)", !!(await git.remoteUrl())?.includes("github.com")],
   ];
   for (const [name, q, needed] of secrets) {

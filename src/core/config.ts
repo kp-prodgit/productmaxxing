@@ -20,8 +20,13 @@ export interface TeamConfig {
   egress: string[];
   /** Source kinds the team allows at all (B2, default-deny). */
   allowedSources: ("transcripts" | "slack")[];
-  /** Slack channels the team approved for ingestion. */
+  /** Slack channels the team approved before connector inputs (0.21.0). They now read as the Slack input's places. */
   slackChannels: string[];
+  /**
+   * Channel-like connectors and the places in each the team approved (INPUT-1): read by the synthesis Mac's Claude
+   * collection task through the PM's own connector, never by PMX directly. Changed only by reviewed PR (NEUT-2).
+   */
+  inputs?: { connector: string; places: string[]; look?: string | null }[] | null;
   allowPrivateChannels: boolean;
   /** Calls are ingested only when someone outside these domains took part (B2). */
   internalDomains: string[];
@@ -66,7 +71,13 @@ export interface PersonalConfig {
    * `routes` (BOARD-3): what each source may feed, by connector (granola, fireflies…, "file" for the folder, "slack").
    * "off" reads nothing from it, "mine" only your own to-dos, "linear" (the default) to-dos and team tasks too.
    */
-  sources: { transcriptDirs: string[]; slackChannel: string | null; routes?: Record<string, "off" | "mine" | "linear"> };
+  sources: {
+    transcriptDirs: string[];
+    slackChannel: string | null;
+    routes?: Record<string, "off" | "mine" | "linear">;
+    /** Recorders the PM added beyond the built-in meeting apps, like Momentum (INPUT-1). Every one is collected. */
+    calls?: { connector: string; look?: string | null }[];
+  };
   /** The personal never-ingest list (B2). Sensitive in itself, so it stays here. */
   neverIngest: { people: string[]; channels: string[]; meetingTitles: string[] };
   crmNamesFile: string | null;

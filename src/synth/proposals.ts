@@ -23,6 +23,11 @@ export interface Proposal {
   size: Size;
   sources: string[];
   from: { id: string; title: string; at: string; why: string }[];
+  /**
+   * Later runs that heard the same need again (INPUT-2): their receipts and how many sources each added. Their
+   * meetings are in `from` too, marked with the receipt they came from.
+   */
+  again?: { receipt: string; at: string; n: number }[];
 }
 
 interface Staged {
@@ -59,6 +64,31 @@ export async function stageProposals(list: Omit<Proposal, "id">[]): Promise<Prop
   return added;
 }
 
+/**
+ * Adds a later run's sources to a proposal still waiting (INPUT-2): the same need, heard again. The PM sees every
+ * source under the proposal, and the description Linear would get says how many more sources and when, never which.
+ * False when the proposal is gone (approved or dropped since).
+ */
+export async function addEvidence(id: string, e: { receipt: string; from: Proposal["from"]; days: string[] }): Promise<boolean> {
+  const all = await readProposals();
+  const p = all.find((x) => x.id === id);
+  if (!p) return false;
+  const seen = new Set(p.from.map((f) => `${f.title}|${f.at}`));
+  const fresh = e.from.filter((f) => !seen.has(`${f.title}|${f.at}`));
+  if (!fresh.length) return true;
+  p.from = [...p.from, ...fresh.map((f) => ({ ...f, id: `${f.id}@${e.receipt}` }))];
+  p.again = [...(p.again ?? []), { receipt: e.receipt, at: new Date().toISOString(), n: fresh.length }];
+  const more = p.again.reduce((a, x) => a + x.n, 0);
+  const days = [...new Set([...(p.description.match(/^\*\*Heard again\*\*.*\(([^)]*)\)\.$/m)?.[1]?.split(", ") ?? []), ...e.days])].sort().join(", ");
+  const line = `**Heard again** in ${more === 1 ? "one more source" : `${more} more sources`} (${days}).`;
+  p.description = /^\*\*Heard again\*\*.*$/m.test(p.description)
+    ? p.description.replace(/^\*\*Heard again\*\*.*$/m, line)
+    : p.description.replace(/^(\*\*Based on\*\*.*)$/m, `$1\n${line}`);
+  if (hasCanary(JSON.stringify(p))) throw new Error(CANARY_REFUSAL);
+  await save(all);
+  return true;
+}
+
 /** Proposals matching what the PM typed: an ID, a 1-based number from `pmx proposals`, or "all". */
 function pick(all: Proposal[], refs: string[]): { hit: Proposal[]; missing: string[] } {
   if (refs.includes("all") || refs.includes("--all")) return { hit: all, missing: [] };
@@ -85,6 +115,8 @@ async function markReceipt(p: Proposal, posted: { identifier: string } | { dropp
 export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]): Promise<{ posted: { id: string; identifier: string; title: string }[]; duplicates: string[]; missing: string[] }> {
   const all = await readProposals();
   const { hit, missing } = pick(all, refs);
+  // Only the same title stops a proposal the PM approved: synthesis already folded repeats in (INPUT-2), and the PM's
+  // own decision isn't second-guessed by a fuzzy match.
   const open = new Map((await svc.tracker.list()).filter((t) => t.status !== "done").map((t) => [norm(t.title), t.identifier]));
   const posted: { id: string; identifier: string; title: string }[] = [];
   const duplicates: string[] = [];

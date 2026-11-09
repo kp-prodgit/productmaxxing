@@ -22,6 +22,8 @@ export const paths = {
   /** The brain's assessments and approval queue (BRAIN-4): private, local, never synced. */
   brain: () => join(pmxHome(), "brain"),
   transcripts: () => join(pmxHome(), "transcripts"),
+  /** Threads from the team's approved channels (INPUT-1), one file each: private, local, never synced. */
+  threads: () => join(pmxHome(), "threads"),
   /** Individual to-dos (TODO-1): private, local, never synced. */
   todos: () => join(pmxHome(), "todos.json"),
   worktrees: () => join(pmxHome(), "worktrees"),

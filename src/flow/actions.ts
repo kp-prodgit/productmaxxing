@@ -9,6 +9,7 @@ import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
 import { loadSkill, teamSkillPath } from "../core/skills.js";
 import { SIZES, type Size } from "../core/types.js";
 import { addNeverIngest, checkNeverIngest, type NeverIngestKind } from "./edit.js";
+import { channelInputs, checkConnector, checkLook, checkPlace, connectorId, MEETING_CONNECTORS } from "../inputs/inputs.js";
 
 /**
  * What the pipeline board's Rules tab can change (BOARD-3). Personal settings apply on this Mac at once; team settings
@@ -26,15 +27,31 @@ export type Change =
   | { kind: "rubric"; category: string; size: Size; text: string }
   | { kind: "review-cap"; value: number }
   | { kind: "digest-day"; value: number }
-  | { kind: "digest-dm"; value: string | null };
+  | { kind: "digest-dm"; value: string | null }
+  /** A recorder of the PM's own, like Momentum (INPUT-1). Applies on this Mac. */
+  | { kind: "call-input"; op: "add" | "remove"; connector: string; look?: string | null }
+  /** The places the team approves in one channel connector, as a whole list; empty stops reading it (INPUT-1). */
+  | { kind: "team-input"; connector: string; places: string[]; look?: string | null }
+  /** Whose Mac proposes team tasks and reads the team's channels (Q2), by PMX handle. */
+  | { kind: "synthesizer"; value: string };
 
 const RANK = { off: 0, mine: 1, linear: 2 } as const;
 const FIELD = { title: "meetingTitles", person: "people", channel: "channels" } as const;
-export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap";
+export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "team-input" || c.kind === "synthesizer";
 
 /** A change that lets more through: the board asks once more before it, and only the local page may send it. */
-export function loosens(c: Change, p: PersonalConfig): boolean {
+export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolean {
   if (c.kind === "route") return RANK[c.value] > RANK[p.sources.routes?.[c.source] ?? "linear"];
+  // A new recorder or a new place means PMX reads more.
+  // A new recorder, a new place, or a changed "only read…" note means PMX may read more.
+  if (c.kind === "call-input") {
+    const cur = (p.sources.calls ?? []).find((x) => connectorId(x.connector) === connectorId(c.connector));
+    return c.op === "add" && (!cur || (cur.look ?? null) !== (c.look ?? null));
+  }
+  if (c.kind === "team-input") {
+    const cur = team ? channelInputs(team).find((x) => connectorId(x.connector) === connectorId(c.connector)) : undefined;
+    return c.places.some((x) => !(cur?.places ?? []).some((y) => y.toLowerCase() === x.toLowerCase())) || (!!c.places.length && !!cur && (cur.look ?? null) !== (c.look ?? null));
+  }
   return (c.kind === "my-domain" || c.kind === "never" || c.kind === "team-domain") && c.op === "remove";
 }
 
@@ -85,6 +102,21 @@ export function checkChange(c: any, team: TeamConfig): Change {
       if (v !== null && !/^[UW][A-Z0-9]{6,14}$/.test(v)) fail("A Slack member ID looks like U0123ABCD. In Slack, open your profile, click ⋮ and copy member ID.");
       return { kind: "digest-dm", value: v };
     }
+    case "call-input": {
+      if (c.op !== "add" && c.op !== "remove") fail("Add or remove a recorder.");
+      const connector = checkConnector(c.connector);
+      if (MEETING_CONNECTORS.some((m) => connectorId(m) === connectorId(connector))) fail(`PMX already looks for ${connector} by itself. Turn it on or off under Sources.`);
+      return { kind: "call-input", op: c.op, connector, ...(c.op === "add" ? { look: checkLook(c.look) } : {}) };
+    }
+    case "synthesizer":
+      if (typeof c.value !== "string" || !/^[\w.@-]{1,64}$/.test(c.value)) fail("Name the teammate by their PMX handle.");
+      return { kind: "synthesizer", value: c.value };
+    case "team-input": {
+      const connector = checkConnector(c.connector);
+      const places: string[] = [...new Set((Array.isArray(c.places) ? (c.places as unknown[]) : []).map(checkPlace))];
+      if (places.length > 20) fail("Up to 20 places per connector.");
+      return { kind: "team-input", connector, places, look: checkLook(c.look) };
+    }
   }
   return fail(`Unknown change "${c?.kind}".`);
 }
@@ -107,6 +139,11 @@ export async function applyPersonal(personal: PersonalConfig, changes: Change[])
     else if (c.kind === "category") personal.categories = c.accepted ? [...new Set([...personal.categories, c.name])] : personal.categories.filter((x) => x !== c.name);
     else if (c.kind === "digest-day") personal.digest = { ...personal.digest, weekday: c.value };
     else if (c.kind === "digest-dm") personal.digest = { ...personal.digest, slackDmUserId: c.value };
+    else if (c.kind === "call-input") {
+      const rest = (personal.sources.calls ?? []).filter((x) => connectorId(x.connector) !== connectorId(c.connector));
+      if (c.op === "add" && rest.length >= 8) throw new Error("Up to 8 recorders of your own.");
+      personal.sources = { ...personal.sources, calls: c.op === "add" ? [...rest, { connector: c.connector, ...(c.look ? { look: c.look } : {}) }] : rest };
+    }
     else continue;
     out.push(describe(c));
   }
@@ -127,6 +164,9 @@ export function describe(c: Change): string {
     case "review-cap": return `Stop pulling at ${c.value} drafts waiting for review`;
     case "digest-day": return `Build the digest on ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][c.value]}s`;
     case "digest-dm": return c.value ? `Send the approved digest to Slack member ${c.value}` : "Don't send the digest to Slack";
+    case "call-input": return c.op === "add" ? `Collect calls from ${c.connector}${c.look ? ` (only ${c.look})` : ""}` : `Stop collecting calls from ${c.connector}`;
+    case "synthesizer": return `${c.value}'s Mac proposes team tasks and reads the team's channels`;
+    case "team-input": return c.places.length ? `Read ${c.connector}: ${c.places.join(", ")}${c.look ? ` (only ${c.look})` : ""}` : `Stop reading ${c.connector}`;
   }
 }
 
@@ -168,6 +208,16 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
         cfg.sizes[c.size] = { ...cfg.sizes[c.size], ...(c.minutes !== undefined ? { minutes: c.minutes } : {}), ...(c.usd !== undefined ? { costUsd: c.usd } : {}) };
       } else if (c.kind === "review-cap") cfg.reviewQueueCap = c.value;
       else if (c.kind === "rubric") rubric = setRubricCell(rubric ?? (await loadSkill(wt.cwd, "pmx-size")).text, c.category, c.size, c.text);
+      else if (c.kind === "synthesizer") cfg.synthesizer = c.value;
+      else if (c.kind === "team-input") {
+        // Slack channels approved the old way move into `inputs`, so there's one list to read and change.
+        const list = channelInputs({ inputs: cfg.inputs, slackChannels: cfg.slackChannels ?? [], allowedSources: cfg.allowedSources ?? [] })
+          .filter((x) => connectorId(x.connector) !== connectorId(c.connector));
+        if (c.places.length) list.push({ connector: c.connector, places: c.places, ...(c.look ? { look: c.look } : {}) });
+        cfg.inputs = list;
+        // The old Slack list now lives in `inputs`; leaving it would make Slack impossible to turn off the old way.
+        cfg.slackChannels = [];
+      }
     }
     await writeFileIn(wt.cwd, TEAM_CONFIG_FILE, `${JSON.stringify(cfg, null, 2)}\n`);
     if (rubric !== null) await writeFileIn(wt.cwd, teamSkillPath("", "pmx-size").replace(/^\//, ""), rubric);

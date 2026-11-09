@@ -59,7 +59,7 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
   if (r.rules.allowOneOnOne) out.push("   Your own to-dos: internal meetings and 1:1s are allowed, because the result stays on this Mac. Health, pay and performance passages are still cut.");
   r.sources.forEach((s, i) => {
     const l = live[i];
-    const name = s.file ?? l?.file ?? (s.kind === "slack" ? "a Slack message" : "a file that's no longer in your folder");
+    const name = s.file ?? l?.file ?? (s.kind !== "transcript" ? `a thread${s.place ? ` in ${s.place}` : ""}` : "a file that's no longer in your folder");
     if (s.decision === "used") out.push(`   ✔ used      [${s.id}] ${name}: ${s.detail}${s.ledger ? `. ${LEDGER[s.ledger.state]}${s.ledger.entry ? ` (${s.ledger.entry})` : ""}` : ""}`);
     else out.push(`   ✘ left out  ${name}: ${HOLD_LABELS[s.rule!]}, because ${s.detail}`);
     (l?.cuts ?? s.passagesCut.map((c) => ({ rule: c.rule, line: null, matched: null }))).forEach((c) => {

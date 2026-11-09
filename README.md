@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.20.0/productmaxxing-0.20.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.20.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.21.0/productmaxxing-0.21.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.21.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.20.0.tgz
+npm install -g ./productmaxxing-0.21.0.tgz
 pmx init
 ```
 
@@ -41,7 +41,7 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `proposals` | Tasks PMX proposed from your calls, exactly as Linear would get them. `approve <n>` or `--all` sends them to the PMX inbox; `drop` discards them. Nothing reaches Linear before you approve |
 | `budget` | Your daily cap on PMX's usage: `set <dollars>`, `off` (only your plan's limits and the team cap), or `set 0` to pause PMX |
 | `flow` | The pipeline board: your skills, your scheduled tasks, a map of what travels from your meeting apps and Slack to Linear and back (with counts on every connection), and the rules behind each step. `--web` opens it on this Mac, where you can approve proposed tasks and change rules; `--install-skill` adds `/pmx-flow`, which publishes it as a live Claude artifact that shows counts only |
-| `sources` | What each source may feed: `set granola off`, `mine` (your to-dos only) or `linear` (to-dos and team tasks) |
+| `sources` | Where PMX listens: your meeting apps, recorders you add (`add Momentum`, `--only "calls tagged Discovery"`; `remove`), your team's approved channels, and what each may feed (`set granola off`, `mine` for your to-dos only, `linear` for to-dos and team tasks). The board's Sources tab does the same, and proposes team channels |
 | `domains` | Your company's email domains, which tell colleagues from customers: `add` or `remove` |
 | `categories` | The task categories your agent takes on: `add` or `remove` |
 | `whats-new` | What changed in this pmx, or `--since <version>`; PMX also shows it once after every update (`--json` for Claude) |
@@ -53,9 +53,9 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `linear` | How PMX reaches Linear: through your Claude app's Linear connector by default (`status`); `written` lists everything PMX wrote there, `tidy` rewrites what older versions wrote (meeting excerpts, meeting titles), `withdraw <id>` cancels an issue and removes its text; `key` stores an API key instead (advanced) |
 | `board` | The team board as a live Claude artifact (only when you use Claude and Linear): the link, `--open`, and `--install-skill` for `/pmx-board`, which publishes it from inside the Claude app |
 | `schedule` | The scheduled tasks PMX needs in your Claude app and whether each is set up and current; `--install-skill` adds `/pmx-schedule`, which creates or updates them from inside the Claude app; `--allow` lets them run `pmx` without stopping for permission |
-| `collect` | Meeting transcripts from your Claude connectors (Granola, Fireflies…): `--prompt` prints the scheduled task's instructions, `--check` validates what it saved |
+| `collect` | Calls and channel threads from your Claude connectors (Granola, Momentum, Slack…): `--prompt` prints the scheduled task's instructions, `--check` validates what it saved and deletes anything from a place your team didn't approve |
 | `todo` | Your own to-dos from your meetings, including 1:1s; never leaves your Mac. `--refresh` reads today's unread meetings, `done <id>` checks one off |
-| `synthesize` | Today's unprocessed customer calls (and Slack) → proposed, sized tasks waiting for your approval (`pmx proposals`); each meeting is marked processed in Linear under an opaque ID, so it's never processed twice |
+| `synthesize` | Today's unprocessed customer calls and approved channel threads → proposed, sized tasks waiting for your approval (`pmx proposals`). A meeting saved by two recorders is read once, and a need already open or waiting gets the new sources instead of a second task |
 | `company` | Roll teams' PMX tasks up into company-level themes; reads tasks, never transcripts |
 | `pull` | Claim the best ready task that fits the budget and the review cap, and run it (dry run in week one) |
 | `claim` / `release` | Claim a specific task; give one back; `--stale` releases expired claims |
@@ -118,11 +118,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.20.0/productmaxxing-0.20.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.20.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.21.0/productmaxxing-0.21.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.21.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.20.0.tgz
+npm install -g ./productmaxxing-0.21.0.tgz
 pmx whats-new --since <the version you had>
 ```
 

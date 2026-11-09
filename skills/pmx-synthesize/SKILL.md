@@ -14,9 +14,9 @@ A single JSON object and nothing else:
 
 ```json
 {"tasks": [
-  {"title": "…", "category": "…", "size": "S|M|L|XL", "rationale": "…", "sources": ["T1", "S4"],
-   "support": {"T1": "The buyer asked for SCIM twice.", "S4": "Support reports the same gap."},
-   "sizing": {"cell": "Themes across 3–8 sources", "why": "Five calls on one theme."}}
+  {"title": "…", "category": "…", "size": "S|M|L|XL", "rationale": "…", "sources": ["T1", "C4"],
+   "support": {"T1": "The buyer asked for SCIM twice.", "C4": "A support thread reports the same gap."},
+   "sizing": {"cell": "Themes across 3–8 sources", "why": "Five calls on one theme."}, "sameAs": null}
 ]}
 ```
 
@@ -31,10 +31,14 @@ A single JSON object and nothing else:
 - `sources`: the IDs of the sources that directly support the task. One is fine; never add a weak or
   unrelated source to reach two.
 - `support`: for each cited source, one sentence on how it supports this task, in your own words.
+- `sameAs`: null, or the ID of the open task or waiting proposal this is the same need as.
 
 ## Rules
 
-- Propose at most 10 tasks, highest value first. Merge duplicates.
+- Propose at most 10 tasks, highest value first. One task per need: when several sources raise the same need (a call,
+  a channel thread, the same meeting from two recorders), make one task and cite every one of them.
+- When the prompt lists what's already on the team's list and a need is the same as one of those, return it with
+  `"sameAs"` set to that ID. PMX adds your sources to it instead of making a second task.
 - Only propose work an agent can finish as a written draft with a repo checkout and the cited sources, in one
   of the categories listed in the prompt. Choose the category by its description. No code changes, no outreach.
 - Frame each task around the customer's problem, not the solution someone asked for.

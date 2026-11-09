@@ -7,7 +7,7 @@ import { TOPICS } from "./filter.js";
 import { privateDir, readJson, writeJson } from "./fsutil.js";
 import { paths } from "./paths.js";
 import type { RedactionKind } from "./redact.js";
-import type { Size } from "./types.js";
+import { isThread, type Size } from "./types.js";
 
 /**
  * A run receipt (PRIV-4): how one digest or synthesis run decided what to read, what it left out
@@ -48,11 +48,14 @@ export interface RunReceipt {
   todo?: { added: { text: string; source: string; due: string | null }[]; duplicates: number; dropped: string[] };
   /** Fake confidential items run through this run's own rules in memory (FLOW-3). Each must be held. */
   canaries?: { total: number; held: number; failed: string[] };
+  /** Copies of a meeting already in this run, from another recorder or folder, read once (INPUT-2). A count only. */
+  twins?: number;
   error?: string;
 }
 
 export interface SourceReceipt {
-  kind: "transcript" | "slack";
+  /** "thread" from 0.21.0: a conversation from an approved channel, through a connector (INPUT-1). */
+  kind: "transcript" | "slack" | "thread";
   /** sha256 of the absolute path or permalink, so `pmx explain` can find a left-out file again. */
   refHash: string;
   decision: "used" | "left-out";
@@ -69,6 +72,8 @@ export interface SourceReceipt {
   origin?: string;
   /** Slack only: the allowlisted channel ID, from the permalink. */
   channel?: string;
+  /** Threads only: the approved place, as the team listed it. */
+  place?: string;
   /**
    * Left-out transcripts only: the meeting identity hashes (MEET-1), so the flow view can check that no held
    * meeting ever reached the Linear meeting ledger (FLOW-3). Hashes only; never shown or shared.
@@ -89,7 +94,8 @@ export interface TaskReceipt {
    * the next sync; the flow view resolves it), the existing task it duplicated, or nowhere on a dry run.
    */
   /** `staged`: waiting for the PM's approval as that proposal (APPROVE-1); `dropped`: the PM said no. */
-  posted?: { identifier: string } | { duplicateOf: string } | { dryRun: true } | { staged: string } | { dropped: true };
+  /** `mergedInto`: the same need as a proposal already waiting, so its sources were added to that one (INPUT-2). */
+  posted?: { identifier: string } | { duplicateOf: string } | { dryRun: true } | { staged: string } | { dropped: true } | { mergedInto: string };
 }
 
 export type SizeFlag = "no-reason" | "cell-mismatch" | "count-below" | "count-above";
@@ -111,13 +117,13 @@ export const topicRulesHash = () =>
 
 export function sourceReceipts(decisions: ItemDecision[], titleOf: (t: string) => string): SourceReceipt[] {
   return decisions.map((d) => {
-    const channel = d.item.kind === "slack" ? d.item.ref.match(/\/archives\/([A-Z0-9]+)\//)?.[1] : undefined;
+    const channel = isThread(d.item) ? d.item.ref.match(/\/archives\/([A-Z0-9]+)(\/|$)/)?.[1] : undefined;
     const base = {
       kind: d.item.kind, refHash: refHash(d.item.ref), detail: d.detail, passagesCut: d.passages, passagesUsed: d.passagesKept,
-      origin: d.item.kind === "slack" ? "slack" : d.item.origin?.source ?? "file", ...(channel ? { channel } : {}),
+      origin: d.item.kind === "slack" ? "slack" : d.item.origin?.source ?? "file", ...(channel ? { channel } : {}), ...(d.item.place ? { place: d.item.place } : {}),
     };
     if (d.decision === "held") return { ...base, decision: "left-out", rule: d.rule, ...(d.item.keys?.length ? { keys: [...d.item.keys, ...(d.item.legacyKeys ?? [])] } : {}) };
-    return { ...base, decision: "used", id: d.item.id, file: d.item.kind === "slack" ? d.item.ref : basename(d.item.ref), title: titleOf(d.item.title), at: d.item.at };
+    return { ...base, decision: "used", id: d.item.id, file: d.item.ref.startsWith("http") ? d.item.ref : basename(d.item.ref), title: titleOf(d.item.title), at: d.item.at };
   });
 }
 

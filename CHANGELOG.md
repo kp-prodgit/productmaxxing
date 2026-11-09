@@ -2,6 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.21.1: the npm page links to productmaxxing.ai
+
+- **The package's homepage is now https://productmaxxing.ai**, so the Homepage link on npm goes to the site. Nothing else changed.
+
 ## 0.21.0: any Claude connector feeds PMX, with no duplicate tasks
 
 INPUT-1, INPUT-2. Slack through the Claude connector instead of a token, a recorder like Momentum, and one pattern for every other connector.

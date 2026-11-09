@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.21.1", date: "2026-11-09", headline: "The npm page links to productmaxxing.ai",
+    items: [
+      { what: "The Homepage link on PMX's npm page now goes to https://productmaxxing.ai. Nothing else changed." },
+    ],
+  },
+  {
     version: "0.21.0", date: "2026-11-08", headline: "Any Claude connector feeds PMX: Slack channels, Momentum and more, with no duplicate tasks",
     items: [
       { what: "A new Sources tab shows where PMX listens and whether each source works. Add a recorder like Momentum or Gong, or propose Slack channels for your team, with no token: Claude reads them through the connectors you already have.", try: "pmx flow --web" },

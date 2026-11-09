@@ -1,6 +1,6 @@
 {
   "name": "productmaxxing",
-  "version": "0.21.0",
+  "version": "0.21.1",
   "description": "ProductMaxxing: synthesize product signals into sized work and let each PM's agent draft it, paced by human review.",
   "license": "Apache-2.0",
   "type": "module",
@@ -33,7 +33,7 @@
     "type": "git",
     "url": "https://github.com/kp-prodgit/productmaxxing.git"
   },
-  "homepage": "https://productmaxxing.com",
+  "homepage": "https://productmaxxing.ai",
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^5.9.3",

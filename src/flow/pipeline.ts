@@ -87,7 +87,11 @@ export interface PipelineData {
   proposals: { id: string; title: string; category: string; size: Size; from: string; description: string }[];
   drafts: { identifier: string; title: string; url: string | null; since: string | null }[];
   /** Open to-dos. Local level only: they never leave the Mac. */
-  todos: { id: string; text: string; due: string | null; from: string }[];
+  todos: { id: string; text: string; due: string | null; from: string; when: "today" | "evening" | "someday" | null }[];
+  /** What the PM finished in the last 14 days, newest first (BOARD-6). This Mac's page only. */
+  logbook?: LogbookEntry[];
+  /** The team's Plan board artifact, when one is published (BOARD-1). */
+  boardUrl?: string | null;
   /** Team settings pull requests opened from the board that are still open. */
   pendingTeam: { url: string; at: string; changes: string[] }[];
   /** `problems` stays plain text for boards published before 0.17.0; `items` carries each one's fix. */
@@ -146,7 +150,9 @@ export interface PipelineInputs {
   collectReports: { at: string; connector: string | null; saved: number; inputs?: { id: string; shape: "calls" | "channels"; saved: number }[] }[];
   todosCreated: string[];
   /** Open to-dos on this Mac. */
-  openTodos?: { id: string; text: string; due: string | null; source: { title: string; at: string } }[];
+  openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string } }[];
+  logbook?: LogbookEntry[];
+  boardUrl?: string | null;
   pendingTeam?: PipelineData["pendingTeam"];
   proposals: Proposal[];
   checks: FlowCheck[];
@@ -343,7 +349,9 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
       from: p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
     })) : [],
     drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null })),
-    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, from: `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
+    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, from: t.source.title === "Added by you" ? "Added by you" : `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
+    logbook: local ? i.logbook ?? [] : [],
+    boardUrl: i.boardUrl ?? null,
     pendingTeam: i.pendingTeam ?? [],
     health: { ok: !problems.length, problems: problems.map((p) => p.text), items: problems, facts: i.health.facts },
     checks: i.checks,
@@ -366,4 +374,42 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
 /** The rubric as the board edits it: category → size → text, for every category the team has. */
 export function rubricFor(rubric: SizeRubric, categories: string[]): Record<string, Record<Size, string>> {
   return Object.fromEntries(categories.map((c) => [c, Object.fromEntries(SIZES.map((z) => [z, rubric.cells[c]?.[z] ?? ""])) as Record<Size, string>]));
+}
+
+export interface LogbookEntry {
+  at: string;
+  kind: "done" | "approved" | "dropped" | "accepted" | "redo" | "rejected" | "shared" | "digest-rejected";
+  text: string;
+  /** The Linear identifier, when there is one. */
+  ref: string | null;
+}
+
+/**
+ * The Logbook (BOARD-6): to-dos ticked done, proposals approved or dropped, drafts decided and digests shared or
+ * rejected by this PM, from records PMX already keeps. Titles are the PM's own, so only this Mac's page gets it.
+ */
+export function buildLogbook(i: {
+  now: Date; agent: string; days?: number;
+  todos: { text: string; status: string; doneAt: string | null }[];
+  receipts: { at: string; synth?: { tasks: { title: string; posted?: object }[] } | null }[];
+  runlog: RunLogEntry[] | null;
+}): LogbookEntry[] {
+  const since = new Date(i.now.getTime() - (i.days ?? 14) * 86400000).toISOString();
+  const out: LogbookEntry[] = [];
+  for (const t of i.todos) if (t.status === "done" && t.doneAt && t.doneAt >= since) out.push({ at: t.doneAt, kind: "done", text: t.text, ref: null });
+  for (const r of i.receipts) {
+    if (r.at < since) continue;
+    for (const t of r.synth?.tasks ?? []) {
+      const p = t.posted as Record<string, unknown> | undefined;
+      if (p && typeof p.identifier === "string" && !p.identifier.startsWith("PENDING-")) out.push({ at: r.at, kind: "approved", text: t.title, ref: p.identifier });
+      else if (p && typeof p.identifier === "string") out.push({ at: r.at, kind: "approved", text: t.title, ref: null });
+      else if (p && p.dropped === true) out.push({ at: r.at, kind: "dropped", text: t.title, ref: null });
+    }
+  }
+  for (const e of i.runlog ?? []) {
+    if (e.ts < since || e.agent !== i.agent) continue;
+    if (e.type === "verdict") out.push({ at: e.ts, kind: e.verdict, text: e.taskId, ref: e.taskId });
+    if (e.type === "digest" && e.outcome !== "staged") out.push({ at: e.ts, kind: e.outcome === "approved" ? "shared" : "digest-rejected", text: `Digest, week of ${e.ts.slice(0, 10)}`, ref: null });
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 200);
 }

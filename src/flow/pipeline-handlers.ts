@@ -8,7 +8,8 @@ import { loadPipeline } from "./pipeline-load.js";
 import { rememberTeamPr } from "./team-prs.js";
 import { digestAction } from "./digests.js";
 import { startJob } from "./jobs.js";
-import { completeTodo } from "../todo/todo.js";
+import { addTodo, completeTodo, placeTodo } from "../todo/todo.js";
+import type { PipelineActions } from "./pipeline-act.js";
 import { mkdir } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { plist, stableNode } from "../core/launchd.js";
@@ -16,7 +17,7 @@ import { claudeAbsolutePath } from "../core/claude-bin.js";
 import { paths, pmxHome } from "../core/paths.js";
 
 /** What `pmx flow --web` serves for the pipeline board (BOARD-3): this Mac's data, and the writes only it may make. */
-export function pipelineHandlers(ctx: Ctx) {
+export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<PipelineActions, "todoAdd" | "todoPlace">> {
   return {
     data: (hours: number) => loadPipeline(ctx, { level: "local", hours, keychain: ctx.keychain }),
     async proposals(action: "approve" | "drop", ids: string[]) {
@@ -70,6 +71,17 @@ export function pipelineHandlers(ctx: Ctx) {
       if (typeof id !== "string" || !/^[\w-]{3,64}$/.test(id)) return { status: 400, body: { error: "Unknown to-do." } };
       try { const t = await completeTodo(id, ctx.now()); return { status: 200, body: { message: `Done: ${t.text}` } }; }
       catch (e: any) { return { status: 404, body: { error: e.message.replace(/`([^`]+)`/g, "$1") } }; }
+    },
+    /** A to-do the PM typed on the board (BOARD-6). */
+    async todoAdd(input: { text: unknown; due?: unknown; when?: unknown }) {
+      try { const t = await addTodo(input, ctx.now()); return { status: 200, body: { message: `Added: ${t.text}`, todo: { id: t.id } } }; }
+      catch (e: any) { return { status: 400, body: { error: e.message } }; }
+    },
+    /** A to-do moved to Today, This Evening, Someday or a date, or reopened after an undo. */
+    async todoPlace(id: string, p: { due?: unknown; when?: unknown; reopen?: boolean }) {
+      if (typeof id !== "string" || !/^[\w-]{3,64}$/.test(id)) return { status: 400, body: { error: "Unknown to-do." } };
+      try { const t = await placeTodo(id, p); return { status: 200, body: { message: p.reopen ? `Reopened: ${t.text}` : `Moved: ${t.text}` } }; }
+      catch (e: any) { return { status: 400, body: { error: e.message.replace(/`([^`]+)`/g, "$1") } }; }
     },
     /** A paused category resumed from the board, as `pmx review --unpause` does (Team plan). */
     async resume(category: string) {

@@ -19,6 +19,21 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.24.0", date: "2026-11-12", headline: "Fireflies is read through its Claude connector",
+    items: [
+      { what: "PMX reads Fireflies the way its connector is built: your meetings since the last run, the transcript word for word without timestamps, never Fireflies' AI summary, and never its tools that share or change meetings.", try: "pmx sources add Fireflies" },
+    ],
+  },
+  {
+    version: "0.23.0", date: "2026-11-11", headline: "PMX is a workspace you work in, right inside Claude",
+    items: [
+      { what: "A new layout: a left menu with Inbox (tasks to approve, the digest, fixes), Today, Upcoming, Anytime and Logbook, then Plan, Digest, Agents, Status and Settings. Approving or ticking off waits a few seconds so you can undo it.", try: "pmx flow --web" },
+      { what: "The /pmx-flow page in Claude now does everything the Mac page does, with nothing running in Terminal: click Connect once and allow it on your Mac. Type /pmx-flow in the Claude app to update your page." },
+      { what: "Add your own to-dos, and move any to-do to Today, This Evening, Someday or a date." },
+      { what: "Settings has its own screen: grouped sections, Save Changes, and a review of every change before it's saved." },
+    ],
+  },
+  {
     version: "0.22.0", date: "2026-11-09", headline: "Google Meet's notetaker is an input, and links point to productmaxxing.ai",
     items: [
       { what: "PMX reads Google Meet calls through your Google Drive connector: the transcript in each meeting's \"Notes by Gemini\" or \"Transcript\" doc, word for word. Gemini's summary alone isn't a transcript, so turn on transcripts in Meet to have a call read.", try: "pmx sources add \"Google Meet\"" },

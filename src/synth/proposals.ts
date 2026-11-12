@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { CANARY_REFUSAL, hasCanary } from "../core/canary.js";
 import type { Ctx } from "../core/context.js";
-import { privateDir, readJson, writeJson } from "../core/fsutil.js";
+import { privateDir, readJson, withLock, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
 import { readReceipt, writeReceipt } from "../core/receipt.js";
 import type { Services } from "../core/services.js";
@@ -50,6 +50,10 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /** Adds proposals, skipping any whose title is already waiting. Returns the ones added, with their IDs. */
 export async function stageProposals(list: Omit<Proposal, "id">[]): Promise<Proposal[]> {
+  return withLock(proposalsFile(), () => stageLocked(list));
+}
+
+async function stageLocked(list: Omit<Proposal, "id">[]): Promise<Proposal[]> {
   const all = await readProposals();
   const waiting = new Set(all.map((p) => norm(p.title)));
   const added: Proposal[] = [];
@@ -70,6 +74,10 @@ export async function stageProposals(list: Omit<Proposal, "id">[]): Promise<Prop
  * False when the proposal is gone (approved or dropped since).
  */
 export async function addEvidence(id: string, e: { receipt: string; from: Proposal["from"]; days: string[] }): Promise<boolean> {
+  return withLock(proposalsFile(), () => evidenceLocked(id, e));
+}
+
+async function evidenceLocked(id: string, e: { receipt: string; from: Proposal["from"]; days: string[] }): Promise<boolean> {
   const all = await readProposals();
   const p = all.find((x) => x.id === id);
   if (!p) return false;
@@ -134,18 +142,21 @@ export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]):
     }
     done.add(p.id);
     // Saved after each one, so a failure halfway never posts the same task twice.
-    await save((await readProposals()).filter((x) => !done.has(x.id)));
+    await withLock(proposalsFile(), async () => save((await readProposals()).filter((x) => !done.has(x.id))));
   }
   return { posted, duplicates, missing };
 }
 
 export async function dropProposals(refs: string[], now = new Date()): Promise<{ dropped: Proposal[]; missing: string[] }> {
-  const all = await readProposals();
-  const { hit, missing } = pick(all, refs);
-  for (const p of hit) await markReceipt(p, { dropped: true }, now);
-  const gone = new Set(hit.map((p) => p.id));
-  await save(all.filter((p) => !gone.has(p.id)));
-  return { dropped: hit, missing };
+  const r = await withLock(proposalsFile(), async () => {
+    const all = await readProposals();
+    const { hit, missing } = pick(all, refs);
+    const gone = new Set(hit.map((p) => p.id));
+    await save(all.filter((p) => !gone.has(p.id)));
+    return { dropped: hit, missing };
+  });
+  for (const p of r.dropped) await markReceipt(p, { dropped: true }, now);
+  return r;
 }
 
 /** One proposal as the PM reviews it: what the tracker gets, then (marked) what only this Mac sees. */

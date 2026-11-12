@@ -2,7 +2,7 @@ import { allKeys } from "../meetings/ledger.js";
 import { createHash } from "node:crypto";
 import { checkBudget, recordSpend } from "../budget/provider.js";
 import type { Ctx } from "../core/context.js";
-import { privateDir, readJson, writeJson } from "../core/fsutil.js";
+import { privateDir, readJson, withLock, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
 import { DATA_RULES, dataBlock } from "../core/prompt.js";
 import { newReceiptId, writeReceipt, type RunReceipt } from "../core/receipt.js";
@@ -20,6 +20,11 @@ export interface Todo {
   /** The meeting it came from: redacted title and date, plus the identity hashes. */
   source: { title: string; at: string; keys: string[] };
   status: "open" | "done";
+  /**
+   * Where the PM put it on the board (BOARD-6): Today, This Evening or Someday. Null is the default: Today once it's
+   * due, Upcoming before that, Anytime with no date.
+   */
+  when?: "today" | "evening" | "someday" | null;
   createdAt: string;
   doneAt: string | null;
   /** The run that found it: `pmx explain <receiptId>`. */
@@ -51,6 +56,16 @@ async function saveTodos(s: Store): Promise<void> {
   for (const [k, at] of Object.entries(s.processed)) if (Date.parse(at) < cutoff) delete s.processed[k];
   s.items = s.items.filter((t) => t.status === "open" || !t.doneAt || Date.parse(t.doneAt) >= cutoff);
   await writeJson(paths.todos(), s, 0o600);
+}
+
+/** Loads, changes and saves the store under its lock, so a change made meanwhile by another process is never lost. */
+async function mutateTodos<T>(fn: (s: Store) => T | Promise<T>): Promise<T> {
+  return withLock(paths.todos(), async () => {
+    const s = await loadTodos();
+    const out = await fn(s);
+    await saveTodos(s);
+    return out;
+  });
 }
 
 export function parseTodos(text: string, validIds: Set<string>): { todos: { text: string; due: string | null; source: string; why: string }[]; dropped: string[] } {
@@ -154,21 +169,67 @@ export async function refreshTodos(ctx: Ctx, o: { since?: Date; dryRun?: boolean
   receipt.todo = { added: refs, duplicates, dropped: parsed.dropped };
   await writeReceipt(receipt, now);
   if (!o.dryRun) {
-    for (const i of work) for (const k of i.keys ?? []) store.processed[k] = now.toISOString();
-    store.items.push(...result.added);
-    await saveTodos(store);
+    // Saved onto a fresh read: the PM may have ticked or added to-dos while Claude was reading.
+    await mutateTodos((fresh) => {
+      for (const i of work) for (const k of i.keys ?? []) fresh.processed[k] = now.toISOString();
+      fresh.items.push(...result.added);
+    });
   }
   return result;
 }
 
-export async function completeTodo(id: string, now: Date): Promise<Todo> {
-  const store = await loadTodos();
-  const t = store.items.find((x) => x.id === id || x.id.startsWith(id));
+const find = (s: Store, id: string) => {
+  // An exact ID, or a unique prefix of one as typed in Terminal.
+  const t = s.items.find((x) => x.id === id) ?? (id.length >= 3 ? s.items.filter((x) => x.id.startsWith(id)) : []).find((_, __, all) => all.length === 1);
   if (!t) throw new Error(`No to-do "${id}". See \`pmx todo\`.`);
-  t.status = "done";
-  t.doneAt = now.toISOString();
-  await saveTodos(store);
   return t;
+};
+
+export async function completeTodo(id: string, now: Date): Promise<Todo> {
+  return mutateTodos((s) => {
+    const t = find(s, id);
+    t.status = "done";
+    t.doneAt = now.toISOString();
+    return t;
+  });
+}
+
+const WHEN = ["today", "evening", "someday"] as const;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Checks a placement from the board: a due date (YYYY-MM-DD) or none, and Today, This Evening, Someday or none. */
+function checkPlacement(p: { due?: unknown; when?: unknown }): { due: string | null; when: Todo["when"] } {
+  const due = p.due === undefined || p.due === null || p.due === "" ? null : String(p.due);
+  if (due !== null && (!DAY.test(due) || Number.isNaN(Date.parse(due)))) throw new Error("A due date is a day like 2026-11-14.");
+  const when = p.when === undefined || p.when === null || p.when === "" ? null : String(p.when);
+  if (when !== null && !(WHEN as readonly string[]).includes(when)) throw new Error("A to-do goes in Today, This Evening or Someday.");
+  return { due, when: when as Todo["when"] };
+}
+
+/** A to-do the PM typed on the board (BOARD-6). It comes from no meeting, so it carries no meeting keys. */
+export async function addTodo(input: { text: unknown; due?: unknown; when?: unknown }, now: Date): Promise<Todo> {
+  const text = typeof input.text === "string" ? input.text.replace(/\s+/g, " ").trim() : "";
+  if (!text) throw new Error("Give the to-do some words.");
+  if (text.length > 200) throw new Error("Keep a to-do under 200 characters.");
+  const { due, when } = checkPlacement(input);
+  const todo: Todo = {
+    id: createHash("sha256").update(`manual\n${now.toISOString()}\n${text}\n${Math.random()}`).digest("hex").slice(0, 6),
+    text, due, why: "", when, source: { title: "Added by you", at: now.toISOString().slice(0, 10), keys: [] },
+    status: "open", createdAt: now.toISOString(), doneAt: null, receiptId: "",
+  };
+  return mutateTodos((s) => { s.items.push(todo); return todo; });
+}
+
+/** Moves a to-do: a new due date and placement, or reopens one ticked by mistake. */
+export async function placeTodo(id: string, p: { due?: unknown; when?: unknown; reopen?: boolean }): Promise<Todo> {
+  const placed = checkPlacement(p);
+  return mutateTodos((s) => {
+    const t = find(s, id);
+    t.due = placed.due;
+    t.when = placed.when;
+    if (p.reopen) { t.status = "open"; t.doneAt = null; }
+    return t;
+  });
 }
 
 export function formatTodos(items: Todo[]): string {

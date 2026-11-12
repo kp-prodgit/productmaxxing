@@ -12,7 +12,7 @@ import { FLAG_TEXT } from "../synth/synthesize.js";
 import { page } from "./page.js";
 import { flowPage } from "../flow/page.js";
 import { localPipelinePage } from "../flow/pipeline-page.js";
-import type { PipelineData } from "../flow/pipeline.js";
+import { pipelineAct, type PipelineActions } from "../flow/pipeline-act.js";
 import { currentVersion } from "../core/version.js";
 import type { FlowGraph } from "../flow/graph.js";
 import { resolveLive } from "./resolve.js";
@@ -39,18 +39,7 @@ export async function startExplainServer(o: {
    * The pipeline board (BOARD-3), served at /flow. Its writes are POSTs with the same token: approving or dropping
    * proposals, and settings changes, which only this Mac's page may send.
    */
-  pipeline?: {
-    data(hours: number): Promise<PipelineData>;
-    proposals(action: "approve" | "drop", ids: string[]): Promise<string>;
-    changes(changes: unknown[], confirmLoosening: boolean): Promise<{ status: number; body: unknown }>;
-    whatIf(kind: string, value: string): Promise<unknown>;
-    review(identifier: string, verdict: string, note: string): Promise<{ status: number; body: unknown }>;
-    digest?(action: string, week: string, markdown?: string): Promise<{ status: number; body: unknown }>;
-    run?(step: string): Promise<{ status: number; body: unknown }>;
-    todoDone?(id: string): Promise<{ status: number; body: unknown }>;
-    setup?(action: string): Promise<{ status: number; body: unknown }>;
-    resume?(category: string): Promise<{ status: number; body: unknown }>;
-  };
+  pipeline?: PipelineActions;
 }): Promise<ExplainServer> {
   const token = randomBytes(24).toString("base64url");
   const want = Buffer.from(`Bearer ${token}`);
@@ -71,44 +60,8 @@ export async function startExplainServer(o: {
       if (!Number.isInteger(hours) || hours < 1 || hours > 336) return [400, { error: "hours must be 1 to 336" }];
       return [200, { pipeline: await o.pipeline.data(hours) }];
     }
-    if (o.pipeline && path === "/api/pipeline/what-if") return [200, { whatIf: await o.pipeline.whatIf(query.get("kind") ?? "", query.get("value") ?? "") }];
-    if (o.pipeline && path === "/api/pipeline/proposals" && body) {
-      if (body.action !== "approve" && body.action !== "drop") return [400, { error: "action must be approve or drop" }];
-      if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((x: unknown) => typeof x !== "string")) return [400, { error: "ids must be proposal IDs" }];
-      return [200, { message: await o.pipeline.proposals(body.action, body.ids) }];
-    }
-    if (o.pipeline && path === "/api/pipeline/changes" && body) {
-      if (!Array.isArray(body.changes) || body.changes.length > 100) return [400, { error: "changes must be a list" }];
-      const r = await o.pipeline.changes(body.changes, body.confirmLoosening === true);
-      return [r.status, r.body];
-    }
-    if (o.pipeline && path === "/api/pipeline/review" && body) {
-      if (typeof body.identifier !== "string" || typeof body.verdict !== "string") return [400, { error: "identifier and verdict are required" }];
-      const r = await o.pipeline.review(body.identifier, body.verdict, typeof body.note === "string" ? body.note.slice(0, 2000) : "");
-      return [r.status, r.body];
-    }
-    if (o.pipeline?.digest && path === "/api/pipeline/digest" && body) {
-      if (typeof body.action !== "string" || typeof body.week !== "string") return [400, { error: "action and week are required" }];
-      const r = await o.pipeline.digest(body.action, body.week, typeof body.markdown === "string" ? body.markdown : undefined);
-      return [r.status, r.body];
-    }
-    if (o.pipeline?.run && path === "/api/pipeline/run" && body) {
-      if (typeof body.step !== "string") return [400, { error: "step is required" }];
-      const r = await o.pipeline.run(body.step);
-      return [r.status, r.body];
-    }
-    if (o.pipeline?.todoDone && path === "/api/pipeline/todo" && body) {
-      const r = await o.pipeline.todoDone(String(body.id ?? ""));
-      return [r.status, r.body];
-    }
-    if (o.pipeline?.resume && path === "/api/pipeline/resume" && body) {
-      const r = await o.pipeline.resume(String(body.category ?? ""));
-      return [r.status, r.body];
-    }
-    if (o.pipeline?.setup && path === "/api/pipeline/setup" && body) {
-      const r = await o.pipeline.setup(String(body.action ?? ""));
-      return [r.status, r.body];
-    }
+    if (o.pipeline && path === "/api/pipeline/what-if" && !body) return [200, { whatIf: await o.pipeline.whatIf(query.get("kind") ?? "", query.get("value") ?? "") }];
+    if (o.pipeline && path.startsWith("/api/pipeline/") && body) return pipelineAct(o.pipeline, path.slice("/api/pipeline/".length), body);
     if (path === "/api/flow") {
       if (!o.flow) return [404, { error: "not found" }];
       const hours = Number(query.get("hours") ?? 24);

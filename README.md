@@ -11,16 +11,16 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.22.0/productmaxxing-0.22.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.22.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/productmaxxing-0.24.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.22.0.tgz
+npm install -g ./productmaxxing-0.24.0.tgz
 pmx init
 ```
 
 The release package is prebuilt and has no dependencies, so installing it downloads and builds nothing. Joining a team that already uses PMX? Clone its PMX repo and install the team's copy instead: `npm install -g <repo>/.pmx/cli/productmaxxing.tgz`. Use Homebrew's Node rather than nvm: the background job remembers Node's path, and nvm switching or removing a version breaks it.
 
-`pmx init` doesn't ask for working hours: PMX works whenever this Mac is on and awake. It asks for your company's email domain, so it can tell colleagues from customers (without one it holds every meeting). On a Claude plan it sets no dollar cap of your own, because the dollars are only an estimate; your plan's own limits and your team's cap still apply. It explains the PMX repo, checks every answer (and asks again if one is wrong), shows a summary, and saves nothing until you confirm. Then it sets up or joins your team's PMX repo, stores tokens in the keychain, writes a clean run profile and registers one background job. If the Claude desktop app is on your Mac, it also offers to add PMX's local server to it, so the `/pmx-flow` board in Claude can read PMX (counts only). Then:
+`pmx init` doesn't ask for working hours: PMX works whenever this Mac is on and awake. It asks for your company's email domain, so it can tell colleagues from customers (without one it holds every meeting). On a Claude plan it sets no dollar cap of your own, because the dollars are only an estimate; your plan's own limits and your team's cap still apply. It explains the PMX repo, checks every answer (and asks again if one is wrong), shows a summary, and saves nothing until you confirm. Then it sets up or joins your team's PMX repo, stores tokens in the keychain, writes a clean run profile and registers one background job. If the Claude desktop app is on your Mac, it also offers to add PMX's local server to it, so the `/pmx-flow` workspace in Claude works with nothing running in Terminal. Then:
 
 ```bash
 pmx doctor        # green/red checklist, including every clean-profile check (--json for scripts)
@@ -40,7 +40,7 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `status` | Config, kill switch, today's usage (tokens, and dollars at list prices) and recent runs |
 | `proposals` | Tasks PMX proposed from your calls, exactly as Linear would get them. `approve <n>` or `--all` sends them to the PMX inbox; `drop` discards them. Nothing reaches Linear before you approve |
 | `budget` | Your daily cap on PMX's usage: `set <dollars>`, `off` (only your plan's limits and the team cap), or `set 0` to pause PMX |
-| `flow` | The pipeline board: your skills, your scheduled tasks, a map of what travels from your meeting apps and Slack to Linear and back (with counts on every connection), and the rules behind each step. `--web` opens it on this Mac, where you can approve proposed tasks and change rules; `--install-skill` adds `/pmx-flow`, which publishes it as a live Claude artifact that shows counts only |
+| `flow` | Your workspace: Inbox (tasks to approve), Today, Upcoming, Anytime and Logbook for your to-dos and reviews, then Plan, Digest, Agents, Status (the pipeline, privacy checks, activity) and Settings. `--web` opens it on this Mac; `--install-skill` adds `/pmx-flow`, which publishes the same workspace as a live Claude artifact that works through the Claude app once you click Connect and allow it on your Mac |
 | `sources` | Where PMX listens: your meeting apps, recorders you add (`add Momentum`, `add "Google Meet"` for Gemini notes and Meet transcripts through Google Drive, `--only "calls tagged Discovery"`; `remove`), your team's approved channels, and what each may feed (`set granola off`, `mine` for your to-dos only, `linear` for to-dos and team tasks). The board's Sources tab does the same, and proposes team channels |
 | `domains` | Your company's email domains, which tell colleagues from customers: `add` or `remove` |
 | `categories` | The task categories your agent takes on: `add` or `remove` |
@@ -118,11 +118,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.22.0/productmaxxing-0.22.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.22.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/productmaxxing-0.24.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.22.0.tgz
+npm install -g ./productmaxxing-0.24.0.tgz
 pmx whats-new --since <the version you had>
 ```
 
@@ -154,7 +154,7 @@ The brain runs on one of your team's machines on your own Claude plan, so task t
 - **Shared team memory (B4).** `memory/` in the PMX repo, loaded through the project `CLAUDE.md`, changed only by code-owner-reviewed PR.
 - **Atomic claims.** A claim is a parentless commit pushed to `refs/pmx/claims/<task>`; only one push can win.
 - **Provable runs (B5, NEUT-3).** Each output PR carries `.pmx/runs/<task>.json`. CI recomputes the environment fingerprint from the repo and rejects records that don't match.
-- **See where data went, and change the rules (FLOW-1 to FLOW-7, BOARD-3).** `pmx flow --web` is the pipeline board on this Mac: counts on every connection from your meeting apps to Linear and back, the skills and scheduled tasks, an audit that checks held meetings against Linear and fake confidential "canary" meetings every run must hold, and every rule, editable. Your own settings apply at once; team settings open one pull request. The `/pmx-flow` artifact shows the same in Claude with counts only: no meeting or proposal titles, no do-not-read entries.
+- **See where data went, and change the rules (FLOW-1 to FLOW-7, BOARD-3).** `pmx flow --web` is the pipeline board on this Mac: counts on every connection from your meeting apps to Linear and back, the skills and scheduled tasks, an audit that checks held meetings against Linear and fake confidential "canary" meetings every run must hold, and every rule, editable. Your own settings apply at once; team settings open one pull request. The `/pmx-flow` artifact is the same workspace in Claude. Before you connect it, it shows counts only: no meeting or proposal titles, no do-not-read entries. Connecting asks you on the Mac; after that, titles reach only your page, uncached, and a Claude chat can't read them or act without the key you allowed (`pmx mcp --unpair` disconnects).
 - **Explainable runs (PRIV-4).** Every digest and synthesis run leaves a receipt in `~/.pmx/receipts` (owner-only, 14 days, never in git). `pmx explain` shows it; left-out text is never stored, and file names and lines are found again in your own folders on screen.
 - **Meetings, once.** A scheduled task in your Claude app copies transcripts from your meeting connectors; PMX's own runs never get connectors. Team meetings are claimed while they're processed and recorded in the PMX repo once done, so no meeting is processed twice. Your own to-dos may come from 1:1s, but stay on your Mac.
 - **Content-free analytics (PRIV-5).** Only after `pmx login`, and only IDs, sizes, outcomes, counts and cost. `pmx analytics --show` prints exactly what's waiting; `pmx analytics off` stops it.

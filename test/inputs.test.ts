@@ -98,6 +98,40 @@ describe("connector inputs (INPUT-1)", () => {
     expect(board.suggested.find((x) => x.connector === "Google Meet")).toMatchObject({ shape: "calls", via: "Google Drive" });
   });
 
+  it("reads Fireflies through its own connector: the transcript tool only, never its summaries or write tools", async () => {
+    const { repo } = await pmxRepo();
+    const base = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [], slackChannel: null } } });
+    const p = await collectPrompt(base, { scope: "mine" });
+    expect(p).toMatch(/If you use Fireflies, use these two tools and no others\. List meetings with fireflies_get_transcripts, with fromDate "2026-11-05", mine true and limit 50/);
+    expect(p).toMatch(/fireflies_get_transcript and its transcriptId/);
+    expect(p).toMatch(/drop the timestamp, keep "Speaker: what they said", and join back-to-back lines from the same speaker/);
+    expect(p).toMatch(/Never use fireflies_get_summary, fireflies_fetch or fireflies_search/);
+    expect(p).toMatch(/Never use the Fireflies tools that share, rename or move meetings/);
+    // The recipe comes before Google Meet's, once, and a team run lists the team's meetings, not only the PM's.
+    expect(p.indexOf("If you use Fireflies")).toBeLessThan(p.indexOf("Google Meet has no connector"));
+    expect(p.match(/If you use Fireflies/g)).toHaveLength(1);
+    const team = await collectPrompt(base, { scope: "team" });
+    expect(team).toMatch(/fromDate "2026-11-05" and limit 50/);
+    // Added as a recorder it's read every run, with the same recipe; turned off, it isn't mentioned at all.
+    const added = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [], slackChannel: null, calls: [{ connector: "Fireflies" }] } } });
+    const q = await collectPrompt(added, { scope: "mine" });
+    expect(q).toMatch(/in this order: Granola, Otter, Fathom, tl;dv, Zoom, Google Meet\./);
+    expect(q).toMatch(/- "Fireflies"\n/);
+    expect(q.match(/If you use Fireflies/g)).toHaveLength(1);
+    const off = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [], slackChannel: null, routes: { fireflies: "off" } } } as any });
+    expect(await collectPrompt(off, { scope: "mine" })).not.toMatch(/fireflies_get_transcripts/);
+  });
+
+  it("the check drops line timestamps a recorder left in a transcript, and keeps the front matter", async () => {
+    const { repo } = await pmxRepo();
+    const ctx = await testCtx({ repo, now: NOW });
+    const dir = paths.transcripts();
+    await writeTranscript(dir, `${today}-fireflies-acme.md`, `---\ntitle: Acme [Q4] sync\ndate: ${today}T14:00:00Z\nparticipants: jane@acme.com, fred@fireflies.ai\nsource: fireflies\nsource_id: ff-9\nowner: Ana <ana@us.com>\n---\n[00:05 - 00:08] Jane: We export a CSV every Friday.\n[1:02:03 - 1:02:09] Ana: [laughs] And paste it by hand?\nJane: Yes, every week.`);
+    await checkCollected(ctx);
+    const { readFile } = await import("node:fs/promises");
+    expect(await readFile(join(dir, `${today}-fireflies-acme.md`), "utf8")).toBe(`---\ntitle: Acme [Q4] sync\ndate: ${today}T14:00:00Z\nparticipants: jane@acme.com, fred@fireflies.ai\nsource: fireflies\nsource_id: ff-9\nowner: Ana <ana@us.com>\n---\nJane: We export a CSV every Friday.\nAna: [laughs] And paste it by hand?\nJane: Yes, every week.`);
+  });
+
   it("deletes threads from places the team didn't approve, and records how each connector went", async () => {
     const { repo } = await pmxRepo();
     const ctx = await testCtx({ repo, now: NOW, team: { synthesizer: "ana", inputs: [{ connector: "Slack", places: ["#product-feedback"] }] }, personal: { handle: "ana", sources: { transcriptDirs: [], slackChannel: null, calls: [{ connector: "Momentum" }] } } });

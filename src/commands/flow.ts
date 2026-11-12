@@ -90,12 +90,18 @@ export const flowCommands: Command[] = [
   },
   {
     name: "mcp",
-    summary: "PMX's read-only server for the /pmx-flow artifact (the Claude app starts it); --install registers it with the Claude desktop app",
-    usage: "pmx mcp | pmx mcp --install [--yes]",
-    options: { install: { type: "boolean" }, yes: { type: "boolean", short: "y" } },
+    summary: "PMX's server for the /pmx-flow workspace (the Claude app starts it); --install registers it with the Claude desktop app, --unpair disconnects every paired page",
+    usage: "pmx mcp | pmx mcp --install [--yes] | pmx mcp --unpair",
+    options: { install: { type: "boolean" }, yes: { type: "boolean", short: "y" }, unpair: { type: "boolean" } },
     async run(a) {
+      if (a.values.unpair) {
+        const { unpairAll } = await import("../mcp/pair.js");
+        const n = await unpairAll();
+        console.log(n ? `Disconnected ${n} page(s). Each shows Connect again; connecting asks you on this Mac.` : "No page was connected.");
+        return 0;
+      }
       if (a.values.install) {
-        if (!a.values.yes && !(await a.ask.confirm("Register PMX's read-only server with the Claude desktop app, so the /pmx-flow page can read PMX on this Mac? Any Claude chat on this Mac can then read PMX's flow metadata (never held meeting titles).", true))) return 1;
+        if (!a.values.yes && !(await a.ask.confirm("Register PMX's server with the Claude desktop app, so your /pmx-flow workspace can work on this Mac with nothing running in Terminal? Any Claude chat on this Mac can read PMX's counts and flow metadata (never held meeting titles). Titles and actions need a page you connect, and connecting asks you on this Mac first.", true))) return 1;
         const r = await installMcp(await stableNode(process.execPath), a.cliPath);
         if (r.error) throw new Error(r.error);
         console.log(r.changed ? "Registered. Restart the Claude app, then open your /pmx-flow page there." : "Already registered.");

@@ -17,7 +17,7 @@ import { loadTodos } from "../todo/todo.js";
 import { kindOf, toTask } from "../tracker/linear.js";
 import { overlay, readOutbox, readResolved, readSnapshot, relayHealth } from "../tracker/relay.js";
 import { buildFlowGraph } from "./graph.js";
-import { buildPipeline, rubricFor, type HealthProblem, type PipelineData, type PipelineLevel } from "./pipeline.js";
+import { buildLogbook, buildPipeline, rubricFor, type HealthProblem, type PipelineData, type PipelineLevel } from "./pipeline.js";
 import { pendingTeamPrs } from "./team-prs.js";
 import { pausedCategories } from "../core/services.js";
 import { analyticsOn, cloudTarget } from "../cloud/account.js";
@@ -176,6 +176,8 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     level: o.level, now, hours, agent: ctx.agent, receipts, runlog: log, issues, linearSyncedAt: snap?.syncedAt ?? null,
     collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals,
     openTodos: todos.filter((t) => t.status === "open"), pendingTeam,
+    logbook: local ? buildLogbook({ now, agent: ctx.agent, todos, receipts, runlog: log }) : [],
+    boardUrl: ctx.team.board?.url ?? ctx.personal.board?.url ?? null,
     checks: graph.checks, health: { problems, facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
     teamCategories: ctx.team.categories, paused, autoPause: ctx.team.autoPause,
     automations, activity: buildActivity({ now, hours, agent: ctx.agent, receipts, runlog: log, collectReports: state.collectReports, lastTick: state.lastTick }),

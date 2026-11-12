@@ -1,11 +1,11 @@
 ---
 name: pmx-flow
-description: Publishes ProductMaxxing's (PMX) pipeline board as a live Claude artifact (skills, scheduled tasks, what travels from meeting apps and Slack to Linear and back, and the rules behind each step), read from PMX on this Mac, or updates the one this Mac already published. Use when the user types /pmx-flow or asks to set up, open or update the PMX flow view in Claude.
+description: Publishes ProductMaxxing's (PMX) workspace as a live Claude artifact (tasks to approve, to-dos, drafts to review, the digest, the pipeline and settings), run on this Mac through the Claude app with nothing in Terminal, or updates the one this Mac already published. Use when the user types /pmx-flow or asks to set up, open or update the PMX workspace, board or flow view in Claude.
 ---
 
 <!-- Installed by ProductMaxxing (pmx flow --install-skill), which keeps it up to date. Your edits are overwritten on the next update. -->
 
-# Publish the PMX pipeline board
+# Publish the PMX workspace
 
 PMX can't publish artifacts itself, so it prepares the page and you publish it.
 
@@ -14,9 +14,10 @@ PMX can't publish artifacts itself, so it prepares the page and you publish it.
 3. Publish the file at `html` with the Artifact tool. Pass `capabilities`, `icon` and `description` exactly as given; don't add, drop or rename a capability or tool. If `url` is set, pass it as `url` so the existing page keeps its link (read it first if the tool asks). Don't edit the page. Its content comes from PMX.
 4. Run `pmx flow --set-url <the published link>`.
 5. Tell the user the link and these facts:
-   - The page reads PMX on the Mac that opens it, through the Claude desktop app. It shows nothing in a browser tab or on another computer.
+   - The page works on the Mac that opens it, through the Claude desktop app, with nothing running in Terminal. In a browser tab or on another computer it shows how to connect instead.
    - If `mcpInstalled` is false: the user runs `pmx mcp --install` in Terminal once and restarts the Claude app, so the page can reach PMX. Don't run it for them.
-   - The page shows counts only: no meeting or proposal titles and no do-not-read entries. `pmx flow --web` shows those on the Mac, and that's where the user approves proposed tasks and changes rules.
-   - The page changes one thing: it adds an entry to the user's do-not-read list when they click to.
+   - The first time, the page shows a Connect button. Clicking it makes PMX ask on the Mac, in a dialog, whether to allow the page. After Allow, the page shows their tasks, to-dos and digest and acts on them. `pmx mcp --unpair` or Settings → Account disconnects it.
+   - The Claude app may ask them to allow some actions the first time.
+6. Never call the `pair`, `board` or `board_act` tools yourself, and never ask the user for a key: they are for the page.
 
 Publish nothing else, never share the page, and never change or delete any other artifact.

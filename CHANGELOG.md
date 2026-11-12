@@ -2,6 +2,27 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.24.0: Fireflies, read through its Claude connector
+
+COLLECT-1, INPUT-1.
+
+- **Fireflies has its own recipe.** PMX already tried Fireflies among the meeting apps, but only with general steps. The collection task now uses Fireflies' connector the way it's built: it lists your meetings since the last run with `fireflies_get_transcripts` (only the ones you attended, unless it's the team's run), fetches each transcript with `fireflies_get_transcript`, drops the `[00:05 - 00:08]` timestamps, joins one speaker's lines into turns, and leaves out Fireflies' own notetaker. A meeting still live or not yet transcribed waits for a later run.
+- **Never Fireflies' summaries or write tools.** The task is told never to use Fireflies' AI summary tools (`fireflies_get_summary`, `fireflies_fetch`, `fireflies_search`) and never the ones that share, rename, move, upload or create meetings or soundbites.
+- **Timestamps are cleaned on check.** If any recorder's lines still start with a timestamp, `pmx collect --check` removes it, so a time never ends up quoted in a task.
+- To read Fireflies on every run, alongside the first meeting app connected, add it: `pmx sources add Fireflies`. Connect it in the Claude app under Settings → Connectors.
+
+## 0.23.0: a workspace you work in, right inside Claude
+
+BOARD-6; FLOW-4, FLOW-5, BOARD-3 and PRIV-7 updated. After a multi-agent review found the board hard to act on, and the Claude page unable to act without a server in Terminal.
+
+- **A SaaS-style workspace.** A left menu replaces the tabs. Your work comes first, in lists like Things: **Inbox** (tasks to approve, with why and where they were heard; the weekly digest; team changes; anything that needs a fix), **Today** (drafts to review, to-dos due, This Evening), **Upcoming** (dated to-dos and PMX's next runs), **Anytime** (to-dos with no date, by meeting, and Someday) and **Logbook** (what you finished, approved, dropped or decided in the last 14 days). Then **Plan**, **Digest**, **Agents** and **Status** (health, privacy checks, the flow and activity).
+- **Settings in its own screen**: grouped sections (Sources, customers, do-not-read, always private, what Linear gets, schedule, digest, kinds of work, budget, account), cards with toggles, and Save Changes with a review of every change. Team changes still open one pull request, and a change that lets more through still asks first.
+- **Undo.** Approving, dropping or ticking off waits a few seconds, with Undo, before it happens.
+- **Your own to-dos.** Add one (the + button or `n`; "tomorrow", "Friday", "tonight" and "someday" work), and move any to-do to Today, This Evening, Someday or a date.
+- **Keyboard**: 1–5 for the lists, j/k to move, Space to complete or approve, a/d to approve or drop, n for a new to-do, / to search, ? for all shortcuts.
+- **The Claude page acts, with no Terminal.** `/pmx-flow` publishes the same workspace. Click Connect once: PMX asks you on your Mac, in a dialog, whether to allow the page. After that the page shows your tasks, to-dos and digest and acts on them, through the server the Claude app starts on its own (`pmx mcp`). Titles reach only your page, uncached; a Claude chat can't read them or act without a key you allowed on the Mac. Disconnect with `pmx mcp --unpair` or Settings → Account. Type /pmx-flow in the Claude app to update a page you published before; `pmx doctor` reminds you.
+- **Safer writes.** PMX's to-do and proposal files take a lock, so the background job and the page never overwrite each other's changes.
+
 ## 0.22.0: Google Meet's notetaker as an input, and links point to productmaxxing.ai
 
 INPUT-1.

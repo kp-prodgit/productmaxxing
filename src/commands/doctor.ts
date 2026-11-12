@@ -180,6 +180,9 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   const mh = await mcpHealth();
   if (mh) add("flow.mcp", mh.ok, mh.detail, "warn");
   else if (d.personal.flow?.url) add("flow.mcp", false, "the /pmx-flow page can't reach PMX on this Mac: run `pmx mcp --install`, then restart the Claude app", "warn");
+  // 0.23.0 (FLOW-5, BOARD-6): a page published before the workspace can't pair or act; publishing it again keeps its link.
+  const fv = d.personal.flow?.version;
+  if (d.personal.flow?.url && fv && (compareVersions(fv, "0.23.0") ?? 0) < 0) add("flow.page", false, `your /pmx-flow page is from pmx ${fv}, before the workspace: type /pmx-flow in the Claude app to update it, keeping its link`, "warn");
 
   const loose: string[] = [];
   for (const dir of [paths.home(), paths.staging(), paths.receipts(), paths.transcripts()]) {

@@ -9,15 +9,20 @@ import { currentVersion } from "../core/version.js";
 import { addNeverIngest, checkNeverIngest, whatIf } from "../flow/edit.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
 import { loadPipeline } from "../flow/pipeline-load.js";
+import { ACT_PATHS, pipelineAct, type PipelineActions } from "../flow/pipeline-act.js";
+import { keyOk, macConfirm, pair, unpairAll, type Confirm } from "./pair.js";
 
 /**
- * `pmx mcp` (FLOW-4): a local MCP server on stdio, so the /pmx-flow artifact can read the flow graph through the
- * Claude app (`host:pmx`). Hand-rolled JSON-RPC 2.0, one message per line, no dependencies.
+ * `pmx mcp` (FLOW-4): a local MCP server on stdio, so the /pmx-flow artifact can reach PMX through the Claude app
+ * (`host:pmx`). Hand-rolled JSON-RPC 2.0, one message per line, no dependencies.
  *
- * Any Claude chat on this Mac can call it, so it answers at the "shared" level only: held items are a rule and a
- * number, never a title, file, hash or detail; private to-dos are a count. Its one write only tightens the PM's
- * do-not-read list. PMX's own agent runs use `--strict-mcp-config` with no servers, so they never see it.
+ * Any Claude chat on this Mac can call it. Without a key it answers at the "shared" level only: held items are a rule
+ * and a number, never a title, file, hash or detail; private to-dos are a count; its one write only tightens the PM's
+ * do-not-read list. With a key from `pair`, which the PM allows on this Mac in a native dialog, `board` and `board_act`
+ * are the PM's full board, as `pmx flow --web` serves it (PRIV-7). PMX's own agent runs use `--strict-mcp-config` with
+ * no servers, so they never see it.
  */
+const KEY = { type: "string", description: "The key this page got from pair. Kept by the page; never ask the user for it." } as const;
 export const MCP_TOOLS = [
   {
     name: "pipeline",
@@ -46,12 +51,37 @@ export const MCP_TOOLS = [
     inputSchema: { type: "object", additionalProperties: false, required: ["kind", "value"], properties: { kind: { type: "string", enum: ["title", "person", "channel"] }, value: { type: "string", minLength: 3, maxLength: 120 } } },
     annotations: { title: "Add to the PMX do-not-read list", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
+  {
+    name: "pair",
+    description: "Connects the PM's own /pmx-flow page to ProductMaxxing (PMX) on this Mac. PMX asks the PM in a dialog on the Mac and returns a key only if they allow it. For the page's Connect button only: never call it from a chat.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+    annotations: { title: "Connect a PMX page", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: "board",
+    description: "The PM's full ProductMaxxing (PMX) board for their paired /pmx-flow page: proposals, to-dos, drafts, the digest, settings. Needs the page's key; refuses without it.",
+    inputSchema: { type: "object", additionalProperties: false, required: ["key"], properties: { key: KEY, hours: { type: "integer", minimum: 1, maximum: 336 } } },
+    annotations: { title: "PMX board (paired page)", readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "board_act",
+    description: "One action from the PM's paired /pmx-flow page: approve or drop proposals, tick, add or move a to-do, decide a draft review, approve the digest, run a step, change settings. Needs the page's key; refuses without it.",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["key", "path", "body"],
+      properties: { key: KEY, path: { type: "string", enum: [...ACT_PATHS, "unpair"] }, body: { type: "object" } },
+    },
+    annotations: { title: "Act on the PMX board (paired page)", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
 ] as const;
 
 type Msg = { jsonrpc: "2.0"; id?: string | number | null; method?: string; params?: any };
 
+/** What a paired call needs besides the context: the board's actions and how to ask the PM. Tests pass their own. */
+export interface McpDeps { actions?: (c: Ctx) => PipelineActions; confirm?: Confirm }
+const NOT_PAIRED = { error: "This page isn't connected to PMX on this Mac. Click Connect on the page.", code: "not_paired" };
+
 /** Answers one JSON-RPC message, or null for a notification. Exported for tests. */
-export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>): Promise<object | null> {
+export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>, deps: McpDeps = {}): Promise<object | null> {
   const reply = (result: unknown) => ({ jsonrpc: "2.0", id: msg.id ?? null, result });
   const fail = (code: number, message: string) => ({ jsonrpc: "2.0", id: msg.id ?? null, error: { code, message } });
   if (msg.id === undefined) return null;
@@ -61,7 +91,7 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>): Promise<obje
         protocolVersion: typeof msg.params?.protocolVersion === "string" ? msg.params.protocolVersion : "2025-06-18",
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "pmx", title: "ProductMaxxing", version: currentVersion() },
-        instructions: "ProductMaxxing (PMX) flow metadata for the /pmx-flow artifact. Held meetings are shown by rule only.",
+        instructions: "ProductMaxxing (PMX) for the PM's /pmx-flow page. In a chat, use only pipeline, flow_graph and flow_what_if (counts and metadata). pair, board and board_act are for the page itself: never call pair from a chat, and never ask the user for a key.",
       });
     case "ping":
       return reply({});
@@ -93,6 +123,24 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>): Promise<obje
           const r = await addNeverIngest((await ctx()).personal, kind, value, "flow");
           return result({ added: r.added, message: r.added ? "Added to your do-not-read list. PMX applies it from the next run." : "Already on your do-not-read list." });
         }
+        if (name === "pair") {
+          const key = await pair(deps.confirm ?? macConfirm, new Date());
+          return key ? result({ key, message: "Connected. This page can now show your board and act on it." }) : result({ error: "Not connected: you chose Don't Allow on the Mac, or nobody answered.", code: "declined" }, true);
+        }
+        if (name === "board" || name === "board_act") {
+          if (!(await keyOk(args.key))) return result(NOT_PAIRED, true);
+          const c = await ctx();
+          const actions = (deps.actions ?? (await import("../flow/pipeline-handlers.js")).pipelineHandlers)(c);
+          if (name === "board") {
+            const hours = args.hours === undefined ? 168 : Number(args.hours);
+            if (!Number.isInteger(hours) || hours < 1 || hours > 336) return result({ error: "hours must be a whole number from 1 to 336" }, true);
+            return result(await actions.data(hours));
+          }
+          const path = String(args.path ?? "");
+          if (path === "unpair") return result({ status: 200, body: { message: `Disconnected ${await unpairAll()} page(s). Each shows Connect again.` } });
+          const [status, body] = await pipelineAct(actions, path, args.body);
+          return result({ status, body });
+        }
         return fail(-32602, `Unknown tool ${name}`);
       } catch (e: any) {
         return result({ error: String(e?.message ?? e) }, true);
@@ -104,7 +152,7 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>): Promise<obje
 }
 
 /** Serves MCP on stdin/stdout until stdin closes. Nothing else may write to stdout meanwhile. */
-export async function serveMcp(ctx: () => Promise<Ctx>): Promise<void> {
+export async function serveMcp(ctx: () => Promise<Ctx>, deps: McpDeps = {}): Promise<void> {
   console.log = (...a: unknown[]) => console.error(...a);
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of rl) {
@@ -116,8 +164,8 @@ export async function serveMcp(ctx: () => Promise<Ctx>): Promise<void> {
       process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } })}\n`);
       continue;
     }
-    const out = await handleMcp(msg, ctx);
-    if (out) process.stdout.write(`${JSON.stringify(out)}\n`);
+    // Answered as each finishes, not in order: a pairing dialog or a Linear write mustn't hold up the page's reads.
+    void handleMcp(msg, ctx, deps).then((out) => { if (out) process.stdout.write(`${JSON.stringify(out)}\n`); });
   }
 }
 

@@ -62,6 +62,16 @@ export const READ_VIA: Record<string, { via: string; how: string }> = {
   },
 };
 
+/**
+ * How to read a meeting app through its own Claude connector, when the generic steps aren't enough. Fireflies' connector
+ * (api.fireflies.ai/mcp) lists meetings and fetches transcripts with separate tools, prefixes each line with a
+ * timestamp, and also offers AI summaries and tools that share or change meetings, none of which PMX may use.
+ */
+export const READ_HOW: Record<string, (o: { scope: "mine" | "team"; since: Date }) => string> = {
+  fireflies: ({ scope, since }) =>
+    `If you use Fireflies, use these two tools and no others. List meetings with fireflies_get_transcripts, with fromDate ${JSON.stringify(since.toISOString().slice(0, 10))}${scope === "mine" ? ", mine true" : ""} and limit 50, and ask for format "json"; if a page has 50 meetings, ask again with skip raised by 50. Skip a meeting that is still live or not yet transcribed, without counting it: a later run collects it. Fetch each meeting's transcript with fireflies_get_transcript and its transcriptId. Each line starts with a timestamp like [00:05 - 00:08]: drop the timestamp, keep "Speaker: what they said", and join back-to-back lines from the same speaker into one turn. Use the meeting's ID as source_id, and its participants' email addresses as participants, leaving out Fireflies' own notetaker (an address at fireflies.ai). Never use fireflies_get_summary, fireflies_fetch or fireflies_search: they return Fireflies' AI summary, not what people said. Never use the Fireflies tools that share, rename or move meetings, make soundbites, or upload or create meetings.`,
+};
+
 const BUILTIN_IDS: Record<string, string> = { "tl;dv": "tldv", "google drive (google meet transcripts)": "google-meet", "google meet": "google-meet" };
 
 /**

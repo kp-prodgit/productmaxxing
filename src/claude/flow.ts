@@ -14,8 +14,11 @@ import { claudePresent } from "./skill.js";
  * on a Mac running PMX, and only at the shared level. PMX can't publish artifacts; `/pmx-flow` does.
  */
 export const flowFile = () => join(pmxHome(), "flow", "pmx-flow.html");
-/** The page reads PMX through the viewer's own Mac and can only add to the do-not-read list (BOARD-3, FLOW-6). */
-export const FLOW_TOOLS = ["pipeline", "flow_what_if", "never_ingest_add"] as const;
+/**
+ * The page reads PMX through the viewer's own Mac. Unpaired it shows counts and can only add to the do-not-read list
+ * (FLOW-6); paired, it is the PM's full workspace (FLOW-4, FLOW-5, BOARD-6).
+ */
+export const FLOW_TOOLS = ["pipeline", "flow_what_if", "never_ingest_add", "pair", "board", "board_act"] as const;
 export const flowCapabilities = () => ({ mcp: { servers: [{ server: "host:pmx", tools: [...FLOW_TOOLS] }] } });
 
 export async function renderFlow(team: TeamConfig | null, personal: PersonalConfig | null): Promise<string> {
@@ -31,9 +34,9 @@ export async function flowJson(team: TeamConfig | null, personal: PersonalConfig
   return {
     ready: true,
     html: await renderFlow(team, personal),
-    title: "PMX Pipeline",
-    description: "ProductMaxxing's pipeline: skills, scheduled tasks, what travels from your meetings to Linear and back, and the rules behind each step, read from this Mac.",
-    icon: "flow",
+    title: "PMX Workspace",
+    description: "Your ProductMaxxing workspace: tasks to approve, to-dos, drafts to review, the digest and settings, run on this Mac through the Claude app.",
+    icon: "checklist",
     capabilities: flowCapabilities(),
     url: personal?.flow?.url ?? null,
     publishedVersion: personal?.flow?.version ?? null,

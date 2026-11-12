@@ -206,9 +206,19 @@ describe("0.20.0: every interaction point on the board, in a PM's words (BOARD-5
 
   it("the page: Today first, every tab routed, old links land on their new home, and Terminal is never the first fix", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    expect(page).toMatch(/const TABS = \["today", "flow", "sources", "digest", "work", "automations", "privacy", "settings"\]/);
-    for (const t of ["today", "flow", "digest", "work", "automations", "privacy", "settings"]) expect(page).toContain(`<section id="v-${t}"`);
-    expect(page).toMatch(/show\(store\.get\("pmx-board-tab"\) \|\| "today"\)/);
+    // 0.23.0 (BOARD-6): a left nav of views instead of tabs, each with its own route, opening on Today.
+    expect(page.startsWith("<title>PMX Workspace</title>")).toBe(true);
+    expect(page).toMatch(/<script type="application\/json" id="pmx-config">/);
+    expect(page).toMatch(/const VIEWS = \["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "status", "settings"\]/);
+    for (const v of ["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "status", "settings"]) expect(page).toContain(`data-view="${v}"`);
+    expect(page).toMatch(/const S = \{ view: "today"/);
+    // Links from before 0.23.0 land on their new home.
+    for (const old of ["flow", "automations", "sources", "privacy", "work"]) expect(page).toMatch(new RegExp(`[{ ]${old}: \\["`));
+    // Completing or approving waits for Undo before anything is sent.
+    expect(page).toMatch(/const GRACE = 4000;/);
+    // No markup PMX's local policy would block, and no sample data.
+    expect(page).not.toMatch(/style="|\son[a-z]+="|<script src=|<link /);
+    expect(page).not.toMatch(/example data/i);
     // Commands sit behind a "Prefer Terminal?" disclosure; the visible control is a button.
     expect(page).toMatch(/const terminal = \(cmd, label = "Prefer Terminal\?"\)/);
     expect(page).not.toMatch(/cmdChip\(/);

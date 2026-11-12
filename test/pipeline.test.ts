@@ -208,7 +208,7 @@ describe("0.17.0: the board shows where to act (BOARD-4)", () => {
     const todo = { id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", source: { title: "Acme renewal", at: "2026-11-07T10:00:00Z" } };
     const local = buildPipeline({ ...inputs("local"), openTodos: [todo], pendingTeam: [{ url: "https://github.com/x/y/pull/3", at: NOW.toISOString(), changes: ["review cap 5"] }] });
     expect(local.needs.todos).toBe(1);
-    expect(local.todos).toEqual([{ id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", from: "Acme renewal (2026-11-07)" }]);
+    expect(local.todos).toEqual([{ id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", from: "Acme renewal (2026-11-07)", when: null }]);
     expect(local.pendingTeam).toHaveLength(1);
     const shared = buildPipeline({ ...inputs("shared"), openTodos: [todo] });
     expect(shared.needs.todos).toBe(1);
@@ -245,17 +245,29 @@ describe("0.17.0: the board shows where to act (BOARD-4)", () => {
     }
   });
 
-  it("the page: the detail sits beside the map, steps are reachable by link and keyboard, and the shared page can still produce commands", async () => {
+  it("the page: every step of the flow and its counts is listed in order, views are reachable by link and keyboard, and the paired artifact acts through the same doors (BOARD-6, FLOW-5)", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    expect(page).toMatch(/@media \(min-width: 1180px\) \{ \.conn \{ grid-template-columns: minmax\(0, 1fr\) 340px/);
-    expect(page).toMatch(/addEventListener\("hashchange", route\)/);
-    expect(page).toMatch(/\$\("map"\)\.addEventListener\("keydown"/);
-    expect(page).not.toMatch(/disabled: !LOCAL/);
+    // Status → Flow lists the steps in order, with a count from every connection on the old map.
+    expect(page).toMatch(/h\("ol", \{ class: "steps"/);
+    for (const id of ["c-f", "s-f", "f-h", "f-t", "f-d", "t-t", "d-a", "a-x", "a-i", "i-r", "r-g", "g-v", "v-d"]) expect(page).toContain(`"${id}"`);
+    expect(page).toMatch(/addEventListener\("hashchange", onHash\)/);
+    expect(page).toMatch(/document\.addEventListener\("keydown", \(e\) =>/);
+    // Space and Enter belong to the focused control, never to a row selected behind it.
+    expect(page).toMatch(/if \(\(e\.key === "Enter" \|\| e\.key === " "\) && isControl\(t\)\) return;/);
+    // One door to read and one to act: the local server with its token, or host:pmx with the page's key.
+    expect(page).toMatch(/async function read\(h\) \{\n\s+if \(LOCAL\) return \(await api\(`\/api\/pipeline\?hours=\$\{h\}`\)\)\.pipeline;/);
+    expect(page).toMatch(/host\("board", \{ key, hours: h \}, \{ cache: false \}\)/);
+    expect(page).toMatch(/async function act\(path, body\) \{\n\s+if \(LOCAL\) return api\(`\/api\/pipeline\/\$\{path\}`, body\);/);
+    expect(page).toMatch(/host\("board_act", \{ key, path, body \}, \{ cache: false \}\)/);
+    // Connect: PMX asks on the Mac; the key stays in this page's storage; Disconnect only on the artifact.
+    expect(page).toMatch(/host\("pair", \{\}\)/);
+    expect(page).toMatch(/store\.get\("pmx-key"\)/);
+    expect(page).toMatch(/Check your Mac: PMX is asking you to allow this page/);
+    expect(page).toMatch(/LOCAL \? null : btn\("Disconnect this page"/);
+    expect(page).toMatch(/act\("unpair", \{\}\)/);
     expect(page).not.toMatch(/role: "radio"/);
     // A null child given to replaceChildren prints "null"; the page goes through put() where one can be empty.
     expect(page).not.toMatch(/replaceChildren\(\.\.\.parts\)/);
-    // Line-pattern classes for the key never share a name with a step's kind class.
-    expect(page).not.toMatch(/class="k-(full|model|linear|status|held|off)"/);
   });
 });
 
@@ -318,12 +330,12 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
     expect(skills.find((k) => k.name === "pmx-synthesize")!.check).toBeUndefined();
   });
 
-  it("the page has a Categories tab with its own route, and the skills link to their category", async () => {
+  it("the categories have their own view with its own route, and old links to them land there", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    // 0.20.0 (BOARD-5): categories live under Agent work, with their skills; old #categories links still land there.
-    expect(page).toMatch(/<a href="#work" data-tab="work">Agent work<\/a>/);
-    expect(page).toMatch(/const OLD = \{ connections: "flow", categories: "work", skills: "work", schedules: "automations", rules: "privacy" \}/);
-    expect(page).toMatch(/tab === "work" && sub/);
+    // 0.23.0 (BOARD-6): categories and their skills live under Agents; old #work, #categories and #skills links land there.
+    expect(page).toMatch(/<button type="button" class="ni" data-view="agents">/);
+    expect(page).toMatch(/const ALIAS = \{ work: \["agents"\], categories: \["agents"\], skills: \["agents"\], flow: \["status", "flow"\]/);
+    expect(page).toMatch(/V\.agents = \(\) =>/);
   });
 
   it("0.19.0: categories are grouped by lifecycle stage, in order, with unstaged ones last (CAT-2)", async () => {

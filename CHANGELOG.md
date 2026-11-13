@@ -2,6 +2,21 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.25.1: the board on this Mac shows your settings as they are now
+
+From a report that Settings changes, kinds of work first, didn't take on the board.
+
+- **`pmx flow --web` kept the settings it read when it started**, for as long as it ran (days, since 0.25.0 reopens the board already running). A change made anywhere else didn't show on its page (in the Claude app's /pmx-flow page, with `pmx todo --linear`, or by the collection task adding its folder), and its next save wrote that old copy back over them, so a switch could look like it didn't stick. Its board now reads and saves your settings as they are on disk at each request, as PMX's server in the Claude app always did.
+- **The board's controls are tested by clicking them.** New tests load the real page in a simulated browser against PMX's real board server, both as the page on this Mac and as the Claude app shows it. They cover:
+  - every switch, dropdown, add box and remove button in Settings;
+  - Save, Discard, the review sheet's Undo, Undo after saving, and confirming a change that loosens privacy;
+  - leaving Settings with unsaved changes;
+  - a team setting going out for approval;
+  - New to-do, Mark done and the to-do period;
+  - Approve, Drop and its Undo, and Approve all in the Inbox.
+
+  Each save is checked where it lands, in your settings on disk.
+
 ## 0.25.0: tasks are proposed on their own, and an empty Inbox says why
 
 SIG-6, SIG-7, TODO-4; APPROVE-1, TODO-1, TODO-3, DIG-2, FLOW-4 and BOARD-3 updated. From a tester's report: a new PM who followed the setup had a working Linear connection, an empty project and a to-do list full of personal items, and nothing said why.

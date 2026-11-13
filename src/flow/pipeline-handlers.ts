@@ -17,6 +17,17 @@ import { claudeAbsolutePath } from "../core/claude-bin.js";
 import { paths, pmxHome } from "../core/paths.js";
 
 /** What `pmx flow --web` serves for the pipeline board (BOARD-3): this Mac's data, and the writes only it may make. */
+/**
+ * The board's handlers for a server that stays up (`pmx flow --web`): each call builds them from a fresh context, so
+ * the board shows and saves the settings as they are on disk now, not as they were when the server started. A change
+ * made elsewhere (the Claude app's page, `pmx todo --linear`, the collection task adding its folder) shows on the next
+ * read, and the board's next save can't write an old copy back over it. The Claude app's server does the same.
+ */
+export async function liveHandlers(ctx: () => Promise<Ctx>): Promise<ReturnType<typeof pipelineHandlers>> {
+  const first = pipelineHandlers(await ctx());
+  return Object.fromEntries(Object.keys(first).map((k) => [k, async (...a: unknown[]) => (pipelineHandlers(await ctx()) as any)[k](...a)])) as unknown as ReturnType<typeof pipelineHandlers>;
+}
+
 export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<PipelineActions, "todoAdd" | "todoPlace">> {
   return {
     data: (hours: number) => loadPipeline(ctx, { level: "local", hours, keychain: ctx.keychain }),

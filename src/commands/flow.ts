@@ -1,5 +1,5 @@
 import { removeNeverIngest } from "./settings.js";
-import { pipelineHandlers } from "../flow/pipeline-handlers.js";
+import { liveHandlers } from "../flow/pipeline-handlers.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
 import { trustClaims } from "../flow/graph.js";
 import { addNeverIngest, checkNeverIngest, whatIf, type NeverIngestKind } from "../flow/edit.js";
@@ -58,7 +58,8 @@ export const flowCommands: Command[] = [
           console.log(`PMX is already serving your board (since ${new Date(running.startedAt).toLocaleString()}, in the Terminal window that started it): ${running.url}\nTo stop it, press Ctrl+C in that window.`);
           return 0;
         }
-        const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, flow: (hours, scope) => loadFlowGraph(ctx, { level: scope === "team" ? "team" : "local", hours }), pipeline: pipelineHandlers(ctx) });
+        // The board reads and saves through a fresh context per request (liveHandlers): this server can run for days.
+        const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, flow: async (hours, scope) => loadFlowGraph(await a.ctx(), { level: scope === "team" ? "team" : "local", hours }), pipeline: await liveHandlers(a.ctx) });
         const unnote = await noteWebServer(s.flowUrl);
         if (!a.values["no-open"]) await exec("open", [s.flowUrl]);
         console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve proposals and change your settings. Running \`pmx flow --web\` again opens this same page. Press Ctrl+C to stop.`);

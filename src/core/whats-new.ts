@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.25.1", date: "2026-11-13", headline: "The board on this Mac shows your settings as they are now",
+    items: [
+      { what: "The board from `pmx flow --web` kept the settings it started with, so a change made in the Claude app or by a command didn't show there, and saving on it could undo that change. It now reads your settings fresh each time.", try: "pmx flow --web" },
+    ],
+  },
+  {
     version: "0.25.0", date: "2026-11-12", headline: "Tasks are proposed on their own, and an empty Inbox says why",
     items: [
       { what: "PMX now proposes tasks from your customer calls in the background even if your team hasn't picked a synthesis Mac. Each task still waits for your approval before it reaches Linear." },

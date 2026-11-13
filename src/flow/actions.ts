@@ -33,7 +33,9 @@ export type Change =
   /** The places the team approves in one channel connector, as a whole list; empty stops reading it (INPUT-1). */
   | { kind: "team-input"; connector: string; places: string[]; look?: string | null }
   /** Whose Mac proposes team tasks and reads the team's channels (Q2), by PMX handle. */
-  | { kind: "synthesizer"; value: string };
+  | { kind: "synthesizer"; value: string }
+  /** SIG-7 (0.25.0): the PM may send their own to-dos to Linear, one at a time. Off by default. */
+  | { kind: "todos-linear"; value: boolean };
 
 const RANK = { off: 0, mine: 1, linear: 2 } as const;
 const FIELD = { title: "meetingTitles", person: "people", channel: "channels" } as const;
@@ -52,6 +54,8 @@ export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolea
     const cur = team ? channelInputs(team).find((x) => connectorId(x.connector) === connectorId(c.connector)) : undefined;
     return c.places.some((x) => !(cur?.places ?? []).some((y) => y.toLowerCase() === x.toLowerCase())) || (!!c.places.length && !!cur && (cur.look ?? null) !== (c.look ?? null));
   }
+  // Turning on "send my to-dos to Linear" lets the PM's own commitments leave this Mac.
+  if (c.kind === "todos-linear") return c.value && !p.todosToLinear;
   return (c.kind === "my-domain" || c.kind === "never" || c.kind === "team-domain") && c.op === "remove";
 }
 
@@ -107,6 +111,10 @@ export function checkChange(c: any, team: TeamConfig): Change {
       const connector = checkConnector(c.connector);
       return { kind: "call-input", op: c.op, connector, ...(c.op === "add" ? { look: checkLook(c.look) } : {}) };
     }
+    case "todos-linear":
+      if (typeof c.value !== "boolean") fail("Turn sending your to-dos to Linear on or off.");
+      if (c.value && team.tracker.kind === "none") fail("Your team has no task tracker, so there's nowhere to send to-dos.");
+      return { kind: "todos-linear", value: c.value };
     case "synthesizer":
       if (typeof c.value !== "string" || !/^[\w.@-]{1,64}$/.test(c.value)) fail("Name the teammate by their PMX handle.");
       return { kind: "synthesizer", value: c.value };
@@ -138,6 +146,7 @@ export async function applyPersonal(personal: PersonalConfig, changes: Change[])
     else if (c.kind === "category") personal.categories = c.accepted ? [...new Set([...personal.categories, c.name])] : personal.categories.filter((x) => x !== c.name);
     else if (c.kind === "digest-day") personal.digest = { ...personal.digest, weekday: c.value };
     else if (c.kind === "digest-dm") personal.digest = { ...personal.digest, slackDmUserId: c.value };
+    else if (c.kind === "todos-linear") personal.todosToLinear = c.value;
     else if (c.kind === "call-input") {
       const rest = (personal.sources.calls ?? []).filter((x) => connectorId(x.connector) !== connectorId(c.connector));
       if (c.op === "add" && rest.length >= 8) throw new Error("Up to 8 recorders of your own.");
@@ -164,6 +173,7 @@ export function describe(c: Change): string {
     case "digest-day": return `Build the digest on ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][c.value]}s`;
     case "digest-dm": return c.value ? `Send the approved digest to Slack member ${c.value}` : "Don't send the digest to Slack";
     case "call-input": return c.op === "add" ? `Collect calls from ${c.connector}${c.look ? ` (only ${c.look})` : ""}` : `Stop collecting calls from ${c.connector}`;
+    case "todos-linear": return c.value ? "Let me send my own to-dos to Linear, one at a time" : "Keep all my to-dos on this Mac";
     case "synthesizer": return `${c.value}'s Mac proposes team tasks and reads the team's channels`;
     case "team-input": return c.places.length ? `Read ${c.connector}: ${c.places.join(", ")}${c.look ? ` (only ${c.look})` : ""}` : `Stop reading ${c.connector}`;
   }

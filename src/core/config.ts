@@ -97,6 +97,11 @@ export interface PersonalConfig {
   board?: { url: string; version: string; publishedAt: string } | null;
   /** The flow view this PM published from this Mac with /pmx-flow (FLOW-5). It reads this Mac only, so it's never a team setting. */
   flow?: { url: string; version: string; publishedAt: string } | null;
+  /**
+   * SIG-7 (0.25.0): whether this PM may send their own to-dos to Linear, one at a time, from the board or
+   * `pmx todo linear <id>`. Off by default: to-dos come from every meeting, 1:1s included, and stay on this Mac.
+   */
+  todosToLinear?: boolean;
 }
 
 export const DEFAULT_TEAM: Omit<TeamConfig, "team"> = {

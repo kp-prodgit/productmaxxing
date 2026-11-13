@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { ttyAsker } from "./core/ask.js";
+import { afterUpdateNote } from "./mcp/handoff.js";
 import { loadPersonalConfig, loadTeamConfig, type PersonalConfig, type TeamConfig } from "./core/config.js";
 import { consoleOut, makeCtx, type Ctx } from "./core/context.js";
 import { exec } from "./core/exec.js";
@@ -72,8 +73,9 @@ async function main(argv: string[]): Promise<number> {
   // NEW-1: after an update, the first command says what's new, once, on stderr.
   const fresh = cmd.name === "init" && !(await stat(paths.config()).then(() => true, () => false));
   if (!QUIET_COMMANDS.has(cmd.name)) {
-    const installedAt = await loadPersonalConfig().then((p) => p.installedAt, () => null);
-    await announceOnce((s) => process.stderr.write(`${s}\n`), { installedAt });
+    const personal = await loadPersonalConfig().catch(() => null);
+    const pages = async () => personal && afterUpdateNote(await loadTeamConfig(personal.repoPath).catch(() => null), personal, exec);
+    await announceOnce((s) => process.stderr.write(`${s}\n`), { installedAt: personal?.installedAt ?? null, pages });
   }
   const code = await cmd.run({
     values: values as Record<string, any>,

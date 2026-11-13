@@ -31,6 +31,8 @@ export interface Gathered {
   held: FilterResult["held"];
   heldItems: number;
   read: number;
+  /** Meetings and threads kept out, by when and why: no title or text (SIG-6, why a meeting gave no task). */
+  heldList: { kind: SignalItem["kind"]; at: string; rule: string }[];
   /** The parts of the run receipt that gathering decides (PRIV-4). */
   receipt: Pick<RunReceipt, "window" | "rules" | "skippedSources" | "sources" | "masked" | "canaries" | "twins">;
 }
@@ -76,6 +78,7 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
   const titles = makeRedactor(names);
   return {
     items, held: filtered.held, heldItems: filtered.heldItems, read: raw.length,
+    heldList: filtered.decisions.filter((d) => d.decision === "held").map((d) => ({ kind: d.item.kind, at: d.item.at, rule: d.rule ?? "unknown-participants" })),
     receipt: {
       window: { days: o.days, since: new Date(sinceMs).toISOString(), scope: o.scope },
       rules: {

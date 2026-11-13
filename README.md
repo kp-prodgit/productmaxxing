@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/productmaxxing-0.24.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.25.0/productmaxxing-0.25.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.25.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.24.0.tgz
+npm install -g ./productmaxxing-0.25.0.tgz
 pmx init
 ```
 
@@ -118,13 +118,17 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/productmaxxing-0.24.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.24.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.25.0/productmaxxing-0.25.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.25.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.24.0.tgz
+npm install -g ./productmaxxing-0.25.0.tgz
 pmx whats-new --since <the version you had>
 ```
+
+Updating from 0.24.0 or older? Quit the Claude app completely (⌘Q) and open it again, so it starts PMX's new server: until then your PMX page in Claude talks to the old one. From 0.25.0 the server switches to a new pmx by itself.
+
+Pages you published in Claude with `/pmx-flow` or `/pmx-board` keep running the old code until they're published again: after any update, type `/pmx-flow` (and `/pmx-board`) in the Claude app. Each keeps its link. PMX says so after the update, on the page itself and in `pmx doctor`, and tells Claude too, so a Claude session that ran the update publishes them again itself.
 
 Then run `pmx doctor`. It names anything left to do: for example, `pmx claude login` when PMX's Claude profile isn't signed in, or typing `/pmx-schedule` in the Claude app when a scheduled task's prompt changed.
 

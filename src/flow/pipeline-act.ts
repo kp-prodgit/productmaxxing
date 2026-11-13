@@ -15,11 +15,13 @@ export interface PipelineActions {
   todoDone?(id: string): Promise<{ status: number; body: unknown }>;
   todoAdd?(input: { text: unknown; due?: unknown; when?: unknown }): Promise<{ status: number; body: unknown }>;
   todoPlace?(id: string, p: { due?: unknown; when?: unknown; reopen?: boolean }): Promise<{ status: number; body: unknown }>;
+  /** SIG-7: send one to-do to Linear, when the PM turned that on. */
+  todoLinear?(id: string): Promise<{ status: number; body: unknown }>;
   setup?(action: string): Promise<{ status: number; body: unknown }>;
   resume?(category: string): Promise<{ status: number; body: unknown }>;
 }
 
-export const ACT_PATHS = ["proposals", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "resume", "setup", "what-if"] as const;
+export const ACT_PATHS = ["proposals", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "todo-linear", "resume", "setup", "what-if"] as const;
 
 /** One action: its path without /api/pipeline/, and its JSON body. Returns an HTTP-style status and body. */
 export async function pipelineAct(o: PipelineActions, path: string, body: any): Promise<[number, unknown]> {
@@ -53,6 +55,7 @@ export async function pipelineAct(o: PipelineActions, path: string, body: any): 
   if (path === "todo" && o.todoDone) { const r = await o.todoDone(String(body.id ?? "")); return [r.status, r.body]; }
   if (path === "todo-add" && o.todoAdd) { const r = await o.todoAdd({ text: body.text, due: body.due, when: body.when }); return [r.status, r.body]; }
   if (path === "todo-place" && o.todoPlace) { const r = await o.todoPlace(String(body.id ?? ""), { due: body.due, when: body.when, reopen: body.reopen === true }); return [r.status, r.body]; }
+  if (path === "todo-linear" && o.todoLinear) { const r = await o.todoLinear(String(body.id ?? "")); return [r.status, r.body]; }
   if (path === "resume" && o.resume) { const r = await o.resume(String(body.category ?? "")); return [r.status, r.body]; }
   if (path === "setup" && o.setup) { const r = await o.setup(String(body.action ?? "")); return [r.status, r.body]; }
   return [404, { error: "not found" }];

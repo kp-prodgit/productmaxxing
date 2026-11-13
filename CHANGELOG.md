@@ -2,6 +2,39 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.25.0: tasks are proposed on their own, and an empty Inbox says why
+
+SIG-6, SIG-7, TODO-4; APPROVE-1, TODO-1, TODO-3, DIG-2, FLOW-4 and BOARD-3 updated. From a tester's report: a new PM who followed the setup had a working Linear connection, an empty project and a to-do list full of personal items, and nothing said why.
+
+- **Synthesis runs without anyone typing `pmx synthesize`.** It already ran in the background job, but only on the team's synthesis Mac, and no setup step ever chose one, so on a new team it never ran. Now, until the team picks a synthesis Mac, each Mac proposes tasks from the calls it collected (a meeting two PMs saved is still read once, through the team's meeting record). Each run reads from a day before the last one, 7 days the first time and never more than 14, instead of only today's meetings. Synthesis still only proposes: every task waits for your approval.
+- **An empty Inbox explains itself.** Instead of "No proposed tasks are waiting", the board, `pmx proposals` and `pmx doctor` say whether synthesis never ran, ran and found nothing, or kept every meeting out, and why: "kept all of them out of tasks: 4 internal-only (no one from outside the company), 1 1:1". The Inbox shows Last synthesis, and on this Mac's page what happened to each recent meeting (not read yet, read for tasks, or kept out and by which rule; a meeting kept out shows its date and rule, never its title).
+- **Run synthesis from the board.** The Inbox has Run synthesis now, with a rough cost, when meetings are waiting to be read.
+- **To-dos and tasks, told apart.** Today, Anytime, the Inbox, the to-do details and the Connect screen say that to-dos come from all your meetings and never leave this Mac, and that tasks come only from customer calls and go to Linear after you approve them.
+- **`pmx doctor` warns** (`synth.never`) when Linear is connected and meetings were collected but this Mac never proposed a task.
+- **Your own commitments in Linear, if you want.** Off by default. Turn it on in Settings, under What Linear gets, or with `pmx todo --linear on`; each to-do then has Send to Linear (`pmx todo linear <id>`). Only the to-do's words go, as a `commitment` no agent picks up.
+- **Fixes:**
+  - `pmx digest --review` with no terminal deleted the staged digest. It now keeps it: nothing is published or deleted without an answer.
+  - `pmx todo --refresh` read only today's meetings. It now reads the last 7 days', skipping meetings already read.
+- **Pick the period for `pmx todo`.** `pmx todo` lists to-dos from the last 7 days' meetings by default, and says how many open ones are older and the `--days` that shows them. `--days 30`, `--since 14d`, `--since today` or `--since 2026-11-01` pick another period, up to 90 days; `--days all` lists every to-do. The same options set how far back `--refresh` reads. On the board, Today, Upcoming and Anytime have a "From meetings in" picker (Today, 7, 14, 30 or 90 days, or All time; the last 7 days by default, remembered in that browser), and say how many to-dos from earlier meetings it hides, and how many of those are due, with a button that shows them.
+  - `pmx flow --web` started a new server and link each time, so old links said the link had expired. A second run now opens the board already running; one left from an older pmx is stopped first.
+  - The page's Connect button said nothing useful when the Claude app still ran an older PMX server. It now says to quit the Claude app (⌘Q) and open it again.
+
+## 0.24.1: the Flow map is back, and PMX's server in Claude follows updates
+
+FLOW-4, FLOW-5, BOARD-1, BOARD-3.
+
+- **Flow is back in the left menu.** The map from 0.16.0 to 0.22.0 is its own place again, under System: every step from your sources through the privacy filter, Claude, your approval and Linear to the agents and review, with arrows coloured by what they carry, counts of what moved in the window, and a panel saying what each step and arrow does and which settings shape it. Map or List, keyboard navigation (arrow keys, `[` and `]`), and a dot that runs along an arrow when something new moves. Nothing else changed: Status keeps its list of the steps, and old `#flow` links open the map.
+- **PMX's server in the Claude app switches to a new pmx by itself.** The Claude app starts `pmx mcp` once and keeps it running, so after an update your page in Claude kept talking to the old code, and could break as it loaded half of the new one. Now, before each message, the server checks the pmx installed on disk; when it changed, it starts the new server and passes everything to it, and tells the Claude app the tools may have changed.
+- **Servers from 0.24.0 or older need one restart of the Claude app.** They can't switch by themselves. `pmx update`, the first `pmx` command after an npm install, `pmx whats-new` and `pmx doctor` (`flow.mcp-old`) say when one is still running: quit the Claude app completely (⌘Q) and open it again. The page in Claude says so too when the server answering it is older than the page. `INSTALL.md` now has this step.
+
+- **Pages in Claude no longer fall behind silently.** PMX can't publish artifacts, so a page published with `/pmx-flow` or `/pmx-board` kept the old code after an update until someone typed the command again, and nothing said so. Now, however pmx was updated (`pmx update`, the background auto-update or `npm install -g`), PMX tells Claude and you:
+  - **The update's output.** `pmx update` and the first `pmx` command after an npm install name each page published with an older pmx, and tell Claude, when Claude ran the update, to publish it again now with the `pmx-flow` or `pmx-board` skill, keeping its link. `pmx whats-new --json` lists them as `pagesToUpdate`.
+  - **Claude in the Claude app.** PMX's server (`pmx mcp`) tells Claude about the out-of-date page when the app starts it, so Claude offers to update it, and the `pipeline` tool lists it among the problems.
+  - **The page itself.** Your workspace shows "published with pmx X, this Mac now runs Y: type /pmx-flow", with the command to copy. This works on pages published with 0.23.0 and later.
+  - **The scheduled collection** ends its report with the same line. It never publishes pages itself.
+  - **The auto-update notification** and **`pmx doctor`** say which command to type.
+- `INSTALL.md` now tells Claude to publish the pages again after an upgrade.
+
 ## 0.24.0: Fireflies, read through its Claude connector
 
 COLLECT-1, INPUT-1.

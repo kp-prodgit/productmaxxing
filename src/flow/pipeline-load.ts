@@ -23,6 +23,8 @@ import { pausedCategories } from "../core/services.js";
 import { analyticsOn, cloudTarget } from "../cloud/account.js";
 import { killSwitchOn } from "../core/killswitch.js";
 import { currentVersion } from "../core/version.js";
+import { pageProblem, stalePages } from "../claude/pages.js";
+import { synthStatus } from "../synth/status.js";
 import { buildActivity, buildAutomations } from "./automations.js";
 import { loadDigestBoard } from "./digests.js";
 import { jobList } from "./jobs.js";
@@ -170,6 +172,9 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   if (tc && pendingTeam.length) { tc.status = "waiting"; tc.statusText = `${pendingTeam.length} in review`; }
   if (digest?.waiting.length) facts.push(`digest waiting`);
   const inputs = buildInputsBoard({ team: ctx.team, personal: ctx.personal, agent: ctx.agent, state, receipts, now, hours, local });
+  // FLOW-5, BOARD-1: a page this Mac published with an older pmx runs the older code until Claude publishes it again.
+  for (const p of stalePages(ctx.team, ctx.personal)) problems.push({ text: pageProblem(p), cmd: `/${p.skill}` });
+  const synth = await synthStatus(ctx as Ctx, { local, receipts, automatic: !!job, lastSynthAt: state.lastSynthAt }).catch(() => null);
   const unplugged = inputs.rows.filter((r) => r.status === "not-connected");
   if (unplugged.length) problems.push({ text: `${unplugged.map((r) => r.connector).join(" and ")} ${unplugged.length === 1 ? "isn't" : "aren't"} connected in your Claude app, so PMX can't read ${unplugged.length === 1 ? "it" : "them"}. Add ${unplugged.length === 1 ? "it" : "them"} under Settings → Connectors in the Claude app.`, fix: "tab:sources" });
   return buildPipeline({
@@ -183,11 +188,13 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     automations, activity: buildActivity({ now, hours, agent: ctx.agent, receipts, runlog: log, collectReports: state.collectReports, lastTick: state.lastTick }),
     digest, jobs, killSwitch: ks, version: currentVersion(),
     inputs,
+    synth,
     rules: {
       routes: { ...(ctx.personal.sources.routes ?? {}) },
       teamDomains: ctx.team.internalDomains, myDomains: ctx.personal.companyDomains ?? [],
       neverIngest: { people: [...ni.people], titles: [...ni.meetingTitles], channels: [...ni.channels] },
       budget: { dailyUsd: ctx.personal.budget.dailyUsd, teamCap: ctx.team.caps.perDayUsd, spentUsd: b.spentUsd, tokens: b.tokens },
+      todosToLinear: !!ctx.personal.todosToLinear,
       categories: cats.map((c) => ({ name: c, accepted: ctx.personal.categories.includes(c) })),
       reviewCap: ctx.team.reviewQueueCap,
       sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: ctx.team.sizes[z].minutes, usd: ctx.team.sizes[z].costUsd }])) as Record<Size, { minutes: number; usd: number }>,

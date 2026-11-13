@@ -9,6 +9,7 @@ import { flowJson, renderFlow, setFlowUrl } from "../claude/flow.js";
 import { appSkillTarget, FLOW_SKILL, installAppSkill } from "../claude/skill.js";
 import { installMcp, mcpInstalled, serveMcp } from "../mcp/server.js";
 import { startExplainServer } from "../explain/server.js";
+import { noteWebServer, runningWebServer } from "../flow/web-server.js";
 import type { Command } from "./index.js";
 
 const hoursOf = (v: string | undefined) => {
@@ -50,10 +51,18 @@ export const flowCommands: Command[] = [
         return 0;
       }
       if (a.values.web) {
+        // One board per Mac: a second `pmx flow --web` opens the one already running, so earlier links keep working.
+        const running = await runningWebServer();
+        if (running) {
+          if (!a.values["no-open"]) await exec("open", [running.url]);
+          console.log(`PMX is already serving your board (since ${new Date(running.startedAt).toLocaleString()}, in the Terminal window that started it): ${running.url}\nTo stop it, press Ctrl+C in that window.`);
+          return 0;
+        }
         const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, flow: (hours, scope) => loadFlowGraph(ctx, { level: scope === "team" ? "team" : "local", hours }), pipeline: pipelineHandlers(ctx) });
+        const unnote = await noteWebServer(s.flowUrl);
         if (!a.values["no-open"]) await exec("open", [s.flowUrl]);
-        console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve proposals and change your settings. Press Ctrl+C to stop.`);
-        await new Promise<void>((resolve) => process.on("SIGINT", () => s.close().then(resolve)));
+        console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve proposals and change your settings. Running \`pmx flow --web\` again opens this same page. Press Ctrl+C to stop.`);
+        await new Promise<void>((resolve) => { const stop = () => s.close().then(unnote).then(resolve); process.on("SIGINT", stop); process.on("SIGTERM", stop); });
         return 0;
       }
       const g = await loadFlowGraph(ctx, { level: a.values.team ? "team" : a.values.json ? "shared" : "local", hours: hoursOf(a.values.window) });

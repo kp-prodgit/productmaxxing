@@ -1,3 +1,7 @@
+import { stalePages } from "../claude/pages.js";
+import { neverSynthesized } from "../synth/status.js";
+import { agentHandle } from "../core/config.js";
+import { oldServerNote, oldServers } from "../mcp/handoff.js";
 import { neededTasks, taskRunHealth, taskState } from "../claude/tasks.js";
 import { nodeSupported, profileSignedIn, resolveClaude } from "../core/claude-bin.js";
 import { missingAllowRules } from "../claude/permissions.js";
@@ -154,6 +158,9 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
     add("claude.board", !!b && !stale, b ? `team board ${b.url}${stale ? `: published with an older pmx; ${how} to update it` : ""}` : `no Claude board yet: ${how}`, "warn");
   }
   const st = await loadState();
+  // SIG-6: Linear connected and meetings collected, but no task ever proposed on this Mac.
+  const never = await neverSynthesized(d.team, d.personal, agentHandle(d.personal), st.lastSynthAt, !!(await d.launchd.installed().catch(() => null)), d.now?.() ?? new Date()).catch(() => null);
+  if (never) add("synth.never", false, never, "warn");
   if (d.team.cli?.autoUpdate) {
     const au = st.autoUpdate;
     const stuck = au && (au.result === "needs-sudo" || au.result === "failed");
@@ -180,9 +187,14 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   const mh = await mcpHealth();
   if (mh) add("flow.mcp", mh.ok, mh.detail, "warn");
   else if (d.personal.flow?.url) add("flow.mcp", false, "the /pmx-flow page can't reach PMX on this Mac: run `pmx mcp --install`, then restart the Claude app", "warn");
-  // 0.23.0 (FLOW-5, BOARD-6): a page published before the workspace can't pair or act; publishing it again keeps its link.
-  const fv = d.personal.flow?.version;
-  if (d.personal.flow?.url && fv && (compareVersions(fv, "0.23.0") ?? 0) < 0) add("flow.page", false, `your /pmx-flow page is from pmx ${fv}, before the workspace: type /pmx-flow in the Claude app to update it, keeping its link`, "warn");
+  // FLOW-4: a server the Claude app started before this pmx was installed, from before 0.24.1, still runs the old code.
+  if (mh) {
+    const old = await oldServers(d.exec);
+    if (old.length) add("flow.mcp-old", false, oldServerNote(old.length)!.replace(/^The/, "the"), "warn");
+  }
+  // FLOW-5: the /pmx-flow page runs the code of the pmx that published it; publishing it again keeps its link.
+  const fp = stalePages(null, { flow: d.personal.flow ?? null, board: null }, current)[0];
+  if (fp) add("flow.page", false, `your /pmx-flow page is from pmx ${fp.publishedVersion ?? "an older version"}: type /pmx-flow in the Claude app to update it to ${current}, keeping its link`, "warn");
 
   const loose: string[] = [];
   for (const dir of [paths.home(), paths.staging(), paths.receipts(), paths.transcripts()]) {

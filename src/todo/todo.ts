@@ -29,6 +29,8 @@ export interface Todo {
   doneAt: string | null;
   /** The run that found it: `pmx explain <receiptId>`. */
   receiptId: string;
+  /** SIG-7: the Linear issue the PM sent it to, when they chose to. */
+  linear?: string | null;
 }
 
 /** ~/.pmx/todos.json (0600): the PM's to-dos and which meetings were already read for them (TODO-3). */
@@ -99,9 +101,54 @@ export interface TodoResult {
  * read for to-dos yet, including 1:1s and internal meetings (individual scope), and adds one cited
  * to-do per commitment. Nothing leaves the Mac except the model call on the PM's own Claude plan.
  */
+/** How far back `pmx todo`, `pmx todo --refresh` and the background job look by default. */
+export const TODO_DAYS = 7;
+/** The longest period `--days` or `--since` can pick: a refresh reads every unread meeting in it. */
+export const TODO_MAX_DAYS = 90;
+
+/**
+ * The time period for `pmx todo` (TODO-4): `--days N`, or `--since today|Nd|YYYY-MM-DD`; the last 7 days when neither
+ * is given. "The last N days" starts at midnight N days before today, the window refresh has always used, so
+ * `--days 7` and the default agree. One period serves both the list and `--refresh`.
+ */
+export function todoPeriod(o: { days?: string; since?: string }, now: Date): { since: Date; days: number; label: string; chosen: boolean } {
+  if (o.days !== undefined && o.since !== undefined) throw new Error("Use --days or --since, not both.");
+  // Listing every to-do ever found: `--days all`. A refresh can't use it (see TODO_MAX_DAYS).
+  if (o.days?.trim().toLowerCase() === "all") return { since: new Date(0), days: Infinity, label: "any time", chosen: true };
+  const range = `1 to ${TODO_MAX_DAYS}`;
+  const back = (n: number, from: string) => {
+    if (!Number.isInteger(n) || n < 1 || n > TODO_MAX_DAYS) throw new Error(`${from} takes ${range} days, not "${o.days ?? o.since}".`);
+    return { since: startOfDay(now, n), days: n, label: `the last ${n} day${n === 1 ? "" : "s"}` };
+  };
+  if (o.days !== undefined) return { ...back(/^\d+$/.test(o.days) ? Number(o.days) : NaN, "--days"), chosen: true };
+  if (o.since === undefined) return { ...back(TODO_DAYS, "--days"), chosen: false };
+  const v = o.since.trim().toLowerCase();
+  if (v === "today") return { since: startOfDay(now), days: 0, label: "today", chosen: true };
+  const rel = /^(\d+)d$/.exec(v);
+  if (rel) return { ...back(Number(rel[1]), "--since"), chosen: true };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`--since takes "today", a number of days like 30d, or a date like 2026-11-05, not "${o.since}".`);
+  const since = new Date(`${v}T00:00:00`);
+  if (Number.isNaN(since.getTime()) || localDay(since) !== v) throw new Error(`--since: "${o.since}" isn't a real date.`);
+  const days = Math.round((startOfDay(now).getTime() - since.getTime()) / 86400000);
+  if (days < 0) throw new Error(`--since ${v} is in the future.`);
+  if (days > TODO_MAX_DAYS) throw new Error(`--since ${v} is more than ${TODO_MAX_DAYS} days ago. Pick a later date.`);
+  return { since, days, label: `since ${v}`, chosen: true };
+}
+
+/** The to-dos whose meeting (or, for ones you added, the day you added them) falls in the period, and how many don't. */
+export function todosInPeriod(items: Todo[], since: Date, now: Date): { shown: Todo[]; older: number; oldestDays: number } {
+  const cutoff = localDay(since);
+  const shown = items.filter((t) => t.source.at.slice(0, 10) >= cutoff);
+  const old = items.filter((t) => t.source.at.slice(0, 10) < cutoff).map((t) => t.source.at.slice(0, 10)).sort()[0];
+  const oldestDays = old ? Math.round((startOfDay(now).getTime() - new Date(`${old}T00:00:00`).getTime()) / 86400000) : 0;
+  return { shown, older: items.length - shown.length, oldestDays };
+}
+
 export async function refreshTodos(ctx: Ctx, o: { since?: Date; dryRun?: boolean; skipIfNothingNew?: boolean } = {}): Promise<TodoResult> {
   const now = ctx.now();
-  const since = o.since ?? startOfDay(now);
+  // The last 7 days by default, not just today: a meeting collected late, or while the Mac was off, still gets read.
+  // Meetings already read for to-dos are skipped, so the overlap costs nothing.
+  const since = o.since ?? startOfDay(now, TODO_DAYS);
   const days = Math.ceil((now.getTime() - since.getTime()) / 86400000) + 1;
   const store = await loadTodos();
   const g = await gather(ctx, { days, scope: "individual" });
@@ -232,8 +279,34 @@ export async function placeTodo(id: string, p: { due?: unknown; when?: unknown; 
   });
 }
 
-export function formatTodos(items: Todo[]): string {
-  if (!items.length) return "No open to-dos. `pmx todo --refresh` reads today's meetings.";
+/**
+ * The Linear category a PM's own commitment goes in (SIG-7). No skill has it, so agents never pick it up, and the
+ * board doesn't flag it as a category nobody handles.
+ */
+export const COMMITMENT = "commitment";
+
+/**
+ * Sends one to-do to the team's Linear project, when the PM turned that on (SIG-7). Only the to-do's own words go:
+ * never the meeting's title, transcript, attendees or quotes. Sent once; a second call returns the same issue.
+ */
+export async function sendTodoToLinear(
+  ctx: Pick<Ctx, "personal" | "team">, tracker: { createInbox(t: { title: string; description: string; category: string; size: "S"; sources: string[] }): Promise<{ identifier: string }> }, id: string,
+): Promise<{ identifier: string; text: string; already: boolean }> {
+  if (ctx.team.tracker.kind === "none") throw new Error("Your team has no task tracker, so there's nowhere to send to-dos.");
+  if (!ctx.personal.todosToLinear) throw new Error("Sending your own to-dos to Linear is off, so they stay on this Mac. Turn it on in Settings, under What Linear gets, or with `pmx todo --linear on`.");
+  const t = (await loadTodos()).items.find((x) => x.id === id);
+  if (!t) throw new Error(`No to-do ${id}. \`pmx todo\` lists them.`);
+  if (t.linear) return { identifier: t.linear, text: t.text, already: true };
+  const issue = await tracker.createInbox({
+    title: t.text.slice(0, 200), category: COMMITMENT, size: "S", sources: [],
+    description: [`A commitment ${ctx.personal.handle} made${t.due ? `, due ${t.due}` : ""}, sent to Linear by them to track it here.`, "", "PMX sent only these words: no meeting title, transcript, attendees or quotes. Agents don't pick up commitments."].join("\n"),
+  });
+  await mutateTodos((s) => { find(s, id).linear = issue.identifier; });
+  return { identifier: issue.identifier, text: t.text, already: false };
+}
+
+export function formatTodos(items: Todo[], period?: string): string {
+  if (!items.length) return `No open to-dos${period ? ` from ${period}` : ""}. \`pmx todo --refresh\` reads the last ${TODO_DAYS} days' meetings (\`--days 30\` for more). To-dos stay on this Mac; tasks for Linear are under \`pmx proposals\`.`;
   const sorted = [...items].sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999") || a.createdAt.localeCompare(b.createdAt));
   return sorted
     .map((t) => `${t.status === "done" ? "✔" : "☐"} ${t.id}  ${t.text}${t.due ? `  (due ${t.due})` : ""}\n         from "${t.source.title}" on ${t.source.at}: ${t.why}`)

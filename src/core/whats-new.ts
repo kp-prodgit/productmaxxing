@@ -19,6 +19,24 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.25.0", date: "2026-11-12", headline: "Tasks are proposed on their own, and an empty Inbox says why",
+    items: [
+      { what: "PMX now proposes tasks from your customer calls in the background even if your team hasn't picked a synthesis Mac. Each task still waits for your approval before it reaches Linear." },
+      { what: "When no tasks are waiting, your Inbox says why (not run yet, nothing new, or every meeting kept out as internal) and what happened to each recent meeting, with a Run synthesis button and its cost.", try: "pmx proposals" },
+      { what: "To-dos stay on this Mac; tasks go to Linear after you approve them. If you'd like to track your own commitments in Linear too, you can now turn that on.", try: "pmx todo --linear on" },
+      { what: "`pmx todo` and the board's to-do views show to-dos from the last 7 days' meetings by default; pick another period with --days or --since (or From meetings in on the board), up to 90 days, or all of them.", try: "pmx todo --days 30" },
+      { what: "Fixes: `pmx digest --review` keeps the draft when it can't ask you, `pmx todo --refresh` reads the last 7 days, and `pmx flow --web` reopens the board that's already running." },
+    ],
+  },
+  {
+    version: "0.24.1", date: "2026-11-12", headline: "The Flow map is back, and your PMX page in Claude follows updates",
+    items: [
+      { what: "Flow is back in the left menu: the map of every step from your meetings to Linear and the agents, what each arrow carries and how much moved, with a panel explaining each step. Everything else stays where it was.", try: "pmx flow --web, then Flow" },
+      { what: "PMX's server in the Claude app now switches to a newly installed pmx by itself. Coming from 0.24.0 or older? Quit the Claude app completely (⌘Q) and open it again once, so your PMX page there stops talking to the old server.", try: "pmx doctor" },
+      { what: "Pages you published in Claude with /pmx-flow or /pmx-board keep the old code until they're published again. After any update, PMX now says which ones, on the page itself, in the Claude app and in its own output, and a Claude session that runs the update publishes them again itself. Each keeps its link.", try: "/pmx-flow in the Claude app" },
+    ],
+  },
+  {
     version: "0.24.0", date: "2026-11-12", headline: "Fireflies is read through its Claude connector",
     items: [
       { what: "PMX reads Fireflies the way its connector is built: your meetings since the last run, the transcript word for word without timestamps, never Fireflies' AI summary, and never its tools that share or change meetings.", try: "pmx sources add Fireflies" },
@@ -211,10 +229,12 @@ export async function pendingNotes(o: { installedAt?: string | null } = {}): Pro
 export const QUIET_COMMANDS = new Set(["tick", "mcp", "whats-new", "uninstall"]);
 
 /** Shows pending notes once, on stderr so JSON on stdout stays clean, then marks them seen. Never throws. */
-export async function announceOnce(write: (s: string) => void, o: { installedAt?: string | null } = {}): Promise<void> {
+export async function announceOnce(write: (s: string) => void, o: { installedAt?: string | null; pages?: () => Promise<string | null> } = {}): Promise<void> {
   try {
     const notes = await pendingNotes(o);
-    if (notes.length) write(`${formatNotes(notes)}\n\nSee this again with \`pmx whats-new\`.\n`);
+    // The pages this Mac published in Claude still run the old code: say so with the notes, so Claude publishes them again.
+    const pages = notes.length && o.pages ? await o.pages().catch(() => null) : null;
+    if (notes.length) write(`${formatNotes(notes)}\n\nSee this again with \`pmx whats-new\`.\n${pages ? `\n${pages}\n` : ""}`);
     if (notes.length || (await stat(paths.config()).then(() => true, () => false))) await markSeen();
   } catch {}
 }

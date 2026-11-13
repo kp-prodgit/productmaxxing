@@ -138,12 +138,13 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
     ...(viaJob("todo") ?? ok()), result: todoR?.todo ? `${plural(todoR.todo.added.length, "new to-do")}${i.todos ? ` · ${i.todos} open` : ""}` : i.todos ? `${i.todos} open` : null,
     run: i.killSwitch.on ? null : "todo", runNote: null,
   });
-  const synthHere = isMe(i.synthesizer);
+  // 0.25.0: with no synthesis Mac chosen, each Mac proposes tasks from its own calls (SIG-6).
+  const synthHere = !i.synthesizer || isMe(i.synthesizer);
   out.push({
     id: "synthesize", group: "work", name: "Propose tasks from customer calls", by: "auto", where: synthHere ? "This Mac and Claude" : "The team's synthesis Mac",
-    what: "Claude reads customer calls and approved Slack threads, with private details removed, and proposes sized tasks. Nothing goes to Linear until you approve.",
+    what: `Claude reads customer calls${i.synthesizer ? " and approved Slack threads" : " you collected"}, with private details removed, and proposes sized tasks. Nothing goes to Linear until you approve.${i.synthesizer ? "" : " With no synthesis Mac chosen, each Mac does this for its own calls; your team can pick one Mac to do it for everyone under Sources."}`,
     cadence: "every 30 minutes for new calls; Slack every 6 hours", last: synthHere ? latest([i.lastSynthAt, synthR?.at]) : synthR?.at ?? null, next: synthHere ? nextPass : null, tab: "today",
-    ...(!i.tracker ? { status: "off" as const, statusText: "No task tracker set up", fix: null } : !i.synthesizer ? { status: "setup" as const, statusText: "No synthesis Mac chosen", fix: { text: "Your team picks one Mac to read customer calls and propose tasks for everyone. Choose it under Sources, in Channels and feeds: your team approves the choice." } } : synthHere ? (viaJob("synthesize") ?? ok()) : ok("Runs on another Mac")),
+    ...(!i.tracker ? { status: "off" as const, statusText: "No task tracker set up", fix: null } : synthHere ? (viaJob("synthesize") ?? ok()) : ok("Runs on another Mac")),
     result: synthR?.synth ? `${plural(synthR.synth.tasks.length, "task")} proposed from ${plural(synthR.sources.filter((s) => s.decision === "used").length, "source")}` : null,
     run: synthHere && i.tracker && !i.killSwitch.on ? "synthesize" : null, runNote: synthHere ? null : `Runs on ${i.synthesizer ?? "the team's synthesis Mac"}, so every call is read once for the whole team.`,
   });

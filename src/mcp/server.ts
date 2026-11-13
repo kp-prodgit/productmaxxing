@@ -6,6 +6,8 @@ import { mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import type { Ctx } from "../core/context.js";
 import { currentVersion } from "../core/version.js";
+import { stalePages } from "../claude/pages.js";
+import { handoff, noteServer, type HandoffDeps } from "./handoff.js";
 import { addNeverIngest, checkNeverIngest, whatIf } from "../flow/edit.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
 import { loadPipeline } from "../flow/pipeline-load.js";
@@ -74,6 +76,19 @@ export const MCP_TOOLS = [
   },
 ] as const;
 
+const INSTRUCTIONS = "ProductMaxxing (PMX) for the PM's /pmx-flow page. In a chat, use only pipeline, flow_graph and flow_what_if (counts and metadata). pair, board and board_act are for the page itself: never call pair from a chat, and never ask the user for a key.";
+const REPUBLISH = "PMX can't publish its pages in Claude itself, so after PMX is updated they keep running the older code until Claude publishes them again. When the pipeline tool's health problems say a PMX page in Claude was published with an older pmx, tell the user and offer to update it now with the pmx-flow skill (the workspace) or the pmx-board skill (the team board); each keeps its link.";
+
+/**
+ * What the Claude app tells Claude about this server when it starts it. After an update, it names the pages this Mac
+ * published with an older pmx, so Claude offers to publish them again.
+ */
+export async function serverInstructions(ctx: () => Promise<Ctx>): Promise<string> {
+  const pages = await ctx().then((c) => stalePages(c.team, c.personal), () => []);
+  const now = pages.map((p) => `Right now, the user's ${p.title} was published with pmx ${p.publishedVersion ?? "an older version"} and pmx ${p.version} is installed: tell the user once, briefly, and offer to update it with the ${p.skill} skill.`);
+  return [INSTRUCTIONS, REPUBLISH, ...now].join(" ");
+}
+
 type Msg = { jsonrpc: "2.0"; id?: string | number | null; method?: string; params?: any };
 
 /** What a paired call needs besides the context: the board's actions and how to ask the PM. Tests pass their own. */
@@ -89,9 +104,10 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>, deps: McpDeps
     case "initialize":
       return reply({
         protocolVersion: typeof msg.params?.protocolVersion === "string" ? msg.params.protocolVersion : "2025-06-18",
-        capabilities: { tools: { listChanged: false } },
+        // listChanged: after an update hands off to a newer pmx, its tools may differ (see handoff.ts).
+        capabilities: { tools: { listChanged: true } },
         serverInfo: { name: "pmx", title: "ProductMaxxing", version: currentVersion() },
-        instructions: "ProductMaxxing (PMX) for the PM's /pmx-flow page. In a chat, use only pipeline, flow_graph and flow_what_if (counts and metadata). pair, board and board_act are for the page itself: never call pair from a chat, and never ask the user for a key.",
+        instructions: await serverInstructions(ctx),
       });
     case "ping":
       return reply({});
@@ -152,20 +168,30 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>, deps: McpDeps
 }
 
 /** Serves MCP on stdin/stdout until stdin closes. Nothing else may write to stdout meanwhile. */
-export async function serveMcp(ctx: () => Promise<Ctx>, deps: McpDeps = {}): Promise<void> {
+export async function serveMcp(ctx: () => Promise<Ctx>, deps: McpDeps = {}, io: { input?: NodeJS.ReadableStream; write?: (line: string) => void; handoff?: HandoffDeps } = {}): Promise<void> {
   console.log = (...a: unknown[]) => console.error(...a);
-  const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  const write = io.write ?? ((l: string) => void process.stdout.write(`${l}\n`));
+  // After an update, the newly installed pmx answers instead of this process's old code (see handoff.ts).
+  const h = handoff(write, io.handoff);
+  const unnote = io.input ? async () => {} : await noteServer();
+  const rl = createInterface({ input: io.input ?? process.stdin, crlfDelay: Infinity });
+  try {
   for await (const line of rl) {
     if (!line.trim()) continue;
+    if (h.route(line)) continue;
     let msg: Msg;
     try {
       msg = JSON.parse(line);
     } catch {
-      process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } })}\n`);
+      write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }));
       continue;
     }
     // Answered as each finishes, not in order: a pairing dialog or a Linear write mustn't hold up the page's reads.
-    void handleMcp(msg, ctx, deps).then((out) => { if (out) process.stdout.write(`${JSON.stringify(out)}\n`); });
+    void handleMcp(msg, ctx, deps).then((out) => { if (out) write(JSON.stringify(out)); });
+  }
+  } finally {
+    h.close();
+    await unnote();
   }
 }
 

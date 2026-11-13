@@ -35,6 +35,8 @@ import { reviewCommand } from "./review.js";
 import { cloudCommands } from "./cloud.js";
 import { companyStep, meetingCommands, todoStep } from "./meetings.js";
 import { updateStep } from "./autoupdate.js";
+import { stalePages } from "../claude/pages.js";
+import { afterUpdateNote } from "../mcp/handoff.js";
 import { linearCommands } from "./linear.js";
 import { flowCommands } from "./flow.js";
 import { settingsCommands } from "./settings.js";
@@ -76,6 +78,12 @@ export const tickSteps: [string, TickStep][] = [
 async function showNewNotes(version: string): Promise<void> {
   const text = await newVersionNotes(exec, currentVersion()).catch(() => null);
   console.log(text ? `\n${text}` : `\nSee what's new in pmx ${version}: pmx whats-new`);
+  // A pmx from before 0.24.1 doesn't say which pages to publish again; this one does, for the version it installed.
+  if (!text?.includes("Update your PMX page") && !text?.includes("still running PMX's server")) {
+    const personal = await loadPersonalConfig().catch(() => null);
+    const note = personal && (await afterUpdateNote(await loadTeamConfig(personal.repoPath).catch(() => null), personal, exec, version));
+    if (note) console.log(`\n${note}`);
+  }
   if (text) await markSeen(version);
 }
 
@@ -319,7 +327,11 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
     async run(a) {
       if (a.values.since && !isVersion(String(a.values.since))) throw new Error(`--since takes a version like 0.10.1, not "${a.values.since}".`);
       const notes = a.values.all ? RELEASE_NOTES.filter((n) => (compareVersions(n.version, currentVersion()) ?? 0) <= 0) : notesBetween(a.values.since ? String(a.values.since) : null);
-      console.log(a.values.json ? JSON.stringify({ version: currentVersion(), notes }, null, 2) : formatNotes(notes));
+      // `pmx update` prints this from the pmx it just installed, so whoever ran the update (often Claude) is told to publish the pages again.
+      const personal = await loadPersonalConfig().catch(() => null);
+      const pages = personal ? stalePages(await loadTeamConfig(personal.repoPath).catch(() => null), personal, currentVersion()) : [];
+      const note = personal ? await afterUpdateNote(await loadTeamConfig(personal.repoPath).catch(() => null), personal, exec, currentVersion()) : null;
+      console.log(a.values.json ? JSON.stringify({ version: currentVersion(), notes, pagesToUpdate: pages }, null, 2) : `${formatNotes(notes)}${note ? `\n\n${note}` : ""}`);
       return 0;
     },
   },

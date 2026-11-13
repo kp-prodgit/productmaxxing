@@ -209,7 +209,7 @@ describe("0.20.0: every interaction point on the board, in a PM's words (BOARD-5
     // 0.23.0 (BOARD-6): a left nav of views instead of tabs, each with its own route, opening on Today.
     expect(page.startsWith("<title>PMX Workspace</title>")).toBe(true);
     expect(page).toMatch(/<script type="application\/json" id="pmx-config">/);
-    expect(page).toMatch(/const VIEWS = \["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "status", "settings"\]/);
+    expect(page).toMatch(/const VIEWS = \["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "flow", "status", "settings"\]/);
     for (const v of ["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "status", "settings"]) expect(page).toContain(`data-view="${v}"`);
     expect(page).toMatch(/const S = \{ view: "today"/);
     // Links from before 0.23.0 land on their new home.

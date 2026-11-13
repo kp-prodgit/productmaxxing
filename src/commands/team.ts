@@ -12,6 +12,7 @@ import { verifyPr } from "../run/verify.js";
 import { synthesize } from "../synth/synthesize.js";
 import { approveProposals, dropProposals, formatProposals, readProposals } from "../synth/proposals.js";
 import { startOfDay } from "../meetings/ledger.js";
+import { formatSynthStatus, recentReceipts, synthesizesHere, synthStatus, synthWindow } from "../synth/status.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
 
@@ -55,6 +56,13 @@ export const teamCommands: Command[] = [
       const refs = [...a.positionals.slice(1), ...(a.values.all ? ["all"] : [])];
       if (sub === "list") {
         const list = await readProposals();
+        if (!list.length && !a.values.json) {
+          // SIG-6: say why nothing is waiting, not just that nothing is.
+          const ctx = await a.ctx();
+          const st = await synthStatus(ctx, { local: true, receipts: await recentReceipts(), automatic: !!(await ctx.launchd.installed().catch(() => null)), lastSynthAt: (await loadState()).lastSynthAt });
+          console.log(formatSynthStatus(st, ctx.now()));
+          return 0;
+        }
         console.log(a.values.json ? JSON.stringify(list, null, 2) : formatProposals(list, !a.values.brief));
         return 0;
       }
@@ -184,11 +192,11 @@ function sinceDate(v: string | undefined, now: Date): Date {
  * are processed at once. With nothing new it makes no model call. Slack still runs every 6 hours.
  */
 export const synthStep: TickStep = async (ctx: Ctx) => {
-  if (ctx.team.synthesizer !== ctx.agent && ctx.team.synthesizer !== ctx.personal.handle) return null;
-  if (ctx.team.tracker.kind === "none") return null;
+  if (!synthesizesHere(ctx.team, ctx.personal, ctx.agent)) return null;
   const s = await loadState();
   const slackDue = !s.lastSynthAt || ctx.now().getTime() - new Date(s.lastSynthAt).getTime() >= 6 * 3600000;
-  const r = await synthesize(ctx, await services(ctx), { days: 2, since: startOfDay(ctx.now()), skipIfNothingNew: !slackDue });
+  const w = synthWindow(s.lastSynthAt, ctx.now());
+  const r = await synthesize(ctx, await services(ctx), { ...w, skipIfNothingNew: !slackDue });
   if (!r.meetings.processed.length && !r.staged.length) return null;
   return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} task(s) proposed and waiting for your approval (pmx proposals)`;
 };

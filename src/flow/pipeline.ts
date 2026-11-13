@@ -1,4 +1,6 @@
 import { HOLD_LABELS, type HoldReason } from "../core/filter.js";
+import type { SynthStatus } from "../synth/status.js";
+import { COMMITMENT } from "../todo/todo.js";
 import type { RunReceipt } from "../core/receipt.js";
 import type { RunLogEntry } from "../core/runlog.js";
 import { acceptStats } from "../review/queue.js";
@@ -87,7 +89,8 @@ export interface PipelineData {
   proposals: { id: string; title: string; category: string; size: Size; from: string; description: string }[];
   drafts: { identifier: string; title: string; url: string | null; since: string | null }[];
   /** Open to-dos. Local level only: they never leave the Mac. */
-  todos: { id: string; text: string; due: string | null; from: string; when: "today" | "evening" | "someday" | null }[];
+  /** `at`: the meeting's day, or the day the PM added it; the board's period picker filters on it (TODO-4). */
+  todos: { id: string; text: string; due: string | null; from: string; at: string; when: "today" | "evening" | "someday" | null; linear?: string | null }[];
   /** What the PM finished in the last 14 days, newest first (BOARD-6). This Mac's page only. */
   logbook?: LogbookEntry[];
   /** The team's Plan board artifact, when one is published (BOARD-1). */
@@ -119,6 +122,8 @@ export interface PipelineData {
   version?: string;
   /** INPUT-1, INPUT-2 (0.21.0): every connector PMX reads through, and the duplicates it caught. */
   inputs?: InputsBoard | null;
+  /** SIG-6 (0.25.0): who proposes tasks, when it last ran, and why none are waiting, meeting by meeting on this Mac's page. */
+  synth?: SynthStatus | null;
 }
 
 export interface PipelineRules {
@@ -134,11 +139,14 @@ export interface PipelineRules {
   rubric: Record<string, Record<Size, string>>;
   slackChannels: string[];
   allowedSources: string[];
+  /** SIG-7 (0.25.0): whether this PM chose to send their own to-dos to Linear, one at a time. */
+  todosToLinear?: boolean;
 }
 
 export interface PipelineInputs {
   level: PipelineLevel;
   inputs?: InputsBoard | null;
+  synth?: SynthStatus | null;
   now: Date;
   hours: number;
   agent: string;
@@ -150,7 +158,7 @@ export interface PipelineInputs {
   collectReports: { at: string; connector: string | null; saved: number; inputs?: { id: string; shape: "calls" | "channels"; saved: number }[] }[];
   todosCreated: string[];
   /** Open to-dos on this Mac. */
-  openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string } }[];
+  openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string }; linear?: string | null }[];
   logbook?: LogbookEntry[];
   boardUrl?: string | null;
   pendingTeam?: PipelineData["pendingTeam"];
@@ -236,7 +244,8 @@ function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "
     };
   });
   const byUnknown = new Map<string, number>();
-  for (const t of tasks) if (t.category && !cfg[t.category] && t.status !== "done") byUnknown.set(t.category, (byUnknown.get(t.category) ?? 0) + 1);
+  // A PM's own commitment sent to Linear (SIG-7) has no skill on purpose: agents never take it.
+  for (const t of tasks) if (t.category && t.category !== COMMITMENT && !cfg[t.category] && t.status !== "done") byUnknown.set(t.category, (byUnknown.get(t.category) ?? 0) + 1);
   return { categories, unknown: [...byUnknown].map(([id, n]) => ({ id, tasks: n })).sort((a, b) => a.id.localeCompare(b.id)) };
 }
 
@@ -349,7 +358,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
       from: p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
     })) : [],
     drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null })),
-    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, from: t.source.title === "Added by you" ? "Added by you" : `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
+    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, at: t.source.at.slice(0, 10), ...(t.linear ? { linear: t.linear } : {}), from: t.source.title === "Added by you" ? "Added by you" : `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
     logbook: local ? i.logbook ?? [] : [],
     boardUrl: i.boardUrl ?? null,
     pendingTeam: i.pendingTeam ?? [],
@@ -364,6 +373,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     automations: i.automations ?? [],
     activity: i.activity ?? [],
     inputs: i.inputs ?? null,
+    synth: i.synth ?? null,
     digest: i.digest ? { ...i.digest, waiting: i.digest.waiting.map((w) => ({ ...w, markdown: local ? w.markdown : null })), dm: { on: i.digest.dm.on, user: local ? i.digest.dm.user : null }, slackChannel: local ? i.digest.slackChannel : null } : null,
     jobs: local ? i.jobs ?? [] : [],
     killSwitch: i.killSwitch ?? { on: false, reason: null },

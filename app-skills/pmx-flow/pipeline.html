@@ -14,6 +14,8 @@
   --accent: #3459c9; --accent-soft: #ecf1fd; --accent-fg: #ffffff;
   --today: #c99a00; --ok: #16793f; --ok-soft: #e8f6ee; --warn: #8f4b05; --warn-soft: #fdf3e4; --bad: #c53030; --bad-soft: #fdeeee;
   --ic-up: #c83a50; --ic-any: #2a8c7f;
+  /* The flow map: where data is (this Mac, Claude, Linear, your repo, kept private). */
+  --mac: #2f5f86; --mac-soft: #e1ebf4; --claude: #7a3fc4; --claude-soft: #efe6fa; --linear: #0e6b5b; --linear-soft: #dcefe9; --repo: #6d5a2e; --repo-soft: #f1ecdf; --held: #9a5a06; --held-soft: #f7ead6;
   --shadow: 0 10px 30px rgba(20,24,35,.10), 0 1px 3px rgba(20,24,35,.06);
   --scrim: rgba(10,12,18,.35); --knob: #ffffff; --toast-hover: rgba(127,127,127,.25);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -27,14 +29,14 @@
   --line: #2a2d34; --line-2: #383c45; --fg: #ececef; --fg-2: #a9aeb8; --fg-3: #8d929d;
   --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
   --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
-  --ic-up: #f07a8c; --ic-any: #5cc9b8;
+  --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
   --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121316; --sunken: #17191d; --card: #1b1d22; --hover: #22252b; --select: #1f2a44;
   --line: #2a2d34; --line-2: #383c45; --fg: #ececef; --fg-2: #a9aeb8; --fg-3: #8d929d;
   --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
   --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
-  --ic-up: #f07a8c; --ic-any: #5cc9b8;
+  --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
   --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark }
 html, body { height: 100% }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/20px var(--font); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100% }
@@ -278,6 +280,86 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--line-2);
 .cite { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); border: 0; vertical-align: 1px }
 .reader-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px }
 .reader-bar .acts { display: flex; gap: 8px; flex-wrap: wrap }
+/* Flow: the map (BOARD-3) */
+.page.wide { max-width: 1240px }
+.seg { display: inline-flex; border: 1px solid var(--line-2); border-radius: var(--r-s); overflow: hidden; background: var(--card) }
+.seg button { border: 0; background: none; padding: 5px 12px; font-size: 13px; color: var(--fg-2) }
+.seg button + button { border-left: 1px solid var(--line-2) }
+.seg button[aria-pressed="true"] { background: var(--hover); color: var(--fg); font-weight: 500 }
+details.legend { font-size: 13px; color: var(--fg-2); margin: 0 0 12px }
+details.legend summary { cursor: pointer; width: max-content }
+.key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--fg-2); margin-top: 8px; align-items: center }
+.key > span { display: inline-flex; align-items: center; gap: 7px }
+.key svg { width: 28px; height: 8px; overflow: visible }
+.key .pillkey { font-family: var(--mono); font-size: 11px; background: var(--fg); color: var(--bg); border-radius: 999px; padding: 0 7px }
+.fconn { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px }
+.fmain { min-width: 0 }
+@media (min-width: 1180px) { .fconn { grid-template-columns: minmax(0, 1fr) 320px; align-items: start } .fdetail { position: sticky; top: 16px } .fdetail .backmap { display: none } }
+.mapbox { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); padding: 8px; overflow-x: auto }
+svg.map { display: block; width: 100%; min-width: 760px; height: auto; font-family: var(--font) }
+.map .band { font-size: 12px; letter-spacing: 0.07em; text-transform: uppercase; fill: var(--fg-3); font-weight: 600 }
+.map .divider { stroke: var(--line-2); stroke-dasharray: 4 4 }
+.map .node rect.box { stroke-width: 1.5 }
+.map .node .t { font-size: 14.5px; font-weight: 600; fill: var(--fg) }
+.map .node .s { font-size: 13px; fill: var(--fg-2) }
+.map .node .tag { font-size: 11px; font-weight: 700; letter-spacing: 0.05em }
+.map .node, .map .edge, .map .badge { cursor: pointer; transition: opacity 150ms }
+.map .node .halo { fill: none; stroke: var(--fg); stroke-width: 2; opacity: 0 }
+.map .node:hover rect.box { stroke-width: 2.5 }
+.map .node.sel rect.box { stroke-width: 3 }
+.map .node.sel .halo { opacity: 0.55 }
+.map g:focus-visible { outline: none }
+.map .node:focus-visible rect.box { stroke: var(--fg); stroke-width: 3; stroke-dasharray: none }
+.map .queue rect { fill: var(--fg) }
+.map .queue text { fill: var(--bg); font-family: var(--mono); font-size: 12px; font-weight: 600 }
+.map .queue.zero { opacity: 0 }
+.map.has-sel .node:not(.sel):not(.adj), .map.has-sel .edge:not(.sel):not(.adj), .map.has-sel .badge:not(.adj) { opacity: 0.35 }
+.k-app rect.box { fill: var(--card); stroke: var(--fg-3) } .k-app .tag { fill: var(--fg-3) }
+.k-mac rect.box { fill: var(--mac-soft); stroke: var(--mac) } .k-mac .tag { fill: var(--mac) }
+.k-claude rect.box { fill: var(--claude-soft); stroke: var(--claude) } .k-claude .tag { fill: var(--claude) }
+.k-linear rect.box { fill: var(--linear-soft); stroke: var(--linear) } .k-linear .tag { fill: var(--linear) }
+.k-repo rect.box { fill: var(--repo-soft); stroke: var(--repo) } .k-repo .tag { fill: var(--repo) }
+.k-held rect.box { fill: var(--held-soft); stroke: var(--held); stroke-dasharray: 5 3 } .k-held .tag { fill: var(--held) }
+.k-off rect.box { fill: var(--card); stroke: var(--fg-3); stroke-dasharray: 3 3 } .k-off .t, .k-off .s { fill: var(--fg-3) }
+.map .edge path.l { fill: none; stroke-width: 2.2 }
+.map .edge .hit { stroke: transparent; stroke-width: 16; fill: none }
+.e-full path.l, .kl-full { stroke: var(--mac); stroke-width: 2 }
+.e-model path.l, .kl-model { stroke: var(--claude); stroke-width: 3.5 }
+.e-linear path.l, .kl-linear { stroke: var(--linear); stroke-width: 3; stroke-dasharray: 12 3 2 3 }
+.e-status path.l, .kl-status { stroke: var(--fg-3); stroke-width: 1.5 }
+.e-held path.l, .kl-held { stroke: var(--held); stroke-width: 2; stroke-dasharray: 6 4 }
+.e-off path.l, .kl-off { stroke: var(--fg-3); stroke-width: 2; stroke-dasharray: 2 4 }
+.map .edge:hover path.l, .map .edge:focus-visible path.l { stroke-width: 4.5 }
+.map .edge.sel path.l { stroke-width: 5 }
+.map .badge rect { fill: var(--card); stroke: var(--line-2) }
+.map .badge text { font-family: var(--mono); font-size: 12.5px; fill: var(--fg); font-weight: 500 }
+/* Zeros stay quiet: an arrow shows a number only once something moved on it. */
+.map .badge.zero { opacity: 0; pointer-events: none }
+.map .badge.new rect { stroke: var(--fg); stroke-width: 2 }
+.map .pulse { fill: var(--fg) }
+table.flist { width: 100%; border-collapse: collapse; font-size: 13px }
+table.flist th, table.flist td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top }
+table.flist th { font-size: 12px; color: var(--fg-2); font-weight: 600 }
+table.flist .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums }
+table.flist tr.grp td { background: var(--sunken); font-weight: 600; font-size: 12px; color: var(--fg-2) }
+.kindchip { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; white-space: nowrap }
+.kindchip.full { background: var(--mac-soft); color: var(--mac) } .kindchip.model { background: var(--claude-soft); color: var(--claude) }
+.kindchip.linear { background: var(--linear-soft); color: var(--linear) } .kindchip.status { background: var(--sunken); color: var(--fg-2) }
+.kindchip.held { background: var(--held-soft); color: var(--held) } .kindchip.off { background: var(--sunken); color: var(--fg-3) }
+.fdetail { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); padding: 16px; min-width: 0 }
+.fdetail .eyebrow { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--fg-3); font-weight: 600 }
+.fdetail h2 { margin: 3px 0 6px; font-size: 17px }
+.fdetail h2:focus { outline: none }
+.fdetail h3 { font-size: 13px; margin: 14px 0 0 }
+.fdetail p + p { margin-top: 6px }
+.fdetail .backmap { margin-bottom: 8px }
+.fdetail dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; margin: 10px 0 }
+.fdetail dl.kv dt { color: var(--fg-2); font-size: 13px }
+.fdetail dl.kv dd { margin: 0; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums }
+.fdetail .carry { border-radius: var(--r-s); padding: 9px 11px; font-size: 13px; margin: 10px 0; background: var(--sunken); display: grid; gap: 4px; justify-items: start }
+.fdetail .carry.full { background: var(--mac-soft) } .fdetail .carry.model { background: var(--claude-soft) } .fdetail .carry.linear { background: var(--linear-soft) } .fdetail .carry.held { background: var(--held-soft) }
+.fdetail .carry .mini, .fdetail .carry .link { margin-top: 2px }
+.fdetail .links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; overflow-x: auto }
 .tabs button { border: 0; background: none; padding: 8px 12px; color: var(--fg-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap }
 .tabs button[aria-selected="true"] { color: var(--fg); border-color: var(--fg); font-weight: 500 }
@@ -365,6 +447,13 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
 .sc-h .tog { border: 0; background: none; padding: 2px; color: var(--fg-2); transition: transform .15s; border-radius: var(--r-s) }
 .sc.closed .sc-h .tog { transform: rotate(-90deg) }
 .sc.closed .sc-b { display: none }
+.sc-b.pad { padding: 12px 14px; display: grid; gap: 8px }
+details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
+.mlist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px }
+.mlist li { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; padding: 5px 0; border-top: 1px solid var(--line) }
+.mlist li:first-child { border-top: 0 }
+.mlist .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+@media (max-width: 560px) { .mlist li { grid-template-columns: minmax(0, 1fr); gap: 2px 10px; justify-items: start } .mlist .t { white-space: normal } }
 .sc-b { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-m); padding: 2px 0; min-width: 0 }
 .sr { display: flex; align-items: center; gap: 8px 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); min-height: 52px; flex-wrap: wrap; min-width: 0 }
 .sr:last-child { border-bottom: 0 }
@@ -470,6 +559,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   <symbol id="i-plan" viewBox="0 0 24 24"><rect x="3.5" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="16.5" y="4" width="4" height="7" rx="1.5"/></symbol>
   <symbol id="i-paper" viewBox="0 0 24 24"><path d="M5 4h11v16H6a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1z"/><path d="M16 8h3v10a2 2 0 0 1-2 2M8 8h5M8 12h5M8 16h3"/></symbol>
   <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13v1M15 13v1M9.5 17h5"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="5" rx="1.5"/><rect x="15" y="4" width="6" height="5" rx="1.5"/><rect x="9" y="15" width="6" height="5" rx="1.5"/><path d="M9 6.5h6M18 9v2.5a1.5 1.5 0 0 1-1.5 1.5H12v2"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6z"/><path d="m9 12 2 2 4-4"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
@@ -507,6 +597,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     <button type="button" class="ni" data-view="digest"><svg class="i" aria-hidden="true"><use href="#i-paper"/></svg>Digest<span class="dot" id="b-digest" hidden></span></button>
     <button type="button" class="ni" data-view="agents"><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg>Agents</button>
     <h6>System</h6>
+    <button type="button" class="ni" data-view="flow"><svg class="i" aria-hidden="true"><use href="#i-flow"/></svg>Flow</button>
     <button type="button" class="ni" data-view="status"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Status<span class="dot bad" id="b-status" hidden></span></button>
     <div class="spacer"></div>
     <button type="button" class="conn off" id="conn"><i aria-hidden="true"></i><span><b>PMX on this Mac</b> · <span id="conn-t">Connecting…</span></span></button>
@@ -570,6 +661,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     selection_required: "Choose which PMX to use when the Claude app asks.",
     cancelled: "You declined in the Claude app, so nothing ran.",
     server_unavailable: "PMX on this Mac didn't answer in time. Try again in a moment.",
+    old_server: "The Claude app is still running PMX's server from an older pmx, which doesn't know this page yet. Quit the Claude app completely (⌘Q, not just its window) and open it again. That starts the new server, which updates itself from now on.",
     upstream_error: "PMX on this Mac didn't answer. Try again in a moment.",
     not_paired: "This page isn't connected to PMX on this Mac yet.",
     declined: "Not connected: you chose Don't Allow on the Mac, or nobody answered within 2 minutes.",
@@ -579,6 +671,8 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   function fromTool(e) {
     if (e && e.pmx) return e;
     const code = e && e.code;
+    // A server from an older pmx doesn't have this page's tools (pair, board…): the Claude app is still running it.
+    if (code === "tool_not_found" || code === "unknown_tool" || code === "method_not_found" || /unknown tool|tool not found|no such tool|-32601|-32602/i.test(String((e && e.message) || ""))) return fail(HELP.old_server, { code: "old_server" });
     if (code === "tool_error") {
       const r = (e && e.result) || {};
       const p = r.structuredContent || r.payload || (Array.isArray(r.content) && r.content[0] && parseJson(r.content[0].text)) || parseJson(e.message) || {};
@@ -720,8 +814,8 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   let conn = { state: "loading", msg: "", code: null };
   let preview = null;               // the unpaired counts shown on the Connect screen
   const S = { view: "today", pref: "sources", stab: "overview", sel: null, why: new Set(), note: null, q: "", back: "today", sheet: null, someday: false };
-  const VIEWS = ["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "status", "settings"];
-  const TITLES = { inbox: "Inbox", today: "Today", upcoming: "Upcoming", anytime: "Anytime", logbook: "Logbook", plan: "Plan", digest: "Digest", agents: "Agents", status: "Status", settings: "Settings" };
+  const VIEWS = ["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "flow", "status", "settings"];
+  const TITLES = { inbox: "Inbox", today: "Today", upcoming: "Upcoming", anytime: "Anytime", logbook: "Logbook", plan: "Plan", digest: "Digest", agents: "Agents", flow: "Flow", status: "Status", settings: "Settings" };
   const LISTS = ["inbox", "today", "upcoming", "anytime"];
   const notes = {};                 // notes typed for a redo or reject, kept across refreshes
   const typed = {};                 // text typed into add boxes, kept across redraws
@@ -804,7 +898,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   // ================= loading =================
   function loadError(e) {
     if (LOCAL) {
-      if (e.status === 403 || !TOKEN) return { msg: "This page's link has expired. Open PMX's page again from Terminal to get a fresh link.", cmd: "pmx flow --web" };
+      if (e.status === 403 || !TOKEN) return { msg: "This link is from a PMX board that has stopped or restarted. In Terminal, run pmx flow --web: it opens the board that's running, or starts it again.", cmd: "pmx flow --web" };
       if (e.status === 0) return { msg: "PMX isn't answering on this Mac. The Terminal window that opened this page may have closed.", cmd: "pmx flow --web" };
       return { msg: `PMX couldn't read its records: ${e.message}` };
     }
@@ -872,10 +966,10 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   }
 
   // ================= routes =================
-  // #inbox … #logbook, #plan, #digest, #agents, #status[/flow|/activity], #settings/<section>. Links from before 0.23.0
+  // #inbox … #logbook, #plan, #digest, #agents, #flow (the map), #status[/flow|/activity], #settings/<section>. Links from before 0.23.0
   // land on their new home: #flow, #work, #automations, #sources, #privacy/<section>, #settings/<section> and so on.
   const STABS = ["overview", "flow", "activity"];
-  const ALIAS = { work: ["agents"], categories: ["agents"], skills: ["agents"], flow: ["status", "flow"], connections: ["status", "flow"], automations: ["status", "overview"], schedules: ["settings", "schedule"], sources: ["settings", "sources"], rules: ["settings", "dnr"], privacy: ["settings", "dnr"], prefs: ["settings"], search: ["today"] };
+  const ALIAS = { work: ["agents"], categories: ["agents"], skills: ["agents"], connections: ["flow"], automations: ["status", "overview"], schedules: ["settings", "schedule"], sources: ["settings", "sources"], rules: ["settings", "dnr"], privacy: ["settings", "dnr"], prefs: ["settings"], search: ["today"] };
   // Old privacy and settings sections, and the "rule:<id>" fixes PMX sends, by their new section.
   const RULE = { routes: "sources", fixed: "private", domains: "customers", dnr: "dnr", sizes: "sizes", gets: "linear", agent: "kinds", budget: "limits", digest: "digestset", "review-cap": "limits", team: "account", checks: null };
   function parseRoute(hash) {
@@ -951,9 +1045,34 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   const shown = (k) => !held.has(k);
   const props = () => ((D && D.proposals) || []).filter((p) => shown(`p:${p.id}`));
   const drafts = () => ((D && D.drafts) || []).filter((d) => shown(`r:${d.identifier}`));
-  const todos = () => ((D && D.todos) || []).filter((t) => shown(`t:${t.id}`));
+  // TODO-4: to-dos from meetings in a period, the last 7 days unless the PM picks another; remembered on this browser.
+  const TODO_PERIODS = [["0", "Today"], ["7", "Last 7 days"], ["14", "Last 14 days"], ["30", "Last 30 days"], ["90", "Last 90 days"], ["all", "All time"]];
+  let todoDays = (() => { const v = store.get("pmx-todo-days"); return TODO_PERIODS.some(([k]) => k === v) ? v : "7"; })();
+  const inPeriod = (t, days = todoDays) => days === "all" || !t.at || diffDays(t.at) >= -Number(days);
+  const allTodos = () => ((D && D.todos) || []).filter((t) => shown(`t:${t.id}`));
+  const todos = () => allTodos().filter((t) => inPeriod(t));
+  const setTodoDays = (v) => { todoDays = v; store.set("pmx-todo-days", v === "7" ? null : v); render(); };
+  const periodSelect = () => h("label", { class: "swl" }, "From meetings in", h("select", { class: "in", "aria-label": "Show to-dos from meetings in", "data-fk": "todo-period", value: todoDays, onchange: (ev) => setTodoDays(ev.target.value) },
+    TODO_PERIODS.map(([v, t]) => h("option", { value: v }, t))));
+  // To-dos this view would show with no period, but the period leaves out: say how many, and offer the period that has them.
+  function periodNote(fits) {
+    const older = allTodos().filter((t) => fits(t) && !inPeriod(t));
+    if (!older.length) return null;
+    const wider = TODO_PERIODS.map(([v]) => v).find((v) => v !== "0" && older.every((t) => inPeriod(t, v))) || "all";
+    const label = TODO_PERIODS.find(([v]) => v === wider)[1];
+    const due = older.filter((t) => t.due && diffDays(t.due) <= 0).length;
+    return h("div", { class: "callout", role: "status" },
+      h("div", null, h("b", null, `${plural(older.length, "to-do")} from earlier meetings ${older.length === 1 ? "isn't" : "aren't"} shown`),
+        h("p", null, `${!due ? "" : older.length === 1 ? "It's due today or overdue. " : `${due} of them ${due === 1 ? "is" : "are"} due today or overdue. `}You're seeing to-dos from ${todoDays === "0" ? "today's meetings" : `meetings in the last ${todoDays} days`}.`)),
+      btn(`Show ${label.toLowerCase()}`, { cls: "sm", on: () => setTodoDays(wider) }));
+  }
   const waiting = () => ((D && D.digest && D.digest.waiting) || []).filter((w) => shown(`dg:${w.week}`));
-  const fixes = () => (D && D.health ? D.health.items || (D.health.problems || []).map((text) => ({ text })) : []);
+  // A page newer than the server answering it: the Claude app still runs PMX's server from before the update (FLOW-4).
+  const verN = (v) => String(v || "").split(".").map(Number);
+  const older = (a, b) => { const x = verN(a), y = verN(b); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+  const serverFix = () => (!LOCAL && D && D.version && CFG.version && older(D.version, CFG.version)
+    ? [{ text: `The Claude app is still running PMX's server from pmx ${D.version}, older than this page (${CFG.version}), so some of it may not work. Quit the Claude app completely (⌘Q, not just its window) and open it again.` }] : []);
+  const fixes = () => [...serverFix(), ...(D && D.health ? D.health.items || (D.health.problems || []).map((text) => ({ text })) : [])];
   const teamPrs = () => (D && D.pendingTeam) || [];
   const isDueToday = (t) => !!t.due && diffDays(t.due) <= 0;
   const onToday = (t) => t.when === "today" || t.when === "evening" || isDueToday(t);
@@ -1087,6 +1206,32 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     if (job && job.status === "setup") return "Tasks are proposed once automatic runs are on.";
     return nextCollect();
   }
+  // ================= Why no tasks are waiting (SIG-6) =================
+  // Says whether synthesis never ran, ran and found nothing, or kept every meeting out, with a Run button and its cost,
+  // and on this Mac's own page what happened to each recent meeting (held ones by date and rule only, never a title).
+  const usdText = (n) => (n < 0.01 ? "under $0.01" : `about $${n < 1 ? n.toFixed(2) : n.toFixed(1)}`);
+  const OUTCOME = { pending: ["Not read for tasks yet", "warn"], read: ["Read for tasks", ""], held: ["Kept out", "off"] };
+  const splitNote = () => h("p", { class: "hint" }, "To-dos and tasks both come from your meetings. To-dos come from all of them, 1:1s included, and never leave this Mac. Tasks come only from calls with someone outside your company, and go to Linear only after you approve them here.");
+  function synthCard() {
+    const sy = D.synth;
+    if (!sy) return null;
+    const a = automation("synthesize"), busy = running("synthesize");
+    const canRun = sy.where === "here" && !!(a && a.run);
+    const est = canRun && sy.counts.pending && sy.estimateUsd != null ? ` (${usdText(sy.estimateUsd)})` : "";
+    const facts = sy.where === "here" ? [`Last synthesis: ${sy.lastRunAt ? ago(sy.lastRunAt) : "never"}`,
+      sy.counts.meetings ? `last ${sy.days} days: ${plural(sy.counts.meetings, "meeting")}, ${sy.counts.read} read for tasks, ${sy.counts.pending} not read yet, ${sy.counts.held} kept out` : null].filter(Boolean).join(" · ") : null;
+    const ms = sy.meetings || [];
+    return h("section", { class: "sc synth", "aria-label": "Proposed tasks" },
+      h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "No tasks are waiting for you"), facts ? h("small", null, facts) : null),
+        canRun ? btn(busy ? "Reading meetings…" : `Run synthesis now${est}`, { cls: "sm pri", icon: busy ? null : "play", disabled: busy, on: (ev) => runNow("synthesize", ev.currentTarget) }) : null),
+      h("div", { class: "sc-b pad" },
+        h("p", null, sy.reason),
+        canRun ? h("p", { class: "hint" }, `Synthesis only proposes tasks: each waits here for you, and nothing reaches Linear until you approve it.${est ? " Its cost counts toward your daily budget." : ""}`) : null,
+        ms.length ? h("details", { class: "why" }, h("summary", null, `What happened to each meeting (${ms.length})`),
+          h("ul", { class: "mlist" }, ms.map((m) => h("li", null, h("span", { class: "d faint num" }, when(m.at)), h("span", { class: "t" }, m.title || "A meeting (its title stays private)"),
+            pill(m.outcome === "held" ? `Kept out: ${m.label}` : OUTCOME[m.outcome][0], OUTCOME[m.outcome][1]))))) : null,
+        splitNote()));
+  }
   const V = {};
   V.inbox = () => {
     const ps = props(), ws = waiting(), fx = fixes(), prs = teamPrs();
@@ -1095,7 +1240,8 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
       head("inbox", "ic-inbox", "Inbox", "Decisions waiting for you. Nothing reaches Linear until you approve it.",
         [ps.length > 1 ? btn(`Approve all ${ps.length}`, { on: () => approve(ps) }) : null]),
       total ? [
-        group("Tasks to approve", ps.map(propRow), { right: chip("Only you see these until you approve") }),
+        ps.length ? null : synthCard(),
+        group("Tasks to approve", ps.map(propRow), { right: chip("Only you see these until you approve"), note: "From calls with customers. Each goes to Linear only when you approve it; your own to-dos never do." }),
         group("Digest", ws.map((w) => row({
           key: `dg:${w.week}`, title: `Your digest for the week of ${weekOf(w.week)} is ready`,
           ck: sysMark("paper"), meta: [h("span", null, `${plural(w.sources, "source")} cited${w.held ? ` · ${w.held} kept private` : ""}`), h("span", null, "Nothing is shared until you approve it")],
@@ -1110,7 +1256,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
           meta: [h("span", null, `Waiting for a teammate to approve · opened ${when(p.at)}`)],
           acts: [p.url ? ext(p.url, "View PR") : null],
         })), { note: "For your information: a teammate who looks after settings approves these." }),
-      ] : empty("inbox", `Inbox zero. ${emptyApprove()}`.trim()),
+      ] : D.synth ? synthCard() : empty("inbox", `Inbox zero. ${emptyApprove()}`.trim()),
     ];
   };
   function nextStrip() {
@@ -1128,7 +1274,8 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     const day = t.filter((x) => x.when !== "evening"), eve = t.filter((x) => x.when === "evening");
     const capN = D.rules && D.rules.reviewCap;
     return [
-      head("star", "ic-today", "Today", null), nextStrip(),
+      head("star", "ic-today", "Today", "Your to-dos for today and drafts to review. To-dos are yours alone and never leave this Mac.", [periodSelect()]), nextStrip(),
+      periodNote(onToday),
       t.length || r.length ? [
         group("Reviews", r.map(draftRow), { plain: true, note: capN && r.length >= capN ? `Agents stop taking new work while ${capN} drafts wait. Review one to let them continue.` : null }),
         group("To-dos", day.map(todoRow), { plain: true }),
@@ -1155,7 +1302,8 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     const ev = runsByDay();
     const days = [...new Set([...fut.map((t) => t.due), ...ev.map((e) => e.d)])].sort();
     return [
-      head("cal", "ic-up", "Upcoming", "To-dos with a date, and what PMX runs next."),
+      head("cal", "ic-up", "Upcoming", "To-dos with a date, and what PMX runs next.", [periodSelect()]),
+      periodNote((t) => t.due && diffDays(t.due) > 0),
       days.length ? days.map((d) => h("section", { class: "group", "aria-label": dayLabel(d) },
         h("div", { class: "gh plain" }, h("h2", null, h("span", { class: "dn num", "aria-hidden": "true" }, String(new Date(`${d}T00:00:00`).getDate())), dayLabel(d))),
         list([...fut.filter((t) => t.due === d).map(todoRow),
@@ -1172,7 +1320,8 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     const sd = some.length ? h("details", { class: "someday", open: S.someday, ontoggle: (ev) => (S.someday = ev.currentTarget.open) },
       h("summary", null, ic("chev"), "Someday ", chip(String(some.length))), list(some.map(todoRow))) : null;
     return [
-      head("layers", "ic-any", "Anytime", "To-dos with no date yet, by the meeting they came from."),
+      head("layers", "ic-any", "Anytime", "To-dos with no date yet, by the meeting they came from. They stay on this Mac; tasks for Linear wait in your Inbox.", [periodSelect()]),
+      periodNote((t) => !t.due),
       keys.length ? keys.map((k) => group(k, by.get(k).map(todoRow), { plain: true })) : empty("layers", "No open to-dos without a date."),
       sd,
     ];
@@ -1199,7 +1348,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   V.search = () => {
     const ps = props().filter((p) => hit(p.title, p.from, p.description, catName(p.category)));
     const rs = drafts().filter((d) => hit(d.title, d.identifier));
-    const ts = todos().filter((t) => hit(t.text, t.from));
+    const ts = allTodos().filter((t) => hit(t.text, t.from));
     const lb = (D.logbook || []).filter((e) => hit(e.text, e.ref));
     const n = ps.length + rs.length + ts.length + lb.length;
     return [
@@ -1216,7 +1365,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
   function findItem(k) {
     if (!D || !k) return null;
     const id = k.slice(k.indexOf(":") + 1);
-    if (k.startsWith("t:")) { const x = todos().find((t) => t.id === id); return x && { type: "todo", x }; }
+    if (k.startsWith("t:")) { const x = allTodos().find((t) => t.id === id); return x && { type: "todo", x }; }
     if (k.startsWith("p:")) { const x = props().find((p) => p.id === id); return x && { type: "proposal", x }; }
     if (k.startsWith("r:")) { const x = drafts().find((d) => d.identifier === id); return x && { type: "draft", x }; }
     return null;
@@ -1255,13 +1404,16 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
       const tmr = ymd(addDays(1));
       const cur = x.when === "evening" ? "evening" : x.when === "someday" ? "someday" : x.due === tmr && !x.when ? "tomorrow" : x.when === "today" ? "today" : !x.due && !x.when ? "none" : null;
       const pick = (v, label) => place(x, v === "today" ? { due: null, when: "today" } : v === "evening" ? { due: null, when: "evening" } : v === "tomorrow" ? { due: tmr, when: null } : v === "someday" ? { due: null, when: "someday" } : { due: null, when: null }, label);
-      parts = [top([ic("lock"), " Only on this Mac"]),
+      const toLinear = !!(D.rules && D.rules.todosToLinear);
+      parts = [top(x.linear ? [ic("link"), ` Also in Linear as ${x.linear}`] : [ic("lock"), " Only on this Mac"]),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.text),
           h("div", null, h("div", { class: "lbl", id: "when-l" }, "When"),
             h("div", { class: "when", role: "group", "aria-labelledby": "when-l" }, WHEN_OPTS.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": cur === v ? "true" : "false", onclick: () => pick(v, l) }, l)),
               h("label", { class: "swl" }, h("span", { class: "sr-only" }, "Due date"), h("input", { class: "in", type: "date", value: x.due || "", "aria-label": "Due date", onchange: (ev) => { if (ev.target.value) place(x, { due: ev.target.value, when: null }, dayLabel(ev.target.value)); } })))),
-          h("div", null, h("div", { class: "lbl" }, "From"), h("p", null, x.from === "Added by you" ? "You added it." : `${x.from}. The meeting stays on this Mac; only this to-do is shown here.`))),
-        h("div", { class: "foot" }, btn("Mark done", { cls: "pri", icon: "check", on: () => { closeSheet(); complete(x); } }))];
+          h("div", null, h("div", { class: "lbl" }, "From"), h("p", null, x.from === "Added by you" ? "You added it." : `${x.from}. The meeting stays on this Mac; only this to-do is shown here.`)),
+          x.linear ? null : h("p", { class: "hint" }, toLinear ? "Send to Linear shares only these words with your team, never the meeting's title or transcript." : "To-dos never leave this Mac. To track your own commitments in Linear, turn that on in Settings, under What Linear gets.")),
+        h("div", { class: "foot" }, btn("Mark done", { cls: "pri", icon: "check", on: () => { closeSheet(); complete(x); } }),
+          toLinear && !x.linear ? btn("Send to Linear", { on: async (ev) => { busyBtn(ev.currentTarget, "Sending…"); try { const r = await act("todo-linear", { id: x.id }); toast(r.message || "Sent."); } catch (e) { toast(`Couldn't send it: ${e.message}`, { error: true }); } await load(); } }) : null)];
     } else if (it.type === "proposal") {
       parts = [top("Proposed task · not in Linear yet"),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.title),
@@ -1639,7 +1791,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
           h("ul", null, lines), lastLine(...ids[i]), h("p", null, text), link ? h("div", { class: "fixacts" }, btn(link.label, { cls: "sm ghost", on: link.go })) : null)))),
     ];
   }
-  const ACT_TAB = { today: ["today"], digest: ["digest"], work: ["agents"], flow: ["status", "flow"], automations: ["status"], settings: ["settings"], sources: ["settings", "sources"], inbox: ["inbox"] };
+  const ACT_TAB = { today: ["today"], digest: ["digest"], work: ["agents"], flow: ["flow"], automations: ["status"], settings: ["settings"], sources: ["settings", "sources"], inbox: ["inbox"] };
   function activity() {
     const items = D.activity || [];
     if (!items.length) return empty("shield", `Nothing happened ${winText()} yet.`);
@@ -1660,6 +1812,309 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
       h("div", { id: "stab-panel", role: "tabpanel", "aria-labelledby": `stab-${S.stab}` }, S.stab === "flow" ? flowSteps() : S.stab === "activity" ? activity() : overview()),
     ];
   };
+
+  // ================= Flow: the map (BOARD-3) =================
+  // The map from 0.16.0 to 0.22.0, back as its own place in the menu: every step from your sources to Linear and the
+  // agents, the arrows between them in the colour of what they carry, and a panel saying what each one does. Status
+  // keeps its own list of the steps. Built fresh on each render; the selection, the view and focus carry over.
+  {
+    const COLX = [20, 210, 400, 590, 780, 970], NW = 150, NH = 58;
+    // Tags say where the data is, not which product: that's what the colours mean too.
+    const FIXED_NODES = {
+      collect:  { col: 1, y: 110, kind: "claude", tag: "CLAUDE APP", title: "Collect meetings", sub: "copies transcripts" },
+      filter:   { col: 2, y: 190, kind: "mac", tag: "ON YOUR MAC", title: "Privacy filter", sub: "decides what's private" },
+      held:     { col: 2, y: 320, kind: "held", tag: "KEPT PRIVATE", title: "Kept private", sub: "stays on your Mac" },
+      findtodo: { col: 3, y: 70, kind: "claude", tag: "SENT TO CLAUDE", title: "Finds to-dos", sub: "in your own meetings" },
+      draft:    { col: 3, y: 190, kind: "claude", tag: "SENT TO CLAUDE", title: "Proposes tasks", sub: "from customer calls" },
+      todos:    { col: 4, y: 70, kind: "mac", tag: "ON YOUR MAC", title: "Your to-dos", sub: "stay on your Mac", queue: true },
+      approve:  { col: 4, y: 190, kind: "mac", tag: "ON YOUR MAC", title: "You approve", sub: "you say yes or no", queue: true },
+      dropped:  { col: 4, y: 320, kind: "mac", tag: "ON YOUR MAC", title: "Dropped", sub: "you said no" },
+      inbox:    { col: 5, y: 190, kind: "linear", tag: "IN LINEAR", title: "Linear inbox", sub: "PMX project" },
+      ready:    { col: 5, y: 320, kind: "linear", tag: "IN LINEAR", title: "Ready", sub: "picked for an agent", queue: true },
+      agent:    { col: 4, y: 470, kind: "claude", tag: "CLAUDE AGENT", title: "Agent drafts", sub: "using its instructions" },
+      review:   { col: 3, y: 470, kind: "repo", tag: "FOR YOU", title: "Drafts to review", sub: "accept, redo or reject", queue: true },
+      done:     { col: 2, y: 470, kind: "repo", tag: "DONE", title: "Accepted", sub: "kept for your team" },
+    };
+    // The order the arrow keys and the list view walk the steps in: the way work flows.
+    const ORDER = ["collect", "filter", "held", "findtodo", "todos", "draft", "approve", "dropped", "inbox", "ready", "agent", "review", "done"];
+    const FIXED_EDGES = [
+      ["c-f", "collect", "filter", "full", "Transcript files on this Mac. Nothing has left it at this point."],
+      ["s-f", "slack", "filter", "status", "Threads from the channels your team approved, copied by your Claude app through your own connector. Never DMs."],
+      ["f-h", "filter", "held", "held", "Meetings kept private aren't sent to Claude or Linear. The transcript stays on this Mac; PMX's record keeps only which rule kept it private."],
+      ["f-t", "filter", "findtodo", "model", "Your own meetings, 1:1s included, with emails, phone numbers and names on your CRM list removed, and pay, performance and health passages cut. Sent to Claude with no tools; the to-dos it finds stay on this Mac."],
+      ["f-d", "filter", "draft", "model", "Customer calls and approved threads, with private details removed, sent to Claude with no tools. 1:1s, hiring, internal-only meetings and anything on your do-not-read list never get here."],
+      ["t-t", "findtodo", "todos", "status", "To-dos saved on this Mac only."],
+      ["d-a", "draft", "approve", "status", "Proposed tasks wait on this Mac, exactly as Linear would get them. Linear has none of them yet."],
+      ["a-x", "approve", "dropped", "status", "Tasks you dropped. Nothing about them reaches Linear."],
+      ["a-i", "approve", "inbox", "linear", "Title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes."],
+      ["i-r", "inbox", "ready", "status", "Tasks a teammate moved to Ready, counted now rather than over the window. Only Ready tasks are picked up."],
+      ["r-g", "ready", "agent", "model", "Your agent took a Ready task within your budget and review limit, and drafted it in PMX's own Claude setup with the task text and team memory.", "uturn"],
+      ["g-v", "agent", "review", "status", "A draft in your team's repo, with a record of how it was made."],
+      ["v-d", "review", "done", "status", "Someone accepted it. Rejected drafts lower that kind of work's accept rate."],
+    ];
+    const KINDNAME = { full: "Full text, this Mac", model: "Private details removed, to Claude", linear: "Summaries to Linear", status: "Counts and status", held: "Private", off: "Not connected" };
+    const KINDTEXT = { full: ["full", "Full transcript text, on this Mac only."], model: ["model", "Text with private details removed, sent to Claude."], linear: ["linear", "Sent to Linear: task summaries, never meeting text."], status: ["", "No meeting text: counts, status and IDs."], held: ["held", "Nothing is sent anywhere."], off: ["", "Nothing: not connected."] };
+    // What each step does, the settings behind it, its automation, and where its waiting work is.
+    const NODE_INFO = {
+      collect: ["A scheduled task in your Claude app. Claude copies each new transcript word for word into a private folder on this Mac. It's told to skip your do-not-read list and sources you turned off, but that's an instruction to Claude, not a check: the privacy filter is the check.", ["dnr", "routes"], "collect"],
+      filter: ["Code on this Mac, not Claude. Before anything is sent, it decides what Claude may read for your to-dos and for team tasks, and keeps the rest private.", ["fixed", "domains", "dnr"]],
+      held: ["Meetings kept private are never sent to Claude or Linear. Their transcripts stay on this Mac; PMX's record keeps only which rule kept each one private.", ["fixed", "dnr"]],
+      findtodo: ["Claude reads your own meetings with no tools and lists your action items.", ["routes"], "todo"],
+      draft: ["Claude reads customer calls and approved threads, with private details removed and no tools, and proposes sized tasks, with a reason each source supports it. PMX drops any task that quotes a meeting.", ["sizes", "gets"], "synthesize"],
+      todos: ["Your to-dos from your own meetings. They never leave this Mac.", [], null, "anytime"],
+      approve: ["Every proposed task waits here until you approve or drop it. Approving sends it to Linear's inbox; dropping sends nothing.", ["gets"], "approve", "inbox"],
+      dropped: ["Tasks you dropped. Nothing about them reaches Linear.", []],
+      inbox: ["Approved tasks arrive in Linear's PMX project as Inbox. A teammate moves the ones worth doing to Ready.", ["gets"], "linear", "plan"],
+      ready: ["Tasks a teammate moved to Ready. Agents pick up only these.", ["agent"], null, "plan"],
+      agent: ["Your agent takes one Ready task per pass, if it fits your budget and fewer drafts than your review limit are waiting. Each kind of work has its own instructions under Agents.", ["agent", "budget"], "pull"],
+      review: ["Drafts made by agents, in your team's repo. Accept, ask for a redo, or reject.", ["agent"], "review", "today"],
+      done: ["Accepted drafts. Each one's record shows how it was made and what it cost.", []],
+      slack: ["Threads from the places your team approved (Slack, Teams…), never DMs. Your Claude app's collection task copies them on the team's synthesis Mac, through your own connector; PMX reads them through the privacy filter.", ["routes", "dnr"], "collect"],
+      email: ["PMX doesn't read email.", []],
+    };
+    const RULELABEL = { routes: "Sources", fixed: "Always private", domains: "Who counts as a customer", dnr: "Do-not-read list", sizes: "Sizes", gets: "What Linear gets", agent: "Kinds of work", budget: "Budget and limits" };
+    const QUEUE_WORD = { approve: "to approve", review: "to review", todos: "open", ready: "ready" };
+    const GO_WORD = { inbox: "Open Inbox", today: "Open Today", anytime: "Open Anytime", plan: "Open Plan" };
+    const SVGN = "http://www.w3.org/2000/svg";
+    // SVG elements. Styles go through the CSSOM: the local page's policy refuses style attributes.
+    const s = (tag, attrs, ...kids) => {
+      const el = document.createElementNS(SVGN, tag);
+      for (const [k, v] of Object.entries(attrs || {})) if (v == null) continue; else if (k === "style") el.style.cssText = v; else if (k.startsWith("on")) el.addEventListener(k.slice(2), v); else el.setAttribute(k, v);
+      for (const c of kids) if (c != null) el.append(c.nodeType ? c : document.createTextNode(String(c)));
+      return el;
+    };
+    const activate = (fn) => ({ onclick: fn, onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(); } } });
+    const stacked = () => matchMedia("(max-width: 1179px)").matches;
+    let nodes = {}, edges = [];
+    let fsel = null;                                   // { type: "node" | "edge", id }
+    let fview = matchMedia("(max-width: 700px)").matches ? "list" : "map";
+    let focusNode = "approve";
+    let prevN = null;                                  // what each arrow carried last time, to show what just moved
+    let mapEl = null, detailEl = null;
+
+    function shape() {
+      nodes = {};
+      const srcs = D.sources.map((x) => ({ id: `src-${x.id}`, title: x.label, sub: !x.connected ? "not connected" : x.id === "file" ? "files you add" : "via Claude connector", kind: x.connected ? "app" : "off", tag: x.connected ? (x.id === "file" ? "FOLDER" : "APP") : "" }));
+      // Every channel connector the team approved shares one node: threads from approved places (INPUT-1).
+      const chans = D.inputs ? D.inputs.rows.filter((x) => x.shape === "channels") : [];
+      const allowed = (D.rules && D.rules.allowedSources) || [];
+      if (chans.length || allowed.includes("slack")) {
+        const nPl = chans.length ? chans.reduce((a, x) => a + x.placesN, 0) : ((D.rules && D.rules.slackChannels) || []).length;
+        srcs.push({ id: "slack", title: chans.length > 1 ? "Channels" : chans.length ? chans[0].connector : "Slack", sub: nPl ? plural(nPl, "approved channel") : "no channel approved", kind: nPl ? "app" : "off", tag: "APP" });
+      }
+      srcs.push({ id: "email", title: "Email", sub: "PMX can't read email", kind: "off", tag: "" });
+      const step = Math.min(80, 300 / Math.max(1, srcs.length - 1));
+      srcs.slice(0, 5).forEach((x, i) => (nodes[x.id] = { ...x, col: 0, y: 60 + i * step }));
+      Object.assign(nodes, JSON.parse(JSON.stringify(FIXED_NODES)));
+      for (const n of Object.values(nodes)) n.x = COLX[n.col];
+      edges = [];
+      for (const x of D.sources) if (nodes[`src-${x.id}`]) edges.push({ id: `src-${x.id}`, from: `src-${x.id}`, to: "collect", kind: x.connected ? "full" : "off", n: x.n, unit: "meetings", last: x.last, carries: `Claude's collection task reads ${x.label} through your connector and saves each transcript word for word in a private folder on this Mac. It copies every meeting you attended, 1:1s included; the privacy filter decides what's used.` });
+      if (nodes.email) edges.push({ id: "e-c", from: "email", to: "collect", kind: "off", n: 0, unit: "emails", last: null, carries: "PMX doesn't read email. Forward customer emails to an approved channel instead." });
+      for (const [id, from, to, kind, carries, route] of FIXED_EDGES) {
+        if (!nodes[from] || !nodes[to]) continue;
+        const e = (D.edges && D.edges[id]) || { n: 0, unit: "", last: null };
+        edges.push({ id, from, to, kind: id === "s-f" && nodes.slack.kind === "off" ? "off" : kind, n: e.n, unit: e.unit, tokens: e.tokens, last: e.last, carries, route });
+      }
+    }
+    const order = () => [...Object.keys(nodes).filter((k) => nodes[k].col === 0), ...ORDER.filter((k) => nodes[k])];
+    const P = (n, side) => side === "r" ? { x: n.x + NW, y: n.y + NH / 2 } : side === "l" ? { x: n.x, y: n.y + NH / 2 } : side === "t" ? { x: n.x + NW / 2, y: n.y } : { x: n.x + NW / 2, y: n.y + NH };
+    function geom(e) {
+      const a = nodes[e.from], b = nodes[e.to];
+      if (e.route === "uturn") { const p1 = P(a, "b"), p2 = P(b, "r"); return { d: `M${p1.x},${p1.y} V${p2.y} H${p2.x}`, lx: p1.x, ly: (p1.y + p2.y) / 2 + 10 }; }
+      if (a.col === b.col) { const down = b.y > a.y; const p1 = P(a, down ? "b" : "t"), p2 = P(b, down ? "t" : "b"); return { d: `M${p1.x},${p1.y} V${p2.y}`, lx: p1.x, ly: (p1.y + p2.y) / 2 }; }
+      const right = b.col > a.col, p1 = P(a, right ? "r" : "l"), p2 = P(b, right ? "l" : "r"), dx = (p2.x - p1.x) / 2;
+      return { d: `M${p1.x},${p1.y} C${p1.x + dx},${p1.y} ${p2.x - dx},${p2.y} ${p2.x},${p2.y}`, lx: (p1.x + p2.x) / 2, ly: (p1.y + p2.y) / 2 };
+    }
+    // Only steps where work waits carry a number, as a pill: arrows carry what moved.
+    function queueCount(id) {
+      if (id === "approve") return D.needs.proposals;
+      if (id === "review") return D.needs.drafts;
+      if (id === "todos") return D.needs.todos || 0;
+      if (id === "ready") return D.edges && D.edges["i-r"] ? D.edges["i-r"].n : 0;
+      return null;
+    }
+    const edgeName = (e) => `${nodes[e.from].title} to ${nodes[e.to].title}`;
+    const pillW = (v) => Math.max(26, 12 + String(v).length * 8);
+    function buildMap() {
+      const svg = s("svg", { class: "map", viewBox: "0 0 1160 545", role: "group", "aria-label": "Map of PMX's steps. Tab to it, then use the arrow keys to move between steps and Enter to open one. Use the right and left square brackets to step through a step's connections." });
+      const defs = s("defs");
+      for (const [k, v] of [["full", "--mac"], ["model", "--claude"], ["linear", "--linear"], ["status", "--fg-3"], ["held", "--held"], ["off", "--fg-3"]])
+        defs.append(s("marker", { id: `ar-${k}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse" }, s("path", { d: "M0,0 L10,5 L0,10 z", style: `fill: var(${v})` })));
+      svg.append(defs);
+      for (const [t, c] of [["Sources", 0], ["Collect", 1], ["Privacy", 2], ["Claude reads", 3], ["You", 4], ["Linear", 5]]) svg.append(s("text", { class: "band", x: COLX[c], y: 34 }, t));
+      // The agent row runs right to left, so its label starts where the row does.
+      svg.append(s("line", { class: "divider", x1: 10, x2: 1150, y1: 420, y2: 420 }), s("text", { class: "band", x: 1030, y: 446, "text-anchor": "end" }, "← After Linear: agents draft the work"));
+      const eg = s("g"), ng = s("g"), bg = s("g");
+      for (const e of edges) {
+        const g = geom(e);
+        eg.append(s("g", { class: `edge e-${e.kind}`, id: `edge-${e.id}`, "data-fk": `fe-${e.id}`, tabindex: -1, role: "button", "aria-label": `${edgeName(e)}: ${e.kind === "off" ? "not connected" : `${e.n} ${e.unit} ${e.id === "i-r" ? "now" : winText()}`}`, ...activate(() => select("edge", e.id, { user: true })) },
+          s("path", { class: "l", d: g.d, id: `path-${e.id}`, "marker-end": `url(#ar-${e.kind})` }), s("path", { class: "hit", d: g.d })));
+        if (e.kind === "off") continue;
+        const grew = prevN && prevN[e.id] !== undefined && e.n > prevN[e.id];
+        const v = grew ? `+${e.n - prevN[e.id]}` : String(e.n), w = pillW(v);
+        bg.append(s("g", { class: `badge${e.n === 0 ? " zero" : ""}${grew ? " new" : ""}`, id: `badge-${e.id}`, transform: `translate(${g.lx},${g.ly - 10})`, "aria-hidden": "true", onclick: () => select("edge", e.id, { user: true }) },
+          s("rect", { width: w, height: 20, rx: 10, x: -w / 2 }), s("text", { x: 0, y: 14, "text-anchor": "middle" }, v)));
+      }
+      for (const [id, n] of Object.entries(nodes)) {
+        const q = n.queue ? queueCount(id) : null;
+        const kids = [s("rect", { class: "halo", x: -5, y: -5, width: NW + 10, height: NH + 10, rx: 12 }), s("rect", { class: "box", width: NW, height: NH, rx: 9 }), s("text", { class: "tag", x: 10, y: 15 }, n.tag), s("text", { class: "t", x: 10, y: 33 }, n.title), s("text", { class: "s", x: 10, y: 50 }, n.sub)];
+        if (n.queue) { const w = pillW(q ?? 0); kids.push(s("g", { class: `queue${q ? "" : " zero"}`, transform: `translate(${NW - 20},-10)` }, s("rect", { width: w, height: 20, rx: 10, x: -w / 2 }), s("text", { x: 0, y: 14, "text-anchor": "middle" }, String(q ?? 0)))); }
+        ng.append(s("g", { class: `node k-${n.kind}`, id: `node-${id}`, "data-id": id, "data-fk": `fn-${id}`, transform: `translate(${n.x},${n.y})`, tabindex: id === focusNode ? 0 : -1, role: "button",
+          "aria-label": `${n.title}: ${n.sub}${q !== null ? `. ${q} ${QUEUE_WORD[id]}` : ""}`, ...activate(() => select("node", id, { user: true })) }, ...kids));
+      }
+      svg.append(eg, ng, bg);
+      svg.addEventListener("keydown", keys);
+      mapEl = svg;
+      markSelection();
+      return svg;
+    }
+    function setFocusNode(id) {
+      focusNode = id;
+      mapEl?.querySelectorAll(".node").forEach((g) => g.setAttribute("tabindex", g.dataset.id === id ? "0" : "-1"));
+    }
+    // Arrow keys move between steps by where they sit; [ and ] walk the focused step's connections.
+    function keys(ev) {
+      const cur = document.activeElement?.closest?.(".node, .edge");
+      if (!cur) return;
+      const at = cur.classList.contains("node") ? cur.dataset.id : null;
+      if (["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown"].includes(ev.key) && at) {
+        ev.preventDefault();
+        const a = nodes[at], dir = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+        let best = null, bestD = Infinity;
+        for (const [id, b] of Object.entries(nodes)) {
+          if (id === at) continue;
+          const dx = b.x - a.x, dy = b.y - a.y, along = dx * dir[0] + dy * dir[1], across = Math.abs(dx * dir[1] + dy * dir[0]);
+          if (along <= 0) continue;
+          const d = along + across * 2;
+          if (d < bestD) { bestD = d; best = id; }
+        }
+        if (best) { setFocusNode(best); $(`node-${best}`).focus(); }
+      } else if (ev.key === "]" || ev.key === "[") {
+        ev.preventDefault();
+        const base = at || focusNode, list = edges.filter((e) => e.from === base || e.to === base);
+        if (!list.length) return;
+        const i = cur.classList.contains("edge") ? list.findIndex((e) => `edge-${e.id}` === cur.id) : -1;
+        const next = list[(i + (ev.key === "]" ? 1 : list.length - 1) + (i < 0 && ev.key === "[" ? 1 : 0)) % list.length];
+        $(`edge-${next.id}`).focus();
+      } else if (ev.key === "Escape" && cur.classList.contains("edge")) {
+        $(`node-${focusNode}`)?.focus();
+      }
+    }
+    // Selecting a step lights it and its connections and dims the rest, so the map shows what the panel describes.
+    function markSelection() {
+      if (!mapEl) return;
+      mapEl.querySelectorAll(".sel, .adj").forEach((x) => x.classList.remove("sel", "adj"));
+      mapEl.querySelectorAll("[aria-current]").forEach((x) => x.removeAttribute("aria-current"));
+      mapEl.classList.toggle("has-sel", !!fsel);
+      if (!fsel) return;
+      const el = mapEl.querySelector(`#${fsel.type}-${CSS.escape(fsel.id)}`);
+      el?.classList.add("sel"); el?.setAttribute("aria-current", "true");
+      const near = fsel.type === "node" ? edges.filter((e) => e.from === fsel.id || e.to === fsel.id) : edges.filter((e) => e.id === fsel.id);
+      for (const e of near) {
+        mapEl.querySelector(`#edge-${CSS.escape(e.id)}`)?.classList.add("adj"); mapEl.querySelector(`#badge-${CSS.escape(e.id)}`)?.classList.add("adj");
+        for (const n of [e.from, e.to]) if (!(fsel.type === "node" && n === fsel.id)) mapEl.querySelector(`#node-${CSS.escape(n)}`)?.classList.add("adj");
+      }
+    }
+    function select(type, id, o = {}) {
+      fsel = { type, id };
+      if (type === "node") setFocusNode(id);
+      markSelection();
+      if (detailEl) put(detailEl, detail());
+      const e = type === "edge" ? edges.find((x) => x.id === id) : null;
+      announce(`${type === "node" ? nodes[id]?.title : e ? edgeName(e) : ""} selected.${stacked() ? " Its detail is below the map." : ""}`);
+      if (o.user && stacked() && detailEl) requestAnimationFrame(() => { detailEl.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "start" }); $("fdetail-h")?.focus({ preventScroll: true }); });
+    }
+    // A dot runs along each arrow that carried something new since the last refresh.
+    function pulses(grown) {
+      if (reduced() || fview !== "map" || S.view !== "flow" || !mapEl) return;
+      for (const id of grown) {
+        const p = mapEl.querySelector(`#path-${CSS.escape(id)}`); if (!p) continue;
+        const dot = s("circle", { r: 4.5, class: "pulse" }); mapEl.append(dot);
+        const len = p.getTotalLength(), t0 = performance.now();
+        const step = (t) => { const k = Math.min(1, (t - t0) / 1200), ease = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; const pt = p.getPointAtLength(len * ease); dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y); if (k < 1) requestAnimationFrame(step); else dot.remove(); };
+        requestAnimationFrame(step);
+      }
+    }
+    // The list walks the steps in flow order; each step's name opens it, each row opens a connection.
+    function listView() {
+      const rows = [];
+      for (const id of order()) {
+        const n = nodes[id], q = queueCount(id);
+        rows.push(h("tr", { class: "grp" }, h("td", { colspan: "3" }, h("button", { type: "button", class: "link", "data-fk": `fl-${id}`, onclick: () => select("node", id, { user: true }) }, n.title), q !== null ? ` · ${q} ${QUEUE_WORD[id]}` : "")));
+        for (const e of edges.filter((x) => x.from === id)) rows.push(h("tr", null,
+          h("td", null, h("button", { type: "button", class: "link", "data-fk": `fl-${e.id}`, onclick: () => select("edge", e.id, { user: true }) }, `→ ${nodes[e.to].title}`), h("div", null, h("span", { class: `kindchip ${e.kind}` }, KINDNAME[e.kind]))),
+          h("td", { class: "n" }, e.kind === "off" ? "—" : `${e.n} ${e.unit}`), h("td", { class: "faint" }, e.kind === "off" ? "—" : when(e.last))));
+      }
+      return h("table", { class: "flist" }, h("thead", null, h("tr", null, h("th", null, "Step → next step"), h("th", { class: "n" }, `Moved ${winText()}`), h("th", null, "Last"))), h("tbody", null, rows));
+    }
+    const ruleButtons = (ids) => (ids.length ? h("div", { class: "links" }, h("span", { class: "small muted" }, "Settings for this step:"),
+      ids.map((r) => btn(`${RULELABEL[r]} →`, { cls: "sm", fk: `fr-${r}`, on: () => go("settings", { sub: RULE[r] }) }))) : null);
+    const toMap = () => h("button", { type: "button", class: "link small backmap", onclick: () => { mapEl?.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "start" }); if (fsel && fsel.type === "node") $(`node-${fsel.id}`)?.focus({ preventScroll: true }); } }, "↑ Back to the map");
+    function detail() {
+      if (!fsel) return [h("div", { class: "eyebrow" }, "Pick a step"), h("h2", { id: "fdetail-h", tabindex: "-1" }, "What each step does"),
+        h("p", { class: "muted small" }, "Click a step or an arrow on the map to see what it carries, what's waiting there, and the settings behind it."),
+        h("p", { class: "faint small" }, "Blue stays on your Mac. Purple goes to Claude with private details removed. Green reaches Linear.")];
+      if (fsel.type === "edge") {
+        const e = edges.find((x) => x.id === fsel.id);
+        if (!e) { fsel = null; return detail(); }
+        const [cls, lead] = KINDTEXT[e.kind];
+        const rules = e.to === "held" || e.from === "filter" ? ["fixed", "dnr"] : e.to === "inbox" ? ["gets"] : nodes[e.from].col === 0 ? ["routes"] : e.to === "agent" ? ["agent", "budget"] : [];
+        return [toMap(), h("div", { class: "eyebrow" }, "Connection"), h("h2", { id: "fdetail-h", tabindex: "-1" }, `${nodes[e.from].title} → ${nodes[e.to].title}`),
+          h("dl", { class: "kv" }, h("dt", null, e.id === "i-r" ? "Ready now" : `Moved ${winText()}`), h("dd", null, e.kind === "off" ? "—" : `${e.n} ${e.unit}`),
+            e.tokens ? [h("dt", null, "Text sent to Claude"), h("dd", null, `${fmt(e.tokens)} tokens`)] : null,
+            h("dt", null, "Last time"), h("dd", null, e.kind === "off" ? "never" : when(e.last))),
+          h("div", { class: `carry ${cls}` }, h("b", null, `${lead} `), e.carries),
+          h("div", { class: "links" }, btn(`← ${nodes[e.from].title}`, { cls: "sm", fk: "fd-from", on: () => select("node", e.from, { user: true }) }), btn(`${nodes[e.to].title} →`, { cls: "sm", fk: "fd-to", on: () => select("node", e.to, { user: true }) })),
+          ruleButtons(rules)];
+      }
+      const n = nodes[fsel.id];
+      if (!n) { fsel = null; return detail(); }
+      const [what, rules, autoId, where] = NODE_INFO[fsel.id] ?? [n.col === 0 ? "A meeting app. PMX never talks to it directly: the collection task in your Claude app reads it through your connector." : "", n.col === 0 ? ["routes"] : []];
+      const out = [toMap(), h("div", { class: "eyebrow" }, n.tag || "Source"), h("h2", { id: "fdetail-h", tabindex: "-1" }, n.title), h("p", { class: "muted small" }, what)];
+      const q = queueCount(fsel.id);
+      if (where) out.push(h("div", { class: "links" }, q !== null ? h("span", { class: "small" }, h("b", null, String(q ?? 0)), ` ${QUEUE_WORD[fsel.id]}`) : null, btn(`${GO_WORD[where]} →`, { cls: q ? "sm pri" : "sm", fk: "fd-go", on: () => go(where) })));
+      if (fsel.id === "filter" || fsel.id === "held") {
+        out.push(h("h3", null, `Kept private ${winText()}, by reason`));
+        out.push((D.held || []).length ? h("dl", { class: "kv" }, D.held.flatMap((x) => [h("dt", null, x.label), h("dd", null, String(x.n))])) : h("p", { class: "faint small" }, `Nothing kept private ${winText()}.`));
+      } else if (n.kind !== "off" && !where) {
+        const ins = edges.filter((e) => e.to === fsel.id && e.kind !== "off"), outs = edges.filter((e) => e.from === fsel.id && e.kind !== "off");
+        if (ins.length || outs.length) out.push(h("dl", { class: "kv" }, ins.map((e) => [h("dt", null, `From ${nodes[e.from].title}`), h("dd", null, `${e.n} ${e.unit}`)]), outs.map((e) => [h("dt", null, `To ${nodes[e.to].title}`), h("dd", null, `${e.n} ${e.unit}`)])));
+      }
+      const a = autoId && (D.automations || []).find((x) => x.id === autoId);
+      if (a) out.push(h("div", { class: "carry" }, h("div", { class: "mini" }, pill(a.statusText, STATUSPILL[a.status] ?? "")),
+        h("div", { class: "small muted" }, [a.last ? `Last ${when(a.last)}` : "", a.next ? `next ${low(when(a.next))}` : ""].filter(Boolean).join(" · ")),
+        h("button", { type: "button", class: "link small", "data-fk": "fd-auto", onclick: () => { go("status", { stab: "overview" }); requestAnimationFrame(() => $(`auto-${a.id}`)?.scrollIntoView({ block: "center" })); } }, "See in Status →")));
+      if (["ready", "agent", "review", "done"].includes(fsel.id) && (D.categories || []).length)
+        out.push(h("div", { class: "links" }, h("span", { class: "small muted" }, "What agents draft:"), btn(`${plural(D.categories.length, "kind of work", "kinds of work")} →`, { cls: "sm", fk: "fd-cats", on: () => go("agents") })));
+      out.push(ruleButtons(rules));
+      return out;
+    }
+    function setView(v) { fview = v; render(); }
+    const legend = () => h("details", { class: "legend", open: true }, h("summary", null, "How to read the map"),
+      h("div", { class: "key" },
+        h("span", null, h("span", { class: "pillkey" }, "2"), "waiting for you"),
+        h("span", null, h("span", { class: "num" }, "2"), ` on an arrow: moved ${winText()}`),
+        [["full", "Full transcript, stays on this Mac"], ["model", "Private details removed, sent to Claude"], ["linear", "Task summaries sent to Linear"], ["status", "No meeting text: counts and status"], ["held", "Private: never sent anywhere"], ["off", "Not connected"]]
+          .map(([k, t]) => h("span", null, s("svg", { viewBox: "0 0 28 8", "aria-hidden": "true" }, s("line", { class: `kl-${k}`, x1: 0, y1: 4, x2: 28, y2: 4 })), t))));
+    V.flow = () => {
+      shape();
+      const grown = prevN ? edges.filter((e) => e.kind !== "off" && prevN[e.id] !== undefined && e.n > prevN[e.id]).map((e) => e.id) : [];
+      const seg = h("div", { class: "seg", role: "group", "aria-label": "Show the flow as" }, [["map", "Map"], ["list", "List"]].map(([v, t]) =>
+        h("button", { type: "button", "aria-pressed": fview === v ? "true" : "false", "data-fk": `fv-${v}`, onclick: () => setView(v) }, t)));
+      mapEl = null;
+      const box = fview === "map" ? h("div", { class: "mapbox" }, buildMap()) : h("div", { class: "mapbox" }, listView());
+      detailEl = h("aside", { class: "fdetail", "aria-label": "Selected step" }, detail());
+      const out = [
+        head("flow", "", "Flow", "Where your meetings go, step by step. Click a step or an arrow to see what it carries.", [winSelect(), seg]),
+        fview === "map" ? legend() : null,
+        h("div", { class: "fconn" }, h("div", { class: "fmain" }, box), detailEl),
+      ];
+      // Grown arrows show "+n" until the next refresh, and a dot runs along them once.
+      prevN = Object.fromEntries(edges.map((e) => [e.id, e.n]));
+      if (grown.length) requestAnimationFrame(() => pulses(grown));
+      return out;
+    };
+  }
 
   // ================= Settings: state and changes =================
   // The settings as loaded (original) and as edited (state). Every change is worked out from the two, every time, so
@@ -1693,6 +2148,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
       calls: D.inputs ? D.inputs.rows.filter((x) => x.owner === "you").map((x) => ({ connector: x.connector, look: x.look || null })) : [],
       inputs: D.inputs ? D.inputs.rows.filter((x) => x.owner === "team").map((x) => ({ connector: x.connector, places: [...x.places], look: x.look || null })) : [],
       synth: D.inputs ? D.inputs.synthesizer : null,
+      todosLinear: !!r.todosToLinear,
     };
     if (!original || JSON.stringify(original) === JSON.stringify(state)) { original = base; state = clone(base); }
     else original = base; // keep the PM's unsaved edits across refreshes
@@ -1730,6 +2186,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     }
     for (const o of original.inputs) if (!state.inputs.some((x) => ck(x) === ck(o))) add({ kind: "team-input", connector: o.connector, places: [], look: null }, `Stop reading ${o.connector}`, "team");
     if (state.synth !== original.synth && state.synth) add({ kind: "synthesizer", value: state.synth }, `${state.synth === (D.inputs && D.inputs.me) ? "This Mac" : `${state.synth}'s Mac`} proposes team tasks and reads the team's channels`, "team");
+    if (state.todosLinear !== original.todosLinear) add({ kind: "todos-linear", value: state.todosLinear }, state.todosLinear ? "Let me send my own to-dos to Linear, one at a time" : "Keep all my to-dos on this Mac", "me", state.todosLinear);
     if (state.digestDm !== original.digestDm) add({ kind: "digest-dm", value: state.digestDm }, state.digestDm ? `Send the approved digest to Slack (${state.digestDm})` : "Stop sending the digest to Slack", "me");
     return out;
   }
@@ -1754,6 +2211,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
       "review-cap": () => { state.reviewCap = original.reviewCap; delete invalid.revcap; },
       "digest-day": () => (state.digestDay = original.digestDay), "digest-dm": () => (state.digestDm = original.digestDm),
       "call-input": () => back("calls"), "team-input": () => back("inputs"), synthesizer: () => (state.synth = original.synth),
+      "todos-linear": () => (state.todosLinear = original.todosLinear),
     })[c.kind]();
   }
   // An edit redraws the section; a number or text being typed only updates the save bar, so focus stays put.
@@ -2003,10 +2461,13 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
       return card("Kept private", `${plural(total, "meeting")} kept private ${winText()}. These can't be edited or turned off.`, FIXED.map(([rule, name, how]) => h("div", { class: "sr locked" }, ic("lock"),
         h("div", { class: "nm" }, name, h("small", null, how)), heldBy[rule] ? chip(`${heldBy[rule]} kept`, "warn") : null, sw(true, name, null, { disabled: true }), h("span", { class: "swl" }, "Always private"))), { badge: scopeChip("fixed") });
     }],
-    linear: ["What Linear gets", "The exact fields an approved task carries. Nothing goes to Linear before you approve it.", () => card("A task in Linear", null, h("div", { class: "sr" }, h("div", { class: "gets wide" },
+    linear: ["What Linear gets", "The exact fields an approved task carries. Nothing goes to Linear before you approve it.", () => [card("A task in Linear", null, h("div", { class: "sr" }, h("div", { class: "gets wide" },
       h("div", null, h("b", null, "Has"), h("ul", null, h("li", null, "A title and labels: inbox, kind of work, size"), h("li", null, "A 2–4 sentence summary in Claude's words"), h("li", null, "Why it got its size"), h("li", null, "How many sources, and their dates"))),
-      h("div", null, h("b", null, "Never has"), h("ul", null, h("li", null, "Transcript text or quotes (PMX drops a task that repeats 8 words of a meeting)"), h("li", null, "Meeting titles or attendees"), h("li", null, "Your private to-dos"))),
-      h("div", null, h("b", null, "Not in Linear at all"), h("ul", null, h("li", null, "Which meetings were processed: that's recorded in your team's repo, under codes only your team can match"))))), { badge: scopeChip("fixed") })],
+      h("div", null, h("b", null, "Never has"), h("ul", null, h("li", null, "Transcript text or quotes (PMX drops a task that repeats 8 words of a meeting)"), h("li", null, "Meeting titles or attendees"), h("li", null, "Your to-dos, unless you send one yourself (below)"))),
+      h("div", null, h("b", null, "Not in Linear at all"), h("ul", null, h("li", null, "Which meetings were processed: that's recorded in your team's repo, under codes only your team can match"))))), { badge: scopeChip("fixed") }),
+      card("Your own to-dos", "Off unless you turn it on. To-dos come from all your meetings, 1:1s included, so they stay on this Mac.", h("div", { class: "sr" },
+        h("div", { class: "nm" }, "Let me send a to-do to Linear", h("small", null, "Adds Send to Linear to each to-do. Only that to-do's words go, as a commitment no agent picks up; never the meeting's title, transcript or attendees. Nothing is sent until you choose a to-do.")),
+        h("div", { class: "ctl" }, state.todosLinear !== original.todosLinear ? chip("Not saved yet", "new") : null, sw(state.todosLinear, "Let me send my own to-dos to Linear", () => { state.todosLinear = !state.todosLinear; changed(); }, { fk: "sw-todos-linear" }))), { badge: scopeChip("me") })]],
     schedule: ["Schedule", "What runs on its own. Run now starts it on this Mac and shows how it went.", () => {
       const a = D.automations || [];
       const install = a.find((x) => x.fix && x.fix.action === "install-job" && x.status !== "ok");
@@ -2147,7 +2608,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
         result && result.ok && undoBase ? btn("Undo the changes just for you", { cls: "sm", on: undoApplied }) : null),
       h("div", { class: "mf" }, btn(ch.length ? "Keep editing" : "Done", { cls: "ghost", on: () => closeModal() }), ch.length ? save : null));
   }
-  const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept", "digestDay", "digestDm", "calls"];
+  const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept", "digestDay", "digestDm", "calls", "todosLinear"];
   const TEAMKEYS = ["teamDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth"];
   async function apply() {
     if (applying) return;
@@ -2216,7 +2677,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     return h("div", { class: "connect" }, h("div", { class: "logo", "aria-hidden": "true" }, "PMX"),
       h("h1", { tabindex: "-1" }, "Connect this page to PMX"),
       h("p", null, "This page is your PMX workspace: tasks to approve, to-dos, drafts to review and the weekly digest. It reads them from PMX on your Mac through the Claude app. PMX asks you on the Mac first, so only you can connect it."),
-      counts.length ? h("p", null, h("b", null, "Waiting on this Mac: "), `${and(counts)}.`) : null,
+      counts.length ? h("p", null, h("b", null, "Waiting on this Mac: "), `${and(counts)}.`, n.todos ? " To-dos are yours alone and never leave this Mac; tasks reach Linear only after you approve them." : "") : null,
       pairing ? h("p", { class: "wait", role: "status" }, h("span", { class: "spin", "aria-hidden": "true" }), "Check your Mac: PMX is asking you to allow this page. It waits up to 2 minutes.") : null,
       conn.state === "declined" ? h("p", { class: "err", role: "alert" }, HELP.declined) : conn.msg ? h("p", { class: "err", role: "alert" }, conn.msg) : null,
       h("div", { class: "cta" }, btn(pairing ? "Waiting for your Mac…" : conn.state === "declined" ? "Try again" : "Connect", { cls: "pri", disabled: pairing, on: pairNow })),
@@ -2283,7 +2744,7 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
     if (!LOCAL && ["connect", "pairing", "declined"].includes(conn.state)) content = connectScreen();
     else if (!D) content = conn.state === "error" ? errorScreen() : h("p", { class: "loading", role: "status" }, "Loading from PMX…");
     else if (S.view === "settings" && !S.q) content = settingsScreen();
-    else content = h("div", { class: "page" }, (S.q ? V.search : V[S.view])());
+    else content = h("div", { class: S.view === "flow" && !S.q ? "page wide" : "page" }, (S.q ? V.search : V[S.view])());
     put($("view"), content);
     if (S.sheet) { if (findItem(S.sheet)) drawSheet(); else closeSheet(); }
     if (fk) {

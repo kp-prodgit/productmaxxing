@@ -5,16 +5,10 @@ import { savePersonalConfig } from "../core/config.js";
 import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { loadState, markTaskRun } from "../core/state.js";
-import { localDay, startOfDay } from "../meetings/ledger.js";
-import { completeTodo, formatTodos, loadTodos, refreshTodos } from "../todo/todo.js";
+import { localDay } from "../meetings/ledger.js";
+import { completeTodo, formatTodos, loadTodos, refreshTodos, sendTodoToLinear, TODO_DAYS, TODO_MAX_DAYS, todoPeriod, todosInPeriod } from "../todo/todo.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
-
-function sinceArg(v: string | undefined, now: Date): Date {
-  if (!v || v === "today") return startOfDay(now);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`--since takes "today" or a date like 2026-11-05, not "${v}".`);
-  return new Date(`${v}T00:00:00`);
-}
 
 export const meetingCommands: Command[] = [
   {
@@ -48,11 +42,11 @@ export const meetingCommands: Command[] = [
   },
   {
     name: "todo",
-    summary: "Your own to-dos from your meetings, including 1:1s; stays on this Mac. --refresh reads today's unprocessed meetings",
-    usage: "pmx todo [--all] [--json] | pmx todo --refresh [--since today|YYYY-MM-DD] [--dry-run] | pmx todo done <id> | pmx todo --me <name or email>",
+    summary: "Your own to-dos from your meetings, including 1:1s; stays on this Mac. Shows and reads the last 7 days unless you pick a period",
+    usage: "pmx todo [--days N|all | --since today|Nd|YYYY-MM-DD] [--all] [--json] | pmx todo --refresh [--days N | --since …] [--dry-run] | pmx todo done <id> | pmx todo --me <name or email> | pmx todo --linear on|off | pmx todo linear <id>",
     options: {
-      refresh: { type: "boolean" }, since: { type: "string" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, json: { type: "boolean" },
-      me: { type: "string", multiple: true },
+      refresh: { type: "boolean" }, since: { type: "string" }, days: { type: "string" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, json: { type: "boolean" },
+      me: { type: "string", multiple: true }, linear: { type: "string" },
     },
     async run(a) {
       const ctx = await a.ctx();
@@ -63,16 +57,35 @@ export const meetingCommands: Command[] = [
         console.log(`Your to-dos are now found for: ${vals.join(", ")}.`);
         return 0;
       }
+      // SIG-7: the opt-in to send your own to-dos to Linear, and sending one.
+      if (a.values.linear !== undefined) {
+        const on = { on: true, off: false }[String(a.values.linear).toLowerCase() as "on" | "off"];
+        if (on === undefined) throw new Error("--linear takes on or off.");
+        if (on && ctx.team.tracker.kind === "none") throw new Error("Your team has no task tracker, so there's nowhere to send to-dos.");
+        if (on && !ctx.personal.todosToLinear && !(await a.ask.confirm("Let yourself send your own to-dos to your team's Linear project, one at a time? A to-do's words can come from a 1:1 or an internal meeting; only the words you send go, never the meeting's title or transcript.", false))) return 1;
+        ctx.personal.todosToLinear = on;
+        await savePersonalConfig(ctx.personal);
+        console.log(on ? "On. Send a to-do with `pmx todo linear <id>`, or Send to Linear on the board. Nothing is sent until you do." : "Off. Your to-dos stay on this Mac.");
+        return 0;
+      }
+      if (a.positionals[0] === "linear") {
+        const r = await sendTodoToLinear(ctx, (await services(ctx)).tracker, a.positionals[1] ?? "");
+        console.log(r.already ? `Already in Linear as ${r.identifier}.` : `Sent to Linear as ${r.identifier}: ${r.text}`);
+        return 0;
+      }
       if (a.positionals[0] === "done") {
         const t = await completeTodo(a.positionals[1] ?? "", ctx.now());
         console.log(`✔ ${t.text}`);
         return 0;
       }
+      // TODO-4: one period for the list and for refresh; the last 7 days unless --days or --since picks another.
+      const period = todoPeriod({ days: a.values.days, since: a.values.since }, ctx.now());
       if (a.values.refresh) {
-        const since = sinceArg(a.values.since, ctx.now());
+        if (period.days === Infinity) throw new Error(`--refresh reads at most ${TODO_MAX_DAYS} days of meetings. Try --days ${TODO_MAX_DAYS}.`);
+        const since = period.since;
         const r = await refreshTodos(ctx, { since, dryRun: a.values["dry-run"] });
         console.log(`Meetings since ${localDay(since)}: ${r.meetings.read} read now, ${r.meetings.alreadyRead} already read for to-dos.`);
-        if (!r.meetings.read && !a.values.since) console.log(`Only today's meetings are read by default. For earlier ones: pmx todo --refresh --since ${localDay(new Date(ctx.now().getTime() - 6 * 86400000))}`);
+        if (!r.meetings.read && !period.chosen) console.log(`The last ${TODO_DAYS} days are read by default. For earlier meetings: pmx todo --refresh --days 30`);
         console.log(r.added.length ? `${a.values["dry-run"] ? "Would add" : "Added"} ${r.added.length} to-do(s):\n${formatTodos(r.added)}` : "No new to-dos.");
         if (r.receiptId) console.log(`See how each meeting was read: pmx explain ${r.receiptId}`);
         // The collection task's last step (COLLECT_TASK step 4), so its run counts as finished.
@@ -80,8 +93,10 @@ export const meetingCommands: Command[] = [
         return 0;
       }
       const store = await loadTodos();
-      const items = a.values.all ? store.items : store.items.filter((t) => t.status === "open");
-      console.log(a.values.json ? JSON.stringify(items, null, 2) : formatTodos(items));
+      const { shown, older, oldestDays } = todosInPeriod(a.values.all ? store.items : store.items.filter((t) => t.status === "open"), period.since, ctx.now());
+      if (a.values.json) { console.log(JSON.stringify(shown, null, 2)); return 0; }
+      console.log(shown.length ? `To-dos from ${period.label}${a.values.all ? ", done ones included" : ""}:\n${formatTodos(shown)}` : formatTodos([], period.label));
+      if (older) console.log(`\n${older} ${a.values.all ? "" : "open "}to-do(s) from before that. See them with: pmx todo --days ${oldestDays > TODO_MAX_DAYS ? "all" : oldestDays}`);
       return 0;
     },
   },
@@ -102,7 +117,7 @@ export const meetingCommands: Command[] = [
   },
 ];
 
-/** Individual to-dos on every tick: only today's meetings not read yet; no model call otherwise (TODO-3). */
+/** Individual to-dos on every tick: the last 7 days' meetings not read yet; no model call otherwise (TODO-3). */
 export const todoStep: TickStep = async (ctx: Ctx) => {
   // Only for PMs who collect meetings or have used `pmx todo`, so nobody's folder is read for to-dos unasked.
   const store = await loadTodos();

@@ -208,7 +208,7 @@ describe("0.17.0: the board shows where to act (BOARD-4)", () => {
     const todo = { id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", source: { title: "Acme renewal", at: "2026-11-07T10:00:00Z" } };
     const local = buildPipeline({ ...inputs("local"), openTodos: [todo], pendingTeam: [{ url: "https://github.com/x/y/pull/3", at: NOW.toISOString(), changes: ["review cap 5"] }] });
     expect(local.needs.todos).toBe(1);
-    expect(local.todos).toEqual([{ id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", from: "Acme renewal (2026-11-07)", when: null }]);
+    expect(local.todos).toEqual([{ id: "t1", text: "Send Dana the pricing sheet", due: "2026-11-09", from: "Acme renewal (2026-11-07)", at: "2026-11-07", when: null }]);
     expect(local.pendingTeam).toHaveLength(1);
     const shared = buildPipeline({ ...inputs("shared"), openTodos: [todo] });
     expect(shared.needs.todos).toBe(1);
@@ -334,7 +334,7 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
     const page = await readFile(pipelineTemplate(), "utf8");
     // 0.23.0 (BOARD-6): categories and their skills live under Agents; old #work, #categories and #skills links land there.
     expect(page).toMatch(/<button type="button" class="ni" data-view="agents">/);
-    expect(page).toMatch(/const ALIAS = \{ work: \["agents"\], categories: \["agents"\], skills: \["agents"\], flow: \["status", "flow"\]/);
+    expect(page).toMatch(/const ALIAS = \{ work: \["agents"\], categories: \["agents"\], skills: \["agents"\], connections: \["flow"\]/);
     expect(page).toMatch(/V\.agents = \(\) =>/);
   });
 

@@ -42,7 +42,10 @@ export async function runDigest(ctx: Ctx, ask: Asker, o: { stage?: boolean; revi
   }
 
   ctx.out.info("\n" + markdown);
-  const choice = await ask.choose("Approve this digest for the PMX repo?", ["approve", "edit", "reject"], "reject");
+  // "keep" is the default, so a run with no terminal (or --yes) leaves the draft staged: it never deletes or publishes
+  // what nobody chose to.
+  const choice = await ask.choose("Approve this digest for the PMX repo?", ["approve", "edit", "reject", "keep"], "keep");
+  if (choice === "keep") return `Kept for later at ${stagingPath(week)}; nothing reached git. Approve or reject it with \`pmx digest --review\` in Terminal, or under Digest on the board.`;
   if (choice === "edit") {
     const editor = o.editor ?? process.env.EDITOR ?? "vi";
     const { spawnSync } = await import("node:child_process");

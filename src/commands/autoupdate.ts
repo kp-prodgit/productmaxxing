@@ -1,3 +1,4 @@
+import { stalePages } from "../claude/pages.js";
 import { refreshAppSkills } from "../claude/skill.js";
 import type { Ctx } from "../core/context.js";
 import { notify } from "../core/notify.js";
@@ -30,7 +31,10 @@ export const updateStep: TickStep = async (ctx: Ctx) => {
   if (r.result === "updated") {
     const notes = await newVersionNotes(ctx.exec, currentVersion()).catch(() => null);
     const headline = notes?.split("\n")[0]?.replace(/^What's new in pmx [\d.]+: /, "") ?? null;
-    await notify("ProductMaxxing updated", `pmx ${r.version} is installed${headline ? `: ${headline}` : ""}. See what's new: pmx whats-new`).catch(() => {});
+    // The pages this Mac published in Claude still run the old code; PMX can't publish them, so the PM is told what to type.
+    const pages = stalePages(ctx.team, ctx.personal, r.version);
+    const republish = pages.length ? ` Type ${pages.map((p) => `/${p.skill}`).join(" and ")} in the Claude app to update your ${pages.length === 1 ? "page" : "pages"} there.` : "";
+    await notify("ProductMaxxing updated", `pmx ${r.version} is installed${headline ? `: ${headline}` : ""}.${republish} See what's new: pmx whats-new`).catch(() => {});
     return `auto-update: installed pmx ${r.version}`;
   }
   if (tellOnce) {

@@ -8,7 +8,7 @@ import { loadPipeline } from "./pipeline-load.js";
 import { rememberTeamPr } from "./team-prs.js";
 import { digestAction } from "./digests.js";
 import { startJob } from "./jobs.js";
-import { addTodo, completeTodo, placeTodo } from "../todo/todo.js";
+import { addTodo, completeTodo, placeTodo, sendTodoToLinear } from "../todo/todo.js";
 import type { PipelineActions } from "./pipeline-act.js";
 import { mkdir } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -82,6 +82,14 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
       if (typeof id !== "string" || !/^[\w-]{3,64}$/.test(id)) return { status: 400, body: { error: "Unknown to-do." } };
       try { const t = await placeTodo(id, p); return { status: 200, body: { message: p.reopen ? `Reopened: ${t.text}` : `Moved: ${t.text}` } }; }
       catch (e: any) { return { status: 400, body: { error: e.message.replace(/`([^`]+)`/g, "$1") } }; }
+    },
+    /** SIG-7: one to-do sent to Linear, only when the PM turned that on in Settings. */
+    async todoLinear(id: string) {
+      if (typeof id !== "string" || !/^[\w-]{3,64}$/.test(id)) return { status: 400, body: { error: "Unknown to-do." } };
+      try {
+        const r = await sendTodoToLinear(ctx, (await services(ctx)).tracker, id);
+        return { status: 200, body: { message: r.already ? `Already in Linear as ${r.identifier}.` : `Sent to Linear as ${r.identifier}: ${r.text}` } };
+      } catch (e: any) { return { status: 400, body: { error: e.message.replace(/`([^`]+)`/g, "$1") } }; }
     },
     /** A paused category resumed from the board, as `pmx review --unpause` does (Team plan). */
     async resume(category: string) {

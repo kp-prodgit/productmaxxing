@@ -2,6 +2,14 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.30.0: a link to your team's roadmap
+
+Bridge 1 of joining PMX and PMX Engine (EQ-28): the head of product can give PMs a page of their own in PMX Engine, and every PM's Workspace links to it.
+
+- **A Roadmap link in the nav,** under Team, on this Mac's page and on the page in Claude, when your team's `pmx.config.json` has `"roadmap": { "url": "<link>" }`. The head of product publishes the page from PMX Engine 0.3.5 or later and adds its link in a pull request. PMX holds only the link, never the page's content. (CLI-7)
+- **`pmx open roadmap`** opens it from Terminal.
+- `roadmap.url` must be a Claude artifact link, like `board.url`.
+
 ## 0.29.0: the brain is free on your Macs
 
 Q8: everything that runs on your team's Macs is free, the brain included. What a plan covers is the hosted service: team analytics and cloud leases.

@@ -108,6 +108,8 @@ export interface PipelineData {
   logbook?: LogbookEntry[];
   /** The team's Plan board artifact, when one is published (BOARD-1). */
   boardUrl?: string | null;
+  /** The product managers' page in PMX Engine, when the team has one (CLI-7). A link from team config, never content. */
+  roadmapUrl?: string | null;
   /** Team settings pull requests opened from the board that are still open. */
   pendingTeam: { url: string; at: string; changes: string[] }[];
   /** `problems` stays plain text for boards published before 0.17.0; `items` carries each one's fix. */
@@ -174,6 +176,7 @@ export interface PipelineInputs {
   openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string }; linear?: string | null }[];
   logbook?: LogbookEntry[];
   boardUrl?: string | null;
+  roadmapUrl?: string | null;
   pendingTeam?: PipelineData["pendingTeam"];
   proposals: Proposal[];
   checks: FlowCheck[];
@@ -379,6 +382,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, at: t.source.at.slice(0, 10), ...(t.linear ? { linear: t.linear } : {}), from: t.source.title === "Added by you" ? "Added by you" : `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
     logbook: local ? i.logbook ?? [] : [],
     boardUrl: i.boardUrl ?? null,
+    roadmapUrl: i.roadmapUrl ?? null,
     pendingTeam: i.pendingTeam ?? [],
     health: { ok: !problems.length, problems: problems.map((p) => p.text), items: problems, facts: i.health.facts },
     checks: i.checks,

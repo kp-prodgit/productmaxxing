@@ -66,6 +66,11 @@ export interface TeamConfig {
   company?: { teams: { name: string; teamKey: string; projectId: string }[]; machine: string | null } | null;
   /** The team's live board, a Claude artifact everyone opens (BOARD-1). */
   board?: { url: string } | null;
+  /**
+   * The product managers' page in PMX Engine (EQ-28, bridge 1 of the join; CLI-7). Every PM's Workspace links to it. The
+   * head of product publishes it with /pmxe-hubs and adds its link here in a pull request. Only the link: no content.
+   */
+  roadmap?: { url: string } | null;
 }
 
 export interface TeamCategory { skill: string; externalFacing?: boolean; required?: boolean }
@@ -198,6 +203,7 @@ export function validateTeamConfig(c: TeamConfig): TeamConfig {
   if (c.brain && !["off", "recommend", "approve", "autopilot"].includes(c.brain.level)) problems.push(`brain.level must be off, recommend, approve or autopilot, not "${c.brain.level}"`);
   if (c.brain?.everyHours !== undefined && !(Number.isFinite(c.brain.everyHours) && c.brain.everyHours >= 1)) problems.push("brain.everyHours must be a number of hours, 1 or more");
   if (c.board && !/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]+\/?$/.test(c.board.url ?? "")) problems.push("board.url must be a Claude artifact link (https://claude.ai/artifact/…)");
+  if (c.roadmap && !/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]+\/?$/.test(c.roadmap.url ?? "")) problems.push("roadmap.url must be a Claude artifact link (https://claude.ai/artifact/…)");
   if (!c.model) problems.push("model must be set (NEUT-1)");
   for (const s of SIZES) if (!c.sizes?.[s]) problems.push(`sizes.${s} missing`);
   for (const [cat, v] of Object.entries(c.categories ?? {}))

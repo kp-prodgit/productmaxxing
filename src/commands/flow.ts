@@ -68,7 +68,7 @@ export const flowCommands: Command[] = [
   {
     name: "open",
     summary: "Open your PMX workspace on this Mac. With PMX Engine installed it also offers the studio; `pmx open studio` opens the studio itself",
-    usage: "pmx open [studio] [--no-open] | pmx open --hide-studio | --show-studio",
+    usage: "pmx open [studio | roadmap] [--no-open] | pmx open --hide-studio | --show-studio",
     options: { "no-open": { type: "boolean" }, "hide-studio": { type: "boolean" }, "show-studio": { type: "boolean" } },
     async run(a) {
       if (a.values["hide-studio"] || a.values["show-studio"]) {
@@ -86,7 +86,14 @@ export const flowCommands: Command[] = [
         console.log("Opening PMX Engine's studio in your browser. `pmxe studio` does the same in Terminal.");
         return 0;
       }
-      if (a.positionals.length) throw new Error(`pmx open takes "studio" or nothing, not "${a.positionals[0]}".`);
+      if (a.positionals[0] === "roadmap") {
+        const url = (await a.ctx()).team.roadmap?.url;
+        if (!url) throw new Error('Your team has no roadmap page yet. The head of product publishes it from PMX Engine and adds its link to pmx.config.json as "roadmap": { "url": "<link>" }.');
+        await exec("open", [url]);
+        console.log(`Opening your team's roadmap: ${url}`);
+        return 0;
+      }
+      if (a.positionals.length) throw new Error(`pmx open takes "studio", "roadmap" or nothing, not "${a.positionals[0]}".`);
       return serveWorkspace(a, Boolean(a.values["no-open"]));
     },
   },

@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/productmaxxing-0.29.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.30.0/productmaxxing-0.30.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.30.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.29.0.tgz
+npm install -g ./productmaxxing-0.30.0.tgz
 pmx init
 ```
 
@@ -40,6 +40,7 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `status` | Config, kill switch, today's usage (tokens, and dollars at list prices) and recent runs |
 | `proposals` | Tasks PMX proposed from your calls, exactly as Linear would get them. `approve <n>` or `--all` sends them to the PMX inbox; `drop` discards them. Nothing reaches Linear before you approve |
 | `budget` | Your daily cap on PMX's usage: `set <dollars>`, `off` (only your plan's limits and the team cap), or `set 0` to pause PMX |
+| `open` | Your PMX workspace on this Mac, like `flow --web`. `open roadmap` opens your team's roadmap page, the PMs' page in PMX Engine, when `pmx.config.json` has its link. `open studio` opens PMX Engine's studio where it's installed. `--hide-studio` takes the studio out of the nav |
 | `flow` | Your workspace: Inbox (tasks to approve), Today, Upcoming, Anytime and Logbook for your to-dos and reviews, then Plan, Digest, Agents, Status (the pipeline, privacy checks, activity) and Settings. `--web` opens it on this Mac; `--install-skill` adds `/pmx-flow`, which publishes the same workspace as a live Claude artifact that works through the Claude app once you click Connect and allow it on your Mac |
 | `sources` | Where PMX listens: your meeting apps, recorders you add (`add Momentum`, `add "Google Meet"` for Gemini notes and Meet transcripts through Google Drive, `--only "calls tagged Discovery"`; `remove`), your team's approved channels, and what each may feed (`set granola off`, `mine` for your to-dos only, `linear` for to-dos and team tasks). The board's Sources tab does the same, and proposes team channels |
 | `domains` | Your company's email domains, which tell colleagues from customers: `add` or `remove` |
@@ -118,11 +119,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/productmaxxing-0.29.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.30.0/productmaxxing-0.30.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.30.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.29.0.tgz
+npm install -g ./productmaxxing-0.30.0.tgz
 pmx whats-new --since <the version you had>
 ```
 

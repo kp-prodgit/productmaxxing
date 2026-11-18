@@ -183,6 +183,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     openTodos: todos.filter((t) => t.status === "open"), pendingTeam,
     logbook: local ? buildLogbook({ now, agent: ctx.agent, todos, receipts, runlog: log }) : [],
     boardUrl: ctx.team.board?.url ?? ctx.personal.board?.url ?? null,
+    roadmapUrl: ctx.team.roadmap?.url ?? null,
     checks: graph.checks, health: { problems, facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
     teamCategories: ctx.team.categories, paused, autoPause: ctx.team.autoPause,
     automations, activity: buildActivity({ now, hours, agent: ctx.agent, receipts, runlog: log, collectReports: state.collectReports, lastTick: state.lastTick }),

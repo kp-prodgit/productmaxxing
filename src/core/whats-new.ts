@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.30.0", date: "2026-11-18", headline: "A link to your team's roadmap",
+    items: [
+      { what: "When your team has a roadmap page for PMs in PMX Engine, the nav shows Roadmap under Team. The head of product adds its link to pmx.config.json; PMX holds only the link.", try: "pmx open roadmap" },
+    ],
+  },
+  {
     version: "0.29.0", date: "2026-11-18", headline: "The brain is free on your Macs",
     items: [
       { what: "The brain needs no license: it runs on one of your team's Macs, on your own Claude plan. Turn it on with a \"brain\" block in pmx.config.json, in a reviewed pull request; your org's admin policy still decides when it sets the brain.", try: "pmx brain --status" },

@@ -605,6 +605,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     <button type="button" class="ni" data-view="plan"><svg class="i" aria-hidden="true"><use href="#i-plan"/></svg>Plan<span class="badge num" id="b-plan"></span></button>
     <button type="button" class="ni" data-view="digest"><svg class="i" aria-hidden="true"><use href="#i-paper"/></svg>Digest<span class="dot" id="b-digest" hidden></span></button>
     <button type="button" class="ni" data-view="agents"><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg>Agents</button>
+    <a class="ni" id="act-roadmap" target="_blank" rel="noopener noreferrer" hidden><svg class="i" aria-hidden="true"><use href="#i-ext"/></svg>Roadmap</a>
     <h6 id="nav-engine" hidden>Engine</h6>
     <button type="button" class="ni" id="act-studio" hidden><svg class="i" aria-hidden="true"><use href="#i-ext"/></svg>Studio</button>
     <h6>System</h6>
@@ -2811,6 +2812,11 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const badStatus = ok && ((D.checks || []).some((c) => c.status === "violated") || (D.automations || []).some((a) => a.status === "failed") || (D.killSwitch && D.killSwitch.on));
     $("b-status").hidden = !badStatus;
     $("b-version").textContent = (D && D.version) || CFG.version || "";
+    // The product managers' page in PMX Engine, from team config (CLI-7): a link only, opened in its own tab.
+    const rm = $("act-roadmap");
+    const rmUrl = ok && typeof D.roadmapUrl === "string" && /^https:\/\/claude\.ai\//.test(D.roadmapUrl) ? D.roadmapUrl : "";
+    if (rmUrl) rm.setAttribute("href", rmUrl); else rm.removeAttribute("href");
+    rm.hidden = !rmUrl;
     const cc = $("conn");
     const connected = ok && !conn.stale;
     cc.className = `conn${connected ? "" : conn.state === "error" || conn.stale ? " bad" : " off"}`;

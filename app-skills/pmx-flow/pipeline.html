@@ -497,6 +497,12 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
 .sizegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 12px 16px }
 .sizegrid > div { display: grid; gap: 6px; font-size: 13px }
 .sizegrid label { display: flex; gap: 6px; align-items: center; color: var(--fg-2) }
+.kf { display: grid; gap: 14px; padding: 14px 16px; min-width: 0 }
+.kf label, .kf .fl { display: grid; gap: 4px; font-size: 13px; font-weight: 600; min-width: 0 }
+.kf small { font-weight: 400; color: var(--fg-2); font-size: 12px; line-height: 16px }
+.kf .in { width: 100% }
+.kf .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px }
+.kf .acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap }
 .rub { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 6px 10px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line) }
 .rub:last-child { border-bottom: 0 }
 .rub b { font-size: 13px }
@@ -2142,7 +2148,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       routes: Object.fromEntries([...new Set([...(D.sources || []).map((x) => x.id), ...(D.inputs ? D.inputs.rows.map((x) => x.id) : []), ...((r.allowedSources || []).includes("slack") ? ["slack"] : [])])].map((k) => [k, (r.routes || {})[k] || "linear"])),
       teamDomains: arr(r.teamDomains), myDomains: arr(r.myDomains),
       people: arr(r.neverIngest.people), titles: arr(r.neverIngest.titles), channels: arr(r.neverIngest.channels),
-      budget: r.budget.dailyUsd, accept: Object.fromEntries((r.categories || []).map((c) => [c.name, c.accepted])), reviewCap: r.reviewCap,
+      budget: r.budget.dailyUsd, accept: Object.fromEntries((r.categories || []).map((c) => [c.name, c.accepted])), required: Object.fromEntries((r.categories || []).map((c) => [c.name, !!c.required])), reviewCap: r.reviewCap,
       minutes: Object.fromEntries(SZ.map((z) => [z, r.sizes[z].minutes])), usd: Object.fromEntries(SZ.map((z) => [z, r.sizes[z].usd])), rubric: clone(r.rubric || {}),
       digestDay: D.digest ? D.digest.weekday : 5, digestDm: D.digest ? D.digest.dm.user : null,
       calls: D.inputs ? D.inputs.rows.filter((x) => x.owner === "you").map((x) => ({ connector: x.connector, look: x.look || null })) : [],
@@ -2171,6 +2177,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     for (const c of Object.keys(state.rubric)) for (const z of SZ) if (state.rubric[c][z] !== original.rubric[c][z]) add({ kind: "rubric", category: c, size: z, text: state.rubric[c][z] }, `${catName(c)}, size ${z}: "${state.rubric[c][z]}"`, "team");
     if (state.budget !== original.budget) add({ kind: "budget", value: state.budget }, state.budget === null ? "Use the team's daily limit only" : state.budget === 0 ? "Pause PMX's spending" : `Daily limit $${state.budget}`, "me");
     for (const c of Object.keys(state.accept)) if (state.accept[c] !== original.accept[c]) add({ kind: "category", name: c, accepted: state.accept[c] }, `${state.accept[c] ? "Take on" : "Stop taking"} ${catName(c)}`, "me");
+    for (const c of Object.keys(state.required || {})) if (state.required[c] !== original.required[c]) add({ kind: "kind-required", name: c, value: state.required[c] }, `${state.required[c] ? "Require" : "Stop requiring"} ${catName(c)} for everyone on the team`, "team");
     if (state.reviewCap !== original.reviewCap) add({ kind: "review-cap", value: state.reviewCap }, `Agents wait at ${state.reviewCap} drafts`, "team");
     if (state.digestDay !== original.digestDay) add({ kind: "digest-day", value: state.digestDay }, `Build the digest on ${DAYS[state.digestDay]}s`, "me");
     const ck = (x) => cid(x.connector), pk = (x) => JSON.stringify(x.places.map((p) => p.toLowerCase()).sort());
@@ -2208,6 +2215,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       size: () => { state.minutes[c.size] = original.minutes[c.size]; state.usd[c.size] = original.usd[c.size]; for (const k of [`min-${c.size}`, `usd-${c.size}`]) delete invalid[k]; },
       rubric: () => { state.rubric[c.category][c.size] = original.rubric[c.category][c.size]; delete invalid[`rub-${c.category}-${c.size}`]; },
       budget: () => { state.budget = original.budget; delete invalid.budget; }, category: () => (state.accept[c.name] = original.accept[c.name]),
+      "kind-required": () => (state.required[c.name] = original.required[c.name]),
       "review-cap": () => { state.reviewCap = original.reviewCap; delete invalid.revcap; },
       "digest-day": () => (state.digestDay = original.digestDay), "digest-dm": () => (state.digestDm = original.digestDm),
       "call-input": () => back("calls"), "team-input": () => back("inputs"), synthesizer: () => (state.synth = original.synth),
@@ -2308,7 +2316,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     ["Inputs", [["sources", "Sources"], ["customers", "Who counts as a customer"]]],
     ["Privacy", [["dnr", "Do-not-read list"], ["private", "Always private"], ["linear", "What Linear gets"]]],
     ["Workflows", [["schedule", "Schedule"], ["digestset", "Digest"]]],
-    ["Agents & team", [["kinds", "Kinds of work"], ["sizes", "Sizes"], ["limits", "Budget and limits"]]],
+    ["Agents & team", [["kinds", "Kinds of work"], ["newkind", "New kind of work"], ["sizes", "Sizes"], ["limits", "Budget and limits"]]],
     ["Account", [["account", "Account"]]],
   ];
   function inputStatus(r) {
@@ -2490,19 +2498,34 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           state.digestDm = x; return null;
         }, { label: "Your Slack member ID", btn: "Turn on" })),
     ], { badge: scopeChip("me") })],
-    kinds: ["Kinds of work", "Which kinds of work your agent takes from Ready. Accept rates come from your team's reviews.", () => {
+    kinds: ["Kinds of work", "Which kinds of work your agent takes from Ready. Your team defines them, so every PM on the team has the same ones; each of you chooses which your agent takes, unless the team requires one.", () => {
       const cats = D.categories || [];
       const keys = Object.keys(state.accept);
-      if (!keys.length) return h("p", { class: "muted" }, "Your team hasn't set up any kinds of work yet.");
-      return card("Your agent takes on", null, keys.map((k) => {
-        const c = cats.find((x) => x.id === k), on = !!state.accept[k];
+      const add = btn("New kind of work", { cls: "sm", icon: "plus", fk: "new-kind", on: () => go("settings", { sub: "newkind", focus: false }) });
+      if (!keys.length) return [teamWaiting(), h("p", { class: "muted" }, "Your team hasn't set up any kinds of work yet."), add];
+      const stageName = (st) => (LIFECYCLE.find((x) => x[0] === st) || [null, null])[1];
+      return [teamWaiting(), card("Your agent takes on", null, keys.map((k) => {
+        const c = cats.find((x) => x.id === k), req = !!state.required[k], on = req || !!state.accept[k];
         const rate = c && c.reviews.rate != null ? `Accepted ${Math.round(c.reviews.rate * 100)}%` : "No reviews yet";
-        const status = c && c.paused ? pill("Paused: too many rejections", "bad") : pill(on ? "Taking work" : "Skipping", on ? "" : "off");
-        return h("div", { class: "sr" }, h("div", { class: "nm" }, catName(k), " ", on !== original.accept[k] ? chip("Not saved yet", "new") : null, h("small", null, [rate, c ? `sizes S ${c.sizes.S.minutes} min, M ${c.sizes.M.minutes} min, L ${c.sizes.L.minutes} min` : null].filter(Boolean).join(" · "))),
-          h("div", { class: "ctl" }, status, sw(on, `Your agent takes ${catName(k)}`, () => { state.accept[k] = !state.accept[k]; changed(); }, { fk: `kind-${k}` }),
-            moreMenu(`More for ${catName(k)}`, [{ label: "See it in Agents", on: () => go("agents") }, { label: "Edit its sizes", on: () => go("settings", { sub: "sizes" }) }, c && c.paused ? { label: "Resume it", on: () => resume(k, null) } : null])));
-      }), { badge: scopeChip("me") });
+        const broken = c && c.envProblems && c.envProblems.length ? c.envProblems : null;
+        const status = broken ? pill("Won't run", "bad") : c && c.paused ? pill("Paused: too many rejections", "bad") : pill(on ? "Taking work" : "Skipping", on ? "" : "off");
+        const pend = req !== original.required[k] ? chip("Not saved yet", "new") : on !== (original.required[k] || original.accept[k]) ? chip("Not saved yet", "new") : null;
+        const ctlOn = req
+          ? h("span", { class: "swl", "data-fk": `kind-req-${k}` }, ic("lock"), "Required by your team")
+          : sw(on, `Your agent takes ${catName(k)}`, () => { state.accept[k] = !state.accept[k]; changed(); }, { fk: `kind-${k}` });
+        return h("div", { class: "sr" }, h("div", { class: "nm" }, catName(k), " ", c && c.custom ? chip("Your team's") : null, " ", pend,
+            h("small", null, [c && c.produces ? c.produces : null].filter(Boolean).join("")),
+            h("small", null, [c && c.stage ? stageName(c.stage) : null, c && c.propose ? `Proposed when: ${c.propose.when}` : null, rate].filter(Boolean).join(" · ")),
+            broken ? h("div", { class: "fix" }, `Agents won't run it until its skill is fixed: ${broken.join("; ")}.`) : null),
+          h("div", { class: "ctl" }, status, ctlOn,
+            moreMenu(`More for ${catName(k)}`, [
+              { label: "See it in Agents", on: () => go("agents") },
+              { label: "Edit its sizes", on: () => go("settings", { sub: "sizes" }) },
+              { label: req ? "Stop requiring it for everyone" : "Require it for everyone on the team", on: () => { state.required[k] = !req; changed(); } },
+              c && c.paused ? { label: "Resume it", on: () => resume(k, null) } : null])));
+      }), { badge: scopeChip("me"), btn: add })];
     }],
+    newkind: ["New kind of work", "Fill in what the work is and how an agent does it. PMX sends it to your team as one pull request; when a teammate approves it, every PM on the team has it.", () => newKindForm()],
     sizes: ["Sizes", "How long each size takes an agent, roughly what it costs, and the wording Claude matches when it sizes a task. Changes go to your team as one pull request.", () => [
       teamWaiting(),
       card("Time and cost", null, h("div", { class: "sizegrid" }, SZ.map((z) => h("div", null, h("b", null, `Size ${z}`),
@@ -2555,6 +2578,72 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, "Disconnect this page?"),
       h("div", { class: "mb" }, h("p", null, "Every page connected to PMX on this Mac will show Connect again, and PMX will ask on the Mac before any reconnects.")),
       h("div", { class: "mf" }, btn("Cancel", { cls: "ghost", on: () => closeModal() }), go2)));
+  }
+  // ================= Settings: a new kind of work (JOB-8) =================
+  // The template's fields. Kept while the PM moves around the page, so nothing typed is lost before it's sent.
+  const BLANK_KIND = () => ({ name: "", produces: "", when: "", not: "", stage: "identify", sections: "Summary", steps: "", checks: "", minCitations: 1, externalFacing: false, required: false, S: "", M: "", L: "", XL: "", example: "" });
+  let kindForm = BLANK_KIND(), kindMsg = null, kindBusy = false;
+  const kindSlug = (n) => n.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").replace(/[_\s-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "");
+  function newKindForm() {
+    const f = kindForm;
+    const field = (key, label, hint, o = {}) => h("label", null, label, hint ? h("small", null, hint) : null,
+      h(o.area ? "textarea" : "input", { class: "in", id: `kf-${key}`, "data-fk": `kf-${key}`, "aria-label": label, rows: o.area ? o.rows || 3 : null, type: o.area ? null : o.type || "text", maxlength: o.max || 300, placeholder: o.ph || "", min: o.min, max: o.maxv, value: String(f[key] ?? ""),
+        oninput: (ev) => { f[key] = o.type === "number" ? ev.target.value : ev.target.value; if (key === "name") { const sl = $("kf-slug"); if (sl) sl.textContent = f.name.trim() ? `Its id: ${kindSlug(f.name) || "…"}` : ""; } } }));
+    const toggle = (key, label, hint) => h("div", { class: "sr" }, h("div", { class: "nm" }, label, h("small", null, hint)), sw(!!f[key], label, () => { f[key] = !f[key]; render(); }, { fk: `kf-${key}` }));
+    const send = btn(kindBusy ? "Sending…" : "Send to your team for approval", { cls: "pri", disabled: kindBusy, fk: "kf-send", on: sendKind });
+    return [teamWaiting(),
+      kindMsg ? h("div", { class: `result${kindMsg.ok ? "" : " bad"}`, role: "status" }, kindMsg.text, kindMsg.url ? ext(kindMsg.url, "View the pull request", "btn sm") : null) : null,
+      card("What it is", null, h("div", { class: "kf" },
+        h("div", { class: "fl" }, field("name", "Name", "Two to five words, like Stakeholder update or Prototype brief.", { max: 40, ph: "Stakeholder update" }), h("small", { id: "kf-slug" }, f.name.trim() ? `Its id: ${kindSlug(f.name) || "…"}` : "")),
+        field("produces", "What it produces", "One or two sentences: what a finished draft is and who it's for.", { area: true, rows: 2, ph: "A one-page update for execs: what changed this week, what's at risk and what we need from them." }),
+        h("label", null, "Stage", h("small", null, "Where the work sits in the product's life."), sel(LIFECYCLE.map(([k, n]) => [k, n]), f.stage, (v) => { f.stage = v; }, "Stage", "kf-stage"))), { badge: scopeChip("team") }),
+      card("When PMX proposes it", "Synthesis reads these when it turns meetings and channels into tasks.", h("div", { class: "kf" },
+        field("when", "Propose it when", "What in a meeting or channel should make PMX suggest this work.", { area: true, rows: 2, ph: "A meeting moves a date, changes scope, raises a risk or needs an exec decision." }),
+        field("not", "Don't propose it when (optional)", "What looks close but isn't.", { area: true, rows: 2, ph: "Routine status with nothing changed." }))),
+      card("How an agent does it", null, h("div", { class: "kf" },
+        field("sections", "Sections every draft has", "One per line, in order. A draft missing one fails its checklist.", { area: true, rows: 4, max: 400, ph: "Headline\nWhat changed\nRisks\nAsks" }),
+        field("steps", "Steps the agent follows", "One per line, in order.", { area: true, rows: 5, max: 3600, ph: "Lead with the one change that matters most.\nGive every risk an owner placeholder and a source.\nWrite each ask as a decision, marked PM decides." }),
+        field("checks", "What the reviewer checks (optional)", "One per line, besides sections and sources.", { area: true, rows: 3, max: 2400, ph: "Nothing is promised to customers." }),
+        h("div", { class: "two" }, field("minCitations", "Sources a draft must cite", null, { type: "number", min: 0, maxv: 10, max: 2 })))),
+      card("Who it's for", null, [
+        toggle("externalFacing", "It goes outside the team", "Customers, execs or partners read it. A person always sends it; agents never do."),
+        toggle("required", "Required for everyone on the team", "Every PM's agent takes it, and nobody can switch it off on their own. Otherwise each PM chooses."),
+      ]),
+      card("What each size means (optional)", "How PMX sizes these tasks. Blank ones get a general wording.", SZ.map((z) => h("div", { class: "rub" }, h("b", null, z),
+        h("input", { class: "in", id: `kf-size-${z}`, "data-fk": `kf-size-${z}`, maxlength: 120, value: f[z], "aria-label": `What size ${z} means`, oninput: (ev) => (f[z] = ev.target.value) }))), { fold: true, closed: true }),
+      card("Example situation (optional)", "A few lines of what someone said. PMX uses them for the sample run that checks the skill.", h("div", { class: "kf" },
+        field("example", "Example", null, { area: true, rows: 4, max: 1200, ph: "Weekly sync: \"The beta moves two weeks; import isn't ready.\"" })), { fold: true, closed: true }),
+      h("div", { class: "kf" }, h("div", { class: "acts" }, send, btn("Clear the form", { cls: "ghost", fk: "kf-clear", on: () => { kindForm = BLANK_KIND(); kindMsg = null; render(); } }),
+        h("small", null, "Nothing changes for anyone until a teammate approves the pull request."))),
+    ];
+  }
+  async function sendKind() {
+    if (kindBusy) return;
+    const f = kindForm, lines = (v) => String(v || "").split("\n").map((x) => x.trim()).filter(Boolean);
+    const draft = { name: f.name.trim(), produces: f.produces.trim(), when: f.when.trim(), not: f.not.trim() || null, stage: f.stage, sections: lines(f.sections), steps: lines(f.steps), checks: lines(f.checks),
+      minCitations: f.minCitations === "" ? 1 : Number(f.minCitations), externalFacing: !!f.externalFacing, required: !!f.required, sizes: Object.fromEntries(SZ.map((z) => [z, f[z].trim()])), example: f.example.trim() || null };
+    const missing = [["name", "a name"], ["produces", "what it produces"], ["when", "when to propose it"], ["steps", "at least one step"]].filter(([k]) => !String(f[k] || "").trim()).map(([, n]) => n);
+    if (missing.length) { kindMsg = { ok: false, text: `Fill in ${missing.join(", ")} first.` }; render(); return; }
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    kindBusy = true; kindMsg = null; render();
+    try {
+      const r = await act("changes", { changes: [{ kind: "new-kind", draft }], confirmLoosening: false });
+      kindBusy = false;
+      if (r.prError) { kindMsg = { ok: false, text: `It couldn't be sent: ${r.prError}` }; render(); toast("The new kind of work couldn't be sent.", { error: true }); return; }
+      kindForm = BLANK_KIND();
+      kindMsg = { ok: true, text: `Sent "${draft.name}" to your team for approval. When it merges, every PM on the team has it${draft.required ? " and their agents take it" : ", and your agent takes it"}.`, url: r.pr && r.pr.url };
+      // Other unsaved settings stay as they are: the reload keeps edits in progress.
+      await load();
+      // The PM pressed Send, so the form redraws now even if a field still has focus.
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      render();
+      toast(`"${draft.name}" is waiting for your team's approval.`);
+    } catch (e) {
+      kindBusy = false;
+      kindMsg = { ok: false, text: e.message };
+      if (e.code === "not_paired") { lostPairing(); return; }
+      render();
+    }
   }
   function settingsScreen() {
     if (!PANES[S.pref]) S.pref = "sources";
@@ -2609,7 +2698,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       h("div", { class: "mf" }, btn(ch.length ? "Keep editing" : "Done", { cls: "ghost", on: () => closeModal() }), ch.length ? save : null));
   }
   const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept", "digestDay", "digestDm", "calls", "todosLinear"];
-  const TEAMKEYS = ["teamDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth"];
+  const TEAMKEYS = ["teamDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth", "required"];
   async function apply() {
     if (applying) return;
     const ch = diff(), loose = ch.some((c) => c.loosens), before = clone(original);

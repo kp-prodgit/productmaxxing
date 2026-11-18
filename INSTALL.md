@@ -4,7 +4,7 @@ This guide is written for **Claude Code** to follow on a PM's Mac. To use it, op
 
 > Install PMX following https://github.com/kp-prodgit/productmaxxing/blob/main/INSTALL.md
 
-Version: **0.25.1**. Package: `productmaxxing-0.25.1.tgz` from the [v0.25.1 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.25.1).
+Version: **0.26.0**. Package: `productmaxxing-0.26.0.tgz` from the [v0.26.0 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.26.0).
 
 ---
 
@@ -42,7 +42,7 @@ Fixes:
 
 If `pmx --version` printed a version, this is an upgrade. Note that version. Follow the same steps, with these differences:
 - **Tell the user what's new.** After step 3, run `pmx whats-new --since <the version you noted>` and summarize it for the user in a few lines, with the commands it suggests trying.
-- **An old version named Product Git (0.14.0 or older).** Product Git is now ProductMaxxing, and the npm package was renamed from `productgit` to `productmaxxing`. npm won't install the new package over the old one's `pmx` command, so in step 2 run `npm uninstall -g productgit` just before `npm install -g ./productmaxxing-0.25.1.tgz`. This keeps `~/.pmx`, settings and keychain items; the first `pmx` command afterwards moves the keychain items and the background job to their new names.
+- **An old version named Product Git (0.14.0 or older).** Product Git is now ProductMaxxing, and the npm package was renamed from `productgit` to `productmaxxing`. npm won't install the new package over the old one's `pmx` command, so in step 2 run `npm uninstall -g productgit` just before `npm install -g ./productmaxxing-0.26.0.tgz`. This keeps `~/.pmx`, settings and keychain items; the first `pmx` command afterwards moves the keychain items and the background job to their new names.
 - **Restart the Claude app before using the PMX page.** The Claude app keeps running PMX's server (`pmx mcp`) with the code it started with, so after an upgrade from 0.24.0 or older the PMX page in Claude talks to the old server until the app restarts. Ask the user to quit the Claude app completely (⌘Q, not just closing its window) and open it again. If you are running inside the Claude app, say this last, since quitting ends this session. `pmx doctor` warns (`flow.mcp-old`) while an old server is still running. From 0.25.1 on, PMX's server switches to a newly installed pmx by itself, and no restart is needed.
 - **Publish the user's PMX pages in Claude again.** A page published with `/pmx-flow` or `/pmx-board` keeps the code of the pmx that published it until it's published again. If `pmx whats-new` ends with "Update your PMX page(s) in Claude", use the `pmx-flow` skill (and `pmx-board`, if it's listed) in this session to publish each one again with the same link. If this session can't publish artifacts, ask the user to type `/pmx-flow` (and `/pmx-board`) in the Claude app.
 - **Never run `pmx uninstall`.** It deletes `~/.pmx` (the user's settings, to-dos, collected transcripts, drafts and run receipts), PMX's keychain items and the background job. Installing over the old version keeps all of them.
@@ -57,19 +57,19 @@ Download the package and its checksum file into a new empty folder, check the ch
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.25.1/productmaxxing-0.25.1.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.25.1/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.26.0/productmaxxing-0.26.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.26.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.25.1.tgz
+npm install -g ./productmaxxing-0.26.0.tgz
 ```
 
-If `shasum` doesn't print `productmaxxing-0.25.1.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
+If `shasum` doesn't print `productmaxxing-0.26.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
 
 **Joining a team that already uses PMX?** Install your team's version instead. Clone the team's PMX repo (ask the team lead for its URL), then run `npm install -g <repo>/.pmx/cli/productmaxxing.tgz`.
 
 ### Step 3: verify
 
-- `pmx --version` prints `0.25.1`, or the team's version.
+- `pmx --version` prints `0.26.0`, or the team's version.
 - `command -v pmx` is inside the folder `npm prefix -g` printed.
 
 If `pmx` isn't found, the npm global `bin` folder isn't on PATH. Tell the user to open a new Terminal window, or add `$(npm prefix -g)/bin` to their PATH.

@@ -2,7 +2,7 @@ import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { decide, loadQueue, type Verdict } from "../review/queue.js";
 import { approveProposals, dropProposals } from "../synth/proposals.js";
-import { applyPersonal, checkChange, describe, isTeamChange, loosens, proposeTeamChanges } from "./actions.js";
+import { applyPersonal, checkChange, describe, isTeamChange, loosens, proposeTeamChanges, saveTakes } from "./actions.js";
 import { checkNeverIngest, whatIf } from "./edit.js";
 import { loadPipeline } from "./pipeline-load.js";
 import { rememberTeamPr } from "./team-prs.js";
@@ -54,6 +54,9 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
           const r = await proposeTeamChanges(ctx, team);
           await rememberTeamPr({ id: r.id, url: r.url, at: ctx.now().toISOString(), changes: team.map(describe) });
           pr = { url: r.url };
+          // Whoever proposes a kind of work wants their own agent to take it once it merges (JOB-8).
+          const made = team.flatMap((c) => (c.kind === "new-kind" ? [c.slug] : []));
+          if (made.length) await saveTakes(ctx.personal, made);
         } catch (e: any) { prError = e.message; }
       }
       return { status: 200, body: { applied, pr, prError } };

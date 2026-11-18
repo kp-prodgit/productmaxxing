@@ -27,6 +27,10 @@ export const paths = {
   /** Individual to-dos (TODO-1): private, local, never synced. */
   todos: () => join(pmxHome(), "todos.json"),
   worktrees: () => join(pmxHome(), "worktrees"),
+  /** Org skills synced from Linear (JOB, tiered trust): a per-machine cache, never the git repo. */
+  orgSkills: () => join(pmxHome(), "org-skills"),
+  /** Raw skill docs the Linear sync task exports for `pmx skills sync` to validate and materialize. */
+  orgSkillsExport: () => join(pmxHome(), "linear", "skills"),
   logs: () => join(pmxHome(), "logs"),
   launchAgent: () => join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
 };

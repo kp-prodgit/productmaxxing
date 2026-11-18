@@ -40,7 +40,7 @@ export interface RunReceipt {
   skippedSources: string[];
   sources: SourceReceipt[];
   masked: Record<RedactionKind, number>;
-  skills: { name: string; version: string; source: "team" | "bundled" }[];
+  skills: { name: string; version: string; source: "team" | "org" | "bundled" }[];
   model: { name: string; runtime: string; tools: string; costUsd: number | null; tokens: number | null; durationMs: number; promptSha256: string } | null;
   digest?: { cited: string[]; removedClaims: number; staged: string };
   synth?: { tasks: TaskReceipt[]; skipped: string[] };

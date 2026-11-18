@@ -26,7 +26,11 @@ import { writeJson } from "../core/fsutil.js";
 import { TEAM_CONFIG_FILE } from "../core/paths.js";
 import { join } from "node:path";
 import { listReceipts, readReceipt } from "../core/receipt.js";
-import { skillInventory } from "../core/skills.js";
+import { skillInventory, teamSkillPath } from "../core/skills.js";
+import { syncOrgSkills, validateOrgSkill } from "../core/org-skills.js";
+import { enqueueSkillDoc } from "../tracker/relay.js";
+import { linearAccess } from "../linear/access.js";
+import { readFile } from "node:fs/promises";
 import { formatReceipt, formatSkills } from "../explain/format.js";
 import { resolveLive } from "../explain/resolve.js";
 import { startExplainServer } from "../explain/server.js";
@@ -34,12 +38,14 @@ import { pullStep, releaseStep, synthStep, teamCommands } from "./team.js";
 import { reviewCommand } from "./review.js";
 import { cloudCommands } from "./cloud.js";
 import { companyStep, meetingCommands, todoStep } from "./meetings.js";
+import { teamSyncStep } from "./team-sync.js";
 import { updateStep } from "./autoupdate.js";
 import { stalePages } from "../claude/pages.js";
 import { afterUpdateNote } from "../mcp/handoff.js";
 import { linearCommands } from "./linear.js";
 import { flowCommands } from "./flow.js";
 import { settingsCommands } from "./settings.js";
+import { jobsCommands } from "./jobs.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
 import { syncAnalytics } from "../cloud/account.js";
 
@@ -63,7 +69,8 @@ const yes = { yes: { type: "boolean", short: "y" } } as const;
 
 /** Steps `pmx tick` runs, in order. Later milestones add synthesis and pull. */
 export const tickSteps: [string, TickStep][] = [
-  // First, so the rest of a pass never runs on a version the team has moved past (COMPAT-6).
+  // The team's repo first (JOB-10), so this Mac picks up merged kinds of work and settings; then its version (COMPAT-6).
+  ["team", teamSyncStep],
   ["update", updateStep],
   ["digest", digestStep],
   ["todo", todoStep],
@@ -231,9 +238,38 @@ export const commands: Command[] = [
   },
   {
     name: "skills",
-    summary: "List the Claude skills PMX can use, what each does and when it runs",
-    options: { json: { type: "boolean" } },
+    summary: "List the Claude skills PMX can use; `sync` pulls your org's skills from Linear, `publish` shares one with the team",
+    usage: "pmx skills [--json] | pmx skills sync [--from <dir>] | pmx skills publish <name>",
+    options: { json: { type: "boolean" }, from: { type: "string" } },
     async run(a) {
+      if (a.positionals[0] === "sync") {
+        const r = await syncOrgSkills({ fromDir: a.values.from });
+        const lines = [`Synced org skills from ${r.from}.`];
+        if (!r.adopted.length && !r.rejected.length) lines.push("Nothing to sync yet — no exported org skills found.");
+        if (r.adopted.length) lines.push(`Adopted (now runnable): ${r.adopted.join(", ")}`);
+        for (const x of r.rejected) lines.push(`Refused ${x.name}: ${x.reasons.join("; ")}`);
+        console.log(lines.join("\n"));
+        return r.rejected.length ? 1 : 0;
+      }
+      if (a.positionals[0] === "publish") {
+        const name = a.positionals[1];
+        if (!name) throw new Error("Give a skill name: pmx skills publish <name>");
+        const ctx = await a.ctx();
+        const path = teamSkillPath(ctx.personal.repoPath, name);
+        const text = await readFile(path, "utf8").catch(() => null);
+        if (!text) throw new Error(`No skill at ${path}. Author it first with \`pmx jobs new ${name}\`, then commit it.`);
+        const { reasons } = await validateOrgSkill(text, name);
+        if (reasons.length) throw new Error(`Can't publish "${name}": ${reasons.join("; ")}`);
+        const access = await linearAccess(ctx.team, ctx.keychain);
+        if (access !== "relay") {
+          console.log(`Publishing with a Linear key or sign-in isn't wired yet; you're on "${access}". For now org-skill publish rides the Claude relay (the default).`);
+          return 1;
+        }
+        await enqueueSkillDoc(name, text, ctx.now);
+        console.log(`Queued "${name}" to publish as the Linear document "pmx-skill:${name}". The next "PMX: sync Linear through Claude" run uploads it; teammates then get it with \`pmx skills sync\`.`);
+        return 0;
+      }
+      if (a.positionals[0]) throw new Error(`Unknown subcommand "${a.positionals[0]}". Use sync or publish.`);
       const personal = await loadPersonalConfig();
       const team = await loadTeamConfig(personal.repoPath);
       const skills = await skillInventory(personal.repoPath, team.categories);
@@ -319,6 +355,7 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
   ...teamCommands,
   ...flowCommands,
   ...settingsCommands,
+  ...jobsCommands,
   {
     name: "whats-new",
     summary: "What's new in this pmx, or in every version after one you name; --json for Claude and scripts (NEW-1)",

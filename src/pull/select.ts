@@ -1,5 +1,5 @@
 import { budgetBlock, type Budget } from "../budget/provider.js";
-import type { PersonalConfig, TeamConfig } from "../core/config.js";
+import { takesCategory, type PersonalConfig, type TeamConfig } from "../core/config.js";
 import type { Task } from "../core/types.js";
 
 export interface Decision {
@@ -51,7 +51,7 @@ export function selectTasks(i: SelectInput): Selection {
   const decisions: Decision[] = ready.map((t) => {
     const no = (why: string): Decision => ({ task: t, ok: false, why });
     if (!t.category || !i.team.categories[t.category]) return no(`category "${t.category ?? "none"}" has no skill in team config`);
-    if (!i.personal.categories.includes(t.category)) return no(`you don't accept ${t.category}`);
+    if (!takesCategory(i.personal, i.team, t.category)) return no(`you don't accept ${t.category}`);
     const paused = i.pausedCategories.get(t.category);
     if (paused) return no(`${t.category} is paused: ${paused}`);
     if (!t.size) return no("no size label");

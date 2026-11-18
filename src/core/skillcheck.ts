@@ -9,6 +9,10 @@ export interface SkillMeta {
   output?: string;
   requiredHeadings?: string[];
   minCitations?: number;
+  /** How a job runs — the environment binding (JOB-1). See resolveEnv/validateEnv. */
+  env?: RawEnv;
+  /** When synthesis should propose this kind of work (JOB-8): what in the evidence calls for it, and what doesn't. */
+  propose?: { when?: string; not?: string };
 }
 
 export function skillMeta(skillText: string): SkillMeta {
@@ -16,6 +20,100 @@ export function skillMeta(skillText: string): SkillMeta {
   const line = fm?.[1]?.split("\n").find((l) => l.startsWith("pmx:"));
   if (!line) return { kind: "core" };
   return JSON.parse(line.slice(4).trim()) as SkillMeta;
+}
+
+/**
+ * The "environment" a job runs in (JOB-1): the runner binding an org can define per job.
+ * Slice 0 only HONORS `kind: "document"` at run time; "brief"/"prototype" are reserved and a
+ * run against them fails closed. `tools`/`output`/`maxTurns` for the document path default to
+ * today's exact behavior, so existing jobs are unchanged. Secrets and egress never live here
+ * (SKILL.md is the public export) — allowed domains stay in CODEOWNERS'd pmx.config.json.
+ */
+export type EnvKind = "document" | "brief" | "prototype";
+export const ENV_KINDS: EnvKind[] = ["document", "brief", "prototype"];
+export type OutputKind = "file" | "repo" | "url";
+export const OUTPUT_KINDS: OutputKind[] = ["file", "repo", "url"];
+/** The sealed tool allowlist a `document` job runs with today (P3). */
+export const DEFAULT_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep"] as const;
+/** Tools a job's env may name at all; document jobs are further restricted to DEFAULT_TOOLS. */
+export const KNOWN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch", "NotebookEdit"];
+
+/** env as authored in the `pmx:` block — every field optional. */
+export interface RawEnv {
+  kind?: EnvKind;
+  tools?: string[];
+  template?: string | null;
+  runtime?: string | null;
+  output?: { kind?: OutputKind; path?: string };
+  maxTurns?: number | null;
+}
+
+/** env with every field filled, as the runner and UI consume it. */
+export interface EnvDef {
+  kind: EnvKind;
+  tools: string[];
+  template: string | null;
+  runtime: string | null;
+  output: { kind: OutputKind; path: string };
+  maxTurns: number | null;
+}
+
+/** The default output path for a kind, when a job doesn't name one. `file` keeps today's exact path. */
+function defaultOutputPath(kind: OutputKind, category: string): string {
+  if (kind === "repo") return `prototypes/${category}/{id}`;
+  if (kind === "url") return `prototypes/${category}/{id}/PREVIEW.url`;
+  return `outputs/${category}/{id}.md`;
+}
+
+/** Fill a job's authored env with defaults equal to today's behavior. */
+export function resolveEnv(meta: SkillMeta, category?: string | null): EnvDef {
+  const e = meta.env ?? {};
+  const outKind: OutputKind = e.output?.kind ?? "file";
+  return {
+    kind: e.kind ?? "document",
+    tools: e.tools && e.tools.length ? e.tools : [...DEFAULT_TOOLS],
+    template: e.template ?? null,
+    runtime: e.runtime ?? null,
+    output: {
+      kind: outKind,
+      path: e.output?.path ?? defaultOutputPath(outKind, category ?? "{category}"),
+    },
+    maxTurns: e.maxTurns ?? null,
+  };
+}
+
+/** Resolve a job's output path for one task: substitutes {category} and {id}. */
+export function materializeOutput(env: EnvDef, category: string, id: string): string {
+  return env.output.path.replaceAll("{category}", category).replaceAll("{id}", id);
+}
+
+/**
+ * Validate an authored env (JOB-1), fail closed. A `document` job may not widen tools beyond the
+ * sealed default set or change its output kind — widening needs a non-document environment, which
+ * only a reviewed PR (CODEOWNERS) can introduce. Returns a list of problems (empty = valid).
+ */
+export function validateEnv(env: RawEnv | undefined): string[] {
+  if (!env) return [];
+  const problems: string[] = [];
+  const kind = env.kind ?? "document";
+  if (!ENV_KINDS.includes(kind)) problems.push(`env.kind must be one of ${ENV_KINDS.join(", ")}`);
+  if (env.tools !== undefined) {
+    if (!Array.isArray(env.tools) || env.tools.some((t) => typeof t !== "string")) problems.push("env.tools must be a list of tool names");
+    else if (env.tools.length === 0) problems.push("env.tools must not be empty");
+    else {
+      const unknown = env.tools.filter((t) => !KNOWN_TOOLS.includes(t));
+      if (unknown.length) problems.push(`env.tools has unknown tools: ${unknown.join(", ")}`);
+      if (kind === "document") {
+        const widened = env.tools.filter((t) => !(DEFAULT_TOOLS as readonly string[]).includes(t));
+        if (widened.length) problems.push(`a "document" job may not use ${widened.join(", ")}; widening tools needs a non-document environment (reviewed via PR)`);
+      }
+    }
+  }
+  if (env.output?.kind !== undefined && !OUTPUT_KINDS.includes(env.output.kind)) problems.push(`env.output.kind must be one of ${OUTPUT_KINDS.join(", ")}`);
+  if (kind === "document" && env.output?.kind && env.output.kind !== "file") problems.push(`a "document" job must have env.output.kind "file"`);
+  if (env.maxTurns !== undefined && env.maxTurns !== null && (!Number.isInteger(env.maxTurns) || env.maxTurns <= 0 || env.maxTurns > 200)) problems.push("env.maxTurns must be a positive integer ≤ 200");
+  if ((env as Record<string, unknown>).egress !== undefined) problems.push("env must not define egress; set allowed domains in pmx.config.json `egress` (CODEOWNERS-reviewed)");
+  return problems;
 }
 
 export function skillName(skillText: string): string | null {

@@ -43,7 +43,7 @@ export interface BrainReceipt {
   level: BrainPolicy["level"];
   policyVersion: number;
   dryRun: boolean;
-  skill: { name: string; version: string; source: "team" | "bundled" };
+  skill: { name: string; version: string; source: "team" | "org" | "bundled" };
   model: { name: string; costUsd: number | null; tokens: number | null; durationMs: number; promptSha256: string } | null;
   board: { inbox: number; ready: number; inFlight: number; review: number; blocked: number };
   limits: { reviewQueue: string; budgetLeftUsd: number; runsToday: number; killSwitch: boolean; paused: string[] };

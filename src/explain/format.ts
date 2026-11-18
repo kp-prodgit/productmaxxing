@@ -69,7 +69,7 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
   });
   out.push("", `3. Masked before Claude saw it: ${maskedText(r.masked)}`);
   if (r.model) {
-    const skills = r.skills.map((k) => `${k.name} (${k.source === "team" ? "team copy" : "built-in copy"}, version ${k.version})`).join(" + ");
+    const skills = r.skills.map((k) => `${k.name} (${k.source === "team" ? "team copy" : k.source === "org" ? "org copy (synced)" : "built-in copy"}, version ${k.version})`).join(" + ");
     out.push("", `4. Claude wrote the draft: ${r.model.name} using ${skills}`, `   Tools: ${r.model.tools}`, `   ${money(r.model.costUsd)} · ${(r.model.durationMs / 1000).toFixed(1)}s`);
   }
   if (r.digest) {
@@ -108,6 +108,7 @@ export function formatSkills(skills: SkillInfo[]): string {
     out.push(`${s.name}  ·  ${s.status}  ·  version ${s.version}`);
     out.push(`   ${s.description}`);
     out.push(`   When: ${s.usedBy}`);
+    out.push(`   Env: ${s.env.kind} · tools ${s.env.tools.join(", ")} · output ${s.env.output.kind}${s.envProblems.length ? `  ⚠️ ${s.envProblems.join("; ")}` : ""}`);
     out.push(`   File: ${tilde(s.path)}`, "");
   }
   return out.join("\n").trimEnd();

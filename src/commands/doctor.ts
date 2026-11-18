@@ -32,6 +32,7 @@ import { privacyRules } from "../digest/gather.js";
 import { OLD, renameLeftovers } from "../core/rename.js";
 import { budget, budgetBlock } from "../budget/provider.js";
 import { mcpHealth } from "../mcp/server.js";
+import { teamSyncProblem } from "./team-sync.js";
 
 export interface DoctorDeps {
   team: TeamConfig | null;
@@ -168,6 +169,9 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
       ? `auto-update on; last check ${au.checkedAt.slice(0, 16).replace("T", " ")}: ${stuck ? `pmx ${au.version} is waiting, run \`pmx update\`` : au.result === "dev-install" ? "source checkout, not replaced" : au.result}`
       : "auto-update on; the background job hasn't checked yet", "warn");
   }
+  // JOB-10: a checkout that stopped following the team's repo means different kinds of work from everyone else's.
+  const behind = teamSyncProblem(st, d.now?.() ?? new Date());
+  if (behind) add("team.sync", false, behind, "warn");
   const cloud = st.cloudVersions;
   if (cloud?.latest) add("cli.latest", (compareVersions(cloud.latest, current) ?? 0) <= 0, `latest release is pmx ${cloud.latest}`, "warn");
 

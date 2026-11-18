@@ -1,5 +1,6 @@
 import type { TeamConfig } from "../core/config.js";
 import { envFingerprint, profileChecks } from "../core/profile.js";
+import type { OutputKind } from "../core/skillcheck.js";
 
 /**
  * The run record (B5, NEUT-3). Committed with every output at `.pmx/runs/<task>.json`, so anyone
@@ -14,7 +15,7 @@ export interface RunRecord {
   runtime: { name: string; version: string | null };
   model: string;
   profile: { checksPassed: string[]; checksFailed: string[]; fingerprint: string };
-  skill: { name: string; version: string; commit: string | null };
+  skill: { name: string; version: string; commit: string | null; source: "team" | "org" | "bundled"; allowlisted: boolean };
   context: { claudeMdCommit: string | null; memoryCommit: string | null; baseCommit: string };
   lease: { kind: "git" | "cloud"; token: string };
   startedAt: string;
@@ -23,6 +24,8 @@ export interface RunRecord {
   costUsd: number | null;
   outcome: "ok" | "failed" | "capped";
   checklist: { ok: boolean; problems: string[] };
+  /** What the run produced and where (JOB-1): a Markdown file, a prototype directory, or a preview URL. */
+  artifact: { kind: OutputKind; ref: string };
 }
 
 export async function profileSummary(repoPath: string, team: TeamConfig): Promise<RunRecord["profile"]> {

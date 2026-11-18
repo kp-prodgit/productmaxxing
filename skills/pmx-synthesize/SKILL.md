@@ -40,7 +40,9 @@ A single JSON object and nothing else:
 - When the prompt lists what's already on the team's list and a need is the same as one of those, return it with
   `"sameAs"` set to that ID. PMX adds your sources to it instead of making a second task.
 - Only propose work an agent can finish as a written draft with a repo checkout and the cited sources, in one
-  of the categories listed in the prompt. Choose the category by its description. No code changes, no outreach.
+  of the categories listed in the prompt. Choose the category by its description, and when a category says
+  "Propose it when" or "Don't propose it when", follow that. A draft a person then sends, posts or applies (an
+  update for stakeholders, proposed tracker changes) is fine; the agent itself never changes code, sends or posts.
 - Frame each task around the customer's problem, not the solution someone asked for.
 - Never propose anything about a colleague's performance, pay, health or 1:1s.
 - Redaction placeholders like `[PERSON-2]` stay as they are.

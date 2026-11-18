@@ -1,3 +1,4 @@
+import { DEFAULT_TEAM, type TeamCategory } from "../core/config.js";
 import { HOLD_LABELS, type HoldReason } from "../core/filter.js";
 import type { SynthStatus } from "../synth/status.js";
 import { COMMITMENT } from "../todo/todo.js";
@@ -13,6 +14,8 @@ import type { ActivityItem, Automation } from "./automations.js";
 import type { DigestBoard } from "./digests.js";
 import type { InputsBoard } from "../inputs/board.js";
 import type { Job } from "./jobs.js";
+
+const BUILT_IN_CATEGORIES = new Set(Object.keys(DEFAULT_TEAM.categories));
 
 /**
  * The pipeline board's data (BOARD-3): what PMX read, held, sent to Claude and Linear, and what happened next, plus the
@@ -61,10 +64,20 @@ export interface PipelineCategory {
   /** The lifecycle stage from the skill's `pmx:` line (CAT-2), or null for a skill that doesn't say. */
   stage: Stage | null;
   skill: { name: string; version: string | null; copy: string | null; missing: boolean };
+  /** How this job runs (JOB-1): its environment kind, tool allowlist and output shape. Null when the skill is missing. */
+  env: { kind: string; tools: string[]; output: string } | null;
+  /** Problems with the job's authored environment (empty = valid); a job with problems is refused at run time. */
+  envProblems: string[];
   output: string | null;
   sections: string[];
   minCitations: number;
   externalFacing: boolean;
+  /** Every PM's agent on the team takes it; the switch is locked on (JOB-9). */
+  required: boolean;
+  /** The team made it with the kind-of-work template (or by hand), rather than it coming with PMX (JOB-8). */
+  custom: boolean;
+  /** When synthesis should propose it, from the skill's `pmx.propose` (JOB-8). Null for a skill that doesn't say. */
+  propose: { when: string; not: string | null } | null;
   sizes: Record<Size, { minutes: number; usd: number; text: string }>;
   takenOn: boolean;
   paused: string | null;
@@ -133,7 +146,7 @@ export interface PipelineRules {
   /** Local: the entries. Shared: how many of each, never the entries. */
   neverIngest: { people: string[] | number; titles: string[] | number; channels: string[] | number };
   budget: { dailyUsd: number | null; teamCap: number; spentUsd: number; tokens: number };
-  categories: { name: string; accepted: boolean }[];
+  categories: { name: string; accepted: boolean; required?: boolean }[];
   reviewCap: number;
   sizes: Record<Size, { minutes: number; usd: number }>;
   rubric: Record<string, Record<Size, string>>;
@@ -168,7 +181,7 @@ export interface PipelineInputs {
   lastTick: string | null;
   skills: (SkillInfo & { runsInWindow: number })[];
   /** The team's categories as pmx.config.json has them. */
-  teamCategories?: Record<string, { skill: string; externalFacing?: boolean }>;
+  teamCategories?: Record<string, TeamCategory>;
   /** Paused categories with the reason (REV-3). */
   paused?: Map<string, string>;
   autoPause?: { windowDays: number; threshold: number; minVerdicts: number };
@@ -214,7 +227,7 @@ export function splitDescription(id: string, description: string): { name: strin
 }
 
 function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "run" }>[]): { categories: PipelineCategory[]; unknown: PipelineData["unknownCategories"] } {
-  const cfg: Record<string, { skill: string; externalFacing?: boolean }> = i.teamCategories ?? Object.fromEntries(i.rules.categories.map((c) => [c.name, { skill: i.skills.find((s) => s.category === c.name)?.name ?? "" }]));
+  const cfg: Record<string, TeamCategory> = i.teamCategories ?? Object.fromEntries(i.rules.categories.map((c) => [c.name, { skill: i.skills.find((s) => s.category === c.name)?.name ?? "" }]));
   const ap = i.autoPause ?? { windowDays: 30, threshold: 0.3, minVerdicts: 5 };
   const days = ap.windowDays;
   const stats = acceptStats(i.runlog ?? [], i.now, days);
@@ -228,11 +241,16 @@ function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "
     return {
       id, name, produces,
       stage: STAGES.find((s) => s === sk?.check?.stage) ?? DEFAULT_STAGE[id] ?? null,
-      skill: { name: c.skill, version: sk?.version ?? null, copy: sk ? (sk.runs === "team" ? "team's copy" : "built-in") : null, missing: !sk },
+      skill: { name: c.skill, version: sk?.version ?? null, copy: sk ? (sk.runs === "team" ? "team's copy" : sk.runs === "org" ? "org (synced)" : "built-in") : null, missing: !sk },
+      env: sk?.env ? { kind: sk.env.kind, tools: sk.env.tools, output: sk.env.output.kind } : null,
+      envProblems: sk?.envProblems ?? [],
       output: sk?.check?.output ?? null, sections: sk?.check?.sections ?? [], minCitations: sk?.check?.minCitations ?? 0,
       externalFacing: !!c.externalFacing,
+      required: !!c.required,
+      custom: !BUILT_IN_CATEGORIES.has(id),
+      propose: sk?.propose ? { when: sk.propose.when, not: sk.propose.not ?? null } : null,
       sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: i.rules.sizes[z].minutes, usd: i.rules.sizes[z].usd, text: i.rules.rubric[id]?.[z] ?? "" }])) as PipelineCategory["sizes"],
-      takenOn: !!i.rules.categories.find((x) => x.name === id)?.accepted,
+      takenOn: !!(i.rules.categories.find((x) => x.name === id)?.accepted || c.required),
       paused: i.paused?.get(id) ?? null,
       tasks: {
         proposed: i.proposals.filter((p) => p.category === id).length,

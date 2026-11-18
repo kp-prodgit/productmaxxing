@@ -144,7 +144,7 @@ describe("0.16.0: the pipeline board (BOARD-3)", () => {
     const cfg = JSON.parse(await ctx.repo.ok(["show", `${r.branch}:pmx.config.json`]));
     expect(cfg).toMatchObject({ reviewQueueCap: 5, internalDomains: ["us.com", "us.example.com"], sizes: { M: { minutes: 45 } } });
     expect(await ctx.repo.ok(["show", `${r.branch}:.claude/skills/pmx-size/SKILL.md`])).toMatch(/\| spec \| Problem statement and goals \| One-pager \|/);
-    expect(() => setRubricCell("no table", "spec", "S", "x")).toThrow(/no spec row/);
+    expect(() => setRubricCell("no table", "spec", "S", "x")).toThrow(/no per-category table/);
   });
 
   it("the local page's writes need the token and JSON; loosening needs a confirmation; the artifact's tool gets the shared level", async () => {
@@ -277,6 +277,7 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
   const specSkill = {
     name: "pmx-spec", description: "Spec drafting. Writes a one-pager or PRD draft.", kind: "category", category: "spec", usedBy: "", runs: "team", version: "abc", status: "same as built-in", path: "",
     runsInWindow: 1, check: { output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2, stage: "productionize" },
+    env: { kind: "document", tools: ["Read", "Write", "Edit", "Glob", "Grep"], template: null, runtime: null, output: { kind: "file", path: "outputs/spec/{id}.md" }, maxTurns: null }, envProblems: [],
   } as PipelineInputs["skills"][number];
   const withCats = (level: "local" | "shared"): PipelineInputs => {
     const i = inputs(level);
@@ -299,7 +300,9 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
     expect(spec).toEqual({
       id: "spec", name: "Spec drafting", produces: "Writes a one-pager or PRD draft.", stage: "productionize",
       skill: { name: "pmx-spec", version: "abc", copy: "team's copy", missing: false },
+      env: { kind: "document", tools: ["Read", "Write", "Edit", "Glob", "Grep"], output: "file" }, envProblems: [],
       output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2, externalFacing: false,
+      required: false, custom: false, propose: null,
       sizes: { S: { minutes: 15, usd: 0.5, text: "a" }, M: { minutes: 30, usd: 1.5, text: "b" }, L: { minutes: 60, usd: 4, text: "c" }, XL: { minutes: 120, usd: 8, text: "d" } },
       takenOn: true, paused: null,
       tasks: { proposed: 1, inbox: 1, ready: 1, working: 0, review: 1, done: 0, blocked: 0 },
@@ -307,7 +310,7 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
       reviews: { accepted: 1, redo: 0, rejected: 0, rate: 1, days: 30, pauseBelow: 0.3, minReviews: 5 },
     });
     // A category whose skill doesn't exist says so, and keeps its pause and customer-facing flag.
-    expect(notes).toMatchObject({ id: "release-notes", name: "Release notes", stage: null, skill: { name: "pmx-release-notes", missing: true, copy: null }, output: null, externalFacing: true, takenOn: false, paused: "accept rate 20% over 5 reviews", reviews: { rate: null } });
+    expect(notes).toMatchObject({ id: "release-notes", name: "Release notes", custom: true, stage: null, skill: { name: "pmx-release-notes", missing: true, copy: null }, output: null, externalFacing: true, takenOn: false, paused: "accept rate 20% over 5 reviews", reviews: { rate: null } });
   });
 
   it("Linear tasks in a category no skill handles are listed, open ones only; the shared page gets the same counts and no titles", () => {

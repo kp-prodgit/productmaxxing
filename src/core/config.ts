@@ -10,8 +10,12 @@ export interface TeamConfig {
   team: string;
   /** Fixed model for every run, so results don't depend on the runner (NEUT-1). */
   model: string;
-  /** Category → skill. Adding a category is one line here plus a skill folder (SKILL-2). */
-  categories: Record<string, { skill: string; externalFacing?: boolean }>;
+  /**
+   * Category → skill. Adding a category is one line here plus a skill folder (SKILL-2). `required` (JOB-9): every PM's
+   * agent on the team takes it, and nobody can switch it off on their own, so the team's kinds of work are the same
+   * everywhere. Otherwise each PM chooses in Settings.
+   */
+  categories: Record<string, TeamCategory>;
   sizes: Record<Size, { minutes: number; costUsd: number }>;
   tracker: { kind: "linear"; teamKey: string; projectId: string } | { kind: "none" };
   lease: "git" | "cloud";
@@ -41,9 +45,27 @@ export interface TeamConfig {
    * every machine's background job installs the team's version by itself (COMPAT-6, `--auto-update`).
    */
   cli?: { min: string; autoUpdate?: boolean } | null;
+  /**
+   * Org-skill hash allowlist (JOB, tiered trust): skill name → approved 12-hex content hash, CODEOWNERS-reviewed.
+   * When set, a Linear-synced ("org") skill runs only if its hash is pinned here (fail closed); dropping a hash is
+   * an instant kill. Unset = synced document skills run as-is (the default tier). Team and bundled skills, which git
+   * already reviews, are never gated by this.
+   */
+  skills?: Record<string, string> | null;
   company?: { teams: { name: string; teamKey: string; projectId: string }[]; machine: string | null } | null;
   /** The team's live board, a Claude artifact everyone opens (BOARD-1). */
   board?: { url: string } | null;
+}
+
+export interface TeamCategory { skill: string; externalFacing?: boolean; required?: boolean }
+
+/**
+ * Whether this PM's agent takes a kind of work (JOB-9): the team requires it, or the PM switched it on. One rule for
+ * pulling, the board and the CLI.
+ */
+export function takesCategory(personal: Pick<PersonalConfig, "categories">, team: Pick<TeamConfig, "categories">, category: string): boolean {
+  const c = team.categories[category];
+  return !!c && (c.required === true || personal.categories.includes(category));
 }
 
 export type Plan = "team" | "enterprise" | "api" | "bedrock" | "vertex" | "pro" | "max" | "free";
@@ -162,7 +184,9 @@ export function validateTeamConfig(c: TeamConfig): TeamConfig {
   for (const s of SIZES) if (!c.sizes?.[s]) problems.push(`sizes.${s} missing`);
   for (const [cat, v] of Object.entries(c.categories ?? {}))
     if (!/^[a-z][a-z0-9-]*$/.test(cat) || !v?.skill) problems.push(`category ${cat} needs a kebab-case name and a skill`);
+    else if (v.required !== undefined && typeof v.required !== "boolean") problems.push(`categories.${cat}.required must be true or false`);
   if (c.reviewQueueCap < 1) problems.push("reviewQueueCap must be at least 1");
+  for (const [n, h] of Object.entries(c.skills ?? {})) if (!/^[0-9a-f]{12}$/.test(h)) problems.push(`skills.${n} must be a 12-hex skill hash, not "${h}"`);
   if (problems.length) throw new Error(`pmx.config.json: ${problems.join("; ")}`);
   return c;
 }

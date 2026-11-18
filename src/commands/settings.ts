@@ -1,3 +1,4 @@
+import { takesCategory } from "../core/config.js";
 import { companyDomains } from "../core/filter.js";
 import { applyPersonal, checkChange, type Change } from "../flow/actions.js";
 import type { Command } from "./index.js";
@@ -71,7 +72,7 @@ export const settingsCommands: Command[] = [
         return 0;
       }
       if (op) throw new Error(`Unknown subcommand "${op}". Use add or remove.`);
-      for (const c of Object.keys(ctx.team.categories)) console.log(`${ctx.personal.categories.includes(c) ? "✔" : "·"} ${c}`);
+      for (const c of Object.keys(ctx.team.categories)) console.log(`${takesCategory(ctx.personal, ctx.team, c) ? "✔" : "·"} ${c}${ctx.team.categories[c]?.required ? " (required by your team)" : ""}`);
       return 0;
     },
   },

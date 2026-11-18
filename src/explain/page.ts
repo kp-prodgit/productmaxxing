@@ -214,7 +214,7 @@ function renderRun(el, { receipt: r, live }) {
 
   if (r.model) {
     step(4, "Claude wrote the draft",
-      h("div", "row", chip(r.model.name), r.skills.map((k) => chip(k.name + " · " + (k.source === "team" ? "team copy" : "built-in copy") + " · " + k.version))),
+      h("div", "row", chip(r.model.name), r.skills.map((k) => chip(k.name + " · " + (k.source === "team" ? "team copy" : k.source === "org" ? "org copy (synced)" : "built-in copy") + " · " + k.version))),
       h("p", "small", "Tools: " + r.model.tools + "."),
       h("p", "muted small", money(r.model.costUsd) + " · " + (r.model.durationMs / 1000).toFixed(1) + " seconds" + (r.model.tokens ? " · " + r.model.tokens.toLocaleString() + " tokens" : "")),
       h("details", null, h("summary", null, "Prompt fingerprint"), h("p", "small muted", "The prompt is not stored. Its SHA-256 is ", h("code", null, r.model.promptSha256), ", so you can prove two runs got the same input.")));
@@ -304,7 +304,7 @@ async function loadSkills() {
       h("h2", null, "Claude skills"),
       h("p", "lede", "A skill is a set of written instructions Claude follows for one job. PMX uses the copy in your team folder if there is one, otherwise the copy built into pmx. They only load in PMX's own Claude profile (" + profile + "), never in your personal Claude Code. “Differs from built-in” means your team edited its copy, or this version of pmx ships a newer one."),
       ...skills.map((s) => h("div", "card",
-        h("div", "row", h("h3", null, s.name), chip(s.status, s.status === "differs from built-in" ? "out" : ""), s.category ? chip(s.category) : null),
+        h("div", "row", h("h3", null, s.name), chip(s.status, ["differs from built-in", "org shadows built-in"].includes(s.status) ? "out" : ""), s.category ? chip(s.category) : null),
         h("p", "small", s.description),
         h("p", "small", h("strong", null, "When it runs: "), s.usedBy),
         h("p", "small muted mono", s.path + " · version " + s.version))));
@@ -335,7 +335,7 @@ async function loadSizing() {
       h("h2", null, "How task sizes are chosen"),
       h("p", "lede", "A size is the agent effort to produce a reviewable draft, not engineering effort. Claude picks it with the team rubric below and must quote the cell it matched. PMX then checks that cell against the rubric and, where the rubric counts sources, the number of sources the task cites. A disagreement is flagged for the person triaging; it never blocks the task, and anyone can change a size."),
       h("div", "card", h("h3", null, "General rule"), h("div", "tw", general)),
-      h("div", "card", h("h3", null, "Per category"), h("div", "tw", grid), h("p", "small muted", "From the pmx-size skill (" + (s.source === "team" ? "team copy" : "built-in copy") + ", version " + s.version + "). When unsure between two sizes, Claude picks the larger one.")),
+      h("div", "card", h("h3", null, "Per category"), h("div", "tw", grid), h("p", "small muted", "From the pmx-size skill (" + (s.source === "team" ? "team copy" : s.source === "org" ? "org copy (synced)" : "built-in copy") + ", version " + s.version + "). When unsure between two sizes, Claude picks the larger one.")),
       ...tasks.flat());
   } catch (e) { fail(el, e); }
 }

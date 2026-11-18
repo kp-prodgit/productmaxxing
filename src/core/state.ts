@@ -19,6 +19,8 @@ export interface State {
   cloudVersions: { latest: string | null; min: string | null; seenAt: string } | null;
   /** The background auto-update (COMPAT-6): when it last looked, and what last happened. */
   autoUpdate: { checkedAt: string; result: string; version: string | null; notifiedFor: string | null } | null;
+  /** The last time the background job fast-forwarded the team's PMX repo, and how it went (JOB-10). */
+  teamSync?: { checkedAt: string; result: string; okAt?: string | null } | null;
   /** The background job's last pass: which steps failed, and how many passes in a row had a failure. */
   lastTick: { at: string; failed: string[]; failStreak: number } | null;
   /** Each Claude scheduled task's last run, as PMX saw it: its `--prompt` call starts one, its last step finishes it. */

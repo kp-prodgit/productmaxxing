@@ -38,7 +38,8 @@ export type RelayOp =
   | { id: string; at: string; kind: "append-description"; target: string; line: string }
   | { id: string; at: string; kind: "lodge-meeting"; title: string; description: string; agent: string }
   | { id: string; at: string; kind: "finish-meeting"; target: string; status: "done" | "blocked"; lines: string[]; comment: string }
-  | { id: string; at: string; kind: "rewrite"; target: string; title?: string; description?: string; cancel?: boolean };
+  | { id: string; at: string; kind: "rewrite"; target: string; title?: string; description?: string; cancel?: boolean }
+  | { id: string; at: string; kind: "upsert-skill-doc"; name: string; body: string };
 type NewOp = RelayOp extends infer O ? (O extends RelayOp ? Omit<O, "id" | "at"> : never) : never;
 
 export interface Snapshot {
@@ -87,6 +88,17 @@ async function saveOutbox(o: Outbox): Promise<void> {
   await writeJson(files.outbox(), o, 0o600);
 }
 
+/**
+ * Queue publishing an org skill to Linear as the document `pmx-skill:<name>` (JOB, Slice 2b). The scheduled
+ * sync task upserts the document; other teammates' `pmx skills sync` then picks it up. Refuses a canary.
+ */
+export async function enqueueSkillDoc(name: string, body: string, now: () => Date = () => new Date()): Promise<void> {
+  if (hasCanary(body)) throw new Error(CANARY_REFUSAL);
+  const outbox = await readOutbox();
+  outbox.ops.push({ kind: "upsert-skill-doc", name, body, id: randomBytes(8).toString("hex"), at: now().toISOString() });
+  await saveOutbox(outbox);
+}
+
 const ref = (opId: string) => `ref:${opId}`;
 const pendingIdentifier = (opId: string) => `PENDING-${opId.slice(0, 6).toUpperCase()}`;
 
@@ -113,6 +125,7 @@ export function overlay(snap: Snapshot, ops: RelayOp[]): any[] {
       nodes.push(n);
       continue;
     }
+    if (op.kind === "upsert-skill-doc") continue; // a Linear document, not an issue: nothing to overlay
     const n = find(op.target);
     if (!n) continue;
     if (op.kind === "set-label") label(n, op.group, op.value);
@@ -219,6 +232,7 @@ export async function relayPrompt(team: TeamConfig): Promise<string> {
   if (team.tracker.kind !== "linear") return "PMX has no Linear project in pmx.config.json, so there's nothing to sync. Stop here.";
   await privateDir(relayDir());
   const outbox = await readOutbox();
+  const skillsDir = paths.orgSkillsExport();
   const { teamKey, projectId } = team.tracker;
   const byGroup = new Map<string, string[]>();
   for (const l of pmxLabels(team)) { const [g, n] = l.split("/") as [string, string]; byGroup.set(g, [...(byGroup.get(g) ?? []), n]); }
@@ -240,6 +254,7 @@ ${outbox.ops.length ? `- \`create-task\`: create an issue in project ${projectId
 - \`lodge-meeting\`: create an issue in project ${projectId} with the title and description verbatim and labels pmx-kind: meeting, pmx-status: running, pmx-agent: <agent>.
 - \`finish-meeting\`: on the target, add each of \`lines\` to the end of the description, set the pmx-status label to \`status\`, add \`comment\` as a comment, and if status is done, move it to the team's first "completed" workflow state.
 - \`rewrite\`: on the target, replace the title with \`title\` and the whole description with \`description\`, each only when given, verbatim. If \`cancel\` is true, also move it to the team's first "canceled" workflow state. Never delete it.
+- \`upsert-skill-doc\`: create or update a Linear document in project ${projectId} titled \`pmx-skill:<name>\` (from the op's \`name\`), with \`body\` as its full content, verbatim. If a document with that exact title already exists, replace its content; otherwise create it. This shares an org skill with the team — never put a skill's body in an issue.
 
 Labels named "pmx-…: x" are label \`x\` inside the label group \`pmx-…\`. Create a missing group or label in team ${teamKey}.
 A target like PMX-12 is an issue identifier. A target like \`ref:<id>\` means the issue created by the operation with that id earlier in this list, and text like PENDING-1A2B3C anywhere in an operation stands for the issue created by the operation whose id starts with 1a2b3c: write that issue's real identifier instead.
@@ -256,7 +271,10 @@ Write ${files.snapshot()} with your file-writing tool (not a shell command; a sh
 ]}
 The connector may list labels by name only and shorten long descriptions. Look up each label's group in team ${teamKey}'s label list (\`parent\` is the group, for example pmx-status), and fetch the full description of any issue whose description was shortened. Never guess a group or shorten a description.
 
-## 3. Finish
+## 3. Export the team's shared skills
+For every Linear document in project ${projectId} whose title starts with \`pmx-skill:\`, write its full content to \`${skillsDir}/<name>.md\` with your file-writing tool, where \`<name>\` is the title after \`pmx-skill:\`. Fetch each document's full content; never a shortened version. If there are no such documents, write nothing. PMX validates and adopts these with \`pmx skills sync\`.
+
+## 4. Finish
 Run \`pmx linear relay --check\` and report what it prints. Don't change anything else in Linear or in any other app.`;
 }
 

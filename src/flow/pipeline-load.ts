@@ -195,7 +195,8 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
       neverIngest: { people: [...ni.people], titles: [...ni.meetingTitles], channels: [...ni.channels] },
       budget: { dailyUsd: ctx.personal.budget.dailyUsd, teamCap: ctx.team.caps.perDayUsd, spentUsd: b.spentUsd, tokens: b.tokens },
       todosToLinear: !!ctx.personal.todosToLinear,
-      categories: cats.map((c) => ({ name: c, accepted: ctx.personal.categories.includes(c) })),
+      // `accepted` is the PM's own choice; a required kind is taken either way, and stays the PM's choice if the team stops requiring it.
+      categories: cats.map((c) => ({ name: c, accepted: ctx.personal.categories.includes(c), required: !!ctx.team.categories[c]?.required })),
       reviewCap: ctx.team.reviewQueueCap,
       sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: ctx.team.sizes[z].minutes, usd: ctx.team.sizes[z].costUsd }])) as Record<Size, { minutes: number; usd: number }>,
       rubric: rubricFor(rubric, cats),

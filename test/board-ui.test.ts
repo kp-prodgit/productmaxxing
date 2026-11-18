@@ -458,3 +458,91 @@ describe("Inbox: proposed tasks", () => {
     await ui.until(() => !row(ui!, "Export approval history") && !row(ui!, "Fix the wrong"), "both to leave the list");
   }, T);
 });
+
+describe("Settings: your team's own kinds of work (JOB-8, JOB-9)", () => {
+  const SU = { skill: "stakeholder-update", required: true };
+  const withKind = async (ctx: any) => {
+    const { checkKindDraft, renderKindSkill } = await import("../src/core/kinds.js");
+    const { writeFileIn } = await import("../src/core/git.js");
+    const { draft } = checkKindDraft({ name: "Stakeholder update", produces: "A one-page update for execs on what changed", when: "A meeting moves a date or raises a risk", stage: "operate", sections: ["Headline", "Risks"], steps: ["Lead with the change"] }, { categories: DEFAULT_TEAM.categories });
+    await writeFileIn(ctx.personal.repoPath, ".claude/skills/stakeholder-update/SKILL.md", renderKindSkill("stakeholder-update", draft));
+  };
+  const branchFile = async (u: Ui, path: string) => {
+    const { git } = await import("./helpers.js");
+    const repo = u.ctx.personal.repoPath;
+    const b = (await git(repo, "branch", "--list", "pmx/settings-*", "--format=%(refname:short)")).split("\n").filter(Boolean).pop()!;
+    return git(repo, "show", `${b}:${path}`);
+  };
+
+  it("a team-made kind shows what it is and when it's proposed; a required one is locked on; requiring one is a team change", async () => {
+    ui = await openBoard({ hash: "settings/kinds", team: { categories: { ...DEFAULT_TEAM.categories, "stakeholder-update": SU } }, personal: { categories: ["spec"] }, before: withKind });
+    const row = ui.all(".sr").find((r) => r.textContent?.includes("Stakeholder update"))!;
+    expect(row.textContent).toMatch(/Your team's/);
+    expect(row.textContent).toMatch(/A one-page update for execs on what changed/);
+    expect(row.textContent).toMatch(/Keep the work tidy · Proposed when: A meeting moves a date or raises a risk/);
+    expect(row.textContent).toMatch(/Required by your team/);
+    expect(row.querySelector("[role=switch]")).toBeNull();
+    expect(row.textContent).toMatch(/Taking work/);
+
+    await ui.click(ui.button("More for Spec drafting"));
+    await ui.click(ui.button("Require it for everyone on the team"));
+    expect(ui.bar()).toMatch(/1 for your team to approve/);
+    await ui.click(ui.button("Save Changes", "#savebar"));
+    expect(ui.text("#review")).toMatch(/Require Spec drafting for everyone on the team/);
+    await ui.click(ui.button("Propose to your team", "#review"));
+    await ui.until(() => /Sent your team's changes for approval|couldn't be sent/.test(ui!.text("#review")), "the proposal");
+    expect(ui.text("#review")).toMatch(/Sent your team's changes for approval/);
+    expect(JSON.parse(await branchFile(ui, "pmx.config.json")).categories.spec).toEqual({ skill: "pmx-spec", required: true });
+    // Nothing changes until it merges: the PM's own setting is untouched.
+    expect((await loadPersonalConfig()).categories).toEqual(["spec"]);
+  }, T);
+
+  it("when the team stops requiring a kind, the switch shows the PM's own choice; sending a new kind keeps other unsaved edits", async () => {
+    ui = await openBoard({ hash: "settings/kinds", team: { categories: { ...DEFAULT_TEAM.categories, "stakeholder-update": SU } }, personal: { categories: ["spec"] }, before: withKind });
+    await ui.click(ui.button("More for Stakeholder update"));
+    await ui.click(ui.button("Stop requiring it for everyone"));
+    // This PM never switched it on, so once it's no longer required their agent would skip it, and the page says so.
+    expect(ui.switchFor("Your agent takes Stakeholder update").getAttribute("aria-checked")).toBe("false");
+    // An unsaved personal edit, then a new kind of work sent from its own form.
+    await ui.click(ui.switchFor("Your agent takes Spec drafting"));
+    expect(ui.bar()).toMatch(/2 unsaved changes/);
+    await ui.go("#settings/newkind");
+    await ui.type("#kf-name", "Prototype brief");
+    await ui.type("#kf-produces", "A short brief for a clickable prototype and what users should try");
+    await ui.type("#kf-when", "A customer asks to see how something would work");
+    await ui.type("#kf-steps", "Name the one user and moment it's for");
+    await ui.click(ui.button("Send to your team for approval"));
+    await ui.until(() => /Sent "Prototype brief"|couldn't be sent/.test(ui!.text()), "the proposal");
+    expect(ui.text()).toMatch(/Sent "Prototype brief" to your team for approval/);
+    expect(ui.bar()).toMatch(/2 unsaved changes/);
+  }, T);
+
+  for (const app of [false, true]) it(`New kind of work: the form checks what's missing, then sends one pull request and turns it on for its author${app ? " (Claude app)" : ""}`, async () => {
+    ui = await openBoard({ hash: "settings/kinds", app, personal: { categories: ["spec"] } });
+    await ui.click(ui.button("New kind of work", "main"));
+    await ui.until(() => ui!.$("#kf-name"), "the form");
+    await ui.click(ui.button("Send to your team for approval"));
+    expect(ui.text()).toMatch(/Fill in a name, what it produces, when to propose it, at least one step first/);
+    expect(ui.posts.some((p) => p[0] === "changes")).toBe(false);
+
+    await ui.type("#kf-name", "Stakeholder update");
+    expect(ui.text()).toMatch(/Its id: stakeholder-update/);
+    await ui.type("#kf-produces", "A one-page update for execs on what changed this week");
+    await ui.type("#kf-when", "A meeting moves a date, changes scope or raises a risk");
+    await ui.pick("[data-fk=kf-stage]", "operate");
+    await ui.type("#kf-sections", "Headline\nWhat changed\nRisks");
+    await ui.type("#kf-steps", "Lead with the change that matters most\nGive every risk a source");
+    await ui.click(ui.switchFor("It goes outside the team"));
+    await ui.click(ui.button("Send to your team for approval"));
+    await ui.until(() => /Sent "Stakeholder update" to your team for approval|couldn't be sent/.test(ui!.text()), "the proposal");
+    expect(ui.text()).toMatch(/Sent "Stakeholder update" to your team for approval\. When it merges, every PM on the team has it, and your agent takes it\./);
+    const sent = ui.posts.find((p) => p[0] === "changes")![1].changes[0];
+    expect(sent).toMatchObject({ kind: "new-kind", draft: { name: "Stakeholder update", stage: "operate", sections: ["Headline", "What changed", "Risks"], externalFacing: true, required: false } });
+    expect(JSON.parse(await branchFile(ui, "pmx.config.json")).categories["stakeholder-update"]).toEqual({ skill: "stakeholder-update", externalFacing: true });
+    expect(await branchFile(ui, ".claude/skills/stakeholder-update/SKILL.md")).toMatch(/^description: "Stakeholder update\. A one-page update for execs/m);
+    expect((await loadPersonalConfig()).categories).toEqual(["spec", "stakeholder-update"]);
+    // The form is empty again, and the pull request shows as waiting.
+    expect((ui.$("#kf-name") as HTMLInputElement).value).toBe("");
+    expect(ui.text()).toMatch(/1 team change is waiting for a teammate's approval/);
+  }, T);
+});

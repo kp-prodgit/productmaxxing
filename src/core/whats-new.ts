@@ -19,6 +19,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.26.0", date: "2026-11-17", headline: "Your team defines its own kinds of work",
+    items: [
+      { what: "Add a kind of work your team needs, like a prototype or a stakeholder update: fill in what it produces, when PMX should propose it, its sections and steps. It goes to your team as one pull request, and once merged every PM on the team has it. On the board it's Settings → Kinds of work → New kind of work.", try: "pmx jobs template" },
+      { what: "Your team can require a kind of work, so every PM's agent takes it." },
+      { what: "Each Mac now picks up merged team changes on its own every ten minutes or so, so everyone has the same kinds of work and settings." },
+      { what: "A prototype job can build a working prototype (files or a live preview link) instead of a written draft. It has to be a reviewed skill in your team's repo." },
+      { what: "Teams can share jobs through Linear, and can pin each shared job to its exact content before an agent runs it.", try: "pmx skills sync" },
+    ],
+  },
+  {
     version: "0.25.1", date: "2026-11-13", headline: "The board on this Mac shows your settings as they are now",
     items: [
       { what: "The board from `pmx flow --web` kept the settings it started with, so a change made in the Claude app or by a command didn't show there, and saving on it could undo that change. It now reads your settings fresh each time.", try: "pmx flow --web" },

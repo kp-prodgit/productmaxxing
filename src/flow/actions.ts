@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { DEFAULT_TEAM, savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { checkKindDraft, GENERIC_SIZES, renderKindFixture, renderKindSkill, upsertRubricRow, type KindDraft } from "../core/kinds.js";
 import type { Ctx } from "../core/context.js";
 import { cleanDomain } from "../core/filter.js";
 import { writeFileIn } from "../core/git.js";
 import { outputHost } from "../core/host.js";
 import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
-import { loadSkill, teamSkillPath } from "../core/skills.js";
+import { loadSkill, orgSkillPath, teamSkillPath } from "../core/skills.js";
 import { SIZES, type Size } from "../core/types.js";
 import { addNeverIngest, checkNeverIngest, type NeverIngestKind } from "./edit.js";
 import { channelInputs, checkConnector, checkLook, checkPlace, connectorId } from "../inputs/inputs.js";
@@ -35,11 +36,16 @@ export type Change =
   /** Whose Mac proposes team tasks and reads the team's channels (Q2), by PMX handle. */
   | { kind: "synthesizer"; value: string }
   /** SIG-7 (0.25.0): the PM may send their own to-dos to Linear, one at a time. Off by default. */
-  | { kind: "todos-linear"; value: boolean };
+  | { kind: "todos-linear"; value: boolean }
+  /** A kind of work the team defines with the template (JOB-8): its skill, sample task, size row and config line. */
+  | { kind: "new-kind"; slug: string; draft: KindDraft }
+  /** Whether every PM's agent on the team must take a kind of work (JOB-9). */
+  | { kind: "kind-required"; name: string; value: boolean };
 
 const RANK = { off: 0, mine: 1, linear: 2 } as const;
+const own = (o: object, k: unknown) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 const FIELD = { title: "meetingTitles", person: "people", channel: "channels" } as const;
-export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "team-input" || c.kind === "synthesizer";
+export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "team-input" || c.kind === "synthesizer" || c.kind === "new-kind" || c.kind === "kind-required";
 
 /** A change that lets more through: the board asks once more before it, and only the local page may send it. */
 export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolean {
@@ -82,7 +88,7 @@ export function checkChange(c: any, team: TeamConfig): Change {
       if (c.value !== null && (!Number.isFinite(c.value) || c.value < 0 || c.value > team.caps.perDayUsd)) fail(`A cap is 0 to ${team.caps.perDayUsd} dollars, or none.`);
       return { kind: "budget", value: c.value === null ? null : Number(c.value) };
     case "category":
-      if (!(c.name in team.categories)) fail(`Unknown category ${c.name}.`);
+      if (!own(team.categories, c.name)) fail(`Unknown category ${c.name}.`);
       return { kind: "category", name: c.name, accepted: !!c.accepted };
     case "size":
       if (!SIZES.includes(c.size)) fail("Unknown size.");
@@ -91,7 +97,7 @@ export function checkChange(c: any, team: TeamConfig): Change {
       return { kind: "size", size: c.size, ...(c.minutes !== undefined ? { minutes: c.minutes } : {}), ...(c.usd !== undefined ? { usd: c.usd } : {}) };
     case "rubric": {
       const text = String(c.text ?? "").replace(/[|\r\n]+/g, " ").replace(/\s+/g, " ").trim();
-      if (!(c.category in team.categories) || !SIZES.includes(c.size)) fail("Unknown category or size.");
+      if (!own(team.categories, c.category) || !SIZES.includes(c.size)) fail("Unknown category or size.");
       if (text.length < 3 || text.length > 120) fail("A rubric cell is 3 to 120 characters.");
       return { kind: "rubric", category: c.category, size: c.size, text };
     }
@@ -118,6 +124,14 @@ export function checkChange(c: any, team: TeamConfig): Change {
     case "synthesizer":
       if (typeof c.value !== "string" || !/^[\w.@-]{1,64}$/.test(c.value)) fail("Name the teammate by their PMX handle.");
       return { kind: "synthesizer", value: c.value };
+    case "new-kind": {
+      const { slug, draft } = checkKindDraft(c.draft, team);
+      return { kind: "new-kind", slug, draft };
+    }
+    case "kind-required":
+      if (!own(team.categories, c.name)) fail(`Unknown kind of work ${c.name}.`);
+      if (typeof c.value !== "boolean") fail("Require a kind of work for everyone, or stop requiring it.");
+      return { kind: "kind-required", name: c.name, value: c.value };
     case "team-input": {
       const connector = checkConnector(c.connector);
       const places: string[] = [...new Set((Array.isArray(c.places) ? (c.places as unknown[]) : []).map(checkPlace))];
@@ -159,6 +173,12 @@ export async function applyPersonal(personal: PersonalConfig, changes: Change[])
   return out;
 }
 
+/** Switches kinds of work on for this PM (the author of a new one), ahead of the merge that adds them for the team. */
+export async function saveTakes(personal: PersonalConfig, categories: string[]): Promise<void> {
+  personal.categories = [...new Set([...personal.categories, ...categories])];
+  await savePersonalConfig(personal);
+}
+
 export function describe(c: Change): string {
   switch (c.kind) {
     case "route": return `${c.source}: ${{ off: "off", mine: "my to-dos only", linear: "my to-dos and Linear tasks" }[c.value]}`;
@@ -175,18 +195,22 @@ export function describe(c: Change): string {
     case "call-input": return c.op === "add" ? `Collect calls from ${c.connector}${c.look ? ` (only ${c.look})` : ""}` : `Stop collecting calls from ${c.connector}`;
     case "todos-linear": return c.value ? "Let me send my own to-dos to Linear, one at a time" : "Keep all my to-dos on this Mac";
     case "synthesizer": return `${c.value}'s Mac proposes team tasks and reads the team's channels`;
+    case "new-kind": return `Add the kind of work "${c.draft.name}" (${c.slug})${c.draft.required ? ", required for everyone on the team" : ""}`;
+    case "kind-required": return `${c.value ? "Require" : "Stop requiring"} ${c.name} for everyone on the team`;
     case "team-input": return c.places.length ? `Read ${c.connector}: ${c.places.join(", ")}${c.look ? ` (only ${c.look})` : ""}` : `Stop reading ${c.connector}`;
   }
 }
 
-/** One cell of the per-category table in the pmx-size skill, replaced. Throws if the row isn't there. */
+/** One cell of the per-category table in the pmx-size skill, replaced. A missing row is added with general wording. */
 export function setRubricCell(skill: string, category: string, size: Size, text: string): string {
   const lines = skill.split("\n");
   const head = lines.findIndex((l) => /^\|\s*Category\s*\|/i.test(l));
   const cols = head >= 0 ? lines[head]!.split("|").slice(1, -1).map((c) => c.trim()) : [];
   const col = cols.indexOf(size);
   const row = lines.findIndex((l, i) => i > head && l.split("|")[1]?.trim() === category);
-  if (head < 0 || col < 0 || row < 0) throw new Error(`The size rubric has no ${category} row with a ${size} column.`);
+  if (head < 0 || col < 0) throw new Error(`The size rubric has no per-category table with a ${size} column.`);
+  // A kind of work made before it had a row (by hand, or before JOB-8) gets one, so its sizes can be worded.
+  if (row < 0) return setRubricCell(upsertRubricRow(skill, category, GENERIC_SIZES), category, size, text);
   const cells = lines[row]!.split("|");
   cells[col + 1] = ` ${text} `;
   lines[row] = cells.join("|");
@@ -210,6 +234,7 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
     const cfgPath = join(wt.cwd, TEAM_CONFIG_FILE);
     const cfg = JSON.parse(await readFile(cfgPath, "utf8"));
     let rubric: string | null = null;
+    const kinds: Extract<Change, { kind: "new-kind" }>[] = [];
     for (const c of team) {
       if (c.kind === "team-domain") cfg.internalDomains = c.op === "add" ? [...new Set([...(cfg.internalDomains ?? []), c.value])] : (cfg.internalDomains ?? []).filter((d: string) => d !== c.value);
       else if (c.kind === "size") {
@@ -218,6 +243,26 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
       } else if (c.kind === "review-cap") cfg.reviewQueueCap = c.value;
       else if (c.kind === "rubric") rubric = setRubricCell(rubric ?? (await loadSkill(wt.cwd, "pmx-size")).text, c.category, c.size, c.text);
       else if (c.kind === "synthesizer") cfg.synthesizer = c.value;
+      else if (c.kind === "new-kind") {
+        // Checked again against the team's config as it is on the default branch now, not as this Mac last pulled it.
+        cfg.categories = { ...(cfg.categories ?? DEFAULT_TEAM.categories) };
+        if (own(cfg.categories, c.slug)) throw new Error(`Your team already has a kind of work called ${c.slug}.`);
+        if (Object.values(cfg.categories as Record<string, { skill?: string }>).some((x) => x?.skill === c.slug) || (await readFile(orgSkillPath(c.slug), "utf8").then(() => true, () => false)))
+          throw new Error(`Your team already has a skill called ${c.slug}. Pick another name.`);
+        const dir = teamSkillPath("", c.slug).replace(/^\//, "").replace(/\/SKILL\.md$/, "");
+        if (await readFile(join(wt.cwd, dir, "SKILL.md"), "utf8").then(() => true, () => false)) throw new Error(`Your team's repo already has a skill called ${c.slug}.`);
+        cfg.categories[c.slug] = { skill: c.slug, ...(c.draft.externalFacing ? { externalFacing: true } : {}), ...(c.draft.required ? { required: true } : {}) };
+        await writeFileIn(wt.cwd, join(dir, "SKILL.md"), renderKindSkill(c.slug, c.draft));
+        await writeFileIn(wt.cwd, join(dir, "fixtures", "sample-task.md"), renderKindFixture(c.slug, c.draft));
+        rubric = upsertRubricRow(rubric ?? (await loadSkill(wt.cwd, "pmx-size")).text, c.slug, c.draft.sizes);
+        kinds.push(c);
+      } else if (c.kind === "kind-required") {
+        cfg.categories = { ...(cfg.categories ?? DEFAULT_TEAM.categories) };
+        const cur = own(cfg.categories, c.name) ? cfg.categories[c.name] : null;
+        if (!cur) throw new Error(`Your team no longer has a kind of work called ${c.name}.`);
+        const { required: _, ...rest } = cur;
+        cfg.categories[c.name] = c.value ? { ...rest, required: true } : rest;
+      }
       else if (c.kind === "team-input") {
         // Slack channels approved the old way move into `inputs`, so there's one list to read and change.
         const list = channelInputs({ inputs: cfg.inputs, slackChannels: cfg.slackChannels ?? [], allowedSources: cfg.allowedSources ?? [] })
@@ -231,10 +276,20 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
     await writeFileIn(wt.cwd, TEAM_CONFIG_FILE, `${JSON.stringify(cfg, null, 2)}\n`);
     if (rubric !== null) await writeFileIn(wt.cwd, teamSkillPath("", "pmx-size").replace(/^\//, ""), rubric);
     const lines = team.map((c) => `- ${describe(c)}`);
-    const sha = await wt.commitAll(`Team settings from the PMX board\n\n${lines.join("\n")}`);
+    const title = kinds.length === 1 && team.length === 1 ? `New kind of work: ${kinds[0]!.draft.name}` : kinds.length ? `New kinds of work and team settings from PMX` : "Team settings from the PMX board";
+    const sha = await wt.commitAll(`${title}\n\n${lines.join("\n")}`);
     if (!sha) throw new Error("Those team settings are already in place.");
     const host = await outputHost(ctx.repo, ctx.keychain, ctx.exec, ctx.fetch);
-    const pr = await host.openPr({ branch, base, title: "Team settings from the PMX board", body: `Proposed from the PMX pipeline board on ${ctx.agent}.\n\n${lines.join("\n")}\n\nNothing changes for anyone until this merges.` });
+    // A reviewer sees what each new kind of work is for and when PMX will propose it, not only a file list.
+    const about = kinds.map(({ slug, draft: d }) => [
+      `### ${d.name} (\`${slug}\`, ${d.stage})`, "", `- **Produces:** ${d.produces}`, `- **Propose it when:** ${d.when}`, d.not ? `- **Don't propose it when:** ${d.not}` : null,
+      `- **Sections:** ${d.sections.join(", ")} · cites at least ${d.minCitations}`, d.externalFacing ? "- **Goes outside the team:** a person always sends it." : null,
+      d.required ? "- **Required:** every PM's agent on the team takes it." : "- Each PM chooses whether their agent takes it.",
+      "", `Files: \`.claude/skills/${slug}/SKILL.md\` (edit the steps there if they need work), its sample task, the size rubric row and \`pmx.config.json\`.`,
+    ].filter((x) => x !== null).join("\n"));
+    // Typed text never @-mentions anyone on GitHub.
+    const body = [`Proposed from PMX on ${ctx.agent}.`, "", lines.join("\n"), ...(about.length ? ["", ...about] : []), "", "Nothing changes for anyone until this merges."].join("\n").replace(/@(?=\w)/g, "@\u200b");
+    const pr = await host.openPr({ branch, base, title, body });
     return { id: pr.id, url: pr.url, branch };
   } finally {
     await ctx.repo.removeWorktree(dir).catch(() => {});

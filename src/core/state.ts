@@ -36,7 +36,11 @@ export interface State {
     /** From 0.21.0 (INPUT-1): threads saved from approved channels, and how each connector the run used went. */
     threads?: number;
     inputs?: { id: string; shape: "calls" | "channels"; status: "used" | "not-connected" | "failed" | null; saved: number }[];
+    /** COLLECT-3: new files that carried no code from a recent `pmx collect --prompt`. */
+    unverified?: number;
   }[];
+  /** COLLECT-3: the codes the last few `pmx collect --prompt` runs issued. A file the task writes carries one. */
+  collectRuns?: { code: string; at: string }[];
   /**
    * What's new (NEW-1): `seen` is the last version this Mac was told about; `since` is the version an update
    * replaced, so the new pmx can say what changed since then.

@@ -7,6 +7,8 @@
    Layout: a SaaS shell. A fixed left nav on a sunken surface (Things-style lists, then Team, System and the account),
    one calm work column (max 780px), a detail sheet that slides in from the right, and Settings as a two-pane admin
    screen with a Save Changes bar. Every value is built as DOM text: nothing from PMX is ever parsed as HTML. */
+/* The colour and type tokens. The team board and PMX Engine's studio copy the lines between the two marks byte for byte; tests compare them. */
+/* >>> tokens */
 :root {
   --bg: #ffffff; --sunken: #f6f7f9; --card: #ffffff; --hover: #f1f3f6; --select: #e9eefb;
   --line: #e5e7ec; --line-2: #d5d9e0;
@@ -38,6 +40,7 @@
   --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
   --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
   --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark }
+/* <<< tokens */
 html, body { height: 100% }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/20px var(--font); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100% }
 * { box-sizing: border-box }
@@ -1609,7 +1612,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           first ? btn("Reject", { cls: "ghost danger", on: () => rejectDigest(first) }) : null,
           first && first.markdown != null ? btn("Approve and share", { cls: "pri", disabled: digestBusy, on: (ev) => digestAct(first, "approve", ev.currentTarget, "Sharing…") }) : null]),
       ws.length ? ws.map(readerCard) : h("div", { class: "callout" }, h("div", null, h("b", null, "Nothing to read right now"), h("p", null, `Your next digest is built ${diffDays(dg.next) === 0 ? "today" : `on ${dayLabel(dg.next)}`}, by the first automatic run that day.`))),
-      h("section", { class: "sc" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "How it works"), h("small", null, "Claude reads the week's customer calls with private details removed, writes the top themes and follow-ups, and cites a source for every claim. PMX deletes any claim without one. Nothing is shared until you approve it, and never with Linear.")), build),
+      h("section", { class: "sc" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "How it works"), h("small", null, "Claude reads the week's customer calls with private details removed, writes the top customer themes and follow-ups, and cites a source for every claim. PMX deletes any claim without one. Nothing is shared until you approve it, and never with Linear.")), build),
         h("div", { class: "sc-b" },
           h("div", { class: "sr" }, h("div", { class: "nm" }, "Built on", h("small", null, `${DAYS[dg.weekday]}s · next ${dayLabel(dg.next)}`)), btn("Change", { cls: "sm ghost", on: () => go("settings", { sub: "digestset" }) })),
           h("div", { class: "sr" }, h("div", { class: "nm" }, "Reads", h("small", null, dg.reads.length ? dg.reads.join("; ") : "Nothing yet"))),

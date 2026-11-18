@@ -173,7 +173,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   const waitingAt = d?.waiting.map((w) => w.at).filter((x): x is string => !!x).sort().at(-1) ?? null;
   out.push({
     id: "digest", group: "work", name: "Weekly digest", by: "both", where: "This Mac and Claude", tab: "digest",
-    what: "Every week Claude sums up what customers said: top themes, quotes and follow-ups, each cited. You read it first; nothing is shared until you approve it.",
+    what: "Every week Claude sums up what customers said: top customer themes, quotes and follow-ups, each cited. You read it first; nothing is shared until you approve it.",
     cadence: d ? `every ${DAYS[d.weekday]}` : "weekly", last: latest([lastDigest?.at, waitingAt]), next: d?.next ?? null,
     ...(d?.waiting.length ? { status: "waiting" as const, statusText: `${plural(d.waiting.length, "digest")} to read`, fix: null } : viaJob("digest") ?? ok()),
     result: waitingAt && (!lastDigest || waitingAt >= lastDigest.at) ? "Built and waiting for you" : lastDigest ? { waiting: "Waiting for you", approved: "Approved and shared", rejected: "You rejected it", "no-signal": "No customer calls that week", failed: "The build failed", expired: "Replaced by a newer build" }[lastDigest.status] : null,

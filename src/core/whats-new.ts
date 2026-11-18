@@ -19,6 +19,13 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.27.0", date: "2026-11-18", headline: "One look with PMX Engine",
+    items: [
+      { what: "The team board now looks like the rest of PMX: the same colours and type as your Workspace and as PMX Engine's studio. Publish it again with /pmx-board in the Claude app to see it." },
+      { what: "Each collection run marks the files it saves, and the check after it names any new file without the mark, so you can tell your scheduled task's files from anything else. Nothing is removed." },
+    ],
+  },
+  {
     version: "0.26.0", date: "2026-11-17", headline: "Your team defines its own kinds of work",
     items: [
       { what: "Add a kind of work your team needs, like a prototype or a stakeholder update: fill in what it produces, when PMX should propose it, its sections and steps. It goes to your team as one pull request, and once merged every PM on the team has it. On the board it's Settings → Kinds of work → New kind of work.", try: "pmx jobs template" },

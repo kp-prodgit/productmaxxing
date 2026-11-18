@@ -2,31 +2,54 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <!-- Installed by ProductMaxxing. `pmx board --html` fills in the config below; /pmx-board publishes it as a Claude artifact (BOARD-1). -->
 <script type="application/json" id="pmx-config">{"team":"","teamKey":"","projectId":"","version":""}</script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: a five-lane pipeline (pool → ready → in flight → review → done); one lane at a time on phones. */
+/* The PMX Workspace's colour and type tokens, copied byte for byte from app-skills/pmx-flow/pipeline.html (test/tokens.test.ts). */
+/* >>> tokens */
 :root {
-  --bg: #f5f6f8; --surface: #ffffff; --surface-2: #eef0f4; --line: #dde1e8;
-  --fg: #1b2230; --muted: #5d6676; --faint: #8a93a3; --accent: #3466d6; --accent-fg: #ffffff;
-  --inbox: #7d8899; --ready: #2f86e0; --claimed: #9a68e8; --running: #c99a16; --blocked: #d64545; --review: #e07b2c; --done: #2f9e64;
-  --warn-bg: #fff4e5; --warn-fg: #7a4a08; --err-bg: #fdecec; --err-fg: #8f2020;
-  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --radius: 6px;
+  --bg: #ffffff; --sunken: #f6f7f9; --card: #ffffff; --hover: #f1f3f6; --select: #e9eefb;
+  --line: #e5e7ec; --line-2: #d5d9e0;
+  --fg: #16181d; --fg-2: #505664; --fg-3: #687080;
+  --accent: #3459c9; --accent-soft: #ecf1fd; --accent-fg: #ffffff;
+  --today: #c99a00; --ok: #16793f; --ok-soft: #e8f6ee; --warn: #8f4b05; --warn-soft: #fdf3e4; --bad: #c53030; --bad-soft: #fdeeee;
+  --ic-up: #c83a50; --ic-any: #2a8c7f;
+  /* The flow map: where data is (this Mac, Claude, Linear, your repo, kept private). */
+  --mac: #2f5f86; --mac-soft: #e1ebf4; --claude: #7a3fc4; --claude-soft: #efe6fa; --linear: #0e6b5b; --linear-soft: #dcefe9; --repo: #6d5a2e; --repo-soft: #f1ecdf; --held: #9a5a06; --held-soft: #f7ead6;
+  --shadow: 0 10px 30px rgba(20,24,35,.10), 0 1px 3px rgba(20,24,35,.06);
+  --scrim: rgba(10,12,18,.35); --knob: #ffffff; --toast-hover: rgba(127,127,127,.25);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --r-s: 6px; --r-m: 10px; --r-l: 14px;
+  --ease: cubic-bezier(.2,.8,.2,1);
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #12151b; --surface: #1a1f27; --surface-2: #222833; --line: #2c3340;
-  --fg: #e4e8ef; --muted: #9aa3b3; --faint: #6d7686; --accent: #6f9cff; --accent-fg: #0d1220;
-  --inbox: #8e99aa; --ready: #5aa4f0; --claimed: #b48cf5; --running: #e2b93b; --blocked: #f06b6b; --review: #f39a52; --done: #4cc185;
-  --warn-bg: #3a2a10; --warn-fg: #f6cf8e; --err-bg: #3d1a1a; --err-fg: #f5b0b0; color-scheme: dark } }
+  --bg: #121316; --sunken: #17191d; --card: #1b1d22; --hover: #22252b; --select: #1f2a44;
+  --line: #2a2d34; --line-2: #383c45; --fg: #ececef; --fg-2: #a9aeb8; --fg-3: #8d929d;
+  --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
+  --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
+  --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
+  --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark } }
 :root[data-theme="dark"] {
-  --bg: #12151b; --surface: #1a1f27; --surface-2: #222833; --line: #2c3340;
-  --fg: #e4e8ef; --muted: #9aa3b3; --faint: #6d7686; --accent: #6f9cff; --accent-fg: #0d1220;
-  --inbox: #8e99aa; --ready: #5aa4f0; --claimed: #b48cf5; --running: #e2b93b; --blocked: #f06b6b; --review: #f39a52; --done: #4cc185;
-  --warn-bg: #3a2a10; --warn-fg: #f6cf8e; --err-bg: #3d1a1a; --err-fg: #f5b0b0; color-scheme: dark }
+  --bg: #121316; --sunken: #17191d; --card: #1b1d22; --hover: #22252b; --select: #1f2a44;
+  --line: #2a2d34; --line-2: #383c45; --fg: #ececef; --fg-2: #a9aeb8; --fg-3: #8d929d;
+  --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
+  --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
+  --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
+  --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark }
+/* <<< tokens */
+/* The board's own names, drawn from the shared tokens, and its lane colours. */
+:root {
+  --surface: var(--card); --surface-2: var(--hover); --muted: var(--fg-2); --faint: var(--fg-3); --sans: var(--font); --radius: var(--r-s);
+  --warn-bg: var(--warn-soft); --warn-fg: var(--warn); --err-bg: var(--bad-soft); --err-fg: var(--bad);
+  --inbox: #7d8899; --ready: #2f86e0; --claimed: #9a68e8; --running: #c99a16; --blocked: #d64545; --review: #e07b2c; --done: #2f9e64;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --inbox: #8e99aa; --ready: #5aa4f0; --claimed: #b48cf5; --running: #e2b93b; --blocked: #f06b6b; --review: #f39a52; --done: #4cc185 } }
+:root[data-theme="dark"] {
+  --inbox: #8e99aa; --ready: #5aa4f0; --claimed: #b48cf5; --running: #e2b93b; --blocked: #f06b6b; --review: #f39a52; --done: #4cc185 }
 * { box-sizing: border-box }
-body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); padding-block: 16px 32px;
+body { background: var(--sunken); color: var(--fg); font: 14px/1.45 var(--sans); padding-block: 16px 32px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
 button, select, input { font: inherit; color: inherit }
 button { cursor: pointer }

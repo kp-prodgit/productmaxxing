@@ -2,6 +2,11 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.27.0: one look with PMX Engine, and a code on each collected file
+
+- **The team board looks like the rest of PMX.** It now uses the PMX Workspace's colour and type tokens, copied byte for byte, and the Mac's own font instead of IBM Plex from Google Fonts. The board no longer loads a web font. Its lanes keep their colours. PMX Engine's studio copies the same block, so the two products read as one family. A test keeps the board and the Workspace equal. Publish the board again with `/pmx-board` after updating, as after any release. The Digest now says "customer themes". (Q15)
+- **Each collection run gives its files a code (COLLECT-3).** `pmx collect --prompt` now issues a code and asks the scheduled task to write it as a `run:` line in every transcript and thread it saves. `pmx collect --check` names any new file without a recent code, so you can tell a file your task saved from one another Claude session put there. This matters on a Mac that also runs PMX Engine, where PMX's always-allow rules reach every Claude session. Nothing changes for your scheduled task: its stored prompt already asks `pmx collect --prompt` for each run's steps. Files without a code are kept and only counted; holding them back comes later, once every task is seen writing the code. Part of the plan to join PMX and PMX Engine as two packages in one family (Q15, Q16).
+
 ## 0.26.0: your org and your team define their own kinds of work
 
 A job to be done is now something your org defines, not a fixed list — from a Markdown writer to a prototype builder. (JOB-1..10)
@@ -21,6 +26,7 @@ A job to be done is now something your org defines, not a fixed list — from a 
 - **`pmx jobs new <slug>`** scaffolds a new job: a SKILL.md with its env stub, plus the category added to `pmx.config.json`, for you to fill in, commit and open as a PR. Slugs are kebab-case and can't use the reserved `pmx-` prefix, so your jobs never shadow the built-in skills.
 - **`pmx jobs list`** and `pmx skills` now show each job's environment (kind, tools, output), and flag any job whose environment is invalid.
 - **Safe by default.** A `document` job may not widen its tools or change its output kind; that needs a non-document environment, which only a reviewed PR can introduce. A run against an unsupported or invalid environment fails closed and returns the task to ready. Distributing jobs through Linear is a later step.
+
 - **Prototype jobs that build, not just write.** A job whose environment is `prototype` now runs: it starts from an optional template, works with a wider tool set, and can hand the heavy build to an external tool (v0, Lovable, Bolt — PMX orchestrates, it doesn't replace them). Its deliverable is a working prototype — a folder of files under `prototypes/…`, or a live preview URL — instead of a Markdown draft, checked by whether it actually produced something runnable. PMX commits it and opens the PR with a run record of what was built. A prototype job must be a reviewed skill in your own repo; an org-synced or built-in skill never gets the wider tools.
 
 ## 0.25.1: the board on this Mac shows your settings as they are now

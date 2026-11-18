@@ -1,7 +1,9 @@
-import { stat } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { checkCollected, collectPrompt } from "../src/collect/collect.js";
+import { loadState } from "../src/core/state.js";
+import { parseTranscript } from "../src/sources/transcripts.js";
 import { rollup } from "../src/company/rollup.js";
 import { filterItems } from "../src/core/filter.js";
 import { paths } from "../src/core/paths.js";
@@ -200,6 +202,41 @@ describe("collecting from Claude connectors (COLLECT-1, COLLECT-2)", () => {
     expect(out).toMatch(/broken\.md: no front matter, no meeting date, no participants, no source/);
     expect(ctx.personal.identity).toEqual({ names: ["Ana Lee"], emails: ["ana@us.com"] });
     expect((await stat(join(dir, `${today}-fireflies-acme.md`))).mode & 0o777).toBe(0o600);
+  });
+
+  it("gives each run a code, and counts the new files that lack one without removing them (COLLECT-3)", async () => {
+    const { repo } = await pmxRepo();
+    const ctx = await testCtx({ repo, now: NOW });
+    const dir = paths.transcripts();
+    const file = (name: string, run: string | null) =>
+      writeTranscript(dir, name, `---\ntitle: Acme\ndate: ${today}T14:00:00Z\nparticipants: jane@acme.com\nsource: fireflies\nsource_id: ${name}\nowner: Ana Lee <ana@us.com>\n${run ? `run: ${run}\n` : ""}---\n${"Jane: We export a CSV every Friday. ".repeat(10)}`);
+
+    // Before this version has issued a code, nothing is counted: a run that began before the update still checks clean.
+    await file(`${today}-fireflies-old.md`, null);
+    expect((await checkCollected(ctx)).join("\n")).not.toMatch(/carry no code/);
+    await rm(join(dir, `${today}-fireflies-old.md`));
+
+    const prompt = await collectPrompt(ctx, { scope: "mine" });
+    const code = (await loadState()).collectRuns!.at(-1)!.code;
+    expect(code).toMatch(/^[0-9a-f]{12}$/);
+    expect(prompt).toContain(`run: ${code}`);
+    expect(parseTranscript(`---\nrun: ${code}\n---\nx`, "x").run).toBe(code);
+
+    await file(`${today}-fireflies-task.md`, code);
+    await file(`${today}-fireflies-stray.md`, null);
+    await file(`${today}-fireflies-forged.md`, "0123456789ab");
+    const out = (await checkCollected(ctx)).join("\n");
+    expect(out).toMatch(/2 new file\(s\) carry no code from a recent PMX collection run/);
+    expect(out).toContain("fireflies-stray.md");
+    expect(out).toContain("fireflies-forged.md");
+    expect(out).not.toContain("fireflies-task.md");
+    expect((await loadState()).collectReports.at(-1)!.unverified).toBe(2);
+    // Warning only: every file is still there for synthesis and to-dos.
+    for (const n of ["task", "stray", "forged"]) await expect(stat(join(dir, `${today}-fireflies-${n}.md`))).resolves.toBeTruthy();
+
+    // A few recent codes are kept, so an overlapping run's files still count as the task's own.
+    await collectPrompt(ctx, { scope: "mine" });
+    expect((await loadState()).collectRuns!.map((r) => r.code)).toContain(code);
   });
 });
 

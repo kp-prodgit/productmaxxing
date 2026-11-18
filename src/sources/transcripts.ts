@@ -19,6 +19,8 @@ export interface ParsedTranscript {
   /** Threads: the approved place, as the team listed it, and the thread's link. */
   place: string | null;
   link: string | null;
+  /** The code of the `pmx collect` run that wrote the file (COLLECT-3). */
+  run: string | null;
 }
 
 const splitList = (s: string) =>
@@ -34,7 +36,7 @@ export function parseTranscript(raw: string, fallbackTitle: string): ParsedTrans
   const header = fm ? fm[1]! : body.split(/\n\s*\n/, 1)[0] ?? "";
   const fields = new Map<string, string>();
   for (const line of header.split("\n")) {
-    const m = line.match(/^\s*(title|date|participants|attendees|source|source_id|owner|kind|place|link)\s*:\s*(.+)$/i);
+    const m = line.match(/^\s*(title|date|participants|attendees|source|source_id|owner|kind|place|link|run)\s*:\s*(.+)$/i);
     if (m) fields.set(m[1]!.toLowerCase(), m[2]!.trim());
   }
   if (fields.size) {
@@ -55,6 +57,7 @@ export function parseTranscript(raw: string, fallbackTitle: string): ParsedTrans
     title: title.replace(/^["']|["']$/g, ""), date, participants, body,
     source: clean(fields.get("source"))?.toLowerCase() ?? null, sourceId: clean(fields.get("source_id")), owner: clean(fields.get("owner")),
     kind: clean(fields.get("kind"))?.toLowerCase() ?? null, place: clean(fields.get("place")), link: clean(fields.get("link")),
+    run: clean(fields.get("run")),
   };
 }
 

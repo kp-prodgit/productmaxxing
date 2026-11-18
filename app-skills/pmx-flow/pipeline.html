@@ -588,6 +588,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
   <symbol id="i-hash" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></symbol>
+  <symbol id="i-mac" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
 </svg>
@@ -2785,7 +2786,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       counts.length ? h("p", null, h("b", null, "Waiting on this Mac: "), `${and(counts)}.`, n.todos ? " To-dos are yours alone and never leave this Mac; tasks reach Linear only after you approve them." : "") : null,
       pairing ? h("p", { class: "wait", role: "status" }, h("span", { class: "spin", "aria-hidden": "true" }), "Check your Mac: PMX is asking you to allow this page. It waits up to 2 minutes.") : null,
       conn.state === "declined" ? h("p", { class: "err", role: "alert" }, HELP.declined) : conn.msg ? h("p", { class: "err", role: "alert" }, conn.msg) : null,
-      h("div", { class: "cta" }, btn(pairing ? "Waiting for your Mac…" : conn.state === "declined" ? "Try again" : "Connect", { cls: "pri", disabled: pairing, on: pairNow })),
+      // The Mac mark (one card of signs with PMX Engine): this button asks you in a dialog on your Mac.
+      h("div", { class: "cta" }, btn(pairing ? "Waiting for your Mac…" : conn.state === "declined" ? "Try again" : "Connect", { cls: "pri", icon: "mac", title: "PMX asks you in a dialog on your Mac", disabled: pairing, on: pairNow })),
       h("ul", null, h("li", null, "Titles travel from PMX to this page only, through the Claude app. They aren't stored on claude.ai or sent to Claude."), h("li", null, "You can disconnect this page any time in Settings, under Account.")),
       dnrQuick());
   }

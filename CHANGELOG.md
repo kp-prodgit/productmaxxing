@@ -2,6 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.33.0: a Mac mark on Connect
+
+- **Connect shows a Mac mark.** The button that has PMX ask you in a dialog on your Mac carries a small Mac sign, the same one PMX Engine 0.4's studio puts on Approve, Sign off and Hide. One card of signs for both (phase 1 of joining PMX and PMX Engine).
+
 ## 0.32.0: roadmap themes as Linear labels
 
 Bridge 4 of joining PMX and PMX Engine (EQ-38): a task can carry the roadmap theme it serves, as a Linear label, chosen by the PM.

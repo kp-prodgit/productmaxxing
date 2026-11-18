@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.33.0", date: "2026-11-18", headline: "A Mac mark on Connect",
+    items: [
+      { what: "Connect, which has PMX ask you in a dialog on your Mac, now carries a small Mac sign: the same one PMX Engine's studio puts on its approvals. Your /pmx-flow page shows it once you publish it again; pmx doctor says when.", try: "pmx doctor" },
+    ],
+  },
+  {
     version: "0.32.0", date: "2026-11-18", headline: "Roadmap themes as Linear labels",
     items: [
       { what: "Where your team uses PMX Engine, proposed tasks can carry a roadmap theme as a Linear label. PMX suggests one of your team's open themes; you keep, change or clear it before approving.", try: "pmx proposals" },

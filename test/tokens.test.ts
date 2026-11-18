@@ -38,4 +38,11 @@ describe("one look: the team board shares the Workspace's tokens", () => {
       expect(own).not.toMatch(new RegExp(`${name}:\\s*#`));
     }
   });
+
+  it("marks Connect, which asks on the Mac, with the Mac sign PMX Engine's studio uses", async () => {
+    const workspace = await page("app-skills/pmx-flow/pipeline.html");
+    // The same glyph as pmx-engine's studio/studio.html, so the sign reads the same in both.
+    expect(workspace).toContain('<symbol id="i-mac" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>');
+    expect(workspace).toMatch(/"Connect", \{ cls: "pri", icon: "mac", title: "PMX asks you in a dialog on your Mac"/);
+  });
 });

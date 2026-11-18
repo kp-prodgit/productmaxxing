@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.31.0/productmaxxing-0.31.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.31.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.32.0/productmaxxing-0.32.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.32.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.31.0.tgz
+npm install -g ./productmaxxing-0.32.0.tgz
 pmx init
 ```
 
@@ -38,7 +38,7 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `doctor` | Checklist; fails if any clean-profile check is missing; `--json` for install scripts and Claude |
 | `digest` | Weekly digest from allowlisted sources, every claim cited, approved before commit |
 | `status` | Config, kill switch, today's usage (tokens, and dollars at list prices) and recent runs |
-| `proposals` | Tasks PMX proposed from your calls, exactly as Linear would get them. `approve <n>` or `--all` sends them to the PMX inbox; `drop` discards them. Nothing reaches Linear before you approve |
+| `proposals` | Tasks PMX proposed from your calls, exactly as Linear would get them. `approve <n>` or `--all` sends them to the PMX inbox; `drop` discards them; `theme <n> "<theme>"` (or `none`) sets the roadmap theme a task carries as a label, from your team's open themes. Nothing reaches Linear before you approve |
 | `budget` | Your daily cap on PMX's usage: `set <dollars>`, `off` (only your plan's limits and the team cap), or `set 0` to pause PMX |
 | `open` | Your PMX workspace on this Mac, like `flow --web`. `open roadmap` opens your team's roadmap page, the PMs' page in PMX Engine, when `pmx.config.json` has its link. `open studio` opens PMX Engine's studio where it's installed. `--hide-studio` takes the studio out of the nav |
 | `flow` | Your workspace: Inbox (tasks to approve), Today, Upcoming, Anytime and Logbook for your to-dos and reviews, then Plan, Digest, Agents, Status (the pipeline, privacy checks, activity) and Settings. `--web` opens it on this Mac; `--install-skill` adds `/pmx-flow`, which publishes the same workspace as a live Claude artifact that works through the Claude app once you click Connect and allow it on your Mac |
@@ -119,11 +119,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.31.0/productmaxxing-0.31.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.31.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.32.0/productmaxxing-0.32.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.32.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.31.0.tgz
+npm install -g ./productmaxxing-0.32.0.tgz
 pmx whats-new --since <the version you had>
 ```
 
@@ -159,7 +159,7 @@ The brain runs on one of your team's machines on your own Claude plan, so task t
 - **Clean run profile (B1).** Every run uses `~/.pmx/claude`, `--setting-sources project`, auto memory off, `--strict-mcp-config` with no servers, claude.ai connectors and sync off, reads and writes limited to the repo, the sandbox on and permissions never skipped.
 - **Personal-content filter (B2).** Default-deny sources, no DMs, calls only with someone outside your company's email domains (with no domain set, every call is held), and fixed rules that hold back 1:1s (by title, or two people with a title naming two people), hiring and interviews, performance, pay and health. A meeting whose title is about one of those, or that returns to one in two or more passages, is held whole; a single passage is cut. Plus your personal never-ingest list. Held material is discarded, never stored.
 - **Nothing in git until approved (B3).** Digests are staged in `~/.pmx/staging` and committed only after the PM approves.
-- **Shared team memory (B4).** `memory/` in the PMX repo, loaded through the project `CLAUDE.md`, changed only by code-owner-reviewed PR. Where the team uses PMX Engine, `memory/engine/` holds what the product managers' page shows, put there by the head of product's `/pmxe-memory` pull request; tasks never repeat it word for word.
+- **Shared team memory (B4).** `memory/` in the PMX repo, loaded through the project `CLAUDE.md`, changed only by code-owner-reviewed PR. Where the team uses PMX Engine, `memory/engine/` holds what the product managers' page shows, put there by the head of product's `/pmxe-memory` pull request; tasks never repeat it word for word. Its `themes.json` lists the open roadmap themes, which PMX suggests on proposals and the PM can apply as Linear labels (`pmx-theme`).
 - **Atomic claims.** A claim is a parentless commit pushed to `refs/pmx/claims/<task>`; only one push can win.
 - **Provable runs (B5, NEUT-3).** Each output PR carries `.pmx/runs/<task>.json`. CI recomputes the environment fingerprint from the repo and rejects records that don't match.
 - **See where data went, and change the rules (FLOW-1 to FLOW-7, BOARD-3).** `pmx flow --web` is the pipeline board on this Mac: counts on every connection from your meeting apps to Linear and back, the skills and scheduled tasks, an audit that checks held meetings against Linear and fake confidential "canary" meetings every run must hold, and every rule, editable. Your own settings apply at once; team settings open one pull request. The `/pmx-flow` artifact is the same workspace in Claude. Before you connect it, it shows counts only: no meeting or proposal titles, no do-not-read entries. Connecting asks you on the Mac; after that, titles reach only your page, uncached, and a Claude chat can't read them or act without the key you allowed (`pmx mcp --unpair` disconnects).

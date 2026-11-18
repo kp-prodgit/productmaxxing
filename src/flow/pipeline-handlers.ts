@@ -1,7 +1,7 @@
 import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { decide, loadQueue, type Verdict } from "../review/queue.js";
-import { approveProposals, dropProposals } from "../synth/proposals.js";
+import { approveProposals, dropProposals, setProposalTheme } from "../synth/proposals.js";
 import { applyPersonal, checkChange, describe, isTeamChange, loosens, proposeTeamChanges, saveTakes } from "./actions.js";
 import { checkNeverIngest, whatIf } from "./edit.js";
 import { loadPipeline } from "./pipeline-load.js";
@@ -38,7 +38,16 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
       }
       const r = await approveProposals(ctx, await services(ctx), ids);
       const pending = r.posted.some((p) => p.identifier.startsWith("PENDING-"));
-      return [r.posted.length ? `Sent ${r.posted.map((p) => p.identifier).join(", ")} to the PMX inbox${pending ? "; it reaches Linear at the next Claude sync" : ""}.` : "", ...r.duplicates.map((d) => `Not sent: ${d}.`)].filter(Boolean).join(" ") || "Nothing to approve.";
+      return [r.posted.length ? `Sent ${r.posted.map((p) => p.identifier).join(", ")} to the PMX inbox${pending ? "; it reaches Linear at the next Claude sync" : ""}.` : "", ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`)].filter(Boolean).join(" ") || "Nothing to approve.";
+    },
+    async proposalTheme(id: string, theme: string | null) {
+      try {
+        const r = await setProposalTheme(ctx.personal.repoPath, [id], theme);
+        if (!r.changed.length) return { status: 404, body: { error: "That proposal is no longer waiting." } };
+        return { status: 200, body: { message: r.theme ? `Theme: ${r.theme}.` : "No theme.", theme: r.theme } };
+      } catch (e: any) {
+        return { status: 400, body: { error: e.message } };
+      }
     },
     async changes(raw: unknown[], confirmLoosening: boolean) {
       let list;

@@ -39,7 +39,7 @@ describe("released strategy in team memory (EQ-37, bridge 3 of the join)", () =>
       { title: "Plan-first crews", category: "spec", size: "M", rationale: "Make sure every crew that opens a road plans the job in Fieldbook first.", sources: ["T1"], support: { T1: "The customer plans jobs in spreadsheets." } },
       { title: "Offline job plans", category: "spec", size: "M", rationale: "Crews plan where there is no signal; this fits where the product is going.", sources: ["T1"], support: { T1: "The customer plans jobs in spreadsheets." } },
     ] });
-    const r = parseCandidates(reply, ["spec"], new Set(["T1"]), undefined, new Map(), [VISION]);
+    const r = parseCandidates(reply, ["spec"], new Set(["T1"]), undefined, new Map(), { guarded: [VISION] });
     expect(r.tasks.map((t) => t.title)).toEqual(["Offline job plans"]);
     expect(r.skipped).toEqual(["Plan-first crews: its text repeats your team's released strategy word for word, and the tracker gets summaries only"]);
     expect(parseCandidates(reply, ["spec"], new Set(["T1"])).tasks).toHaveLength(2);

@@ -193,6 +193,8 @@ export function relayTracker(team: TeamConfig, warn: (m: string) => void = () =>
     },
     async createInbox(t: NewTask) {
       const op = await enqueue({ kind: "create-task", title: t.title, description: t.description, category: t.category, size: t.size });
+      // The theme rides on its own set-label, which every relay task already applies, so an older task never drops it.
+      if (t.theme) await enqueue({ kind: "set-label", target: ref(op.id), group: GROUPS.theme, value: t.theme });
       return toTask((await state()).nodes.find((n) => n.id === ref(op.id)));
     },
     setStatus: (id, s: Status) => setLabel(id, GROUPS.status, s),

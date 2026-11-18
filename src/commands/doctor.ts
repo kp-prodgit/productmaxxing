@@ -34,6 +34,7 @@ import { budget, budgetBlock } from "../budget/provider.js";
 import { mcpHealth } from "../mcp/server.js";
 import { teamSyncProblem } from "./team-sync.js";
 import { engineChecks } from "../engine/bridge.js";
+import { readThemes, THEMES_FORMAT } from "../synth/themes.js";
 
 export interface DoctorDeps {
   team: TeamConfig | null;
@@ -123,6 +124,11 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
     add("repo.memory-engine", points, points
       ? "agents find the released strategy in memory/engine/ through CLAUDE.md"
       : "memory/engine/ holds released strategy from PMX Engine, but CLAUDE.md doesn't point agents at it: add `@memory/engine/README.md` under \"Team memory\", in a pull request", "warn");
+  }
+  // EQ-38: roadmap themes are offered only from a themes.json this pmx can read.
+  const themeList = await readThemes(repo);
+  if (themeList.format !== null && themeList.format !== THEMES_FORMAT) {
+    add("repo.engine-themes", false, `memory/engine/themes.json is at a format this pmx can't read (${themeList.format}), so it offers no roadmap themes: run \`pmx update\``, "warn");
   }
   for (const [cat, { skill }] of Object.entries(d.team.categories)) {
     const ok = await stat(teamSkillPath(repo, skill)).then(() => true, () => false);

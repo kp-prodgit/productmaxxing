@@ -13,6 +13,7 @@ import { SIZES, type Size } from "../core/types.js";
 import { privacyRules } from "../digest/gather.js";
 import { linearAccess } from "../linear/access.js";
 import { readProposals } from "../synth/proposals.js";
+import { openThemes } from "../synth/themes.js";
 import { loadTodos } from "../todo/todo.js";
 import { kindOf, toTask } from "../tracker/linear.js";
 import { overlay, readOutbox, readResolved, readSnapshot, relayHealth } from "../tracker/relay.js";
@@ -184,6 +185,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     logbook: local ? buildLogbook({ now, agent: ctx.agent, todos, receipts, runlog: log }) : [],
     boardUrl: ctx.team.board?.url ?? ctx.personal.board?.url ?? null,
     roadmapUrl: ctx.team.roadmap?.url ?? null,
+    themes: (await openThemes(ctx.personal.repoPath)).map((t) => t.name),
     checks: graph.checks, health: { problems, facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
     teamCategories: ctx.team.categories, paused, autoPause: ctx.team.autoPause,
     automations, activity: buildActivity({ now, hours, agent: ctx.agent, receipts, runlog: log, collectReports: state.collectReports, lastTick: state.lastTick }),

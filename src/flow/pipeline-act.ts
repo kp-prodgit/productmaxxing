@@ -7,6 +7,8 @@ import type { PipelineData } from "./pipeline.js";
 export interface PipelineActions {
   data(hours: number): Promise<PipelineData>;
   proposals(action: "approve" | "drop", ids: string[]): Promise<string>;
+  /** EQ-38: set or clear one proposal's roadmap theme. This Mac's page only, like the proposals themselves. */
+  proposalTheme?(id: string, theme: string | null): Promise<{ status: number; body: unknown }>;
   changes(changes: unknown[], confirmLoosening: boolean): Promise<{ status: number; body: unknown }>;
   whatIf(kind: string, value: string): Promise<unknown>;
   review(identifier: string, verdict: string, note: string): Promise<{ status: number; body: unknown }>;
@@ -21,7 +23,7 @@ export interface PipelineActions {
   resume?(category: string): Promise<{ status: number; body: unknown }>;
 }
 
-export const ACT_PATHS = ["proposals", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "todo-linear", "resume", "setup", "what-if"] as const;
+export const ACT_PATHS = ["proposals", "proposal-theme", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "todo-linear", "resume", "setup", "what-if"] as const;
 
 /** One action: its path without /api/pipeline/, and its JSON body. Returns an HTTP-style status and body. */
 export async function pipelineAct(o: PipelineActions, path: string, body: any): Promise<[number, unknown]> {
@@ -31,6 +33,11 @@ export async function pipelineAct(o: PipelineActions, path: string, body: any): 
     if (body.action !== "approve" && body.action !== "drop") return [400, { error: "action must be approve or drop" }];
     if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((x: unknown) => typeof x !== "string")) return [400, { error: "ids must be proposal IDs" }];
     return [200, { message: await o.proposals(body.action, body.ids) }];
+  }
+  if (path === "proposal-theme" && o.proposalTheme) {
+    if (typeof body.id !== "string" || (body.theme !== null && typeof body.theme !== "string")) return [400, { error: "id is a proposal ID, and theme a theme name or null" }];
+    const r = await o.proposalTheme(body.id, body.theme === null ? null : body.theme.slice(0, 100));
+    return [r.status, r.body];
   }
   if (path === "changes") {
     if (!Array.isArray(body.changes) || body.changes.length > 100) return [400, { error: "changes must be a list" }];

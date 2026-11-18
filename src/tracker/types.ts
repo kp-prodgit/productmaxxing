@@ -6,6 +6,8 @@ export interface NewTask {
   category: string;
   size: Size;
   sources: string[];
+  /** A roadmap theme the PM approved, as a label in the pmx-theme group (EQ-38). */
+  theme?: string;
 }
 
 /** A team meeting lodged in the tracker's meeting ledger (MEET-2). Not a task: pull, the brain and the board skip it. */
@@ -96,7 +98,7 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
       const task: Task = {
         id, identifier: `PMX-${n}`, title: t.title, description: t.description, url: `memory://${id}`,
         category: t.category, size: t.size, status: "inbox", priority: 0, agent: null, sources: t.sources, prUrl: null,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(), ...(t.theme ? { theme: t.theme } : {}),
       };
       tasks.set(id, task);
       return { ...task };

@@ -7,6 +7,7 @@ import { paths } from "../core/paths.js";
 import { readReceipt, writeReceipt } from "../core/receipt.js";
 import type { Services } from "../core/services.js";
 import type { Size } from "../core/types.js";
+import { openThemes, themeNamed } from "./themes.js";
 
 /**
  * Proposed tasks waiting for the PM (APPROVE-1). Synthesis stages what it would write to the tracker here, exactly
@@ -28,6 +29,11 @@ export interface Proposal {
    * meetings are in `from` too, marked with the receipt they came from.
    */
   again?: { receipt: string; at: string; n: number }[];
+  /**
+   * A roadmap theme from the team's memory/engine/themes.json (EQ-38), suggested by synthesis or set by the PM. It
+   * becomes a pmx-theme label only if the theme is still open when the PM approves.
+   */
+  theme?: string;
 }
 
 interface Staged {
@@ -119,14 +125,39 @@ async function markReceipt(p: Proposal, posted: { identifier: string } | { dropp
   await writeReceipt(r, now);
 }
 
+/**
+ * The PM sets, changes or clears a proposal's roadmap theme (EQ-38). Only a theme open in the team's repo now is
+ * accepted, spelled as the theme spells it. `null` clears it.
+ */
+export async function setProposalTheme(repo: string, refs: string[], name: string | null): Promise<{ changed: Proposal[]; missing: string[]; theme: string | null }> {
+  const theme = name === null ? null : themeNamed(name, await openThemes(repo));
+  if (name !== null && !theme) {
+    const open = (await openThemes(repo)).map((t) => t.name);
+    throw new Error(open.length ? `"${name}" isn't one of your team's open roadmap themes: ${open.join(", ")}.` : "Your team's repo has no open roadmap themes (memory/engine/themes.json, from PMX Engine's /pmxe-memory).");
+  }
+  return withLock(proposalsFile(), async () => {
+    const all = await readProposals();
+    const { hit, missing } = pick(all, refs);
+    for (const p of hit) {
+      if (theme) p.theme = theme;
+      else delete p.theme;
+    }
+    await save(all);
+    return { changed: hit, missing, theme };
+  });
+}
+
 /** Writes the chosen proposals to the tracker's inbox, exactly as staged, and takes them off the list. */
-export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]): Promise<{ posted: { id: string; identifier: string; title: string }[]; duplicates: string[]; missing: string[] }> {
+export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]): Promise<{ posted: { id: string; identifier: string; title: string; theme?: string }[]; duplicates: string[]; missing: string[]; unthemed: string[] }> {
   const all = await readProposals();
   const { hit, missing } = pick(all, refs);
+  // EQ-38: a theme is checked again now, so one held, withdrawn or narrowed since it was suggested never becomes a label.
+  const themes = hit.some((p) => p.theme) ? await openThemes(ctx.personal.repoPath) : [];
+  const unthemed: string[] = [];
   // Only the same title stops a proposal the PM approved: synthesis already folded repeats in (INPUT-2), and the PM's
   // own decision isn't second-guessed by a fuzzy match.
   const open = new Map((await svc.tracker.list()).filter((t) => t.status !== "done").map((t) => [norm(t.title), t.identifier]));
-  const posted: { id: string; identifier: string; title: string }[] = [];
+  const posted: { id: string; identifier: string; title: string; theme?: string }[] = [];
   const duplicates: string[] = [];
   const done = new Set<string>();
   for (const p of hit) {
@@ -135,8 +166,10 @@ export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]):
       duplicates.push(`${p.title} (already ${dup})`);
       await markReceipt(p, { duplicateOf: dup }, ctx.now());
     } else {
-      const t = await svc.tracker.createInbox({ title: p.title, description: p.description, category: p.category, size: p.size, sources: p.sources });
-      posted.push({ id: p.id, identifier: t.identifier, title: t.title });
+      const theme = p.theme ? themeNamed(p.theme, themes) : null;
+      if (p.theme && !theme) unthemed.push(`${p.title}: "${p.theme}" is no longer an open roadmap theme, so it went without one`);
+      const t = await svc.tracker.createInbox({ title: p.title, description: p.description, category: p.category, size: p.size, sources: p.sources, ...(theme ? { theme } : {}) });
+      posted.push({ id: p.id, identifier: t.identifier, title: t.title, ...(theme ? { theme } : {}) });
       open.set(norm(p.title), t.identifier);
       await markReceipt(p, { identifier: t.identifier }, ctx.now());
     }
@@ -144,7 +177,7 @@ export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]):
     // Saved after each one, so a failure halfway never posts the same task twice.
     await withLock(proposalsFile(), async () => save((await readProposals()).filter((x) => !done.has(x.id))));
   }
-  return { posted, duplicates, missing };
+  return { posted, duplicates, missing, unthemed };
 }
 
 export async function dropProposals(refs: string[], now = new Date()): Promise<{ dropped: Proposal[]; missing: string[] }> {
@@ -161,12 +194,12 @@ export async function dropProposals(refs: string[], now = new Date()): Promise<{
 
 /** One proposal as the PM reviews it: what the tracker gets, then (marked) what only this Mac sees. */
 export function formatProposal(p: Proposal, n: number, full: boolean): string {
-  const head = `${n}. [${p.id}] ${p.title}  (${p.category}, size ${p.size})`;
+  const head = `${n}. [${p.id}] ${p.title}  (${p.category}, size ${p.size}${p.theme ? `, theme ${p.theme}` : ""})`;
   if (!full) return head;
   const indent = (s: string) => s.split("\n").map((l) => `     ${l}`).join("\n");
   return [
     head,
-    "   Linear gets this title, labels pmx-status: inbox, pmx-category, pmx-size, and this description:",
+    `   Linear gets this title, labels pmx-status: inbox, pmx-category, pmx-size${p.theme ? `, pmx-theme: ${p.theme}` : ""}, and this description:`,
     indent(p.description),
     "   Only you see this (it stays on this Mac):",
     ...p.from.map((f) => `     · ${f.id} ${f.title} (${f.at.slice(0, 10)}): ${f.why}`),
@@ -181,5 +214,6 @@ export function formatProposals(list: Proposal[], full = true): string {
     ...list.map((p, i) => formatProposal(p, i + 1, full)).join("\n\n").split("\n"),
     "",
     "Approve: pmx proposals approve <number or ID …> (or --all) · Drop: pmx proposals drop <number or ID …> (or --all)",
+    ...(list.some((p) => p.theme) ? ["Theme: pmx proposals theme <number or ID> \"<theme>\" (or none)"] : []),
   ].join("\n");
 }

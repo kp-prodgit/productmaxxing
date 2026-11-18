@@ -70,3 +70,15 @@ describe("Linear adapter (SCOPE-1, TASK-6, SEC-4)", () => {
     expect(fake.calls).not.toContain("commentCreate");
   });
 });
+
+describe("roadmap theme labels in Linear (EQ-38)", () => {
+  it("puts an approved theme in the pmx-theme group, created on first use", async () => {
+    const fake = fakeLinear();
+    const t = linearTracker({ token: "lin_api_x", teamKey: "PROD", projectId: "pmx", fetch: fake.f });
+    const created = await t.createInbox({ title: "Offline photo capture", description: "d", category: "spec", size: "M", sources: [], theme: "Field capture" });
+    expect(created.theme).toBe("Field capture");
+    expect(fake.labels.filter((l) => l.isGroup).map((l) => l.name)).toContain("pmx-theme");
+    expect(fake.labels.find((l) => l.name === "Field capture")!.parent).toEqual({ name: "pmx-theme" });
+    expect((await t.createInbox({ title: "CSV export", description: "d", category: "spec", size: "S", sources: [] })).theme).toBeNull();
+  });
+});

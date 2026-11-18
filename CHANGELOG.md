@@ -2,6 +2,15 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.32.0: roadmap themes as Linear labels
+
+Bridge 4 of joining PMX and PMX Engine (EQ-38): a task can carry the roadmap theme it serves, as a Linear label, chosen by the PM.
+
+- **Themes come from your team's repo only.** PMX Engine 0.3.7's `/pmxe-memory` adds `memory/engine/themes.json`, through the same reviewed pull request as the strategy: the themes on the PMs' page that every group may see. PMX reads that file at a format it knows and nothing else of Engine's. `pmx doctor` warns about a format it can't read. (OUT-5)
+- **Synthesis may suggest one.** When the file lists themes, the model is offered them and may name one per task. A name that isn't on the list is dropped. Teams without the file see no change, and the prompt is as before.
+- **The PM decides.** The theme shows on the proposal in `pmx proposals` and in the Workspace inbox, where the PM keeps, changes or clears it (`pmx proposals theme <n> "<theme>"`, or the picker under "Why?").
+- **Checked again on approval.** A theme taken off the list since it was suggested is not applied; PMX says so. An approved theme goes in Linear's `pmx-theme` group, created on first use. Through the Claude relay it is a label change the relay task already applies.
+
 ## 0.31.0: your team's released strategy, as team memory
 
 Bridge 3 of joining PMX and PMX Engine (EQ-37): agents can draft against what the product managers' page shows, and none of it travels on into the tracker.

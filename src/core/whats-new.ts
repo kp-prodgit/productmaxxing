@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.32.0", date: "2026-11-18", headline: "Roadmap themes as Linear labels",
+    items: [
+      { what: "Where your team uses PMX Engine, proposed tasks can carry a roadmap theme as a Linear label. PMX suggests one of your team's open themes; you keep, change or clear it before approving.", try: "pmx proposals" },
+    ],
+  },
+  {
     version: "0.31.0", date: "2026-11-18", headline: "Your team's released strategy, as team memory",
     items: [
       { what: "Where your team uses PMX Engine, the head of product can put what the PMs' roadmap page shows into memory/engine/ in your team's repo, by pull request. Agents draft against it, and a task never repeats it word for word.", try: "pmx doctor" },

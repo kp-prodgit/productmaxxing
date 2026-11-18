@@ -17,6 +17,7 @@ import { planMeetings, startOfDay } from "../meetings/ledger.js";
 import type { MeetingEntry } from "../tracker/types.js";
 import { addEvidence, readProposals, stageProposals } from "./proposals.js";
 import { knownBlock, matchKnown, sameTitle, type Known } from "./dedup.js";
+import { openThemes, themeBlock, themeNamed, type RoadmapTheme } from "./themes.js";
 
 export interface SynthResult {
   /** Dry run: what would be proposed. */
@@ -107,9 +108,11 @@ export async function releasedStrategy(repo: string): Promise<string[]> {
 
 /**
  * Pulls the JSON object out of the model's reply and validates every task against team config. A task whose title or
- * rationale repeats a source, or the team's released strategy (`guarded`), eight words in a row is skipped.
+ * rationale repeats a source, or the team's released strategy (`guarded`), eight words in a row is skipped. A `theme`
+ * is kept only when it names one of the team's open roadmap themes (`themes`, EQ-38).
  */
-export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric, sourceText: Map<string, string> = new Map(), guarded: string[] = []): { tasks: CandidateTask[]; skipped: string[] } {
+export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric, sourceText: Map<string, string> = new Map(), team: { guarded?: string[]; themes?: RoadmapTheme[] } = {}): { tasks: CandidateTask[]; skipped: string[] } {
+  const guarded = team.guarded ?? [];
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < start) throw new Error("Synthesis returned no JSON.");
@@ -134,7 +137,9 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
     if (dropped.length) skipped.push(`${title}: dropped source(s) ${dropped.join(", ")} with no reason they support it`);
     const sizing = checkSizing({ category: t.category, size: t.size, sources }, t.sizing, rubric);
     const sameAs = typeof t.sameAs === "string" && /^[\w-]{2,40}$/.test(t.sameAs) ? t.sameAs : null;
-    tasks.push({ title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])), ...(sameAs ? { sameAs } : {}) });
+    const theme = themeNamed(t.theme, team.themes ?? []);
+    if (t.theme !== undefined && t.theme !== null && !theme) skipped.push(`${title}: kept without a theme, because its theme isn't one of your team's open roadmap themes`);
+    tasks.push({ title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])), ...(sameAs ? { sameAs } : {}), ...(theme ? { theme } : {}) });
   }
   return { tasks, skipped };
 }
@@ -233,6 +238,8 @@ export async function synthesize(
     ...(await readProposals()).map((p) => ({ id: p.id, title: p.title, where: "waiting" as const })),
     ...[...open].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).map((t) => ({ id: t.identifier, title: t.title, where: "tracker" as const })),
   ];
+  // EQ-38: the open roadmap themes in the team's repo, from PMX Engine. Most teams have none, and the prompt is unchanged.
+  const themes = await openThemes(ctx.personal.repoPath);
   const prompt = [
     skillBody(synth.text),
     "",
@@ -241,6 +248,7 @@ export async function synthesize(
     "",
     await categoryMenu(ctx.personal.repoPath, ctx.team.categories),
     OUTPUT_RULES,
+    ...(themes.length ? [themeBlock(themes)] : []),
     knownBlock(known),
     DATA_RULES(tag),
     "",
@@ -260,7 +268,7 @@ export async function synthesize(
     throw new Error(`Synthesis run failed: ${result.error ?? "unknown"}`);
   }
 
-  const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), await releasedStrategy(ctx.personal.repoPath));
+  const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), { guarded: await releasedStrategy(ctx.personal.repoPath), themes });
   const posted: SynthResult["posted"] = [];
   const bySource = new Map<string, number>();
   // Where each task went, for the receipt and the flow view (FLOW-1).
@@ -285,7 +293,7 @@ export async function synthesize(
   // APPROVE-1: proposals wait on this Mac, exactly as they'd be written, until the PM approves them.
   const staged = await stageProposals(fresh.map((c) => ({
     at: ctx.now().toISOString(), receipt: receipt.id, title: c.title, description: describe(c, work, receipt.id), category: c.category, size: c.size, sources: c.sources,
-    from: fromOf(c),
+    from: fromOf(c), ...(c.theme ? { theme: c.theme } : {}),
   })));
   for (const c of fresh) {
     const s = staged.find((p) => p.title === c.title);

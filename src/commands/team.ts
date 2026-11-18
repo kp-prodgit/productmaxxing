@@ -10,7 +10,7 @@ import { compareReports, neutralityRun, type NeutralityReport } from "../run/neu
 import { runTask } from "../run/run.js";
 import { verifyPr } from "../run/verify.js";
 import { synthesize } from "../synth/synthesize.js";
-import { approveProposals, dropProposals, formatProposals, readProposals } from "../synth/proposals.js";
+import { approveProposals, dropProposals, formatProposals, readProposals, setProposalTheme } from "../synth/proposals.js";
 import { startOfDay } from "../meetings/ledger.js";
 import { formatSynthStatus, recentReceipts, synthesizesHere, synthStatus, synthWindow } from "../synth/status.js";
 import type { Command } from "./index.js";
@@ -49,7 +49,7 @@ export const teamCommands: Command[] = [
   {
     name: "proposals",
     summary: "Tasks PMX proposed from your calls, exactly as Linear would get them: approve or drop each (nothing reaches Linear before you approve)",
-    usage: "pmx proposals [--brief] [--json] | pmx proposals approve <number or ID …> | --all | pmx proposals drop <number or ID …> | --all",
+    usage: "pmx proposals [--brief] [--json] | pmx proposals approve <number or ID …> | --all | pmx proposals drop <number or ID …> | --all | pmx proposals theme <number or ID> \"<roadmap theme>\" | none",
     options: { all: { type: "boolean" }, brief: { type: "boolean" }, json: { type: "boolean" } },
     async run(a) {
       const sub = a.positionals[0] ?? "list";
@@ -66,7 +66,18 @@ export const teamCommands: Command[] = [
         console.log(a.values.json ? JSON.stringify(list, null, 2) : formatProposals(list, !a.values.brief));
         return 0;
       }
-      if (sub !== "approve" && sub !== "drop") throw new Error(`Unknown subcommand "${sub}". Use approve or drop.`);
+      if (sub === "theme") {
+        // EQ-38: the PM sets, changes or clears the roadmap theme a task will carry as a pmx-theme label.
+        const [ref, ...name] = a.positionals.slice(1);
+        if (!ref || !name.length) throw new Error('Say which proposal and which theme: pmx proposals theme 1 "Field capture", or none to clear it.');
+        const ctx = await a.ctx();
+        const wanted = name.join(" ");
+        const r = await setProposalTheme(ctx.personal.repoPath, [ref], /^none$/i.test(wanted) ? null : wanted);
+        for (const p of r.changed) console.log(r.theme ? `${p.title}: theme ${r.theme}` : `${p.title}: no theme`);
+        for (const m of r.missing) console.log(`· no proposal ${m}`);
+        return r.missing.length ? 1 : 0;
+      }
+      if (sub !== "approve" && sub !== "drop") throw new Error(`Unknown subcommand "${sub}". Use approve, drop or theme.`);
       if (!refs.length) throw new Error(`Say which: pmx proposals ${sub} 1 2, an ID like p1a2b3c, or --all.`);
       const ctx = await a.ctx();
       if (sub === "drop") {
@@ -76,8 +87,9 @@ export const teamCommands: Command[] = [
         return r.missing.length ? 1 : 0;
       }
       const r = await approveProposals(ctx, await services(ctx), refs);
-      for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}`);
+      for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}${p.theme ? ` (theme ${p.theme})` : ""}`);
       for (const d of r.duplicates) console.log(`· not posted: ${d}`);
+      for (const u of r.unthemed) console.log(`· ${u}`);
       for (const m of r.missing) console.log(`· no proposal ${m}`);
       if (r.posted.length) console.log(`${r.posted.length} task(s) sent to the PMX inbox${r.posted.some((p) => p.identifier.startsWith("PENDING-")) ? ", reaching Linear at the next Claude sync" : ""}. Move one to ready to let agents pull it.`);
       return r.missing.length ? 1 : 0;

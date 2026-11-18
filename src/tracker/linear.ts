@@ -8,7 +8,7 @@ import { meetingDescription, meetingTitle, type MeetingEntry, type NewTask, type
  * is needed (TASK-6). The mapping is shared with the control plane's canvas proxy
  * (docs/control-plane-api.md).
  */
-export const GROUPS = { status: "pmx-status", category: "pmx-category", size: "pmx-size", agent: "pmx-agent", kind: "pmx-kind" } as const;
+export const GROUPS = { status: "pmx-status", category: "pmx-category", size: "pmx-size", agent: "pmx-agent", kind: "pmx-kind", theme: "pmx-theme" } as const;
 type Group = keyof typeof GROUPS;
 
 interface Label {
@@ -52,6 +52,7 @@ export function toTask(n: any): Task {
     sources: [...desc.matchAll(/^pmx:source (\S+)/gm)].map((m) => m[1]!),
     prUrl: ((n.comments?.nodes ?? []) as any[]).map((c) => c.body?.match(/^pmx:pr (\S+)/m)?.[1]).filter(Boolean).at(-1) ?? null,
     createdAt: n.createdAt,
+    theme: pick("theme"),
   };
 }
 
@@ -176,7 +177,7 @@ export function linearTracker(o: LinearOpts): Tracker {
     },
     async createInbox(t: NewTask) {
       if (hasCanary(t.title + t.description)) throw new Error(CANARY_REFUSAL);
-      const labelIds = [await label("status", "inbox"), await label("category", t.category), await label("size", t.size)];
+      const labelIds = [await label("status", "inbox"), await label("category", t.category), await label("size", t.size), ...(t.theme ? [await label("theme", t.theme)] : [])];
       const d = await gql(`mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { ${ISSUE_FIELDS} } } }`, {
         i: { teamId: await team(), projectId: o.projectId, title: t.title, description: t.description, labelIds },
       });

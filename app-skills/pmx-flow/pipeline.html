@@ -1141,11 +1141,21 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return row({
       key: k, open: true, title: p.title,
       ck: ckBtn("prop", `Approve: ${p.title}`, () => approve([p])),
-      meta: [chip(`${catName(p.category)} · ${p.size}`, "k"), h("span", null, p.from),
+      meta: [chip(`${catName(p.category)} · ${p.size}`, "k"), p.theme ? chip(`Theme: ${p.theme}`) : null, h("span", null, p.from),
         h("button", { type: "button", class: "link", "aria-expanded": open ? "true" : "false", onclick: () => { open ? S.why.delete(k) : S.why.add(k); render(); } }, open ? "Hide why" : "Why?")],
-      extra: open ? h("div", { class: "why" }, h("b", null, "What Linear would get: "), p.description) : null,
+      extra: open ? h("div", { class: "why" }, h("b", null, "What Linear would get: "), p.description, themePick(p)) : null,
       acts: [btn("Approve", { cls: "sm pri", on: () => approve([p]) }), btn("Drop", { cls: "sm sa", on: () => drop(p) })],
     });
+  }
+  // EQ-38: the roadmap theme a task carries to Linear as a pmx-theme label. Only the team's open themes are offered.
+  function themePick(p) {
+    const themes = (D && D.themes) || [];
+    if (!themes.length && !p.theme) return null;
+    return h("label", { class: "swl" }, "Roadmap theme", h("select", { class: "in", "aria-label": `Roadmap theme for ${p.title}`, "data-fk": `theme-${p.id}`, value: p.theme || "",
+      onchange: async (ev) => {
+        const theme = ev.target.value || null;
+        try { const r = await act("proposal-theme", { id: p.id, theme }); p.theme = r.theme || null; toast(r.message || "Saved."); render(); } catch (e) { toast(e.message, { error: true }); }
+      } }, [h("option", { value: "" }, "No theme"), ...themes.map((t) => h("option", { value: t }, t))]));
   }
   function draftRow(d) {
     const k = `r:${d.identifier}`;

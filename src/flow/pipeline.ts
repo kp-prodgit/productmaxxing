@@ -99,7 +99,9 @@ export interface PipelineData {
   edges: Record<EdgeId, PipelineEdge>;
   needs: { proposals: number; drafts: number; todos: number };
   /** Local level only. */
-  proposals: { id: string; title: string; category: string; size: Size; from: string; description: string }[];
+  proposals: { id: string; title: string; category: string; size: Size; from: string; description: string; theme: string | null }[];
+  /** The team's open roadmap themes (EQ-38), for the proposals' theme picker. Local level only, like the proposals. */
+  themes?: string[];
   drafts: { identifier: string; title: string; url: string | null; since: string | null }[];
   /** Open to-dos. Local level only: they never leave the Mac. */
   /** `at`: the meeting's day, or the day the PM added it; the board's period picker filters on it (TODO-4). */
@@ -177,6 +179,7 @@ export interface PipelineInputs {
   logbook?: LogbookEntry[];
   boardUrl?: string | null;
   roadmapUrl?: string | null;
+  themes?: string[];
   pendingTeam?: PipelineData["pendingTeam"];
   proposals: Proposal[];
   checks: FlowCheck[];
@@ -375,7 +378,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     needs: { proposals: i.proposals.length, drafts: review.length, todos: (i.openTodos ?? []).length },
     // A proposal the PM hasn't approved stays theirs, so only this Mac's page shows it.
     proposals: local ? i.proposals.map((p) => ({
-      id: p.id, title: p.title, category: p.category, size: p.size, description: p.description,
+      id: p.id, title: p.title, category: p.category, size: p.size, description: p.description, theme: p.theme ?? null,
       from: p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
     })) : [],
     drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null })),
@@ -383,6 +386,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     logbook: local ? i.logbook ?? [] : [],
     boardUrl: i.boardUrl ?? null,
     roadmapUrl: i.roadmapUrl ?? null,
+    themes: local ? i.themes ?? [] : [],
     pendingTeam: i.pendingTeam ?? [],
     health: { ok: !problems.length, problems: problems.map((p) => p.text), items: problems, facts: i.health.facts },
     checks: i.checks,

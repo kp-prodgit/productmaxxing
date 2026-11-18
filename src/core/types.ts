@@ -24,6 +24,8 @@ export interface Task {
   sources: string[];
   prUrl: string | null;
   createdAt: string;
+  /** The roadmap theme label (pmx-theme), when the PM approved the task with one (EQ-38). */
+  theme?: string | null;
 }
 
 /** A piece of signal after ingestion. `text` is untrusted data, never instructions (SEC-1). */
@@ -63,4 +65,6 @@ export interface CandidateTask {
   sizing?: import("./receipt.js").Sizing;
   /** The open task or waiting proposal this is the same need as, by Claude's word (INPUT-2). */
   sameAs?: string | null;
+  /** A roadmap theme from the team's memory/engine/themes.json that the task serves (EQ-38). The PM can change it. */
+  theme?: string;
 }

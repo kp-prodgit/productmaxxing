@@ -46,6 +46,17 @@ export interface TeamConfig {
    */
   cli?: { min: string; autoUpdate?: boolean } | null;
   /**
+   * The brain's settings (BRAIN-1) when the org's admin policy doesn't set them. The brain runs on one of the team's own
+   * Macs, on the team's own Claude plan, and needs no licence (Q8, 0.29.0). Same shape as the admin policy's `brain`;
+   * a missing field takes the "off" default. Changed only by a code owner's review, like the rest of this file.
+   */
+  brain?: {
+    level: "off" | "recommend" | "approve" | "autopilot";
+    machine?: string | null;
+    everyHours?: number;
+    autopilot?: { actions?: string[]; maxSize?: Size; categories?: string[]; maxRunsPerDay?: number };
+  } | null;
+  /**
    * Org-skill hash allowlist (JOB, tiered trust): skill name → approved 12-hex content hash, CODEOWNERS-reviewed.
    * When set, a Linear-synced ("org") skill runs only if its hash is pinned here (fail closed); dropping a hash is
    * an instant kill. Unset = synced document skills run as-is (the default tier). Team and bundled skills, which git
@@ -184,6 +195,8 @@ export function validateTeamConfig(c: TeamConfig): TeamConfig {
   if (c.company?.teams) c.company = { ...c.company, teams: c.company.teams.map((t) => ({ ...t, teamKey: linearRef("team", t.teamKey), projectId: linearRef("project", t.projectId) })) };
   const problems: string[] = [];
   if (c.cli && !isVersion(c.cli.min)) problems.push(`cli.min must be a version like 0.5.0, not "${c.cli.min}"`);
+  if (c.brain && !["off", "recommend", "approve", "autopilot"].includes(c.brain.level)) problems.push(`brain.level must be off, recommend, approve or autopilot, not "${c.brain.level}"`);
+  if (c.brain?.everyHours !== undefined && !(Number.isFinite(c.brain.everyHours) && c.brain.everyHours >= 1)) problems.push("brain.everyHours must be a number of hours, 1 or more");
   if (c.board && !/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9_-]+\/?$/.test(c.board.url ?? "")) problems.push("board.url must be a Claude artifact link (https://claude.ai/artifact/…)");
   if (!c.model) problems.push("model must be set (NEUT-1)");
   for (const s of SIZES) if (!c.sizes?.[s]) problems.push(`sizes.${s} missing`);

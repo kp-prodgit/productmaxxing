@@ -12,6 +12,12 @@ changes back. You may use it in production only with a valid ProductMaxxing
 subscription for the number of seats in your license, or during an evaluation
 period of up to 60 days.
 
+From version 0.29.0, you may also use in production, without a subscription,
+the parts of this software that run on your own machines and use no paid hosted
+service: the brain, review caps and auto-pause, and the application of your
+organization's admin policy. A subscription is still required for the parts that
+use ProductMaxxing's paid hosted services, such as cloud leases.
+
 You may not sell, sublicense, or offer this software, or a service built on it,
 to third parties, and you may not remove or circumvent the license checks.
 

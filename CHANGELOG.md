@@ -2,6 +2,15 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.29.0: the brain is free on your Macs
+
+Q8: everything that runs on your team's Macs is free, the brain included. What a plan covers is the hosted service: team analytics and cloud leases.
+
+- **The brain needs no license.** It runs on one of your team's Macs, on your own Claude plan. Turn it on with a `brain` block in `pmx.config.json`, in a reviewed pull request, for example `"brain": { "level": "recommend", "machine": null, "everyHours": 4 }`. It has the same fields as the admin policy's brain, and anything left out stays off. A team without the hosted app can use it too. (BRAIN-1)
+- **Your org's admin policy still decides when it sets the brain**, "off" included. `pmx brain --status` says which one applies.
+- **A license is only for cloud leases.** `pmx doctor` reports a missing license only when the team uses cloud leases, and `pmx status` says none is needed otherwise.
+- **`ee/LICENSE` allows it.** From this version, the parts of `ee/` that run on your own machines and use no paid hosted service may be used in production without a subscription: the brain, review caps and auto-pause, and applying the admin policy.
+
 ## 0.28.0: one door to PMX Engine
 
 Phase 2 of joining PMX and PMX Engine (Q15, Q16). On a Mac without PMX Engine, which is every PM's, nothing changes.

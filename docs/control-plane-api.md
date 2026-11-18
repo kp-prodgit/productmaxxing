@@ -24,7 +24,7 @@ The contract between the `pmx` CLI (the free client in `src/cloud/`, Apache-2.0,
 
 ## Plans (PLAN-1 to PLAN-4)
 
-Every signed-in user gets a **free** org. The UI is free; team analytics and the brain are paid.
+Every signed-in user gets a **free** org. The UI is free; team analytics and cloud leases are paid. From CLI 0.29.0 the brain is free too: when the admin policy has no `brain`, the CLI runs it from `brain` in `pmx.config.json`, with no license. The server rules below are unchanged, so a free org still can't turn the brain on through the policy.
 
 | Capability | `free` | `team` / `enterprise` |
 |---|---|---|

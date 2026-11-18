@@ -1,9 +1,14 @@
 import { generateKeyPairSync, sign } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_TEAM, type TeamConfig } from "../../src/core/config.js";
+import { DEFAULT_TEAM, loadTeamConfig, type TeamConfig } from "../../src/core/config.js";
 import { memoryKeychain } from "../../src/core/keychain.js";
 import type { RunLogEntry } from "../../src/core/runlog.js";
-import { freshHome, personal } from "../../test/helpers.js";
+import { freshHome, personal, tmp } from "../../test/helpers.js";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { writeJson } from "../../src/core/fsutil.js";
+import { paths } from "../../src/core/paths.js";
+import { brainAccess, teamBrain } from "../src/index.js";
 import { Cloud } from "../../src/cloud/client.js";
 import { cloudLease } from "../src/cloud-lease.js";
 import { toEvents } from "../../src/cloud/events.js";
@@ -167,5 +172,37 @@ describe("pmx login", () => {
       },
     })).rejects.toThrow(/unexpected state/);
     expect(await kc.get("machine-token")).toBeNull();
+  });
+});
+
+describe("the brain is free on the team's Macs (Q8, 0.29.0)", () => {
+  beforeEach(freshHome);
+  const ctxOf = (t: TeamConfig) => ({ team: t, keychain: memoryKeychain(), fetch: (() => { throw new Error("no network in this test"); }) as any, now: () => now }) as any;
+
+  it("reads its settings from pmx.config.json, with the off defaults, and needs no licence", async () => {
+    expect(teamBrain({ ...DEFAULT_TEAM } as TeamConfig).level).toBe("off");
+    const own = teamBrain({ ...DEFAULT_TEAM, brain: { level: "approve", autopilot: { actions: ["make-ready", "hold", "launch-rockets"], maxRunsPerDay: 3 } } } as TeamConfig);
+    expect(own).toEqual({ level: "approve", machine: null, everyHours: 4, autopilot: { actions: ["make-ready"], maxSize: "S", categories: [], maxRunsPerDay: 3 } });
+
+    // No control plane, no licence on this machine: the team's own setting is enough.
+    const local = await brainAccess(ctxOf({ ...DEFAULT_TEAM, team: "t", brain: { level: "recommend" } } as TeamConfig));
+    expect(local).toMatchObject({ source: "pmx.config.json", brain: { level: "recommend" } });
+    expect((await brainAccess(ctxOf({ ...DEFAULT_TEAM, team: "t" } as TeamConfig))).brain.level).toBe("off");
+  });
+
+  it("follows the org's admin policy whenever it sets the brain, off included", async () => {
+    const withLocal = { ...team, brain: { level: "autopilot" as const } };
+    await writeJson(paths.policy(), { fetchedAt: now.toISOString(), orgId: "org_abc", policy }, 0o600);
+    expect(await brainAccess(ctxOf(withLocal))).toMatchObject({ source: "pmx.config.json", brain: { level: "autopilot" } });
+    await writeJson(paths.policy(), { fetchedAt: now.toISOString(), orgId: "org_abc", policy: { ...policy, brain: { level: "off", machine: null, everyHours: 4, autopilot: { actions: [], maxSize: "S", categories: [], maxRunsPerDay: 0 } } } }, 0o600);
+    expect(await brainAccess(ctxOf(withLocal))).toMatchObject({ source: "admin policy v3", brain: { level: "off" } });
+  });
+
+  it("refuses a team config with a brain level it doesn't know", async () => {
+    const repo = await tmp("brain-cfg-");
+    await writeFile(join(repo, "pmx.config.json"), JSON.stringify({ ...DEFAULT_TEAM, team: "t", brain: { level: "everything" } }));
+    await expect(loadTeamConfig(repo)).rejects.toThrow(/brain\.level must be off, recommend, approve or autopilot/);
+    await writeFile(join(repo, "pmx.config.json"), JSON.stringify({ ...DEFAULT_TEAM, team: "t", brain: { level: "recommend", everyHours: 0 } }));
+    await expect(loadTeamConfig(repo)).rejects.toThrow(/brain\.everyHours/);
   });
 });

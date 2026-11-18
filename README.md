@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.28.0/productmaxxing-0.28.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.28.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/productmaxxing-0.29.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.28.0.tgz
+npm install -g ./productmaxxing-0.29.0.tgz
 pmx init
 ```
 
@@ -67,8 +67,8 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `login` | Sign in to the free hosted app; creates your team's free org if there isn't one |
 | `canvas` | Open the team board: the Claude board if there is one, else the hosted app (free) |
 | `analytics` | What this machine sends to your hosted org; `--show` prints the pending events, `on` / `off` |
-| `brain` | Team plan: assess the board and suggest, queue or (on autopilot) take the next actions, each with a reason; `--review` approves what's waiting, `--why` explains the last pass |
-| `policy` / `license` | Team plan (`ee/`): show the applied admin policy, show or refresh the license |
+| `brain` | Free: assess the board and suggest, queue or (on autopilot) take the next actions, each with a reason; `--review` approves what's waiting, `--why` explains the last pass |
+| `policy` / `license` | Show the applied admin policy; show or refresh the license that cloud leases need (`ee/`) |
 | `tick` | One scheduler pass (launchd runs it every 30 minutes) |
 | `uninstall` | Remove the job, profile, keychain items and `~/.pmx` |
 
@@ -118,11 +118,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.28.0/productmaxxing-0.28.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.28.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/productmaxxing-0.29.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.29.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.28.0.tgz
+npm install -g ./productmaxxing-0.29.0.tgz
 pmx whats-new --since <the version you had>
 ```
 
@@ -140,15 +140,18 @@ Then run `pmx doctor`. It names anything left to do: for example, `pmx claude lo
 - **If you don't update:** your digest, to-dos and `pmx explain` keep working, but shared team work (suggesting tasks, pulling, the brain, the company roll-up) stops with a message until you do. That way an old version never writes something the rest of the team's versions would misread. `pmx doctor` says when you're behind.
 - **What never breaks within a major version:** shared files and Linear labels only gain things; a file written by a newer pmx is refused, not misread; every release is tested against files older releases wrote; and the hosted API only adds to `/v1`. Details in [docs/control-plane-api.md](docs/control-plane-api.md) ("Versions").
 
-## Free and paid
+## Free, and the hosted service
 
-| Free (Apache-2.0, plus the free hosted app) | Team plan |
+Everything that runs on your team's Macs is free, the brain included. What a plan covers is the hosted service.
+
+| Free on your Macs, and the free hosted app | The hosted service's Team plan |
 |---|---|
 | The CLI, digest, task suggestions, pull, review and every local page | Team analytics: accept rates, cycle time, spend, digest and suggestion volume, brain activity |
-| The hosted board, invites, admin policy and the Linear broker | The brain: suggests, queues or (on autopilot, within the admin's limits) takes the next actions on the board |
-| Content-free analytics events, after you sign in and see what's sent | Cloud leases and the signed license |
+| The brain: suggests, queues or (on autopilot, within the limits you set) takes the next actions on the board | Cloud leases, and the signed license they need |
+| The hosted board, invites, admin policy and the Linear broker | |
+| Content-free analytics events, after you sign in and see what's sent | |
 
-The brain runs on one of your team's machines on your own Claude plan, so task text never reaches ProductMaxxing. Fixed rules decide what it may do, every action gets a tracker comment saying why, and it can never approve an agent's draft.
+The brain runs on one of your team's machines on your own Claude plan, so task text never reaches ProductMaxxing. Turn it on with a `brain` block in `pmx.config.json`, in a reviewed pull request, for example `"brain": { "level": "recommend", "machine": null, "everyHours": 4 }`. If your org's admin policy in the hosted app sets the brain, the policy decides instead. Fixed rules decide what it may do, every action gets a tracker comment saying why, and it can never approve an agent's draft.
 
 ## How it keeps work neutral and personal data out
 

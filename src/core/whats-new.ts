@@ -19,6 +19,13 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.29.0", date: "2026-11-18", headline: "The brain is free on your Macs",
+    items: [
+      { what: "The brain needs no license: it runs on one of your team's Macs, on your own Claude plan. Turn it on with a \"brain\" block in pmx.config.json, in a reviewed pull request; your org's admin policy still decides when it sets the brain.", try: "pmx brain --status" },
+      { what: "A license is now needed only for cloud leases, so pmx doctor no longer reports a missing one otherwise." },
+    ],
+  },
+  {
     version: "0.28.0", date: "2026-11-18", headline: "One door to PMX Engine",
     items: [
       { what: "pmx open opens your PMX workspace on this Mac. Where PMX Engine is installed, the nav also offers Studio, which opens the head of product's studio in its own tab.", try: "pmx open" },

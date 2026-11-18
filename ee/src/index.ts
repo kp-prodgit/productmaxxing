@@ -14,7 +14,7 @@ import { setAfterLogin } from "../../src/commands/cloud.js";
 import { cloudLease } from "./cloud-lease.js";
 import { currentLicense, refreshLicense } from "./license.js";
 import { login } from "../../src/cloud/login.js";
-import { applyPolicy, BRAIN_OFF, getPolicy, type BrainPolicy, type Policy } from "./policy.js";
+import { applyPolicy, BRAIN_ACTIONS, BRAIN_OFF, getPolicy, type BrainPolicy, type Policy } from "./policy.js";
 import { brainPass, formatBrain, listBrainReceipts, queueSize, readBrainReceipt, reviewQueue } from "./brain/brain.js";
 import { services } from "../../src/core/services.js";
 import { loadState } from "../../src/core/state.js";
@@ -48,15 +48,30 @@ async function cloudLeaseFor(ctx: Ctx) {
   return cloudLease(cloud, ctx.team.controlPlane!.orgId);
 }
 
-/** The brain's permission for this org, or why it can't run here (BRAIN-1). */
-async function brainAccess(ctx: Ctx): Promise<{ policy: Policy; brain: BrainPolicy } | string> {
+/** The policy a team without a control plane runs under: nothing narrowed, and no brain unless pmx.config.json sets one. */
+const LOCAL_POLICY: Policy = { version: 0, updatedAt: "", allowedCategories: [], allowedSources: [], allowedPlans: [], egressAllowlist: [] };
+
+/** The team's own brain settings from pmx.config.json, with the "off" defaults filling what it leaves out. */
+export function teamBrain(team: TeamConfig): BrainPolicy {
+  const b = team.brain;
+  if (!b) return BRAIN_OFF;
+  const actions = (b.autopilot?.actions ?? []).filter((a): a is BrainPolicy["autopilot"]["actions"][number] => (BRAIN_ACTIONS as readonly string[]).includes(a) && a !== "hold");
+  return {
+    level: b.level, machine: b.machine ?? null, everyHours: b.everyHours ?? BRAIN_OFF.everyHours,
+    autopilot: { ...BRAIN_OFF.autopilot, ...b.autopilot, actions },
+  };
+}
+
+/**
+ * The brain's settings (BRAIN-1), and where they came from. The brain runs on one of the team's own Macs, on the team's
+ * own Claude plan, so it needs no licence (Q8, 0.29.0). The org's admin policy decides when it says anything about the
+ * brain, "off" included; otherwise the team's pmx.config.json does.
+ */
+export async function brainAccess(ctx: Ctx): Promise<{ policy: Policy; brain: BrainPolicy; source: string }> {
   const cp = ctx.team.controlPlane;
-  if (!cp) return "The brain is part of the Team plan. Run `pmx login`, add the org to pmx.config.json, then upgrade in the hosted app.";
-  const lic = await currentLicense(ctx.now(), cp.orgId);
-  if (!lic.claims?.features.includes("brain"))
-    return `The brain needs a Team plan license (${lic.claims ? `this one includes: ${lic.claims.features.join(", ")}` : lic.problem}). After upgrading, run \`pmx license --refresh\`.`;
-  const policy = await getPolicy(cloudFor(ctx.team, ctx.keychain, ctx.fetch)!, cp.orgId, ctx.now());
-  return { policy, brain: policy.brain ?? BRAIN_OFF };
+  const policy = cp ? await getPolicy(cloudFor(ctx.team, ctx.keychain, ctx.fetch)!, cp.orgId, ctx.now()) : LOCAL_POLICY;
+  if (policy.brain) return { policy, brain: policy.brain, source: `admin policy v${policy.version}` };
+  return { policy, brain: teamBrain(ctx.team), source: "pmx.config.json" };
 }
 
 const isBrainMachine = (ctx: Ctx, b: BrainPolicy) => {
@@ -80,7 +95,7 @@ export function registerEe(): Command[] {
     "brain",
     async (ctx) => {
       const access = await brainAccess(ctx).catch(() => null);
-      if (!access || typeof access === "string" || access.brain.level === "off" || !isBrainMachine(ctx, access.brain)) return null;
+      if (!access || access.brain.level === "off" || !isBrainMachine(ctx, access.brain)) return null;
       const s = await loadState();
       if (s.lastBrainAt && ctx.now().getTime() - Date.parse(s.lastBrainAt) < access.brain.everyHours * 3600000) return null;
       const r = await brainPass(ctx, await services(ctx), { policy: access.brain, policyVersion: access.policy.version });
@@ -109,13 +124,16 @@ export function registerEe(): Command[] {
       const lic = await currentLicense(new Date(), team.controlPlane.orgId);
       return [
         { id: "ee.signed-in", ok: signedIn, detail: signedIn ? "signed in to the ProductMaxxing control plane" : "not signed in: run `pmx login`", level: "fail" as const },
-        { id: "ee.license", ok: !!lic.claims, detail: lic.claims ? `${lic.claims.plan} license, ${lic.claims.seats} seats, valid to ${new Date(lic.claims.exp * 1000).toISOString().slice(0, 10)}` : `license: ${lic.problem}`, level: team.lease === "cloud" ? ("fail" as const) : ("warn" as const) },
+        // Only cloud leases need a licence (Q8, 0.29.0): without them, a missing one is nothing to report.
+        ...(lic.claims || team.lease === "cloud"
+          ? [{ id: "ee.license", ok: !!lic.claims, detail: lic.claims ? `${lic.claims.plan} license, ${lic.claims.seats} seats, valid to ${new Date(lic.claims.exp * 1000).toISOString().slice(0, 10)}` : `license for cloud leases: ${lic.problem}`, level: "fail" as const }]
+          : []),
       ];
     },
     status: async (ctx) => {
       if (!ctx.team.controlPlane) return [];
       const lic = await currentLicense(ctx.now(), ctx.team.controlPlane.orgId);
-      return [`Control plane: ${ctx.team.controlPlane.url} (org ${ctx.team.controlPlane.orgId}) · license ${lic.claims ? `${lic.claims.plan}, ${lic.claims.seats} seats` : lic.problem}`];
+      return [`Control plane: ${ctx.team.controlPlane.url} (org ${ctx.team.controlPlane.orgId}) · license ${lic.claims ? `${lic.claims.plan}, ${lic.claims.seats} seats` : ctx.team.lease === "cloud" ? lic.problem : "none needed (only cloud leases use one)"}`];
     },
   });
 
@@ -130,7 +148,7 @@ async function openUrl(url: string) {
 const eeCommands: Command[] = [
   {
     name: "brain",
-    summary: "Team plan: assess the board and suggest, queue or (on autopilot) take the next actions, each with its reason",
+    summary: "Assess the board and suggest, queue or (on autopilot) take the next actions, each with its reason. Free: it runs on one of your team's Macs",
     usage: "pmx brain [--dry-run] | pmx brain --review | pmx brain --why [<id>] | pmx brain --status",
     options: { "dry-run": { type: "boolean" }, review: { type: "boolean" }, why: { type: "boolean" }, status: { type: "boolean" } },
     async run(a) {
@@ -142,15 +160,11 @@ const eeCommands: Command[] = [
         return r ? 0 : 1;
       }
       const access = await brainAccess(ctx);
-      if (typeof access === "string") {
-        console.log(access);
-        return 1;
-      }
       const b = access.brain;
       if (a.values.status) {
         const last = (await listBrainReceipts())[0];
         console.log([
-          `Level: ${b.level} (admin policy v${access.policy.version})`,
+          `Level: ${b.level} (from ${access.source})`,
           `Runs on: ${b.machine ?? ctx.team.synthesizer ?? "no machine set"}${isBrainMachine(ctx, b) ? " (this machine)" : ""}, every ${b.everyHours} h`,
           `Autopilot limits: ${b.autopilot.actions.join(", ") || "no actions"} · up to size ${b.autopilot.maxSize} · ${b.autopilot.categories.join(", ") || "every allowed category"} · ${b.autopilot.maxRunsPerDay} run(s) a day`,
           `Waiting for approval here: ${await queueSize(ctx.now())}`,
@@ -164,7 +178,9 @@ const eeCommands: Command[] = [
         return 0;
       }
       if (b.level === "off" && !a.values["dry-run"]) {
-        console.log("The brain is off in your admin policy. An admin can turn it on in the hosted app (Admin → Brain). Try `pmx brain --dry-run` to see what it would suggest.");
+        console.log(access.source === "pmx.config.json"
+          ? 'The brain is off. Turn it on with a "brain" block in pmx.config.json, in a reviewed pull request, for example "brain": { "level": "recommend", "machine": null, "everyHours": 4 }. Try `pmx brain --dry-run` to see what it would suggest.'
+          : `The brain is off in your org's ${access.source}. An admin can turn it on in the hosted app (Admin → Brain). Try \`pmx brain --dry-run\` to see what it would suggest.`);
         return 1;
       }
       // A dry run with the brain off shows what "recommend" would say, and changes nothing.
@@ -192,7 +208,7 @@ const eeCommands: Command[] = [
   },
   {
     name: "license",
-    summary: "Show or refresh this machine's Team license",
+    summary: "Show or refresh this machine's license, which only cloud leases need",
     options: { refresh: { type: "boolean" } },
     async run(a) {
       const ctx = await a.ctx();

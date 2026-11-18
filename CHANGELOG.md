@@ -2,6 +2,14 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.31.0: your team's released strategy, as team memory
+
+Bridge 3 of joining PMX and PMX Engine (EQ-37): agents can draft against what the product managers' page shows, and none of it travels on into the tracker.
+
+- **`memory/engine/` is team memory.** PMX Engine 0.3.6's `/pmxe-memory` puts what the PMs' page shows there, in a pull request that code owners review. PMX never writes to it. (OUT-4)
+- **New team repos point agents at it.** The template's `CLAUDE.md` imports `@memory/engine/README.md`, which says what the files are. For a repo set up earlier, `pmx doctor` warns when the folder is there but `CLAUDE.md` doesn't point at it, and gives the line to add.
+- **Synthesis never repeats it.** A task whose title or rationale repeats those files eight words in a row is skipped, as one that repeats a meeting already is. Summaries are fine.
+
 ## 0.30.0: a link to your team's roadmap
 
 Bridge 1 of joining PMX and PMX Engine (EQ-28): the head of product can give PMs a page of their own in PMX Engine, and every PM's Workspace links to it.

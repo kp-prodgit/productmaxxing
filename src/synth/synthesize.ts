@@ -4,6 +4,8 @@ import { DATA_RULES, dataBlock } from "../core/prompt.js";
 import { RunLogStore } from "../core/runlog-store.js";
 import type { Services } from "../core/services.js";
 import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { newReceiptId, writeReceipt, type RunReceipt, type SizeFlag, type Sizing, type TaskReceipt } from "../core/receipt.js";
 import { parseRubric, type SizeRubric } from "../core/skillcheck.js";
 import { categoryMenu, loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
@@ -92,8 +94,22 @@ export const FLAG_TEXT: Record<SizeFlag, string> = {
   "count-above": "it cites more sources than this size expects",
 };
 
-/** Pulls the JSON object out of the model's reply and validates every task against team config. */
-export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric, sourceText: Map<string, string> = new Map()): { tasks: CandidateTask[]; skipped: string[] } {
+/**
+ * The released strategy PMX Engine put in team memory (EQ-37, bridge 3 of the join): what the product managers' page
+ * shows, merged into `memory/engine/` by a reviewed pull request. Agents draft against it; the tracker never gets it
+ * word for word. The README there says what the files are, so it isn't guarded.
+ */
+export async function releasedStrategy(repo: string): Promise<string[]> {
+  const dir = join(repo, "memory", "engine");
+  const names = await readdir(dir).catch(() => [] as string[]);
+  return Promise.all(names.filter((n) => n.endsWith(".md") && n !== "README.md").sort().map((n) => readFile(join(dir, n), "utf8")));
+}
+
+/**
+ * Pulls the JSON object out of the model's reply and validates every task against team config. A task whose title or
+ * rationale repeats a source, or the team's released strategy (`guarded`), eight words in a row is skipped.
+ */
+export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric, sourceText: Map<string, string> = new Map(), guarded: string[] = []): { tasks: CandidateTask[]; skipped: string[] } {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < start) throw new Error("Synthesis returned no JSON.");
@@ -113,6 +129,7 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
     if (!sources.length) { skipped.push(`${title}: ${cited.length ? "no source has a reason it supports the task" : "no valid sources"}`); continue; }
     const all = [...sourceText.values()];
     if (quotesSource(`${title} ${rationale}`, all)) { skipped.push(`${title}: its text repeats a meeting word for word, and the tracker gets summaries only`); continue; }
+    if (guarded.length && quotesSource(`${title} ${rationale}`, guarded)) { skipped.push(`${title}: its text repeats your team's released strategy word for word, and the tracker gets summaries only`); continue; }
     const dropped = cited.filter((id) => !sources.includes(id));
     if (dropped.length) skipped.push(`${title}: dropped source(s) ${dropped.join(", ")} with no reason they support it`);
     const sizing = checkSizing({ category: t.category, size: t.size, sources }, t.sizing, rubric);
@@ -243,7 +260,7 @@ export async function synthesize(
     throw new Error(`Synthesis run failed: ${result.error ?? "unknown"}`);
   }
 
-  const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])));
+  const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), await releasedStrategy(ctx.personal.repoPath));
   const posted: SynthResult["posted"] = [];
   const bySource = new Map<string, number>();
   // Where each task went, for the receipt and the flow view (FLOW-1).

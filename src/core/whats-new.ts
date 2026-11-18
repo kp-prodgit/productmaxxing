@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.31.0", date: "2026-11-18", headline: "Your team's released strategy, as team memory",
+    items: [
+      { what: "Where your team uses PMX Engine, the head of product can put what the PMs' roadmap page shows into memory/engine/ in your team's repo, by pull request. Agents draft against it, and a task never repeats it word for word.", try: "pmx doctor" },
+    ],
+  },
+  {
     version: "0.30.0", date: "2026-11-18", headline: "A link to your team's roadmap",
     items: [
       { what: "When your team has a roadmap page for PMs in PMX Engine, the nav shows Roadmap under Team. The head of product adds its link to pmx.config.json; PMX holds only the link.", try: "pmx open roadmap" },

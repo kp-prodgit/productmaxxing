@@ -117,6 +117,13 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
     const ok = await stat(join(repo, f)).then(() => true, () => false);
     add(`repo.${f}`, ok, `PMX repo has ${f}${f === "memory" ? " (shared team memory, B4)" : f === "CODEOWNERS" ? " (code owners on skills, memory, config)" : ""}`);
   }
+  // EQ-37 (bridge 3 of the join): PMX Engine's released strategy reaches agents only through CLAUDE.md.
+  if (await stat(join(repo, "memory", "engine", "README.md")).then(() => true, () => false)) {
+    const points = (await readFile(join(repo, "CLAUDE.md"), "utf8").catch(() => "")).includes("memory/engine");
+    add("repo.memory-engine", points, points
+      ? "agents find the released strategy in memory/engine/ through CLAUDE.md"
+      : "memory/engine/ holds released strategy from PMX Engine, but CLAUDE.md doesn't point agents at it: add `@memory/engine/README.md` under \"Team memory\", in a pull request", "warn");
+  }
   for (const [cat, { skill }] of Object.entries(d.team.categories)) {
     const ok = await stat(teamSkillPath(repo, skill)).then(() => true, () => false);
     add(`skill.${skill}`, ok, `shared skill ${skill} for ${cat} in .claude/skills (NEUT-2)`);

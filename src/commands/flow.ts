@@ -11,6 +11,8 @@ import { installMcp, mcpInstalled, serveMcp } from "../mcp/server.js";
 import { startExplainServer } from "../explain/server.js";
 import { noteWebServer, runningWebServer } from "../flow/web-server.js";
 import type { Command } from "./index.js";
+import { savePersonalConfig } from "../core/config.js";
+import { findPmxe, openStudio } from "../engine/bridge.js";
 
 const hoursOf = (v: string | undefined) => {
   if (v === undefined) return 24;
@@ -21,7 +23,73 @@ const hoursOf = (v: string | undefined) => {
   return h;
 };
 
+/**
+ * This Mac's PMX page, for `pmx flow --web` and `pmx open`. One per Mac: a second run opens the one already running,
+ * so earlier links keep working. On a Mac with PMX Engine the page also offers the studio (phase 2 of the join).
+ */
+async function serveWorkspace(a: Parameters<Command["run"]>[0], noOpen: boolean): Promise<number> {
+  const ctx = await a.ctx();
+  const running = await runningWebServer();
+  if (running) {
+    if (!noOpen) await exec("open", [running.url]);
+    console.log(`PMX is already serving your board (since ${new Date(running.startedAt).toLocaleString()}, in the Terminal window that started it): ${running.url}\nTo stop it, press Ctrl+C in that window.`);
+    return 0;
+  }
+  // The board reads and saves through a fresh context per request (liveHandlers): this server can run for days.
+  const s = await startExplainServer({
+    team: ctx.team, personal: ctx.personal,
+    flow: async (hours, scope) => loadFlowGraph(await a.ctx(), { level: scope === "team" ? "team" : "local", hours }),
+    pipeline: await liveHandlers(a.ctx),
+    studio: localStudio(a),
+  });
+  const unnote = await noteWebServer(s.flowUrl);
+  if (!noOpen) await exec("open", [s.flowUrl]);
+  console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve proposals and change your settings. Running \`pmx open\` or \`pmx flow --web\` again opens this same page. Press Ctrl+C to stop.`);
+  await new Promise<void>((resolve) => { const stop = () => s.close().then(unnote).then(resolve); process.on("SIGINT", stop); process.on("SIGTERM", stop); });
+  return 0;
+}
+
+/** The studio as this Mac's page sees it: there only where PMX Engine is installed, and not hidden in this PM's settings. */
+function localStudio(a: Parameters<Command["run"]>[0]) {
+  return {
+    async status() {
+      const personal = (await a.ctx()).personal;
+      const p = personal.studio === "hidden" ? null : await findPmxe(exec);
+      return p ? { available: true, version: p.version } : { available: false };
+    },
+    async open() {
+      const p = await findPmxe(exec);
+      if (p) openStudio(p);
+    },
+  };
+}
+
 export const flowCommands: Command[] = [
+  {
+    name: "open",
+    summary: "Open your PMX workspace on this Mac. With PMX Engine installed it also offers the studio; `pmx open studio` opens the studio itself",
+    usage: "pmx open [studio] [--no-open] | pmx open --hide-studio | --show-studio",
+    options: { "no-open": { type: "boolean" }, "hide-studio": { type: "boolean" }, "show-studio": { type: "boolean" } },
+    async run(a) {
+      if (a.values["hide-studio"] || a.values["show-studio"]) {
+        const ctx = await a.ctx();
+        if (a.values["hide-studio"]) ctx.personal.studio = "hidden";
+        else delete ctx.personal.studio;
+        await savePersonalConfig(ctx.personal);
+        console.log(a.values["hide-studio"] ? "The Studio entry is hidden on this Mac's PMX page. `pmxe studio` still opens the studio." : "The Studio entry shows on this Mac's PMX page wherever PMX Engine is installed.");
+        return 0;
+      }
+      if (a.positionals[0] === "studio") {
+        const p = await findPmxe(exec);
+        if (!p) throw new Error("PMX Engine isn't installed on this Mac. The head of product installs it with `npm install -g pmx-engine`.");
+        openStudio(p);
+        console.log("Opening PMX Engine's studio in your browser. `pmxe studio` does the same in Terminal.");
+        return 0;
+      }
+      if (a.positionals.length) throw new Error(`pmx open takes "studio" or nothing, not "${a.positionals[0]}".`);
+      return serveWorkspace(a, Boolean(a.values["no-open"]));
+    },
+  },
   {
     name: "flow",
     summary: "The pipeline board: skills, scheduled tasks, what travels from your meetings to Linear and back, and the rules behind it. --web opens it on this Mac",
@@ -50,22 +118,7 @@ export const flowCommands: Command[] = [
         console.log(`Saved. The flow view is ${ctx.personal.flow!.url}`);
         return 0;
       }
-      if (a.values.web) {
-        // One board per Mac: a second `pmx flow --web` opens the one already running, so earlier links keep working.
-        const running = await runningWebServer();
-        if (running) {
-          if (!a.values["no-open"]) await exec("open", [running.url]);
-          console.log(`PMX is already serving your board (since ${new Date(running.startedAt).toLocaleString()}, in the Terminal window that started it): ${running.url}\nTo stop it, press Ctrl+C in that window.`);
-          return 0;
-        }
-        // The board reads and saves through a fresh context per request (liveHandlers): this server can run for days.
-        const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, flow: async (hours, scope) => loadFlowGraph(await a.ctx(), { level: scope === "team" ? "team" : "local", hours }), pipeline: await liveHandlers(a.ctx) });
-        const unnote = await noteWebServer(s.flowUrl);
-        if (!a.values["no-open"]) await exec("open", [s.flowUrl]);
-        console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve proposals and change your settings. Running \`pmx flow --web\` again opens this same page. Press Ctrl+C to stop.`);
-        await new Promise<void>((resolve) => { const stop = () => s.close().then(unnote).then(resolve); process.on("SIGINT", stop); process.on("SIGTERM", stop); });
-        return 0;
-      }
+      if (a.values.web) return serveWorkspace(a, Boolean(a.values["no-open"]));
       const g = await loadFlowGraph(ctx, { level: a.values.team ? "team" : a.values.json ? "shared" : "local", hours: hoursOf(a.values.window) });
       if (a.values.json) {
         console.log(JSON.stringify(g, null, 2));

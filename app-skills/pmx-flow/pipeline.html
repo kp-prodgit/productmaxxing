@@ -605,6 +605,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     <button type="button" class="ni" data-view="plan"><svg class="i" aria-hidden="true"><use href="#i-plan"/></svg>Plan<span class="badge num" id="b-plan"></span></button>
     <button type="button" class="ni" data-view="digest"><svg class="i" aria-hidden="true"><use href="#i-paper"/></svg>Digest<span class="dot" id="b-digest" hidden></span></button>
     <button type="button" class="ni" data-view="agents"><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg>Agents</button>
+    <h6 id="nav-engine" hidden>Engine</h6>
+    <button type="button" class="ni" id="act-studio" hidden><svg class="i" aria-hidden="true"><use href="#i-ext"/></svg>Studio</button>
     <h6>System</h6>
     <button type="button" class="ni" data-view="flow"><svg class="i" aria-hidden="true"><use href="#i-flow"/></svg>Flow</button>
     <button type="button" class="ni" data-view="status"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Status<span class="dot bad" id="b-status" hidden></span></button>
@@ -2894,6 +2896,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const themeButtons = () => h("div", { class: "theme", role: "group", "aria-label": "Appearance" }, THEMES.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": themeNow() === v ? "true" : "false", onclick: (ev) => { applyTheme(v); ev.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", THEMES[i][0] === v ? "true" : "false")); } }, l)));
   $("act-theme").addEventListener("click", () => openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, "Appearance"), h("div", { class: "mb" }, themeButtons()), h("div", { class: "mf" }, btn("Done", { on: () => closeModal() })))));
   $("act-keys").addEventListener("click", keysModal);
+  // PMX Engine's studio (phase 2 of joining PMX and PMX Engine): only on this Mac's page, and only where Engine is
+  // installed. It opens in its own tab. The page in Claude never asks: nothing about Engine goes through the Claude app.
+  if (LOCAL) api("/api/studio").then((st) => { if (st && st.available) { $("nav-engine").hidden = false; $("act-studio").hidden = false; } }).catch(() => {});
+  $("act-studio").addEventListener("click", () => api("/api/studio/open", {}).then(() => toast("Opening the studio in a new tab.")).catch((e) => toast(e.message, { error: true })));
   $("act-new").addEventListener("click", () => openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, "What's new"),
     h("div", { class: "mb" }, h("p", null, `You're on PMX ${(D && D.version) || CFG.version || ""}. This workspace brings your Inbox, Today, Upcoming, Anytime and Logbook lists together with Plan, the digest, agents, status and settings, in one page here and in the Claude app.`), h("p", null, "Completing or approving waits a few seconds for Undo before anything is sent. Press ? for keyboard shortcuts.")),
     h("div", { class: "mf" }, btn("Done", { on: () => closeModal() })))));

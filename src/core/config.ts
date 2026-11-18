@@ -124,6 +124,11 @@ export interface PersonalConfig {
    * `pmx todo linear <id>`. Off by default: to-dos come from every meeting, 1:1s included, and stay on this Mac.
    */
   todosToLinear?: boolean;
+  /**
+   * Phase 2 of joining PMX and PMX Engine: "hidden" keeps the Studio entry out of this Mac's PMX page. It appears only
+   * where PMX Engine is installed, so a PM never sees it; `pmx open --hide-studio` / `--show-studio` set this.
+   */
+  studio?: "hidden";
 }
 
 export const DEFAULT_TEAM: Omit<TeamConfig, "team"> = {

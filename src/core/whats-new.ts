@@ -19,6 +19,13 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.28.0", date: "2026-11-18", headline: "One door to PMX Engine",
+    items: [
+      { what: "pmx open opens your PMX workspace on this Mac. Where PMX Engine is installed, the nav also offers Studio, which opens the head of product's studio in its own tab.", try: "pmx open" },
+      { what: "On a Mac with PMX Engine, pmx doctor and pmx whats-new include Engine's checks and notes, so there is one place to look. Nothing changes on a Mac without it." },
+    ],
+  },
+  {
     version: "0.27.0", date: "2026-11-18", headline: "One look with PMX Engine",
     items: [
       { what: "The team board now looks like the rest of PMX: the same colours and type as your Workspace and as PMX Engine's studio. Publish it again with /pmx-board in the Claude app to see it." },

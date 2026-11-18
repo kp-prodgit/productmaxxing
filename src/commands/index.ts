@@ -19,6 +19,7 @@ import { runUninstall } from "./uninstall.js";
 import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
 import { atLeast, compareVersions, currentVersion, isVersion, vendoredVersion } from "../core/version.js";
 import { formatNotes, markSeen, newVersionNotes, notesBetween, RELEASE_NOTES } from "../core/whats-new.js";
+import { engineNotes, formatEngineNotes } from "../engine/bridge.js";
 import { installLatestRelease, installTeamVersion, type UpdateOutcome } from "../core/update.js";
 import { Git } from "../core/git.js";
 import { loadState } from "../core/state.js";
@@ -368,7 +369,12 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
       const personal = await loadPersonalConfig().catch(() => null);
       const pages = personal ? stalePages(await loadTeamConfig(personal.repoPath).catch(() => null), personal, currentVersion()) : [];
       const note = personal ? await afterUpdateNote(await loadTeamConfig(personal.repoPath).catch(() => null), personal, exec, currentVersion()) : null;
-      console.log(a.values.json ? JSON.stringify({ version: currentVersion(), notes, pagesToUpdate: pages }, null, 2) : `${formatNotes(notes)}${note ? `\n\n${note}` : ""}`);
+      // On a Mac with PMX Engine, its notes this Mac hasn't seen follow PMX's (phase 2 of the join). Nothing changes without it.
+      const engine = await engineNotes(exec);
+      const engineText = formatEngineNotes(engine);
+      console.log(a.values.json
+        ? JSON.stringify({ version: currentVersion(), notes, pagesToUpdate: pages, ...(engine ? { engine } : {}) }, null, 2)
+        : `${formatNotes(notes)}${note ? `\n\n${note}` : ""}${engineText ? `\n\n${engineText}` : ""}`);
       return 0;
     },
   },

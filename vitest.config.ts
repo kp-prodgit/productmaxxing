@@ -7,6 +7,7 @@ export default defineConfig({
     include: ["test/**/*.test.ts", "ee/test/**/*.test.ts"],
     testTimeout: 30000,
     // PMX_CLAUDE_HOME keeps tests out of the real ~/.claude (skills and scheduled tasks).
-    env: { PMX_NO_NOTIFY: "1", PMX_CLAUDE_HOME: join(tmpdir(), `pmx-test-claude-${process.pid}`) },
+    // PMX_PMXE=none: a PMX Engine installed on this Mac never reaches a test; the bridge tests pin a stand-in.
+    env: { PMX_NO_NOTIFY: "1", PMX_CLAUDE_HOME: join(tmpdir(), `pmx-test-claude-${process.pid}`), PMX_PMXE: "none" },
   },
 });

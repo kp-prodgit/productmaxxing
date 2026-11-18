@@ -33,6 +33,7 @@ import { OLD, renameLeftovers } from "../core/rename.js";
 import { budget, budgetBlock } from "../budget/provider.js";
 import { mcpHealth } from "../mcp/server.js";
 import { teamSyncProblem } from "./team-sync.js";
+import { engineChecks } from "../engine/bridge.js";
 
 export interface DoctorDeps {
   team: TeamConfig | null;
@@ -48,6 +49,8 @@ export interface DoctorDeps {
   oldKeychain?: Keychain;
   /** Extra checks from ee/ (license, policy). */
   extra?: () => Promise<DoctorCheck[]>;
+  /** PMX Engine's checks; tests pass their own. */
+  engine?: () => Promise<DoctorCheck[]>;
 }
 
 export interface DoctorCheck extends Check {
@@ -107,7 +110,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (left.length) add("rename.leftovers", false, `ProductGit is now ProductMaxxing, but ${left.join("; ")}. Run any pmx command (like \`pmx status\`) to finish moving; if that can't, run \`npm uninstall -g ${OLD.pkg} && npm install -g <the productmaxxing package>\` (README, "Updating")`, "warn");
   add("config.personal", !!d.personal, d.personal ? `personal config at ${paths.config()}` : "personal config missing: run `pmx init`");
   add("config.team", !!d.team, d.team ? `${TEAM_CONFIG_FILE} valid (team ${d.team.team})` : `team config: ${d.teamError ?? "missing"}`);
-  if (!d.personal || !d.team) return out;
+  if (!d.personal || !d.team) return [...out, ...(await (d.engine ?? (() => engineChecks(d.exec)))())];
 
   const repo = d.personal.repoPath;
   for (const f of ["CLAUDE.md", "memory", ".claude/settings.json", "CODEOWNERS"]) {
@@ -248,6 +251,8 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   }
 
   if (d.extra) out.push(...(await d.extra()));
+  // PMX Engine's checks, on a Mac that has it (phase 2 of the join): warnings only, read from `pmxe doctor --json`.
+  out.push(...(await (d.engine ?? (() => engineChecks(d.exec)))()));
   return out;
 }
 

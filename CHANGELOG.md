@@ -2,6 +2,15 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.28.0: one door to PMX Engine
+
+Phase 2 of joining PMX and PMX Engine (Q15, Q16). On a Mac without PMX Engine, which is every PM's, nothing changes.
+
+- **`pmx open`** opens your PMX workspace on this Mac, as `pmx flow --web` does (that still works). Where PMX Engine is installed, the page's nav gains **Studio**, which opens the head of product's studio in its own tab. `pmx open studio` does the same from Terminal. `pmx open --hide-studio` takes the entry away, and `--show-studio` brings it back. The page in Claude never shows it: nothing about Engine goes through the Claude app. (CLI-6)
+- **One doctor.** `pmx doctor` adds a line for PMX Engine and each problem `pmxe doctor` found, as warnings that never fail PMX's doctor. (CLI-6)
+- **One What's new.** `pmx whats-new` lists Engine's notes you haven't seen after PMX's. (CLI-6)
+- **Only versioned output.** PMX reads only `pmxe doctor --json` and `pmxe whats-new --json`, and only at a format it knows (PMX Engine 0.3.4 and later). For an older Engine it says to run `pmxe doctor`. All of it goes through one module, `src/engine/bridge.ts`. A test keeps that module away from Engine's files, and keeps everything that answers a Claude chat away from the module.
+
 ## 0.27.0: one look with PMX Engine, and a code on each collected file
 
 - **The team board looks like the rest of PMX.** It now uses the PMX Workspace's colour and type tokens, copied byte for byte, and the Mac's own font instead of IBM Plex from Google Fonts. The board no longer loads a web font. Its lanes keep their colours. PMX Engine's studio copies the same block, so the two products read as one family. A test keeps the board and the Workspace equal. Publish the board again with `/pmx-board` after updating, as after any release. The Digest now says "customer themes". (Q15)

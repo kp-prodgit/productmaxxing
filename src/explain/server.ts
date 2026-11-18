@@ -40,6 +40,12 @@ export async function startExplainServer(o: {
    * proposals, and settings changes, which only this Mac's page may send.
    */
   pipeline?: PipelineActions;
+  /**
+   * PMX Engine's studio, on a Mac that has it (phase 2 of the join). This Mac's page shows a Studio entry when
+   * `status` says so, and asks `open` to start the studio in its own tab. Only `pmx flow --web` passes this: the
+   * /pmx-flow artifact and `pmx mcp` never learn anything about Engine.
+   */
+  studio?: { status(): Promise<{ available: boolean; version?: string }>; open(): Promise<void> };
 }): Promise<ExplainServer> {
   const token = randomBytes(24).toString("base64url");
   const want = Buffer.from(`Bearer ${token}`);
@@ -62,6 +68,12 @@ export async function startExplainServer(o: {
     }
     if (o.pipeline && path === "/api/pipeline/what-if" && !body) return [200, { whatIf: await o.pipeline.whatIf(query.get("kind") ?? "", query.get("value") ?? "") }];
     if (o.pipeline && path.startsWith("/api/pipeline/") && body) return pipelineAct(o.pipeline, path.slice("/api/pipeline/".length), body);
+    if (path === "/api/studio" && !body) return [200, o.studio ? await o.studio.status() : { available: false }];
+    if (o.studio && path === "/api/studio/open" && body) {
+      if (!(await o.studio.status()).available) return [404, { error: "PMX Engine isn't installed on this Mac." }];
+      await o.studio.open();
+      return [200, { ok: true }];
+    }
     if (path === "/api/flow") {
       if (!o.flow) return [404, { error: "not found" }];
       const hours = Number(query.get("hours") ?? 24);
@@ -113,7 +125,7 @@ export async function startExplainServer(o: {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       const path = url.pathname;
       // Only the board's own writes are POSTs, as JSON with the token, so a page elsewhere can't send them.
-      const post = req.method === "POST" && path.startsWith("/api/pipeline/") && (req.headers["content-type"] ?? "").startsWith("application/json");
+      const post = req.method === "POST" && (path.startsWith("/api/pipeline/") || path === "/api/studio/open") && (req.headers["content-type"] ?? "").startsWith("application/json");
       if (req.method !== "GET" && !post) return send(res, 405, "text/plain", "Method not allowed", { allow: "GET" });
       if (path === "/" || (path === "/flow" && (o.flow || o.pipeline))) {
         const nonce = randomBytes(16).toString("base64");

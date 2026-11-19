@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -91,7 +92,7 @@ describe("0.15.0: ProductGit becomes ProductMaxxing without breaking a Mac (RENA
   });
 
   it("README and INSTALL tell an existing Mac how to move by hand", async () => {
-    const root = new URL("..", import.meta.url).pathname;
+    const root = fileURLToPath(new URL("..", import.meta.url));
     for (const f of ["README.md", "INSTALL.md"]) expect(await readFile(join(root, f), "utf8")).toMatch(/npm uninstall -g productgit/);
   });
 });

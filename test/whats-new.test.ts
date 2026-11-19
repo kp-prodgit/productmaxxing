@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +10,7 @@ import { currentVersion } from "../src/core/version.js";
 import { announceOnce, formatNotes, markSeen, markUpdatingFrom, newVersionNotes, notesBetween, pendingNotes, QUIET_COMMANDS, RELEASE_NOTES } from "../src/core/whats-new.js";
 import { freshHome, tmp } from "./helpers.js";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const configExists = async () => {
   await mkdir(dirname(paths.config()), { recursive: true });
   await writeFile(paths.config(), "{}");

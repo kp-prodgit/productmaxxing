@@ -2,6 +2,12 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.34.0: customer evidence for PMX Engine
+
+Bridge 2 of joining PMX and PMX Engine (EQ-34): the head of product sees how much customer evidence stands behind each roadmap theme, as counts.
+
+- **`pmx evidence`** counts approved tasks per category and per roadmap theme label (the `pmx-theme` labels of bridge 4): how many tasks, how many sources they cite, and the first and last day. No titles, descriptions, quotes, source IDs or meetings. With `--json` it prints exactly the format PMX Engine 0.5.0 accepts, to standard output and nowhere else: `pmx evidence --json | pmxe propose -`. In PMX Engine's studio the head of product maps each count to a roadmap theme while accepting it. (OUT-6)
+
 ## 0.33.0: a Mac mark on Connect
 
 - **Connect shows a Mac mark.** The button that has PMX ask you in a dialog on your Mac carries a small Mac sign, the same one PMX Engine 0.4's studio puts on Approve, Sign off and Hide. One card of signs for both (phase 1 of joining PMX and PMX Engine).

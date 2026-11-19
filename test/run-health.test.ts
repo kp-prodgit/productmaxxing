@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { chmod, mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
@@ -14,7 +15,7 @@ import { loadState, markTaskRun } from "../src/core/state.js";
 import { claudeCode } from "../src/runtime/claude-code.js";
 import { freshHome, tmp } from "./helpers.js";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const team = { egress: ["api.anthropic.com"], model: "claude-sonnet-5-5", caps: { perRunUsd: 1 } } as any;
 
 /** Claude Code on PATH, answering `--version`, `auth status` and `-p` the way the tester's Mac did. */

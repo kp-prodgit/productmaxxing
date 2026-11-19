@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.33.0/productmaxxing-0.33.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.33.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/productmaxxing-0.34.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.33.0.tgz
+npm install -g ./productmaxxing-0.34.0.tgz
 pmx init
 ```
 
@@ -39,6 +39,7 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `digest` | Weekly digest from allowlisted sources, every claim cited, approved before commit |
 | `status` | Config, kill switch, today's usage (tokens, and dollars at list prices) and recent runs |
 | `proposals` | Tasks PMX proposed from your calls, exactly as Linear would get them. `approve <n>` or `--all` sends them to the PMX inbox; `drop` discards them; `theme <n> "<theme>"` (or `none`) sets the roadmap theme a task carries as a label, from your team's open themes. Nothing reaches Linear before you approve |
+| `evidence` | Counts of approved tasks per category and roadmap theme, with the sources they cite and the first and last day: no titles, quotes or meetings. `--json` prints them for PMX Engine's studio: `pmx evidence --json \| pmxe propose -` |
 | `budget` | Your daily cap on PMX's usage: `set <dollars>`, `off` (only your plan's limits and the team cap), or `set 0` to pause PMX |
 | `open` | Your PMX workspace on this Mac, like `flow --web`. `open roadmap` opens your team's roadmap page, the PMs' page in PMX Engine, when `pmx.config.json` has its link. `open studio` opens PMX Engine's studio where it's installed. `--hide-studio` takes the studio out of the nav |
 | `flow` | Your workspace: Inbox (tasks to approve), Today, Upcoming, Anytime and Logbook for your to-dos and reviews, then Plan, Digest, Agents, Status (the pipeline, privacy checks, activity) and Settings. `--web` opens it on this Mac; `--install-skill` adds `/pmx-flow`, which publishes the same workspace as a live Claude artifact that works through the Claude app once you click Connect and allow it on your Mac |
@@ -119,11 +120,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.33.0/productmaxxing-0.33.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.33.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/productmaxxing-0.34.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.33.0.tgz
+npm install -g ./productmaxxing-0.34.0.tgz
 pmx whats-new --since <the version you had>
 ```
 

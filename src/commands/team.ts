@@ -10,6 +10,7 @@ import { compareReports, neutralityRun, type NeutralityReport } from "../run/neu
 import { runTask } from "../run/run.js";
 import { verifyPr } from "../run/verify.js";
 import { synthesize } from "../synth/synthesize.js";
+import { evidenceOf } from "../synth/evidence.js";
 import { approveProposals, dropProposals, formatProposals, readProposals, setProposalTheme } from "../synth/proposals.js";
 import { startOfDay } from "../meetings/ledger.js";
 import { formatSynthStatus, recentReceipts, synthesizesHere, synthStatus, synthWindow } from "../synth/status.js";
@@ -24,6 +25,22 @@ async function findTask(svc: Services, ref: string) {
 }
 
 export const teamCommands: Command[] = [
+  {
+    // Bridge 2 of joining PMX and PMX Engine: counts only, to standard output. The head of product pipes them on.
+    name: "evidence",
+    summary: "Counts of approved tasks per category and roadmap theme, for PMX Engine's studio: no titles, quotes or meetings",
+    usage: "pmx evidence --json | pmxe propose -",
+    options: { json: { type: "boolean" } },
+    async run(a) {
+      const ctx = await a.ctx();
+      const e = evidenceOf(await (await services(ctx)).tracker.list(), ctx.team.team, ctx.now());
+      if (a.values.json) { console.log(JSON.stringify(e, null, 2)); return 0; }
+      if (!e.rows.length) console.log("No approved tasks yet.");
+      for (const r of e.rows) console.log(`${r.by === "theme" ? "theme" : "category"}  ${r.label}: ${r.tasks} tasks, ${r.sources} sources, ${r.first} to ${r.last}`);
+      if (e.rows.length) console.log("\nTo bring these into PMX Engine's studio, where you map each to a roadmap theme: pmx evidence --json | pmxe propose -");
+      return 0;
+    },
+  },
   {
     name: "synthesize",
     summary: "Turn customer calls into proposed tasks; you approve each one before it reaches Linear (`pmx proposals`)",

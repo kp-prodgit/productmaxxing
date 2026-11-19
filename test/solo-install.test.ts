@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -16,7 +17,7 @@ import { currentVersion } from "../src/core/version.js";
 import { freshHome, pmxRepo, quietOut, tmp } from "./helpers.js";
 
 const withClaude: Exec = async (cmd, args, o) => (cmd === "claude" ? { stdout: "2.1.300 (Claude Code)", stderr: "", code: 0 } : exec(cmd, args, o));
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 /** Answers in order per question, so a test can give a wrong answer first and see it re-asked. */
 function sequenceAsker(answers: Record<string, (string | boolean)[]>, asked: string[] = []): Asker {

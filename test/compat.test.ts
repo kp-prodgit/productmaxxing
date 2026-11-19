@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -21,8 +22,8 @@ import { DEFAULT_TEAM, type TeamConfig } from "../src/core/config.js";
 import { linearTracker } from "../src/tracker/linear.js";
 import { freshHome, pmxRepo, testCtx, tmp } from "./helpers.js";
 
-const OLD = new URL("./compat/v0.4.0/", import.meta.url).pathname;
-const V05 = new URL("./compat/v0.5.0/", import.meta.url).pathname;
+const OLD = fileURLToPath(new URL("./compat/v0.4.0/", import.meta.url));
+const V05 = fileURLToPath(new URL("./compat/v0.5.0/", import.meta.url));
 const old = (f: string) => join(OLD, f);
 
 describe("versions (COMPAT-1)", () => {
@@ -118,7 +119,7 @@ describe("reading what 0.6.0 wrote (COMPAT-4)", () => {
   beforeEach(freshHome);
 
   it("keeps the team's auto-update setting and the last update check", async () => {
-    const V06 = new URL("./compat/v0.6.0/", import.meta.url).pathname;
+    const V06 = fileURLToPath(new URL("./compat/v0.6.0/", import.meta.url));
     const repo = await tmp("compat06-");
     await copyFile(join(V06, "pmx.config.json"), join(repo, "pmx.config.json"));
     expect((await loadTeamConfig(repo)).cli).toEqual({ min: "0.6.0", autoUpdate: true });
@@ -131,7 +132,7 @@ describe("reading what 0.7.0 wrote (COMPAT-4)", () => {
   beforeEach(freshHome);
 
   it("reads a 0.7.0 relay snapshot and outbox, with the queued change applied on top", async () => {
-    const V07 = new URL("./compat/v0.7.0/", import.meta.url).pathname;
+    const V07 = fileURLToPath(new URL("./compat/v0.7.0/", import.meta.url));
     await mkdir(relayDir(), { recursive: true });
     await copyFile(join(V07, "snapshot.json"), join(relayDir(), "snapshot.json"));
     await copyFile(join(V07, "outbox.json"), join(relayDir(), "outbox.json"));

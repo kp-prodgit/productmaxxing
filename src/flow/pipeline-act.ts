@@ -19,11 +19,17 @@ export interface PipelineActions {
   todoPlace?(id: string, p: { due?: unknown; when?: unknown; reopen?: boolean }): Promise<{ status: number; body: unknown }>;
   /** SIG-7: send one to-do to Linear, when the PM turned that on. */
   todoLinear?(id: string): Promise<{ status: number; body: unknown }>;
+  /** TODO-5: move work between a private to-do, a to-do in Linear and a product task, in any direction. */
+  move?(input: { ref: string; to: string; kind?: string; size?: string }): Promise<{ status: number; body: unknown }>;
   setup?(action: string): Promise<{ status: number; body: unknown }>;
+  /** BOARD-8: the Claude app's page opens this Mac's own page ("open", starting it if needed) or stops it ("stop"). */
+  localPage?(action: string): Promise<{ status: number; body: unknown }>;
+  /** BOARD-9: applies team settings that stayed a local branch because the team repo has no remote. */
+  teamApply?(branch: string): Promise<{ status: number; body: unknown }>;
   resume?(category: string): Promise<{ status: number; body: unknown }>;
 }
 
-export const ACT_PATHS = ["proposals", "proposal-theme", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "todo-linear", "resume", "setup", "what-if"] as const;
+export const ACT_PATHS = ["proposals", "proposal-theme", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "todo-linear", "move", "resume", "setup", "local-page", "team-apply", "what-if"] as const;
 
 /** One action: its path without /api/pipeline/, and its JSON body. Returns an HTTP-style status and body. */
 export async function pipelineAct(o: PipelineActions, path: string, body: any): Promise<[number, unknown]> {
@@ -63,7 +69,15 @@ export async function pipelineAct(o: PipelineActions, path: string, body: any): 
   if (path === "todo-add" && o.todoAdd) { const r = await o.todoAdd({ text: body.text, due: body.due, when: body.when }); return [r.status, r.body]; }
   if (path === "todo-place" && o.todoPlace) { const r = await o.todoPlace(String(body.id ?? ""), { due: body.due, when: body.when, reopen: body.reopen === true }); return [r.status, r.body]; }
   if (path === "todo-linear" && o.todoLinear) { const r = await o.todoLinear(String(body.id ?? "")); return [r.status, r.body]; }
+  if (path === "move" && o.move) {
+    if (typeof body.ref !== "string" || typeof body.to !== "string") return [400, { error: "ref and to are required" }];
+    const opt = (v: unknown) => (typeof v === "string" ? v.slice(0, 64) : undefined);
+    const r = await o.move({ ref: body.ref.slice(0, 64), to: body.to, kind: opt(body.kind), size: opt(body.size) });
+    return [r.status, r.body];
+  }
   if (path === "resume" && o.resume) { const r = await o.resume(String(body.category ?? "")); return [r.status, r.body]; }
   if (path === "setup" && o.setup) { const r = await o.setup(String(body.action ?? "")); return [r.status, r.body]; }
+  if (path === "local-page" && o.localPage) { const r = await o.localPage(String(body.action ?? "")); return [r.status, r.body]; }
+  if (path === "team-apply" && o.teamApply) { const r = await o.teamApply(String(body.branch ?? "")); return [r.status, r.body]; }
   return [404, { error: "not found" }];
 }

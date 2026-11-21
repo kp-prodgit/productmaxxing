@@ -1,0 +1,149 @@
+/* PMX components. One stylesheet for the Workspace, the board, the studio and briefing pages.
+   Every value is a token from the tokens and scale parts of dist/pmx.css (built from tokens.json) or a step of the type ramps in the README. No raw colours.
+   Class names already used by PMX's Workspace (.btn, .pri, .ghost, .danger, .sm, .pill, .empty, .banner) keep their names. */
+
+/* ---------- base ---------- */
+html { -webkit-text-size-adjust: 100% }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 400 14px/20px var(--font); -webkit-font-smoothing: antialiased }
+*, *::before, *::after { box-sizing: border-box }
+button, input, select, textarea { font: inherit; color: inherit }
+button { cursor: pointer }
+p, h1, h2, h3, h4, ol, ul, figure { margin: 0 }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-s) }
+.num { font-variant-numeric: tabular-nums }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0 }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important } }
+
+/* ---------- Button ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: var(--control); padding: 0 var(--space-3); border-radius: var(--r-s); border: 1px solid var(--line-2); background: var(--card); color: var(--fg); font: 500 13px/18px var(--font); white-space: nowrap; text-decoration: none; transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease) }
+.btn:hover { background: var(--hover) }
+a.btn, a[role="tab"] { text-decoration: none }
+.btn:active { transform: translateY(.5px) }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600 }
+.btn.pri:hover { background: var(--accent); filter: brightness(1.07) }
+.btn.ghost { border-color: transparent; background: none; color: var(--fg-2) }
+.btn.ghost:hover { background: var(--hover); color: var(--fg) }
+.btn.danger { color: var(--bad) }
+.btn.danger:hover { background: var(--bad-soft) }
+.btn.sm { min-height: var(--control-sm); padding: 0 var(--space-2); font-size: 12px; line-height: 16px }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .45; cursor: default; filter: none; transform: none }
+.btn[aria-busy="true"] { cursor: progress }
+.btn .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: pmx-spin .8s linear infinite }
+@keyframes pmx-spin { to { transform: rotate(360deg) } }
+/* S52: every button, small ones too, is at least the touch size under 768px. */
+@media (max-width: 767px) { .btn { min-height: var(--touch) } .btn.sm { min-height: var(--touch) } }
+
+/* ---------- Pill: a state, as a dot and a word ---------- */
+.pill { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 0 var(--space-2); border-radius: var(--r-pill); background: var(--hover); color: var(--fg-2); font: 500 12px/16px var(--font); white-space: nowrap }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none }
+.pill.ok { background: var(--ok-soft); color: var(--ok) }
+.pill.warn { background: var(--warn-soft); color: var(--warn) }
+.pill.bad { background: var(--bad-soft); color: var(--bad) }
+.pill.held { background: var(--held-soft); color: var(--held) }
+.pill.now { background: var(--accent-soft); color: var(--accent) }
+.pill.draft { background: none; color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--line-2); border: 0; outline: 1px dashed transparent }
+.pill.draft::before { background: none; box-shadow: inset 0 0 0 1.5px currentColor }
+.pill.plain::before { display: none }
+
+/* ---------- Audience: who sees it, in words ---------- */
+.aud { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; color: var(--fg-2); font: 400 12px/16px var(--font) }
+.aud svg.i { width: 13px; height: 13px }
+.aud.some { color: var(--fg); font-weight: 500 }
+.aud.draft { color: var(--fg-2); padding: 0 var(--space-2); border: 1px dashed var(--line-2); border-radius: var(--r-pill) }
+.aud b { font-weight: 600 }
+
+/* ---------- Answer: the first line of every screen ---------- */
+.answer { display: flex; align-items: flex-start; gap: var(--space-5); flex-wrap: wrap; padding-block: var(--space-7) var(--space-6) }
+.answer > div { flex: 1 1 320px; min-width: 0; display: grid; gap: var(--space-1) }
+.answer .eyebrow { color: var(--fg-2); font: 500 13px/18px var(--font) }
+.answer h1 { font: 650 24px/30px var(--font); letter-spacing: -.01em; text-wrap: balance }
+.answer p { color: var(--fg-2); font: 400 14px/20px var(--font); max-width: 60ch }
+.answer .act { display: flex; gap: var(--space-2); align-items: center; flex: none; padding-top: 2px }
+
+/* ---------- Track: a release moving through groups, in order ---------- */
+.track { list-style: none; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr) }
+.track .stop { position: relative; display: grid; align-content: start; gap: 2px; padding: 30px var(--space-3) 0 0; min-width: 0 }
+.track .stop::before { content: ""; position: absolute; top: 9px; left: 20px; right: 0; height: 2px; background: var(--line); border-radius: 1px }
+.track .stop:last-child::before { display: none }
+.track .node { position: absolute; top: 0; left: 0; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--line-2); color: var(--fg-3); font: 600 11px/14px var(--font) }
+.track .node svg.i { width: 12px; height: 12px; stroke-width: 2.4 }
+.track .stop b { font: 600 13px/18px var(--font); overflow-wrap: anywhere }
+.track .stop small { color: var(--fg-2); font: 400 12px/16px var(--font) }
+.track .is-done::before { background: var(--ok) }
+.track .is-done .node { background: var(--ok); box-shadow: none; color: var(--bg) }
+.track .is-now .node { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); color: var(--accent-fg) }
+.track .is-now small { color: var(--accent); font-weight: 500 }
+.track .is-held .node { background: var(--held-soft); box-shadow: inset 0 0 0 1.5px var(--held); color: var(--held) }
+.track .is-held small { color: var(--held); font-weight: 500 }
+.track .is-bad .node { background: var(--bad); box-shadow: none; color: var(--bg) }
+.track .is-bad small { color: var(--bad); font-weight: 500 }
+.track .stop:not(.is-done):not(.is-now):not(.is-held):not(.is-bad) b { color: var(--fg-2); font-weight: 500 }
+@media (max-width: 599px) {
+  .track { grid-auto-flow: row; gap: 0 }
+  .track .stop { padding: 0 0 var(--space-4) 32px; min-height: 44px }
+  .track .stop::before { top: 20px; bottom: 0; left: 9px; right: auto; width: 2px; height: auto }
+}
+
+/* ---------- Empty: what will be here, and the first step ---------- */
+.empty { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-8) var(--space-4); text-align: center; color: var(--fg-2) }
+.empty svg.i { width: 32px; height: 32px; stroke-width: 1.3; color: var(--fg-3) }
+.empty h2 { color: var(--fg); font: 600 16px/22px var(--font) }
+.empty p { max-width: 44ch; font: 400 14px/20px var(--font) }
+.empty .btn { margin-top: var(--space-2) }
+
+/* ---------- Card ---------- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); padding: var(--space-5) }
+.card.raised { box-shadow: var(--shadow-1) }
+
+/* ---------- Briefing: cover ---------- */
+.brief { max-width: var(--measure-wide); margin-inline: auto; padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)) }
+.b-cover { display: grid; gap: var(--space-4); padding-block: var(--space-8) var(--space-7); border-bottom: 1px solid var(--line) }
+.b-cover .for { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); color: var(--fg-2); font: 500 14px/20px var(--font) }
+.b-cover h1 { font: 700 48px/52px var(--font); letter-spacing: -.022em; text-wrap: balance; max-width: 18ch }
+.b-cover .standfirst { font: 400 21px/30px var(--font); letter-spacing: -.005em; max-width: 34em; color: var(--fg) }
+.b-cover .byline { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-cover .byline b { color: var(--fg); font-weight: 600 }
+.b-changes { display: grid; gap: var(--space-2); padding: var(--space-4) var(--space-5); background: var(--sunken); border-radius: var(--r-l); max-width: var(--measure) }
+.b-changes h2 { font: 600 14px/20px var(--font) }
+.b-changes ul { list-style: none; padding: 0; display: grid; gap: var(--space-1) }
+.b-changes li { display: flex; gap: var(--space-2); align-items: baseline; font: 400 14px/20px var(--font); color: var(--fg-2) }
+.b-changes li a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px }
+@media (max-width: 599px) { .b-cover { padding-block: var(--space-7) var(--space-6) } .b-cover h1 { font-size: 34px; line-height: 38px } .b-cover .standfirst { font-size: 18px; line-height: 26px } }
+
+/* ---------- Briefing: mark (New, Updated) ---------- */
+.mark { display: inline-flex; align-items: center; min-height: 20px; padding: 0 6px; border-radius: var(--r-s); background: var(--accent-soft); color: var(--accent); font: 600 12px/16px var(--font); white-space: nowrap }
+
+/* ---------- Briefing: passage ---------- */
+.passage { display: grid; grid-template-columns: var(--space-7) minmax(0, var(--measure)); padding-block: var(--space-6); border-bottom: 1px solid var(--line) }
+.passage .no { color: var(--fg-3); font: 600 21px/28px var(--font); font-variant-numeric: tabular-nums }
+.passage .body { display: grid; gap: var(--space-3) }
+.passage h2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); font: 650 21px/28px var(--font); letter-spacing: -.01em }
+.passage p { font: 400 17px/26px var(--font) }
+@media (max-width: 599px) { .passage { grid-template-columns: var(--space-6) minmax(0, 1fr) } .passage p { font-size: 16px; line-height: 24px } }
+
+/* ---------- Briefing: key figure ---------- */
+.figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-5) var(--space-6) }
+.fig { display: grid; gap: var(--space-1); align-content: start }
+.fig .v { font: 700 56px/56px var(--font); letter-spacing: -.03em; font-variant-numeric: tabular-nums }
+.fig .l { font: 600 14px/20px var(--font) }
+.fig .s { color: var(--fg-2); font: 400 14px/20px var(--font) }
+@media (max-width: 599px) { .fig .v { font-size: 40px; line-height: 44px } }
+
+/* ---------- Briefing: say this ---------- */
+.say { display: grid; gap: var(--space-2); padding: var(--space-4) var(--space-5); border-radius: var(--r-l); background: var(--ok-soft); max-width: var(--measure) }
+.say .k { display: flex; align-items: center; gap: var(--space-2); color: var(--ok); font: 600 14px/20px var(--font) }
+.say q { font: 400 17px/26px var(--font); color: var(--fg); quotes: "\201C" "\201D" }
+.say.dont { background: var(--held-soft) }
+.say.dont .k { color: var(--held) }
+
+/* ---------- Review fixes for the parts above (REVIEW-studio.md, REVIEW-readers.md) ---------- */
+/* S48: an empty action slot takes no room, so the answer gets the full measure */
+.answer > .act:empty { display: none }
+/* S52: link buttons in an answer's actions are at least the touch size under 768px */
+@media (max-width: 767px) { .answer .act a.link, .act > a.link { display: inline-flex; align-items: center; min-height: var(--touch) } }
+/* S34: the empty state's large icon applies only to its own picture, not to the icon inside its button. */
+.empty .btn svg.i { width: 16px; height: 16px; stroke-width: 1.7; color: currentColor }
+/* R6: the cover's "for" line never widens the page; a long audience pill wraps. */
+:root .b-cover .for { min-width: 0 }
+:root .b-cover .for .pill { max-width: 100%; white-space: normal }

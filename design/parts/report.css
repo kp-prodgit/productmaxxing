@@ -1,0 +1,188 @@
+/* ---------- Report: the paged, printable briefing PMX Engine makes for one audience ----------
+   A report is always light paper with one brand colour. It reads as Letter sheets on screen and prints one sheet per page.
+   Its own small type ramp (all steps of the existing ramps): title 32/38, section 21/28, sub-heading 16/22, body 14/22,
+   table 13/18 (appendix 12/16), caption and running lines 12/16, stat statement 32/38, stat figure 16/22.
+   The renderer paginates: it measures each child of `.rp-body` in a hidden `.rp.is-measure` sheet and starts a new `.rp` when the next would overflow. */
+
+/* ---------- ReportPage: the desk and the sheet ---------- */
+.rp-desk { display: flex; flex-direction: column; align-items: center; gap: var(--space-5); padding: var(--space-6) var(--space-4) var(--space-9); background: var(--sunken) }
+/* The light theme restated on the sheet, so a reader in dark mode still gets white paper on a dark desk.
+   This is the one place literal token values are restated; they are the light values in tokens.json, and build.mjs fails if they drift.
+   --rp-w and --rp-h are US Letter at 96 CSS px per inch (8.5in x 11in): a physical page, not a spacing step. */
+.rp {
+  /* >>> literal colours: report sheet */
+  --bg: #ffffff; --sunken: #f6f7f9; --card: #ffffff; --hover: #f1f3f6; --select: #e9eefb; --line: #e5e7ec; --line-2: #d5d9e0;
+  --fg: #16181d; --fg-2: #505664; --fg-3: #687080; --accent: #3459c9; --accent-soft: #ecf1fd; --accent-fg: #ffffff;
+  --today: #c99a00; --ok: #16793f; --ok-soft: #e8f6ee; --warn: #8f4b05; --warn-soft: #fdf3e4; --bad: #c53030; --bad-soft: #fdeeee;
+  --ic-up: #c83a50; --ic-any: #2a8c7f; --mac: #2f5f86; --mac-soft: #e1ebf4; --claude: #7a3fc4; --claude-soft: #efe6fa;
+  --linear: #0e6b5b; --linear-soft: #dcefe9; --repo: #6d5a2e; --repo-soft: #f1ecdf; --held: #9a5a06; --held-soft: #f7ead6;
+  --scrim: rgba(10,12,18,.35); --knob: #ffffff; --toast-hover: rgba(127,127,127,.25);
+  /* <<< literal colours */
+  color-scheme: light;
+  --rp-w: 816px; --rp-h: 1056px;
+  /* The workspace brand. A page sets it on .rp in its own stylesheet, never in a style attribute (the CSP forbids them); it marks the cover rule, heading bars, the stat rule and list bullets, never text. */
+  --brand: var(--accent);
+  display: flex; flex-direction: column; flex: none; width: var(--rp-w); height: var(--rp-h); padding: var(--space-7) var(--space-8) var(--space-6);
+  background: var(--bg); color: var(--fg); box-shadow: var(--shadow-1); font: 400 14px/22px var(--font);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact
+}
+/* Running header: every sheet after the first. */
+.rp-head { display: flex; align-items: baseline; gap: var(--space-2); flex: none; margin-bottom: var(--space-5); padding-bottom: var(--space-2); border-bottom: 1px solid var(--line); font: 400 12px/16px var(--font); color: var(--fg-2) }
+.rp-head .wm { color: var(--fg); font-weight: 700; letter-spacing: -.01em }
+/* The text column. The renderer moves its direct children here sheet by sheet. */
+.rp-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0 }
+.rp-body > * { flex: none; margin-top: var(--space-3) }
+.rp-body > :first-child { margin-top: 0 }
+.rp-body p { font: 400 14px/22px var(--font); text-wrap: pretty }
+.rp-body p b { font-weight: 650 }
+/* Footer: every sheet. Who it was prepared for on the left, the page number on the right. */
+.rp-foot { display: flex; justify-content: space-between; gap: var(--space-4); flex: none; margin-top: auto; padding-top: var(--space-4); color: var(--fg-2); font: 400 12px/16px var(--font) }
+.rp-foot .pg { font-variant-numeric: tabular-nums }
+/* The renderer's measuring sheet: same box as a real sheet, never seen. */
+.rp.is-measure { position: absolute; left: 0; top: 0; visibility: hidden; pointer-events: none }
+
+/* ---------- ReportCover: the top of page one ---------- */
+.rp-cover { display: grid; padding-top: var(--space-4) }
+.rp-cover .wm { color: var(--fg); font: 700 16px/22px var(--font); letter-spacing: -.01em }
+.rp-cover h1 { margin-top: var(--space-6); font: 700 32px/38px var(--font); letter-spacing: -.018em; text-wrap: balance }
+.rp-cover .purpose { margin-top: var(--space-1); color: var(--fg-2); font: 400 16px/22px var(--font) }
+.rp-cover .by { margin-top: var(--space-3); color: var(--fg-2); font: 400 12px/16px var(--font) }
+.rp-cover .by b { color: var(--fg); font-weight: 600 }
+.rp-cover::after { content: ""; height: var(--space-1); margin-top: var(--space-6); background: var(--brand) }
+
+/* ---------- ReportHeading: numbered section heading with the brand bar; plain sub-heading ---------- */
+.rp-body > .rp-h { margin-top: var(--space-6) }
+.rp-body > .rp-h:first-child { margin-top: 0 }
+.rp-h { position: relative; font: 650 21px/28px var(--font); letter-spacing: -.01em; text-wrap: balance }
+.rp-h::before { content: ""; position: absolute; left: calc(-1 * var(--space-4)); top: 2px; height: var(--space-5); width: var(--space-1); background: var(--brand) }
+.rp-h .no { font-variant-numeric: tabular-nums }
+.rp-h .ed { display: block; margin-top: var(--space-1); color: var(--fg-2); font: 400 12px/16px var(--font); letter-spacing: 0 }
+.rp-body > .rp-h2 { margin-top: var(--space-5) }
+.rp-h2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font: 650 16px/22px var(--font) }
+
+/* ---------- ReportTable: ink header, bold first column, faint zebra, hairlines ---------- */
+.rp-tbl { min-width: 0; overflow-x: auto }
+.rp-tbl > .cap { margin-bottom: var(--space-2); font: 650 14px/22px var(--font) }
+.rp-tbl table { width: 100%; border-collapse: collapse; font: 400 13px/18px var(--font) }
+.rp-tbl th, .rp-tbl td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); text-align: left; vertical-align: top }
+.rp-tbl thead th { background: var(--fg); color: var(--bg); font-weight: 650; border-bottom: 0; vertical-align: bottom }
+.rp-tbl tbody th { color: var(--fg); font-weight: 650 }
+.rp-tbl tbody tr:nth-child(even) > * { background: var(--sunken) }
+.rp-tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap }
+.rp-tbl td.m { color: var(--fg-2) }
+/* Widths fixed from the whole table, so the fragments of a split table line up. */
+.rp-tbl table.fixed { table-layout: fixed }
+/* An edition cell: "Edition 3", with the vertical's own edition on a quieter second line. */
+.rp-tbl td.ed { white-space: nowrap }
+.rp-tbl td .sub { display: block; color: var(--fg-2) }
+.rp-tbl td .mark { margin-left: var(--space-1) }
+/* A group row names what the rows under it share (a roadmap theme). */
+.rp-tbl tr.is-group > * { padding-top: var(--space-3); background: var(--bg); border-bottom: 1px solid var(--line-2); font-weight: 650 }
+.rp-tbl tr.is-group small { margin-left: var(--space-2); color: var(--fg-2); font: 400 12px/16px var(--font) }
+/* The total row closes the table: ink rule above, bold, no zebra. */
+.rp-tbl tr.is-total > * { background: var(--bg); border-top: 1px solid var(--fg); border-bottom: 0; font-weight: 650 }
+/* Comparison: last edition against this one. The changed cell is set in weight; the earlier value is quieter. */
+.rp-tbl.cmp td { width: 30% }
+.rp-tbl.cmp td.was { color: var(--fg-2) }
+.rp-tbl.cmp td.is-changed { color: var(--fg); font-weight: 650 }
+/* Appendix: every item, dated, dense. */
+.rp-tbl.appx table { font-size: 12px; line-height: 16px }
+.rp-tbl.appx th, .rp-tbl.appx td { padding: var(--space-1) var(--space-2) }
+.rp-tbl.appx thead th { padding-block: var(--space-2) }
+.rp-tbl.appx td.d { white-space: nowrap; font-variant-numeric: tabular-nums }
+
+/* ---------- StatBand: one large statement, supporting figures, split by the brand rule ---------- */
+.rp-stat { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--space-6); padding: var(--space-5) var(--space-6); background: var(--sunken); border-radius: var(--r-s) }
+.rp-stat .big { align-self: center; display: grid; gap: var(--space-2) }
+.rp-stat .big b { font: 700 32px/38px var(--font); letter-spacing: -.018em; text-wrap: balance }
+.rp-stat .big span { color: var(--fg-2); font: 400 12px/16px var(--font) }
+.rp-stat .side { display: grid; align-content: center; gap: var(--space-3); padding-left: var(--space-6); border-left: var(--space-1) solid var(--brand) }
+.rp-stat .f { display: grid }
+.rp-stat .f b { font: 650 16px/22px var(--font); font-variant-numeric: tabular-nums }
+.rp-stat .f span { color: var(--fg-2); font: 400 12px/16px var(--font) }
+/* Two figures side by side, the rule between them. */
+.rp-stat.duo { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) }
+.rp-stat.duo .big + .big { padding-left: var(--space-6); border-left: var(--space-1) solid var(--brand) }
+
+/* ---------- Changes: "What this changes for <reader>" ---------- */
+.rp-changes { display: grid; gap: var(--space-2) }
+.rp-changes h3 { font: 650 16px/22px var(--font) }
+.rp-changes ul { display: grid; gap: var(--space-2); padding: 0; list-style: none }
+.rp-changes li { position: relative; padding-left: var(--space-5); font: 400 14px/22px var(--font) }
+.rp-changes li::before { content: ""; position: absolute; left: var(--space-1); top: var(--space-2); width: 6px; height: 6px; background: var(--brand) }
+.rp-changes li b { font-weight: 650 }
+
+/* ---------- Evidence: a picture with its caption above ---------- */
+.rp-fig { display: grid; gap: var(--space-2); min-width: 0 }
+.rp-fig .cap { font: 650 14px/22px var(--font) }
+.rp-fig .slot { display: grid; place-items: center; min-width: 0; overflow: hidden; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-m) }
+.rp-fig .slot.wide { aspect-ratio: 16 / 9 }
+.rp-fig .slot > img { display: block; width: 100%; height: auto }
+.rp-fig .slot.wide > img { height: 100%; object-fit: cover }
+/* Nothing to show yet: say what picture belongs here. */
+.rp-fig .slot.is-empty { aspect-ratio: 16 / 9; padding: var(--space-5); background: var(--sunken); border: 1px dashed var(--line-2); color: var(--fg-2); font: 400 13px/18px var(--font); text-align: center }
+/* Our own figures inside the slot: market squares, the roadmap board. */
+.rp-fig .slot > .b-market { display: flex; justify-content: center; max-width: none; padding: var(--space-5) }
+.rp-fig .slot > .b-road { width: 100%; padding: var(--space-4) }
+.rp-fig .note { color: var(--fg-2); font: 400 12px/16px var(--font) }
+/* Before and after: two figures stacked, each with its own caption. */
+.rp-fig.pair { gap: var(--space-5) }
+
+/* ---------- Parts reused inside a report, set to the report's ramp ---------- */
+.rp .b-hold { grid-template-columns: minmax(0, 1fr); padding-block: 0; border-bottom: 0 }
+.rp .b-hold h3 { color: var(--fg-2); font: 650 16px/22px var(--font) }
+.rp .b-hold .note { border-radius: var(--r-m) }
+.rp .b-hold .note p { font: 400 14px/22px var(--font) }
+.rp .b-hold .note .why { font: 400 12px/16px var(--font) }
+.rp .say { max-width: none; border-radius: var(--r-m) }
+.rp .say q { font: 400 14px/22px var(--font) }
+
+/* ---------- Narrow screens: the sheet becomes fluid so it reads on a phone. Screen only: a printed Letter page is 816px wide too. ---------- */
+@media screen and (max-width: 879px) {
+  .rp-desk { padding: 0; gap: var(--space-2) }
+  .rp:not(.is-measure) { width: 100%; height: auto; padding: var(--space-6) var(--space-4) var(--space-5); box-shadow: none }
+  .rp:not(.is-measure) .rp-h::before { left: calc(-1 * var(--space-3)) }
+  .rp:not(.is-measure) .rp-foot { margin-top: var(--space-5) }
+}
+@media screen and (max-width: 599px) {
+  .rp:not(.is-measure) .rp-stat, .rp:not(.is-measure) .rp-stat.duo { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); padding: var(--space-4) }
+  .rp:not(.is-measure) .rp-stat .side, .rp:not(.is-measure) .rp-stat.duo .big + .big { padding: var(--space-4) 0 0; border-left: 0; border-top: var(--space-1) solid var(--brand) }
+  .rp:not(.is-measure) .rp-cover h1, .rp:not(.is-measure) .rp-stat .big b { font-size: 24px; line-height: 30px }
+}
+
+/* ---------- Print: one sheet per physical page, no desk, no shadow ---------- */
+@media print {
+  @page { size: Letter; margin: 0 }
+  .rp-desk { display: block; padding: 0; background: none }
+  .rp { margin: 0; box-shadow: none; break-after: page; break-inside: avoid }
+  .rp:last-child { break-after: auto }
+  .rp.is-measure { display: none }
+}
+
+/* ---------- Review fixes for the parts above (REVIEW-studio.md, REVIEW-readers.md) ---------- */
+/* R25: a time or session-date cell never wraps ("Q4 26", "12 Nov 2026 · done"). */
+.rp-tbl td.nw { white-space: nowrap }
+/* R26: the recommended plan is marked by weight, with "Recommended" under its name. */
+.rp-tbl tr.is-rec > th, .rp-tbl tr.is-rec > td.n { font-weight: 700 }
+.rp-tbl tbody th .sub { display: block; color: var(--fg-2); font-weight: 400 }
+/* R7: at phone width a report table becomes stacked label and value rows; nothing overlaps and nothing scrolls the page. */
+@media screen and (max-width: 599px) {
+  .rp:not(.is-measure) .rp-tbl { overflow-x: visible }
+  .rp:not(.is-measure) .rp-tbl table, .rp:not(.is-measure) .rp-tbl tbody, .rp:not(.is-measure) .rp-tbl tr,
+  .rp:not(.is-measure) .rp-tbl th, .rp:not(.is-measure) .rp-tbl td { display: block; width: auto }
+  .rp:not(.is-measure) .rp-tbl table.fixed { table-layout: auto }
+  .rp:not(.is-measure) .rp-tbl colgroup { display: none }
+  .rp:not(.is-measure) .rp-tbl thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap }
+  .rp:not(.is-measure) .rp-tbl tbody tr { display: grid; gap: var(--space-1); padding-block: var(--space-2); border-bottom: 1px solid var(--line) }
+  .rp:not(.is-measure) .rp-tbl tbody tr > * { padding: 0; border: 0; background: none }
+  .rp:not(.is-measure) .rp-tbl tbody th { padding-bottom: var(--space-1) }
+  .rp:not(.is-measure) .rp-tbl tbody td { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: var(--space-3); padding-block: 0; text-align: left; white-space: normal }
+  .rp:not(.is-measure) .rp-tbl tbody td::before { content: attr(data-label); color: var(--fg-2); font-weight: 600 }
+  .rp:not(.is-measure) .rp-tbl tbody td:empty { display: none }
+  .rp:not(.is-measure) .rp-tbl tr.is-group { padding-block: var(--space-3) var(--space-1); border-bottom: 1px solid var(--line-2) }
+  .rp:not(.is-measure) .rp-tbl tr.is-total { border-top: 1px solid var(--fg); border-bottom: 0 }
+  .rp:not(.is-measure) .rp-tbl.cmp td { width: auto }
+}
+/* R4, decision 7: a drawn figure (the market squares) may be set at a smaller size so it stays with the words that introduce it. */
+.rp-fig.is-compact .slot > .b-market { padding: var(--space-3) }
+.rp-fig.is-compact .slot > .b-market svg { width: 220px; height: auto }

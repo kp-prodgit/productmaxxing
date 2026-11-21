@@ -1,4 +1,5 @@
-import { formatTasks, LINEAR_SYNC_TASK, tasksJson } from "../claude/tasks.js";
+import { formatTasks, LINEAR_SYNC_TASK, TASK_HOURS, tasksJson, type TaskHours } from "../claude/tasks.js";
+import { savePersonalConfig } from "../core/config.js";
 import { boardJson, checkBoard, formatBoard, renderBoard, setBoardUrl, boardUrl } from "../claude/board.js";
 import { appSkillInstalled, appSkillTarget, BOARD_SKILL, installAppSkill } from "../claude/skill.js";
 import { addAllowRules, claudeSettingsFile } from "../claude/permissions.js";
@@ -114,9 +115,23 @@ export const linearCommands: Command[] = [
   {
     name: "schedule",
     summary: "The scheduled tasks PMX needs in your Claude app and whether each exists; type /pmx-schedule in the Claude app to create them",
-    usage: "pmx schedule [--json] | pmx schedule --install-skill | pmx schedule --allow",
-    options: { json: { type: "boolean" }, "install-skill": { type: "boolean" }, allow: { type: "boolean" } },
+    usage: "pmx schedule [--json] | pmx schedule --hours weekdays|always | pmx schedule --install-skill | pmx schedule --allow",
+    options: { json: { type: "boolean" }, "install-skill": { type: "boolean" }, allow: { type: "boolean" }, hours: { type: "string" } },
     async run(a) {
+      // CLAUDE-5: when PMX's Claude tasks run on this Mac. The app holds the schedule, so /pmx-schedule applies it.
+      if (a.values.hours !== undefined) {
+        const hours = String(a.values.hours).toLowerCase() as TaskHours;
+        if (!TASK_HOURS.includes(hours)) throw new Error(`--hours takes ${TASK_HOURS.join(" or ")}.`);
+        const ctx = await a.ctx();
+        ctx.personal.taskHours = hours;
+        await savePersonalConfig(ctx.personal);
+        console.log(hours === "always"
+          ? "PMX's Claude tasks will run around the clock: the Linear sync every hour, every day, and meeting collection every day. They still run only while the Claude app is open and the Mac is awake. For agents that run unattended, `pmx linear key` lets PMX reach Linear directly, with no Claude task in between."
+          : "PMX's Claude tasks will run on weekdays: the Linear sync every hour from 8:00 to 18:00, and meeting collection at 12:30 and 17:30.");
+        console.log("");
+        console.log(await formatTasks(ctx.team, macKeychain(), hours));
+        return 0;
+      }
       if (a.values.allow) {
         const r = await addAllowRules();
         if (r.error) throw new Error(r.error);
@@ -133,7 +148,8 @@ export const linearCommands: Command[] = [
         return r === "kept-yours" ? 1 : 0;
       }
       const ctx = await a.ctx().catch(() => null);
-      console.log(a.values.json ? JSON.stringify(await tasksJson(ctx?.team ?? null, macKeychain()), null, 2) : await formatTasks(ctx?.team ?? null, macKeychain()));
+      const hours = ctx?.personal.taskHours ?? "weekdays";
+      console.log(a.values.json ? JSON.stringify(await tasksJson(ctx?.team ?? null, macKeychain(), hours), null, 2) : await formatTasks(ctx?.team ?? null, macKeychain(), hours));
       return 0;
     },
   },

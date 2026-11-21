@@ -1,0 +1,236 @@
+/* ---------- Studio: the parts a head of product writes with ----------
+   Reuses .btn, .pill, .aud, .track, .card from the base. Text inputs (.in) and segmented controls (.seg) come from the fields part. */
+
+/* Changed since the last release: the words, with the today mark beside them. Shared by SectionCard, RoadmapCanvas and CoverageMap. */
+.sec .chg, .canvas .chg, .cov .chg { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font: 500 12px/16px var(--font); white-space: nowrap }
+.sec .chg::before, .canvas .chg::before, .cov .chg::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--today); flex: none }
+
+/* ---------- SectionCard: one section of a document, in the author's own words ---------- */
+.sec { position: relative; display: grid; gap: var(--space-3); padding: var(--space-5); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease) }
+.sec:hover { border-color: var(--line-2) }
+.sec.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) }
+.sec.is-draft { background: none; border-style: dashed; border-color: var(--line-2) }
+.sec.is-draft.is-selected { border-style: solid; border-color: var(--accent) }
+/* Heading, who sees it, and the quiet actions share one line; they wrap under the heading on a phone */
+.sec .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-3) }
+.sec h3 { flex: 1 1 16em; min-width: 0; font: 650 21px/28px var(--font); letter-spacing: -.01em; text-wrap: balance; overflow-wrap: anywhere }
+.sec .tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) }
+.sec .act { display: flex; gap: var(--space-1) }
+.sec:hover .act, .sec:focus-within .act, .sec.is-selected .act { opacity: 1 }
+@media (hover: none) { .sec .act { opacity: 1 } }
+/* The person's prose, at reading size on the reading column */
+.sec .body { display: grid; gap: var(--space-3); max-width: var(--measure); font: 400 17px/26px var(--font); color: var(--fg) }
+.sec .note { color: var(--fg-2); font: 400 12px/16px var(--font) }
+@media (max-width: 767px) { .sec .act .btn { min-height: var(--touch); min-width: var(--touch) } }
+@media (max-width: 599px) { .sec { padding: var(--space-4) } }
+
+/* ---------- AudiencePicker: who sees a section, chosen by name ---------- */
+.audp { display: grid; gap: var(--space-3); max-width: var(--measure); min-width: 0 }
+.audp .lbl { font: 600 14px/20px var(--font) }
+.audp .opts { list-style: none; padding: var(--space-1); display: grid; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-m) }
+/* "Everyone" and "Draft" sit apart from the groups by a hairline */
+.audp .opts > .split { margin-top: var(--space-1); padding-top: var(--space-1); border-top: 1px solid var(--line) }
+.audp .opt { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-3); min-height: 36px; padding: var(--space-1) var(--space-3); border-radius: var(--r-s); cursor: pointer; transition: background var(--dur-1) var(--ease) }
+.audp .opt:hover { background: var(--hover) }
+/* The real checkbox stays focusable; .box draws it */
+.audp .opt input { position: absolute; top: 0; bottom: 0; left: var(--space-3); width: 16px; height: 16px; margin: auto 0; opacity: 0 }
+.audp .box { display: grid; place-items: center; width: 16px; height: 16px; flex: none; border-radius: calc(var(--r-s) - 2px); background: var(--card); box-shadow: inset 0 0 0 1.5px var(--fg-3); color: var(--bg); transition: background var(--dur-1) var(--ease) }
+.audp .box svg.i { width: 12px; height: 12px; stroke-width: 2.4; opacity: 0 }
+.audp input:checked + .box { background: var(--fg); box-shadow: none }
+.audp input:checked + .box svg.i { opacity: 1 }
+.audp input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 2px }
+.audp .name { flex: 1 1 auto; min-width: 0; font: 400 14px/20px var(--font) }
+.audp input:checked ~ .name { font-weight: 500 }
+/* Why a choice is off or what it means, in words beside it */
+.audp .why { flex: 0 1 auto; color: var(--fg-2); font: 400 12px/16px var(--font) }
+.audp .opt:has(input:disabled) { cursor: default }
+.audp .opt:has(input:disabled):hover { background: none }
+.audp input:disabled + .box { background: var(--sunken); box-shadow: inset 0 0 0 1.5px var(--line-2) }
+.audp input:disabled ~ .name { color: var(--fg-2) }
+/* The live sentence under the list */
+.audp .sum { font: 400 14px/20px var(--font); color: var(--fg) }
+.audp .sum b { font-weight: 600 }
+/* Said before saving: this widens what has already been released */
+.audp .wider { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--warn-soft); border-radius: var(--r-m); color: var(--fg); font: 400 13px/18px var(--font) }
+.audp .wider[hidden] { display: none }
+.audp .wider svg.i { margin-top: 1px; color: var(--warn) }
+.audp .wider b { font-weight: 600 }
+@media (max-width: 767px) { .audp .opt { min-height: var(--touch) } }
+
+/* ---------- RoadmapCanvas: the roadmap as theme columns ---------- */
+.canvas { overflow-x: auto; overscroll-behavior-x: contain; padding: var(--space-3); background: var(--sunken); border-radius: var(--r-l) }
+.canvas .cols { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(calc(var(--space-9) * 3), 1fr); gap: var(--space-3); align-items: start; min-width: min-content }
+.canvas .theme { display: grid; gap: var(--space-3); align-content: start; min-width: 0; padding: var(--space-3); border: 1px solid transparent; border-radius: var(--r-m) }
+.canvas .theme > header { display: grid; justify-items: start; gap: 2px }
+.canvas .theme h3 { font: 600 16px/22px var(--font); text-wrap: balance; overflow-wrap: anywhere }
+.canvas .theme .by { color: var(--fg-2); font: 400 12px/16px var(--font) }
+.canvas .theme .aud { margin-top: 2px }
+/* Entries without a theme: a lighter well, named in words */
+.canvas .theme.unsorted { background: var(--bg); border-color: var(--line) }
+.canvas .list { list-style: none; padding: 0; display: grid; gap: var(--space-2) }
+.canvas .none { padding: var(--space-3); color: var(--fg-2); font: 400 12px/16px var(--font) }
+.canvas .add { justify-self: start }
+/* Entry card: can be picked up, so it is raised */
+.canvas .entry { position: relative; display: grid; gap: var(--space-2); padding: var(--space-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-m); box-shadow: var(--shadow-1); transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease) }
+.canvas .entry:hover { border-color: var(--line-2) }
+.canvas .entry .top { display: flex; align-items: flex-start; gap: var(--space-2) }
+/* The name opens the entry; its hit area covers the card */
+.canvas .entry .name { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: none; color: var(--fg); text-align: left; font: 600 14px/20px var(--font); overflow-wrap: anywhere }
+.canvas .entry .name::after { content: ""; position: absolute; inset: 0; border-radius: var(--r-m) }
+.canvas .entry .name:focus-visible { outline: none }
+.canvas .entry:has(.name:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px }
+/* The move handle: Space lifts the entry from the keyboard */
+.canvas .entry .grip { position: relative; z-index: 1; display: grid; place-items: center; flex: none; width: var(--control-sm); height: var(--control-sm); margin: calc(var(--space-1) * -1) calc(var(--space-1) * -1) 0 0; padding: 0; border: 0; border-radius: var(--r-s); background: none; color: var(--fg-3); cursor: grab; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease) }
+.canvas .entry .grip:hover { background: var(--hover); color: var(--fg) }
+.canvas .entry .grip:disabled { opacity: .45; cursor: default; background: none }
+.canvas .entry .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); color: var(--fg-2); font: 400 12px/16px var(--font) }
+.canvas .entry .when { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums }
+.canvas .entry .conf { display: inline-flex; align-items: center; gap: var(--space-1) }
+.canvas .entry .conf svg.i { width: 13px; height: 13px }
+.canvas .entry .tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) }
+.canvas .entry .tags:empty { display: none }
+/* Customer-safe wording: the icon and the words, never the icon alone */
+.canvas .entry .may { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 0 var(--space-2); border-radius: var(--r-s); background: var(--ok-soft); color: var(--ok); font: 500 12px/16px var(--font); white-space: nowrap }
+.canvas .entry .may svg.i { width: 13px; height: 13px }
+.canvas .entry.is-draft { border-style: dashed; border-color: var(--line-2); box-shadow: none }
+.canvas .entry.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) }
+.canvas .entry.is-dragging { z-index: 2; border-color: var(--line-2); box-shadow: var(--shadow); transform: translateY(-2px); cursor: grabbing }
+.canvas .entry.is-lifted { z-index: 2; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); transform: translateY(-2px) }
+/* Shown on a keyboard-lifted entry: how to move it, on the card itself */
+.canvas .entry .hint { margin: 0 calc(var(--space-3) * -1) calc(var(--space-3) * -1); padding: var(--space-2) var(--space-3); background: var(--accent-soft); color: var(--accent); border-radius: 0 0 calc(var(--r-m) - 1px) calc(var(--r-m) - 1px); font: 500 12px/16px var(--font) }
+/* Where a dragged entry will land */
+.canvas .slot { display: grid; place-items: center; min-height: var(--space-8); padding: var(--space-2); border: 2px dashed var(--accent); border-radius: var(--r-m); background: var(--accent-soft); color: var(--accent); font: 500 12px/16px var(--font); text-align: center }
+@media (max-width: 767px) { .canvas .add { min-height: var(--touch) } .canvas .entry .grip { width: var(--touch); height: var(--touch); margin: calc(var(--space-3) * -1) calc(var(--space-3) * -1) 0 0 } }
+
+/* ---------- ReleaseCard: one release in progress, and whose move it is ---------- */
+.rel { display: grid; gap: var(--space-5); padding: var(--space-5); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); min-width: 0 }
+.rel > header { display: grid; gap: 2px }
+.rel h3 { font: 600 16px/22px var(--font); text-wrap: balance }
+.rel .sub { color: var(--fg-2); font: 400 12px/16px var(--font) }
+/* The move: one sentence that names who acts, and the one action */
+.rel .rel-now { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3) var(--space-4); padding: var(--space-3) var(--space-4); background: var(--sunken); border-radius: var(--r-m) }
+.rel .rel-now.held { background: var(--held-soft) }
+.rel .rel-now.bad { background: var(--bad-soft) }
+.rel .rel-now .msg { flex: 1 1 calc(var(--space-9) * 3); min-width: 0; display: flex; align-items: flex-start; gap: var(--space-2); font: 400 14px/20px var(--font); color: var(--fg) }
+.rel .rel-now .msg b { font-weight: 600 }
+.rel .rel-now .msg svg.i { margin-top: 2px; color: var(--fg-2) }
+.rel .rel-now.held .msg svg.i { color: var(--held) }
+.rel .rel-now.bad .msg svg.i { color: var(--bad) }
+.rel .rel-now a:not(.btn) { color: var(--accent); text-decoration: underline; text-underline-offset: 3px }
+/* Claude is working: the only motion on the card */
+.rel .rel-now .spin { width: 12px; height: 12px; margin: var(--space-1) 2px 0; flex: none; border-radius: 50%; border: 2px solid var(--fg-2); border-right-color: transparent; animation: pmx-spin .8s linear infinite }
+/* A command the person types in the Claude app, with Copy beside it */
+.rel .cmd { flex: 1 1 100%; min-width: 0; display: flex; align-items: center; gap: var(--space-2) }
+.rel .cmd code { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; min-height: var(--control); padding: 0 var(--space-3); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-s); font: 400 12px/16px var(--mono); white-space: nowrap; overflow-x: auto }
+@media (max-width: 599px) { .rel { padding: var(--space-4) } .rel .rel-now { padding: var(--space-3) } .rel .rel-now > .btn { flex: 1 1 100% } .rel .cmd { flex-wrap: wrap } .rel .cmd code { flex-basis: 100% } .rel .cmd .btn { flex: 1 1 100% } }
+
+/* ---------- ReleaseSummary: what a release changes, said before it happens ---------- */
+.relsum { display: grid; gap: var(--space-5); max-width: var(--measure); min-width: 0 }
+.relsum .lead { font: 600 16px/22px var(--font); text-wrap: balance }
+.relsum .grp { display: grid; gap: var(--space-2) }
+.relsum h3 { display: flex; align-items: baseline; gap: var(--space-2); font: 600 14px/20px var(--font) }
+.relsum h3 .n { color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums }
+.relsum ul { list-style: none; padding: 0; display: grid; border-top: 1px solid var(--line) }
+.relsum li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--line) }
+.relsum li .name { font: 400 14px/20px var(--font); overflow-wrap: anywhere }
+.relsum li .det { grid-column: 1 / -1; color: var(--fg-2); font: 400 12px/16px var(--font) }
+.relsum li .det.first { color: var(--warn); font-weight: 500 }
+/* Drafts are not counted; one quiet line says they stay behind */
+.relsum .left { color: var(--fg-2); font: 400 13px/18px var(--font) }
+.relsum .restart { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-3); background: var(--warn-soft); border-radius: var(--r-m); color: var(--fg); font: 400 13px/18px var(--font) }
+.relsum .restart svg.i { margin-top: 1px; color: var(--warn) }
+.relsum .restart b { font-weight: 600 }
+.relsum .note { display: grid; gap: var(--space-1) }
+.relsum .note .k { font: 600 13px/18px var(--font) }
+.relsum .note .k small { margin-left: var(--space-1); color: var(--fg-2); font: 400 12px/16px var(--font) }
+.relsum .note textarea { width: 100%; min-height: calc(var(--space-8) + var(--space-4)); resize: vertical }
+.relsum .note .help { color: var(--fg-2); font: 400 12px/16px var(--font) }
+
+/* ---------- ProposalCard: something Claude or PMX suggests, which changes nothing until accepted ---------- */
+.props { display: grid; gap: var(--space-3); max-width: var(--measure); min-width: 0 }
+.props > .note { color: var(--fg-2); font: 400 13px/18px var(--font) }
+.prop { display: grid; gap: var(--space-3); padding: var(--space-4); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); min-width: 0 }
+.prop .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3) }
+/* Who proposes it: the Claude place colour, with the spark and the words */
+.prop .by { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 0 var(--space-2); border-radius: var(--r-pill); background: var(--claude-soft); color: var(--claude); font: 500 12px/16px var(--font); white-space: nowrap }
+.prop .by svg.i { width: 13px; height: 13px }
+.prop .by.pmx { background: var(--hover); color: var(--fg-2) }
+.prop .where { color: var(--fg-2); font: 400 12px/16px var(--font) }
+.prop .what { display: grid; gap: var(--space-1) }
+.prop .what .kind { color: var(--fg-2); font: 400 13px/18px var(--font) }
+.prop h3 { font: 600 16px/22px var(--font); text-wrap: balance; overflow-wrap: anywhere }
+.prop .what p { font: 400 14px/20px var(--font); color: var(--fg) }
+/* The evidence: a quote and the document it came from */
+.prop blockquote { margin: 0; display: grid; gap: var(--space-1); padding-left: var(--space-3); border-left: 2px solid var(--line-2) }
+.prop blockquote p { color: var(--fg-2); font: 400 13px/18px var(--font); quotes: "\201C" "\201D" }
+.prop blockquote p::before { content: open-quote }
+.prop blockquote p::after { content: close-quote }
+.prop cite { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-2); font: 400 12px/16px var(--font); font-style: normal }
+.prop cite svg.i { width: 13px; height: 13px }
+.prop cite b { color: var(--fg); font-weight: 500 }
+.prop .act { display: flex; flex-wrap: wrap; gap: var(--space-2) }
+/* Accepted or dropped: one line with the outcome and Undo */
+.prop.is-done { gap: var(--space-2); padding-block: var(--space-3); background: none }
+.prop .res { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3) }
+.prop .res .t { flex: 1 1 auto; min-width: 0; font: 600 14px/20px var(--font) }
+.prop.is-dropped .res .t { color: var(--fg-2); font-weight: 500 }
+@media (max-width: 767px) { .prop .res .btn { min-height: var(--touch) } }
+
+/* ---------- CoverageMap: every document, where it stands, in one line each ---------- */
+.cov { container-type: inline-size; list-style: none; padding: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l) }
+.cov > li + li { border-top: 1px solid var(--line) }
+.cov .doc { display: grid; grid-template-columns: calc(var(--space-9) + var(--space-8)) minmax(0, 1fr) auto calc(var(--space-9) * 2) auto; grid-template-areas: "name where steps chg act"; align-items: center; gap: var(--space-1) var(--space-4); padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4) }
+.cov .name { grid-area: name; min-width: 0; font: 600 14px/20px var(--font); overflow-wrap: anywhere }
+.cov .where { grid-area: where; min-width: 0; color: var(--fg-2); font: 400 14px/20px var(--font) }
+.cov .doc.is-empty .where { color: var(--fg-3) }
+/* Five steps, one per group, mirroring the release track. The sentence says it; the bar repeats it */
+.cov .steps { grid-area: steps; display: grid; grid-template-columns: repeat(5, var(--space-5)); gap: 2px }
+.cov .steps i { height: var(--space-1); border-radius: var(--r-pill); background: var(--line-2) }
+.cov .steps .is-done { background: var(--ok) }
+.cov .steps .is-now { background: var(--accent) }
+.cov .steps .is-held { background: var(--held) }
+.cov .steps .is-bad { background: var(--bad) }
+.cov .chg { grid-area: chg; justify-self: start }
+.cov .doc > .btn { grid-area: act }
+/* Verticals: a second line, only where one differs from the company version */
+.cov .vert { grid-column: 1 / -1; padding-left: calc(var(--space-9) + var(--space-8) + var(--space-4)) }
+.cov .vert summary { display: inline-flex; align-items: center; gap: 6px; min-height: var(--control-sm); color: var(--fg-2); font: 500 12px/16px var(--font); list-style: none; cursor: pointer; border-radius: var(--r-s); transition: color var(--dur-1) var(--ease) }
+.cov .vert summary::-webkit-details-marker { display: none }
+.cov .vert summary:hover { color: var(--fg) }
+.cov .vert summary svg.i { width: 13px; height: 13px; transition: transform var(--dur-1) var(--ease) }
+.cov .vert[open] summary svg.i { transform: rotate(90deg) }
+.cov .vert ul { list-style: none; padding: var(--space-1) 0 var(--space-2); display: grid; gap: var(--space-1) }
+.cov .vert li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-3); color: var(--fg-2); font: 400 13px/18px var(--font) }
+.cov .vert li b { color: var(--fg); font-weight: 600 }
+.cov .vert li a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px }
+@container (max-width: 760px) {
+  .cov .doc { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name act" "where where" "steps chg"; padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4) }
+  .cov .chg { justify-self: end }
+  .cov .vert { padding-left: 0 }
+}
+@media (max-width: 767px) { .cov .doc > .btn { min-height: var(--touch) } .cov .vert summary { min-height: var(--touch) } }
+
+/* ---------- Review fixes for the parts above (REVIEW-studio.md, REVIEW-readers.md) ---------- */
+/* S23: a section card's Edit and Who sees it appear on hover, focus or selection, not on every card at rest. */
+@media (hover: hover) { .sec .act { opacity: 0; transition: opacity var(--dur-1) var(--ease) } }
+/* S40: every section card lays out the same way: title, controls top right, audience and state under the title. */
+.sec > .head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--space-2) var(--space-3) }
+.sec > .head > h3 { grid-column: 1; grid-row: 1 }
+.sec > .head > .act { grid-column: 2; grid-row: 1 }
+.sec > .head > .tags { grid-column: 1 / -1; grid-row: 2 }
+/* S21: "Sales may say this" marks the minority (13 of 30 released entries carry approved wording), so it stays, but as a quiet word, not a green pill. */
+.canvas .entry .may { min-height: 0; padding: 0; background: none; color: var(--fg-2) }
+/* S52: roadmap entries and theme links are at least the touch size under 768px */
+@media (max-width: 767px) {
+  .canvas .theme h3 .link, .canvas .entry .name { display: inline-flex; align-items: center; min-height: var(--touch) }
+  .canvas .entry .name { width: 100% }
+}
+/* Decision (S12, S20): after approval, "Copy command" sits inside a Command block on a release card too */
+.rel .cmd:has(> .well) { display: grid; gap: var(--space-2) }
+.rel .cmd .well code { display: block; min-height: 0; padding: var(--space-1) 0; background: none; border: 0; border-radius: 0; white-space: normal; overflow: visible }
+@media (max-width: 599px) { .rel .cmd .well > .btn { flex: 1 1 100%; justify-content: center } }
+/* S25: the coverage row without the stage bar: name, where it stands, what changed, Open */
+.cov .doc:not(:has(> .steps)) { grid-template-columns: calc(var(--space-9) + var(--space-8)) minmax(0, 1fr) calc(var(--space-9) * 2) auto; grid-template-areas: "name where chg act" }
+@container (max-width: 760px) { .cov .doc:not(:has(> .steps)) { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name act" "where where" "chg chg" } .cov .doc:not(:has(> .steps)) .chg { justify-self: start } }
+/* S52: the coverage map's links are at least the touch size under 768px */
+@media (max-width: 767px) { .cov .vert li a { display: inline-flex; align-items: center; min-height: var(--touch) } }

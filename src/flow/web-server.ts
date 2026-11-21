@@ -1,5 +1,8 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { openSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { Exec } from "../core/exec.js";
 import { paths } from "../core/paths.js";
 import { currentVersion } from "../core/version.js";
 
@@ -37,9 +40,75 @@ export async function runningWebServer(o: { fetch?: typeof fetch; stop?: (pid: n
     await rm(webServerFile(), { force: true });
     return null;
   }
+  return (await answers(note, o.fetch, 3000)) ? note : null;
+}
+
+/** Whether the server in a note answers with its token. */
+async function answers(note: WebServerNote, f: typeof fetch = fetch, ms: number): Promise<boolean> {
   const u = new URL(note.url);
   const token = new URLSearchParams(u.hash.slice(1)).get("t") ?? "";
-  const ok = await (o.fetch ?? fetch)(`${u.origin}/api/pipeline?hours=1`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(3000) })
-    .then((r) => r.ok, () => false);
-  return ok ? note : null;
+  return f(`${u.origin}/api/pipeline?hours=1`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(ms) }).then((r) => r.ok, () => false);
+}
+
+/** This Mac's page as the Claude app's page sees it (BOARD-8): whether it runs and since when. Never its link or token. */
+export interface LocalPage { running: boolean; since: string | null }
+
+/** Whether this Mac's page is running now. Read-only: unlike `runningWebServer`, it never stops an older server. */
+export async function webServerStatus(o: { fetch?: typeof fetch } = {}): Promise<LocalPage> {
+  const note = await readNote();
+  if (!note || !alive(note.pid)) return { running: false, since: null };
+  return (await answers(note, o.fetch, 1500)) ? { running: true, since: note.startedAt } : { running: false, since: null };
+}
+
+/** The log of a page started in the background, which has no Terminal window to print to. */
+export const webServerLog = () => join(paths.logs(), "flow-web.log");
+
+/**
+ * Starts `pmx open --no-open` on its own, outside the Claude app's process group, so the page keeps running after the
+ * app quits. Its output goes to ~/.pmx/logs/flow-web.log.
+ */
+export async function launchWebServer(o: { node?: string; cli?: string } = {}): Promise<void> {
+  await mkdir(paths.logs(), { recursive: true });
+  const log = openSync(webServerLog(), "a", 0o600);
+  const child = spawn(o.node ?? process.execPath, [o.cli ?? process.argv[1] ?? "", "open", "--no-open"], { detached: true, stdio: ["ignore", log, log] });
+  child.on("error", () => {});
+  child.unref();
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Opens this Mac's page in the PM's browser, starting it first when it isn't running (BOARD-8). PMX runs `open` itself,
+ * so the link and its token stay on this Mac: the caller learns only whether the page had to be started.
+ */
+export async function openWebServer(exec: Exec, o: { launch?: () => Promise<void>; running?: () => Promise<WebServerNote | null>; waitMs?: number; stepMs?: number } = {}): Promise<{ started: boolean }> {
+  const running = o.running ?? (() => runningWebServer());
+  let s = await running();
+  const started = !s;
+  if (!s) {
+    await (o.launch ?? (() => launchWebServer()))();
+    const end = Date.now() + (o.waitMs ?? 15000);
+    while (!s && Date.now() < end) {
+      await sleep(o.stepMs ?? 250);
+      s = await running();
+    }
+    if (!s) throw new Error("PMX's page on this Mac didn't start. Run pmx open in Terminal to see why; its log is ~/.pmx/logs/flow-web.log.");
+  }
+  await exec("open", [s.url]);
+  return { started };
+}
+
+/**
+ * Stops this Mac's page, wherever it was started. Not the server answering this very call: that one is this page
+ * itself, stopped with Ctrl+C where it runs.
+ */
+export async function stopWebServer(o: { kill?: (pid: number) => void; waitMs?: number } = {}): Promise<boolean> {
+  const note = await readNote();
+  if (!note || !alive(note.pid)) return false;
+  if (note.pid === process.pid) throw new Error("This is the page on this Mac itself. Stop it with Ctrl+C in the Terminal window that runs it.");
+  (o.kill ?? ((pid) => process.kill(pid, "SIGTERM")))(note.pid);
+  const end = Date.now() + (o.waitMs ?? 3000);
+  while (alive(note.pid) && Date.now() < end) await sleep(100);
+  if (!alive(note.pid)) await rm(webServerFile(), { force: true });
+  return true;
 }

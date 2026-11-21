@@ -19,7 +19,7 @@ import { runUninstall } from "./uninstall.js";
 import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
 import { atLeast, compareVersions, currentVersion, isVersion, vendoredVersion } from "../core/version.js";
 import { formatNotes, markSeen, newVersionNotes, notesBetween, RELEASE_NOTES } from "../core/whats-new.js";
-import { engineNotes, formatEngineNotes } from "../engine/bridge.js";
+import { engineChecklist, engineNotes, formatEngineNotes } from "../engine/bridge.js";
 import { installLatestRelease, installTeamVersion, type UpdateOutcome } from "../core/update.js";
 import { Git } from "../core/git.js";
 import { loadState } from "../core/state.js";
@@ -27,7 +27,11 @@ import { writeJson } from "../core/fsutil.js";
 import { TEAM_CONFIG_FILE } from "../core/paths.js";
 import { join } from "node:path";
 import { listReceipts, readReceipt } from "../core/receipt.js";
-import { skillInventory, teamSkillPath } from "../core/skills.js";
+import { packageRoot, skillInventory, teamSkillPath } from "../core/skills.js";
+import { installAppSkill, SETUP_SKILL } from "../claude/skill.js";
+import { AUTO_STEPS } from "../core/upgrade.js";
+import { formatChecklist, type Checklist, type Step } from "../setup/checklist.js";
+import { gatherChecklist } from "../setup/gather.js";
 import { syncOrgSkills, validateOrgSkill } from "../core/org-skills.js";
 import { enqueueSkillDoc } from "../tracker/relay.js";
 import { linearAccess } from "../linear/access.js";
@@ -95,6 +99,31 @@ async function showNewNotes(version: string): Promise<void> {
   if (text) await markSeen(version);
 }
 
+/**
+ * UPGRADE-1: right after `pmx update` installs, the NEW pmx does what the update needs on this Mac and says what's
+ * left, so whoever ran the update (or Claude Code) sees every remaining step for the version this Mac came from.
+ */
+async function showMigrate(): Promise<void> {
+  const prefix = (await exec("npm", ["prefix", "-g"], { timeoutMs: 30000 })).stdout.trim();
+  if (!prefix) return;
+  const r = await exec(join(prefix, "bin", "pmx"), ["migrate"], { timeoutMs: 180000 });
+  console.log(r.code === 0 && r.stdout.trim() ? `\n${r.stdout.trim()}` : "\nRun `pmx checklist` to see what's left after this update.");
+}
+
+/** The checklist, worked out now and recorded (SETUP-1). */
+async function checklistNow(ctx: Ctx | null): Promise<Checklist> {
+  let personal: PersonalConfig | null = null;
+  let team: TeamConfig | null = null;
+  try {
+    personal = await loadPersonalConfig();
+    team = (await effectiveTeam(await loadTeamConfig(personal.repoPath), personal)).team;
+  } catch {}
+  return gatherChecklist({
+    personal, team, checks: await doctorChecks(), exec, keychain: macKeychain(), now: new Date(), ctx, engine: () => engineChecklist(exec),
+    extra: checklistExtra ? () => checklistExtra!(ctx) : undefined,
+  });
+}
+
 export const commands: Command[] = [
   {
     name: "init",
@@ -111,6 +140,61 @@ export const commands: Command[] = [
       console.log("\n" + r.text);
       const team = await loadTeamConfig(personal.repoPath).catch(() => null);
       if (team) console.log("\n" + (await nextSteps(team, personal)));
+      return 0;
+    },
+  },
+  {
+    name: "checklist",
+    summary: "Where this Mac stands with PMX: each install, setup and update step, what's done, what's running and what's next",
+    usage: "pmx checklist [--json] [--all] [--fix] [--install-skill]",
+    options: { json: { type: "boolean" }, all: { type: "boolean" }, fix: { type: "boolean" }, "install-skill": { type: "boolean" } },
+    async run(a) {
+      if (a.values["install-skill"]) {
+        const r = await installAppSkill(SETUP_SKILL);
+        console.error(r === "kept-yours" ? "Kept your own /pmx-setup." : `/pmx-setup ${r === "current" ? "is already" : "is now"} in the Claude app. Quit and reopen the app if it doesn't show up.`);
+      }
+      // --fix: the steps an update does by itself (UPGRADE-1), now, whatever was recorded.
+      if (a.values.fix) for (const s of AUTO_STEPS) {
+        const did = await s.run({ exec, launchd: macLaunchd(), cliPath: a.cliPath, interactive: true }).catch((e: any) => `couldn't: ${e?.message ?? e}`);
+        console.error(`${s.title}: ${did ?? "nothing to do"}`);
+      }
+      const cl = await checklistNow(await a.ctx().catch(() => null));
+      console.log(a.values.json ? JSON.stringify(cl, null, 2) : formatChecklist(cl, { all: a.values.all }));
+      return 0;
+    },
+  },
+  {
+    name: "guide",
+    summary: "The guide Claude follows to install, set up, update and check PMX with you, for this version",
+    usage: "pmx guide",
+    options: {},
+    async run() {
+      console.log(await readFile(join(packageRoot(), "GUIDE.md"), "utf8"));
+      return 0;
+    },
+  },
+  {
+    name: "migrate",
+    summary: "What the last update did on this Mac and what's still to do (pmx update runs it)",
+    usage: "pmx migrate [--json]",
+    options: { json: { type: "boolean" } },
+    async run(a) {
+      // The update steps already ran before this command started (src/cli.ts); this says what they did and what's left.
+      const cl = await checklistNow(await a.ctx().catch(() => null));
+      const u = cl.upgrade;
+      if (a.values.json) {
+        console.log(JSON.stringify({ format: 1, from: u?.from ?? null, to: cl.version, at: u?.at ?? null, applied: u?.applied ?? [], pending: u?.pending ?? [], next: cl.next }, null, 2));
+        return 0;
+      }
+      const waiting = cl.sections.find((s) => s.id === "update")?.steps.filter((s) => s.status === "warn") ?? [];
+      console.log([
+        `pmx ${cl.version}${u?.from && u.from !== cl.version ? `, updated from ${u.from}` : ""}.`,
+        u?.applied.length ? `PMX did:\n${u.applied.map((x) => `  ✔ ${x.title}: ${x.did}`).join("\n")}` : "PMX had nothing to change on this Mac.",
+        ...(waiting.length ? [`Waiting:\n${waiting.map((s) => `  ! ${s.title}: ${s.detail}`).join("\n")}`] : []),
+        u?.pending.length ? `Still to do for this update:\n${u.pending.map((s) => `  ✘ ${s.title}: ${s.do ?? s.detail}`).join("\n")}` : "Nothing else to do for this update.",
+        cl.next ? `Next: ${cl.next.title}. ${cl.next.do ?? ""}`.trim() : "",
+        "The full list: pmx checklist",
+      ].filter(Boolean).join("\n\n"));
       return 0;
     },
   },
@@ -202,6 +286,8 @@ export const commands: Command[] = [
       const lines = await runTick(ctx, tickSteps);
       for (const line of lines) console.log(`${new Date().toISOString()} ${line}`);
       await recordTick(lines);
+      // SETUP-1: keep ~/.pmx/checklist.json current, so PMX's page and Claude see where this Mac stands without asking.
+      await checklistNow(ctx).catch((e) => console.log(`${new Date().toISOString()} checklist: failed: ${e?.message ?? e}`));
       return 0;
     },
   },
@@ -306,7 +392,10 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
     async run(a) {
       if (a.values.latest) {
         const r = await installLatestRelease(exec, { force: a.values.force });
-        if (r.result === "updated") await showNewNotes(r.version);
+        if (r.result === "updated") {
+          await showNewNotes(r.version);
+          await showMigrate();
+        }
         console.log({
           current: `pmx ${currentVersion()} is the latest release.`,
           updated: `Installed pmx ${"version" in r ? r.version : ""}. Team lead: run \`pmx vendor --require\` and merge it, so your team gets it too.`,
@@ -347,7 +436,10 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
         failed: `\nnpm install failed: ${r.result === "failed" ? r.error : ""}`,
       };
       console.log(say[r.result]);
-      if (r.result === "updated") await showNewNotes(r.version);
+      if (r.result === "updated") {
+        await showNewNotes(r.version);
+        await showMigrate();
+      }
       return r.result === "current" || r.result === "updated" ? 0 : 1;
     },
   },
@@ -395,11 +487,14 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
 export let inviteHook: ((i: InviteFile) => Promise<void>) | undefined;
 export let doctorExtra: (() => Promise<import("./doctor.js").DoctorCheck[]>) | undefined;
 export let statusExtra: (ctx: Ctx) => Promise<string[]> = async () => [];
+/** SETUP-1: team features' checklist steps (ee/: the brain). */
+export let checklistExtra: ((ctx: Ctx | null) => Promise<Step[]>) | undefined;
 
-export function setHooks(h: { invite?: typeof inviteHook; doctor?: typeof doctorExtra; status?: typeof statusExtra }): void {
+export function setHooks(h: { invite?: typeof inviteHook; doctor?: typeof doctorExtra; status?: typeof statusExtra; checklist?: typeof checklistExtra }): void {
   if (h.invite) inviteHook = h.invite;
   if (h.doctor) doctorExtra = h.doctor;
   if (h.status) statusExtra = h.status;
+  if (h.checklist) checklistExtra = h.checklist;
 }
 
 async function doctorChecks() {

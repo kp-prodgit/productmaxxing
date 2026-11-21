@@ -98,3 +98,17 @@ export function openStudio(p: Pmxe): void {
   child.on("error", () => {});
   child.unref();
 }
+
+/**
+ * SETUP-1: PMX Engine's own checklist, in one line for PMX's: where the head of product stands and Engine's next
+ * step. Reads only `pmxe checklist --json` (format 1), never Engine's files. Null without Engine, or an Engine too old
+ * to have a checklist (then PMX says only its version).
+ */
+export async function engineChecklist(exec: Exec): Promise<{ version: string; where: string; next: string | null } | null> {
+  const p = await findPmxe(exec);
+  if (!p) return null;
+  const j = await readJson(exec, p, ["checklist", "--json"]);
+  if (!j || j.tool !== "pmxe") return { version: p.version, where: "an older PMX Engine with no checklist; pmxe doctor shows its checks", next: null };
+  const next = j.next && typeof j.next === "object" ? String((j.next as Record<string, unknown>).title ?? "") || null : null;
+  return { version: p.version, where: String(j.where ?? ""), next };
+}

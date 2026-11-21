@@ -8,6 +8,10 @@ import type { Task } from "../core/types.js";
 import { leaseTtlSeconds } from "../lease/types.js";
 import { runTask, type RunOutcome } from "../run/run.js";
 import { explain, selectTasks, type Selection } from "./select.js";
+import { failStreaks } from "./failures.js";
+import { inlineSources, sourcesHere } from "../run/evidence.js";
+import { loadSkill } from "../core/skills.js";
+import { skillMeta } from "../core/skillcheck.js";
 
 export interface PullResult {
   dryRun: boolean;
@@ -21,8 +25,40 @@ export function isDryRunDefault(ctx: Ctx): boolean {
   return ctx.now().getTime() - new Date(ctx.personal.installedAt).getTime() < 7 * 86400000;
 }
 
+/**
+ * Ready tasks this Mac can't draft (RUN-3): a kind of work that must cite sources, and none of the task's sources
+ * quotable here. Their quotes are on the Mac that proposed them, which runs them; nobody spends a run to fail.
+ */
+export async function citationGaps(ctx: Ctx, tasks: Task[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const mins = new Map<string, number>();
+  const minFor = async (category: string) => {
+    if (!mins.has(category)) {
+      const skill = ctx.team.categories[category]?.skill;
+      const meta = skill ? await loadSkill(ctx.personal.repoPath, skill).then((s) => skillMeta(s.text), () => null) : null;
+      mins.set(category, meta?.minCitations ?? 0);
+    }
+    return mins.get(category)!;
+  };
+  for (const t of tasks) {
+    if (t.status !== "ready" || !t.category || !ctx.team.categories[t.category]) continue;
+    const min = await minFor(t.category);
+    if (!min) continue;
+    const here = await sourcesHere(t);
+    // The skill counts citations, not sources: one source cited twice is enough for a minimum of 2.
+    if (inlineSources(t).length || here.ids.length) continue;
+    const need = `a ${t.category} draft must cite its sources ${min === 1 ? "once" : `${min} times`}`;
+    out.set(t.id, !t.sources.length ? `it names no sources, and ${need}`
+      : !here.receipt ? `its sources are quoted only on the Mac that proposed it, and ${need}`
+      : `none of its sources are in its synthesis run on this Mac, and ${need}`);
+  }
+  return out;
+}
+
 export async function plan(ctx: Ctx, svc: Services): Promise<Selection> {
   const [tasks, leases, paused, state] = await Promise.all([svc.tracker.list(), svc.lease.list(), svc.paused(), loadState()]);
+  const log = new RunLogStore(ctx);
+  const runs = (await log.exists().catch(() => false)) ? await log.entries().catch(() => []) : [];
   const now = ctx.now();
   const live = new Set(leases.filter((l) => l.holder !== ctx.agent && new Date(l.expiresAt) > now).map((l) => l.taskId));
   return selectTasks({
@@ -35,6 +71,8 @@ export async function plan(ctx: Ctx, svc: Services): Promise<Selection> {
     inReview: tasks.filter((t) => t.status === "review" && t.agent === ctx.agent).length,
     pausedCategories: paused,
     leasedTaskIds: live,
+    failStreaks: failStreaks(runs),
+    unrunnable: await citationGaps(ctx, tasks),
   });
 }
 

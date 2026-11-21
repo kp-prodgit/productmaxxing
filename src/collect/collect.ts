@@ -5,7 +5,7 @@ import { savePersonalConfig, type PersonalConfig } from "../core/config.js";
 import type { Ctx } from "../core/context.js";
 import { privateDir, readJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
-import { COLLECT_SKIPS, loadState, updateState, type CollectSkip } from "../core/state.js";
+import { COLLECT_SKIPS, loadState, recentReports, updateState, type CollectSkip } from "../core/state.js";
 import { parseTranscript } from "../sources/transcripts.js";
 import { startOfDay } from "../meetings/ledger.js";
 import { pageProblem, stalePages } from "../claude/pages.js";
@@ -272,7 +272,7 @@ export async function checkCollected(ctx: Ctx): Promise<string[]> {
   })).filter((x) => x.status !== null || x.saved);
   await updateState((st) => {
     st.lastCollectAt = ctx.now().toISOString();
-    st.collectReports = [...st.collectReports, {
+    st.collectReports = [...recentReports(st.collectReports, ctx.now()), {
       at: ctx.now().toISOString(), connector: report?.connector ?? null, saved: fresh.length, threads: threads.saved, unverified: unverified.length,
       skipped: report?.skipped ?? Object.fromEntries(COLLECT_SKIPS.map((k) => [k, 0])) as Record<CollectSkip, number>, inputs,
     }];

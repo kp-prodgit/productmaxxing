@@ -244,7 +244,7 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
       add({
         // A task the PM hasn't approved stays theirs: shared views show its title only once it's in Linear.
         id, kind: "task", stage: 3, run: r.id, label: local || (st && ("identifier" in st || "duplicateOf" in st)) ? t.title : `Proposed task ${idx + 1}`, at: r.at,
-        status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : st && "mergedInto" in st ? "added to a waiting proposal" : st && "duplicateOf" in st ? "heard again" : "proposed",
+        status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : st && "mergedInto" in st ? "added to a waiting proposal" : st && "todo" in st ? "kept as a to-do" : st && "duplicateOf" in st ? "heard again" : "proposed",
         meta: { category: t.category, size: t.size, why: t.sizing?.why ?? null, flags: t.sizing?.flags.join(", ") || null, sources: t.sources.length },
       });
       link(runId, id, "synthesized");

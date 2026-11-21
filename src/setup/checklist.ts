@@ -1,0 +1,417 @@
+import { join } from "node:path";
+import type { PersonalConfig, TeamConfig } from "../core/config.js";
+import { readJson, writeJson } from "../core/fsutil.js";
+import { paths } from "../core/paths.js";
+import { TICK_GAP_MS, type State } from "../core/state.js";
+import { AUTO_STEPS, applies, type UpgradeRecord } from "../core/upgrade.js";
+import { compareVersions } from "../core/version.js";
+import type { DoctorCheck } from "../commands/doctor.js";
+
+/**
+ * SETUP-1: where this Mac stands with PMX, step by step, worked out from what's actually here each time (never from
+ * what someone remembers). The same shape as `pmxe checklist --json`, so Claude reads both the same way.
+ *
+ * A step is `done`, `todo` (something to do), `warn` (works, but something's off) or `skip` (doesn't apply here).
+ * `required` steps are the ones PMX can't do its job without. `do` is the exact next action, `who` does it and `how`
+ * says where. `page` is the same advice in words PMX's page may show: it names no terminal commands.
+ */
+export type StepStatus = "done" | "todo" | "warn" | "skip";
+export type Who = "you" | "claude" | "teammate" | "team-lead";
+export type How = "terminal" | "claude" | "app" | "linear" | "page";
+
+export interface Step {
+  id: string;
+  title: string;
+  status: StepStatus;
+  detail: string;
+  do?: string;
+  who?: Who;
+  how?: How;
+  required: boolean;
+  /** When this step was first seen done on this Mac (from ~/.pmx/checklist.json). */
+  since?: string | null;
+  /** The advice for PMX's page, without terminal commands. */
+  page?: string;
+  /** Part of what an update to this version still needs (UPGRADE-1). */
+  afterUpdate?: boolean;
+}
+
+export interface Section { id: string; title: string; steps: Step[] }
+
+export interface Checklist {
+  format: 1;
+  tool: "pmx";
+  version: string;
+  at: string;
+  where: string;
+  next: Step | null;
+  sections: Section[];
+  counts: Record<StepStatus, number>;
+  upgrade: { from: string | null; to: string; at: string | null; applied: { id: string; title: string; at: string; did: string }[]; pending: Step[] } | null;
+}
+
+/** Everything the checklist is worked out from. Gathered on the Mac (src/setup/gather.ts); plain data here, so it's testable. */
+export interface ChecklistInputs {
+  now: Date;
+  version: string;
+  personal: PersonalConfig | null;
+  team: TeamConfig | null;
+  checks: DoctorCheck[];
+  state: State;
+  claude: boolean;
+  /** Whether the team repo has a git remote; null without a repo. */
+  hasRemote: boolean | null;
+  /** Whether the team memory says anything yet; null when PMX can't tell. */
+  memoryFilled: boolean | null;
+  proposals: number | null;
+  /** Tasks in Linear as PMX last saw them; null when it can't count them without asking Linear. */
+  tasks: { pool: number; ready: number; blocked: number } | null;
+  /** When the first week's practice mode ends, or null once agents run for real. */
+  practiceUntil: string | null;
+  lastRun: { taskId: string; outcome: string; ts: string } | null;
+  setupSkill: "current" | "outdated" | "missing" | "yours";
+  /** The Linear sync task's schedule, when it's PMX's relay that syncs. */
+  linearCron: string | null;
+  /** PMX Engine on this Mac: its own checklist's summary, or null when it isn't installed. */
+  engine: { version: string; where: string; next: string | null } | null;
+  /** Steps from team features (ee/): the brain. */
+  extra: Step[];
+}
+
+/** The one place PMX's page sends a PM for terminal steps: Claude, with this guide. */
+export const PAGE_HINT = "In the Claude app, type /pmx-setup and Claude does it with you.";
+const RUN_FIX = "pmx checklist --fix";
+
+const hm = (iso: string) => { const d = new Date(iso); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const day = (iso: string) => new Date(iso).toDateString().slice(4, 10);
+const ago = (now: Date, iso: string) => { const h = (now.getTime() - Date.parse(iso)) / 3600000; return h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${h.toFixed(h < 10 ? 1 : 0)} h` : `${Math.round(h / 24)} days`; };
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const clean = (s: string) => s.replace(/^\s*[✔✘!]\s*/, "");
+
+
+export function buildChecklist(i: ChecklistInputs): Checklist {
+  const c = (id: string) => i.checks.find((x) => x.id === id);
+  const bad = (id: string) => { const x = c(id); return x && !x.ok ? x : null; };
+  const step = (s: Step): Step => ({ ...s, page: s.page ?? (s.status === "done" || s.status === "skip" ? undefined : s.how === "terminal" ? PAGE_HINT : s.do) });
+  const fromCheck = (id: string, title: string, o: { required: boolean; do?: string; who?: Who; how?: How; skip?: string }): Step => {
+    const x = c(id);
+    if (!x) return step({ id, title, status: "skip", detail: o.skip ?? "doesn't apply on this Mac", required: false });
+    return step({ id, title, status: x.ok ? "done" : x.level === "fail" ? "todo" : "warn", detail: clean(x.detail), required: o.required, ...(x.ok ? {} : { do: o.do, who: o.who, how: o.how }) });
+  };
+  const p = i.personal, team = i.team;
+  const rec = i.state.upgrade ?? null;
+  const from = rec?.from ?? null;
+  const updatedHere = !!rec && rec.from !== rec.lastVersion;
+  const since = (v: string) => updatedHere && (from === null || (compareVersions(from, v) ?? -1) < 0);
+
+  // ---- This Mac
+  const mac: Step[] = [
+    fromCheck("os.macos", "This Mac runs macOS", { required: true, do: "PMX runs on macOS only for now." }),
+    (() => {
+      const n = c("node"), vm = bad("node.path");
+      if (n && !n.ok) return step({ id: "mac.node", title: "Node 22.12 or later", status: "todo", detail: clean(n.detail), do: "brew install node, then reinstall pmx (INSTALL.md step 2) and run pmx init", who: "you", how: "terminal", required: true });
+      return step({ id: "mac.node", title: "Node 22.12 or later", status: vm ? "warn" : "done", detail: clean((vm ?? n)?.detail ?? `Node ${process.versions.node}`), ...(vm ? { do: "brew install node, reinstall pmx, then pmx init", who: "you" as const, how: "terminal" as const } : {}), required: true });
+    })(),
+    fromCheck("claude.installed", "Claude Code is installed", { required: true, do: "Install Claude Code from https://code.claude.com", who: "you", how: "app" }),
+    (() => {
+      const min = bad("cli.team-minimum"), latest = bad("cli.latest");
+      if (min) return step({ id: "mac.pmx", title: "PMX is at your team's version", status: "todo", detail: clean(min.detail), do: "pmx update", who: "you", how: "terminal", required: true });
+      if (latest) return step({ id: "mac.pmx", title: "PMX is at your team's version", status: "warn", detail: `pmx ${i.version}; ${clean(latest.detail)}`, do: "Team lead: pmx update --latest, then pmx vendor --require in a pull request. Everyone else: pmx update once it merges.", who: "team-lead", how: "terminal", required: false });
+      return step({ id: "mac.pmx", title: "PMX is at your team's version", status: "done", detail: `pmx ${i.version}`, required: true });
+    })(),
+    // pmx init offers this sign-in, so before init it isn't a step of its own.
+    p ? fromCheck("profile.signed-in", "PMX's own Claude profile is signed in", { required: true, do: "pmx claude login", who: "you", how: "terminal", skip: "needs Claude Code first" })
+      : step({ id: "profile.signed-in", title: "PMX's own Claude profile is signed in", status: "skip", detail: "pmx init offers this sign-in", required: true }),
+  ];
+
+  // ---- Your PMX setup
+  const setup: Step[] = [
+    !p
+      ? step({ id: "setup.config", title: "PMX is set up on this Mac", status: "todo", detail: "PMX is installed but not set up: there's no ~/.pmx/config.json yet.", do: "pmx init (you answer its questions in Terminal; it saves nothing until you confirm)", who: "you", how: "terminal", required: true })
+      : step({ id: "setup.config", title: "PMX is set up on this Mac", status: "done", detail: `set up ${day(p.installedAt)} as ${p.handle}, team repo ${p.repoPath}`, required: true }),
+    p ? fromCheck("config.team", "Your team's settings are readable", { required: true, do: "Fix pmx.config.json in your team repo, or run pmx init again", who: "you", how: "terminal" }) : step({ id: "config.team", title: "Your team's settings are readable", status: "skip", detail: "after pmx init", required: true }),
+    i.hasRemote === null
+      ? step({ id: "setup.remote", title: "Your team repo is shared", status: "skip", detail: "after pmx init", required: false })
+      : step({
+        id: "setup.remote", title: "Your team repo is shared", status: i.hasRemote ? "done" : "warn", required: false,
+        detail: i.hasRemote ? "the team repo has a remote, so teammates share settings, skills, digests and the run log" : "your team repo has no remote, so it lives on this Mac only: teammates can't join it, team setting changes become local branches you apply yourself, and digests and the run log stay here",
+        ...(i.hasRemote ? {} : { do: `Create an empty private GitHub repository, then in ${p?.repoPath ?? "your team repo"}: git remote add origin <its URL> && git push -u origin main`, who: "team-lead" as const, how: "terminal" as const }),
+      }),
+    (() => {
+      const x = bad("cli.team-package");
+      if (!x) return step({ id: "setup.package", title: "Your team repo carries this PMX version", status: c("cli.team-package") ? "done" : "skip", detail: c("cli.team-package") ? clean(c("cli.team-package")!.detail) : "no team package to compare", required: false });
+      const newer = /run `pmx update`/.test(x.detail);
+      return step({ id: "setup.package", title: "Your team repo carries this PMX version", status: "warn", detail: clean(x.detail), required: false, afterUpdate: !newer,
+        do: newer ? "pmx update" : "pmx vendor --require, then commit .pmx/cli and pmx.config.json in a pull request (or straight to main when the repo has no remote)", who: newer ? "you" : "team-lead", how: "terminal" });
+    })(),
+    (() => {
+      const d = bad("privacy.company-domains") ?? bad("privacy.canaries");
+      return step({ id: "setup.privacy", title: "Privacy rules know your company and hold private meetings", status: !c("privacy.canaries") ? "skip" : d ? "todo" : "done", detail: clean((d ?? c("privacy.canaries"))?.detail ?? "after pmx init"), required: true, ...(d ? { do: "pmx init (add your company's email domains)", who: "you" as const, how: "terminal" as const } : {}) });
+    })(),
+    i.memoryFilled === null ? step({ id: "setup.memory", title: "Team memory describes your product", status: "skip", detail: "after pmx init", required: false })
+      : step({ id: "setup.memory", title: "Team memory describes your product", status: i.memoryFilled ? "done" : "warn", required: false,
+        detail: i.memoryFilled ? "memory/product.md has your product's context, so agents draft with it" : "memory/product.md is still the empty template, so agents draft without your product's context",
+        ...(i.memoryFilled ? {} : { do: "Fill in memory/product.md in your team repo (what you sell, to whom, the words you use) and commit it. Claude can help.", who: "you" as const, how: "claude" as const }) }),
+    ...["home.private", "secrets.not-in-config"].map((id) => bad(id)).filter((x): x is DoctorCheck => !!x)
+      .map((x) => step({ id: `setup.${x.id}`, title: "PMX's private files stay private", status: "todo", detail: clean(x.detail), do: "Follow the fix in the detail, then pmx checklist", who: "you", how: "terminal", required: true })),
+  ];
+
+  // ---- The background job (#9: a Mac asleep runs nothing)
+  const lastTick = i.state.lastTick;
+  const gap = lastTick && i.now.getTime() - Date.parse(lastTick.at) > TICK_GAP_MS;
+  const recent = (i.state.tickGaps ?? []).filter((g) => i.now.getTime() - Date.parse(g.to) < 86400000).at(-1);
+  const loaded = c("schedule.launchd");
+  const job: Step[] = [
+    !p ? step({ id: "job.installed", title: "The background job runs PMX every 30 minutes", status: "skip", detail: "after pmx init", required: true })
+      : fromCheck("schedule.launchd", "The background job runs PMX every 30 minutes", { required: true, do: "pmx init, and say yes to the background job", who: "you", how: "terminal" }),
+    (() => {
+      const x = bad("schedule.job-paths") ?? bad("schedule.job-claude");
+      if (!loaded?.ok) return step({ id: "job.paths", title: "The job finds Node and Claude Code", status: "skip", detail: "after the job is registered", required: true });
+      return step({ id: "job.paths", title: "The job finds Node and Claude Code", status: x ? "todo" : "done", detail: x ? clean(x.detail) : "the job's Node and Claude Code paths exist", required: true, ...(x ? { do: RUN_FIX, who: "you" as const, how: "terminal" as const, afterUpdate: updatedHere } : {}) });
+    })(),
+    (() => {
+      if (!loaded?.ok) return step({ id: "job.passes", title: "The job is running", status: "skip", detail: "after the job is registered", required: true });
+      if (!lastTick) return step({ id: "job.passes", title: "The job is running", status: "todo", detail: "registered, but no pass has run yet. The first one runs within 30 minutes while the Mac is awake.", required: true, do: "Wait up to 30 minutes, then pmx checklist", who: "you", how: "terminal" });
+      const failing = bad("schedule.tick");
+      if (failing) return step({ id: "job.passes", title: "The job is running", status: "warn", detail: clean(failing.detail), required: true, do: "Read ~/.pmx/logs/tick.log, fix what it says, then pmx checklist", who: "you", how: "terminal" });
+      if (gap) return step({ id: "job.passes", title: "The job is running", status: "warn", required: true,
+        detail: `no pass since ${hm(lastTick.at)} (${ago(i.now, lastTick.at)} ago). PMX, its Claude tasks and the Linear sync run only while this Mac is awake, so it was probably asleep or off.`,
+        do: "Wake the Mac and keep it awake during work hours (on a laptop, keep it plugged in and turn on System Settings → Battery → Options → Prevent automatic sleeping when the display is off)", who: "you", how: "app" });
+      return step({ id: "job.passes", title: "The job is running", status: recent ? "warn" : "done", required: true,
+        detail: recent ? `last pass ${hm(lastTick.at)}; nothing ran from ${hm(recent.from)} to ${hm(recent.to)} (${ago(new Date(recent.to), recent.from)}), while this Mac was asleep or off` : `last pass ${hm(lastTick.at)}, every 30 minutes while this Mac is awake`,
+        ...(recent ? { do: "Keep the Mac awake during work hours (on a laptop, plugged in, with System Settings → Battery → Options → Prevent automatic sleeping when the display is off)", who: "you" as const, how: "app" as const } : {}) });
+    })(),
+    fromCheck("cli.auto-update", "Updates arrive by themselves", { required: false, do: "pmx update", who: "you", how: "terminal", skip: "your team installs updates by hand (pmx update)" }),
+  ];
+
+  // ---- The Claude app
+  const tasks = i.checks.filter((x) => /^claude\.task\.[^.]+$/.test(x.id));
+  const taskRan = i.checks.filter((x) => /^claude\.task\..+\.ran$/.test(x.id) && !x.ok);
+  const outdated = tasks.filter((x) => !x.ok && /older prompt/.test(x.detail));
+  const missing = tasks.filter((x) => !x.ok && !/older prompt/.test(x.detail));
+  const old = bad("flow.mcp-old"), mcp = bad("flow.mcp");
+  const flowPage = bad("flow.page"), board = c("claude.board");
+  const claude: Step[] = !i.claude || !p ? [step({ id: "claude.app", title: "The Claude app runs PMX's tasks", status: "skip", detail: !p ? "after pmx init" : "no Claude app or Claude Code home on this Mac", required: false })] : [
+    step({ id: "claude.setup", title: "Claude can guide you through PMX (/pmx-setup)", status: i.setupSkill === "current" || i.setupSkill === "yours" ? "done" : "warn", required: false,
+      detail: { current: "/pmx-setup is in the Claude app", yours: "/pmx-setup is your own copy, so PMX leaves it alone", outdated: "/pmx-setup is from an older pmx", missing: "/pmx-setup isn't in the Claude app yet" }[i.setupSkill],
+      ...(i.setupSkill === "missing" || i.setupSkill === "outdated" ? { do: "pmx checklist --install-skill, then quit and reopen the Claude app", who: "you" as const, how: "terminal" as const, afterUpdate: i.setupSkill === "outdated" } : {}) }),
+    fromCheck("claude.allow", "PMX's scheduled tasks may run pmx without asking", { required: true, do: "pmx schedule --allow", who: "you", how: "terminal" }),
+    tasks.length === 0 ? step({ id: "claude.tasks", title: "The Claude app runs PMX's scheduled tasks", status: "skip", detail: "PMX needs no scheduled tasks with these settings", required: false })
+      : step({
+        id: "claude.tasks", title: "The Claude app runs PMX's scheduled tasks", required: true,
+        status: missing.length || outdated.length ? "todo" : taskRan.length ? "warn" : "done",
+        detail: missing.length || outdated.length ? [missing.length ? `missing: ${missing.map((x) => x.detail.match(/"([^"]+)"/)?.[1] ?? x.id).join(", ")}` : "", outdated.length ? `from an older pmx: ${outdated.map((x) => x.detail.match(/"([^"]+)"/)?.[1] ?? x.id).join(", ")}` : ""].filter(Boolean).join("; ")
+          : taskRan.length ? taskRan.map((x) => clean(x.detail)).join("; ") : `${plural(tasks.length, "task")} set up and running`,
+        ...(missing.length || outdated.length ? { do: "In the Claude app: Code tab, a new session with auto mode off, type /pmx-schedule", who: "claude" as const, how: "claude" as const, afterUpdate: outdated.length > 0 }
+          : taskRan.length ? { do: "In the Claude app, open Code → Scheduled, open the task's last run and choose Always allow for what it asks", who: "you" as const, how: "app" as const } : {}),
+      }),
+    old ? step({ id: "claude.mcp", title: "The Claude app reaches this PMX", status: "warn", detail: clean(old.detail), required: false, do: "Quit the Claude app completely (⌘Q) and open it again", who: "you", how: "app", afterUpdate: since("0.25.1") || updatedHere })
+      : mcp ? step({ id: "claude.mcp", title: "The Claude app reaches this PMX", status: "warn", detail: clean(mcp.detail), required: false, do: "pmx mcp --install, then quit the Claude app (⌘Q) and open it again", who: "you", how: "terminal" })
+        : step({ id: "claude.mcp", title: "The Claude app reaches this PMX", status: c("flow.mcp") ? "done" : "skip", detail: c("flow.mcp") ? clean(c("flow.mcp")!.detail) : "not set up: only PMX's page in Claude needs it", required: false }),
+    flowPage ? step({ id: "claude.page", title: "PMX's page in Claude is current", status: "warn", detail: clean(flowPage.detail), required: false, do: "Type /pmx-flow in the Claude app", who: "claude", how: "claude", afterUpdate: true })
+      : step({ id: "claude.page", title: "PMX's page in Claude is current", status: p.flow?.url ? "done" : "todo", required: false,
+        detail: p.flow?.url ? `published with pmx ${p.flow.version ?? "?"} on ${day(p.flow.publishedAt ?? i.now.toISOString())}` : "not published yet. PMX's page shows what's waiting for you, what ran and where your data went.",
+        ...(p.flow?.url ? {} : { do: "pmx flow --install-skill, then type /pmx-flow in the Claude app (or open it on this Mac with pmx open)", who: "you" as const, how: "terminal" as const }) }),
+    !board ? step({ id: "claude.board", title: "Your team board is in Claude", status: "skip", detail: "only for teams on Linear", required: false })
+      : step({ id: "claude.board", title: "Your team board is in Claude", status: board.ok ? "done" : "warn", detail: clean(board.detail), required: false, ...(board.ok ? {} : { do: "Type /pmx-board in the Claude app", who: "claude" as const, how: "claude" as const, afterUpdate: /older pmx/.test(board.detail) }) }),
+  ];
+
+  // ---- Linear
+  const linearOn = team?.tracker.kind === "linear";
+  const weekdays = !!i.linearCron && /\s1-5$/.test(i.linearCron.trim());
+  const relay = bad("linear.relay") ?? c("linear.relay");
+  const linear: Step[] = !linearOn ? [step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: "skip", detail: "your team doesn't use Linear", required: false })] : [
+    c("secrets.linear")?.ok ? step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: "done", detail: clean(c("secrets.linear")!.detail), required: true })
+      : relay ? step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: relay.ok ? "done" : "warn", detail: clean(relay.detail), required: true, ...(relay.ok ? {} : { do: "Check the Linear sync task: in the Claude app, Code → Scheduled. If it's missing, type /pmx-schedule.", who: "you" as const, how: "app" as const }) })
+        : step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: "todo", detail: "no Linear sync has run yet", required: true, do: "Type /pmx-schedule in the Claude app; it creates the Linear sync task", who: "claude", how: "claude" }),
+    i.linearCron === null ? step({ id: "linear.hours", title: "Linear syncs whenever PMX runs", status: "skip", detail: "PMX writes to Linear directly", required: false })
+      : step({ id: "linear.hours", title: "Linear syncs whenever PMX runs", status: weekdays ? "warn" : "done", required: false,
+        detail: weekdays ? "Linear syncs only on weekdays, 8:00 to 18:00, so what you approve at night or on a weekend waits, and so do tasks a teammate makes Ready" : "Linear syncs every hour, every day",
+        ...(weekdays ? { do: "pmx schedule --hours always, then type /pmx-schedule in the Claude app", who: "you" as const, how: "terminal" as const, afterUpdate: since("0.35.0") } : {}) }),
+  ];
+
+  // ---- Your work now (#11 approval and Ready are two steps; #14 practice mode)
+  const lastCollect = i.state.collectReports.at(-1);
+  const never = bad("synth.never");
+  const work: Step[] = !p ? [] : [
+    step({ id: "work.meetings", title: "Meetings reach PMX", status: lastCollect ? (never ? "warn" : "done") : "todo", required: true,
+      detail: lastCollect ? `last collection ${day(lastCollect.at)} ${hm(lastCollect.at)}: ${lastCollect.saved} saved${never ? `; ${clean(never.detail)}` : ""}` : "no meeting collected yet",
+      ...(lastCollect ? {} : { do: "Type /pmx-schedule in the Claude app; its collection task saves new meetings at 12:30 and 17:30 on weekdays", who: "claude" as const, how: "claude" as const }) }),
+    i.proposals === null ? step({ id: "work.approve", title: "Proposed tasks wait for your approval", status: "skip", detail: "PMX can't read its proposals here", required: false })
+      : step({ id: "work.approve", title: "Proposed tasks wait for your approval", status: i.proposals ? "todo" : "done", required: false,
+        detail: i.proposals ? `${plural(i.proposals, "proposed task")} wait${i.proposals === 1 ? "s" : ""} for you. Nothing reaches Linear until you approve it.` : "nothing waits for your approval",
+        ...(i.proposals ? { do: "Approve or drop them in PMX's page (Inbox), or with pmx proposals", who: "you" as const, how: "page" as const, page: "Approve or drop them in the Inbox." } : {}) }),
+    !i.tasks ? step({ id: "work.ready", title: "A teammate makes tasks Ready for agents", status: "skip", detail: linearOn ? "PMX counts these only from its own copy of Linear" : "no tracker", required: false })
+      : step({ id: "work.ready", title: "A teammate makes tasks Ready for agents", required: false,
+        status: i.tasks.ready ? "done" : i.tasks.pool ? "todo" : "done",
+        detail: `${i.tasks.ready} Ready for agents, ${i.tasks.pool} in the pool${i.tasks.blocked ? `, ${i.tasks.blocked} Blocked` : ""}. Approving sends a task to the pool; an agent takes it only after a teammate moves it to Ready.`,
+        ...(!i.tasks.ready && i.tasks.pool ? { do: "On the team board (/pmx-board, or Linear), move the tasks worth an agent's time to Ready", who: "teammate" as const, how: "linear" as const } : {}) }),
+    step({ id: "work.practice", title: "Agents run tasks for real", status: i.practiceUntil ? "warn" : "done", required: false,
+      detail: i.practiceUntil ? `practice mode until ${day(i.practiceUntil)}: for its first week your agent says which task it would take, without running it` : "your agent runs Ready tasks that fit the budget",
+      ...(i.practiceUntil ? { do: "Wait, or run one now with pmx pull --live", who: "you" as const, how: "terminal" as const, page: `Real runs start ${day(i.practiceUntil)}.` } : {}) }),
+    (() => {
+      const ks = bad("killswitch"), money = bad("budget");
+      if (ks) return step({ id: "work.agents", title: "Agents can take work", status: "todo", detail: clean(ks.detail), required: true, do: "When it's safe, delete pmx.stop from your team repo's main branch (and from your own checkout)", who: "team-lead", how: "terminal" });
+      if (money) return step({ id: "work.agents", title: "Agents can take work", status: "warn", detail: clean(money.detail), required: false, do: "Raise your daily cap in PMX's page (Settings), or wait for tomorrow's budget", who: "you", how: "page" });
+      const blocked = i.tasks?.blocked ?? 0;
+      return step({ id: "work.agents", title: "Agents can take work", status: blocked ? "warn" : "done", required: false,
+        detail: `${i.lastRun ? `last run ${i.lastRun.taskId} ${day(i.lastRun.ts)} ${hm(i.lastRun.ts)}: ${i.lastRun.outcome === "ok" ? "drafted" : i.lastRun.outcome}` : "no agent run yet"}${blocked ? `; ${plural(blocked, "task")} Blocked after failing twice in a row` : ""}`,
+        ...(blocked ? { do: "On the team board, read the Blocked task's last comment, fix the task or its kind of work, then move it back to Ready", who: "teammate" as const, how: "linear" as const } : {}) });
+    })(),
+    ...i.extra.map(step),
+  ];
+
+  // ---- PMX Engine
+  const engine: Step[] = [
+    !i.engine ? step({ id: "engine.installed", title: "PMX Engine (optional)", status: "skip", detail: "PMX Engine isn't on this Mac. It's the head of product's tool; PMX works without it.", required: false })
+      : step({ id: "engine.installed", title: "PMX Engine", status: i.engine.next ? "warn" : "done", detail: `PMX Engine ${i.engine.version}: ${i.engine.where}`, required: false,
+        ...(i.engine.next ? { do: `In PMX Engine's workspace, ask Claude for /pmxe-setup (next there: ${i.engine.next})`, who: "you" as const, how: "claude" as const } : {}) }),
+    !team ? step({ id: "engine.link", title: "PMX links to the PMs' page in PMX Engine", status: "skip", detail: "after pmx init", required: false })
+      : step({ id: "engine.link", title: "PMX links to the PMs' page in PMX Engine", status: team.roadmap?.url ? "done" : i.engine ? "warn" : "skip", required: false,
+        detail: team.roadmap?.url ? `linked: ${team.roadmap.url}` : "no link to the PMs' page in pmx.config.json",
+        ...(team.roadmap?.url || !i.engine ? {} : { do: "Team lead: add \"roadmap\": { \"url\": \"<the PMs' page link>\" } to pmx.config.json in a pull request", who: "team-lead" as const, how: "terminal" as const }) }),
+  ];
+
+  // ---- Updates (UPGRADE-1)
+  const applied = rec ? AUTO_STEPS.filter((s) => applies(s, rec.from, i.version)).map((s) => ({ s, a: rec.applied[s.since === null ? `${s.id}@${i.version}` : s.id] })) : [];
+  const update: Step[] = [
+    step({ id: "update.version", title: "This Mac is on the version it last ran", status: "done", required: false,
+      detail: !rec ? `pmx ${i.version}` : updatedHere ? `pmx ${i.version}, updated from ${rec.from ?? "an older pmx"} ${rec.at ? `on ${day(rec.at)}` : ""}`.trim() : `pmx ${i.version}${rec.at ? ` since ${day(rec.at)}` : ""}` }),
+    ...applied.map(({ s, a }) => step({ id: `update.${s.id}`, title: s.title, status: a ? "done" : "warn", required: false,
+      detail: a ? `${a.did} (${day(a.at)} ${hm(a.at)})` : s.interactiveOnly ? "waits for the next pmx command you run (the background job doesn't reload itself)" : "PMX will do it on its next pass",
+      ...(a ? {} : { do: RUN_FIX, who: "you" as const, how: "terminal" as const, afterUpdate: true }) })),
+  ];
+
+  const sections: Section[] = [
+    { id: "mac", title: "This Mac", steps: mac },
+    { id: "setup", title: "Your PMX setup", steps: setup },
+    { id: "job", title: "Background job", steps: job },
+    { id: "claude", title: "Claude app", steps: claude },
+    { id: "linear", title: "Linear", steps: linear },
+    { id: "work", title: "Your work now", steps: work },
+    { id: "engine", title: "PMX Engine", steps: engine },
+    { id: "update", title: "Updates", steps: update },
+  ].filter((s) => s.steps.length);
+  const all = sections.flatMap((s) => s.steps);
+  const open = (s: Step) => s.status === "todo" || s.status === "warn";
+  const next = all.find((s) => s.required && open(s)) ?? all.find((s) => s.status === "todo") ?? all.find((s) => s.status === "warn") ?? null;
+  const counts = { done: 0, todo: 0, warn: 0, skip: 0 } as Record<StepStatus, number>;
+  for (const s of all) counts[s.status]++;
+  return {
+    format: 1, tool: "pmx", version: i.version, at: i.now.toISOString(),
+    where: whereYouStand(i, all), next, sections, counts,
+    upgrade: rec ? {
+      from: rec.from, to: i.version, at: rec.at,
+      applied: applied.filter((x) => x.a).map(({ s, a }) => ({ id: s.id, title: s.title, at: a!.at, did: a!.did })),
+      pending: all.filter((s) => s.afterUpdate && open(s)),
+    } : null,
+  };
+}
+
+function whereYouStand(i: ChecklistInputs, all: Step[]): string {
+  const req = all.filter((s) => s.required && (s.status === "todo" || s.status === "warn"));
+  if (!i.personal) return `pmx ${i.version} is installed but not set up on this Mac yet: setup asks a few questions only you can answer, then registers the background job.`;
+  if (req.length) return `PMX is set up, but ${plural(req.length, "required step")} ${req.length === 1 ? "is" : "are"} left before it can do its job: ${req.map((s) => s.title).join("; ")}.`;
+  const work = [
+    i.proposals ? `${plural(i.proposals, "proposed task")} wait${i.proposals === 1 ? "s" : ""} for your approval` : null,
+    i.tasks && !i.tasks.ready && i.tasks.pool ? `${plural(i.tasks.pool, "task")} in the pool, none Ready for agents` : i.tasks?.ready ? `${i.tasks.ready} Ready for agents` : null,
+    i.practiceUntil ? `agents are in practice mode until ${day(i.practiceUntil)}` : null,
+  ].filter(Boolean);
+  const optional = all.filter((s) => !s.required && s.status === "warn").length;
+  return `PMX is installed and running on this Mac.${work.length ? ` ${work.join("; ")}.` : ""}${optional ? ` ${plural(optional, "optional step")} left.` : ""}`.replace(/\.\./g, ".");
+}
+
+// ---- History: the checklist as each step changed, so it follows what actually happened on this Mac.
+
+export interface ChecklistHistory {
+  format: 1;
+  at: string;
+  steps: Record<string, { status: StepStatus; since: string | null; changedAt: string }>;
+  log: { at: string; id: string; from: StepStatus | null; to: StepStatus }[];
+  /** The last checklist worked out, for PMX's page and Claude (read without running any check). */
+  last: Checklist | null;
+}
+
+export const checklistFile = () => join(paths.home(), "checklist.json");
+
+export async function readHistory(): Promise<ChecklistHistory | null> {
+  const h = await readJson<ChecklistHistory>(checklistFile()).catch(() => null);
+  return h?.format === 1 ? h : null;
+}
+
+/**
+ * Records each step's change and fills `since` (when it was first seen done). On a Mac with no history yet, steps
+ * already done take their date from what PMX recorded when they happened, where it knows (`evidence`).
+ */
+export async function recordChecklist(cl: Checklist, evidence: Record<string, string | null | undefined> = {}): Promise<Checklist> {
+  const h: ChecklistHistory = (await readHistory()) ?? { format: 1, at: cl.at, steps: {}, log: [], last: null };
+  const fresh = !Object.keys(h.steps).length;
+  for (const s of cl.sections.flatMap((x) => x.steps)) {
+    const was = h.steps[s.id];
+    if (!was || was.status !== s.status) {
+      h.log.push({ at: cl.at, id: s.id, from: was?.status ?? null, to: s.status });
+      h.steps[s.id] = { status: s.status, since: was?.since ?? (s.status === "done" ? (fresh ? evidence[s.id] ?? cl.at : cl.at) : null), changedAt: cl.at };
+    }
+    s.since = h.steps[s.id]!.since;
+  }
+  h.log = h.log.slice(-200);
+  h.at = cl.at;
+  h.last = cl;
+  await writeJson(checklistFile(), h, 0o600);
+  return cl;
+}
+
+// ---- Text, for Terminal and for Claude reading along
+
+const MARK: Record<StepStatus, string> = { done: "✔", todo: "✘", warn: "!", skip: "–" };
+const WHO: Record<Who, string> = { you: "you", claude: "Claude, in the Claude app", teammate: "a teammate", "team-lead": "your team lead" };
+
+export function formatChecklist(cl: Checklist, o: { all?: boolean } = {}): string {
+  const lines = [`PMX ${cl.version} on this Mac · checked ${new Date(cl.at).toLocaleString()}`, "", `Where you stand: ${cl.where}`];
+  for (const sec of cl.sections) {
+    // "Your work now" shows what's off too (the brain, practice mode): what runs is part of where you stand.
+    const shown = o.all || sec.id === "work" ? sec.steps : sec.steps.filter((s) => s.status !== "skip");
+    if (!shown.length) continue;
+    lines.push("", sec.title);
+    for (const s of shown) {
+      lines.push(`  ${MARK[s.status]} ${s.title}: ${s.detail}`);
+      if (s.do && (s.status === "todo" || s.status === "warn")) lines.push(`      → ${s.do}${s.who ? ` (${WHO[s.who]})` : ""}`);
+    }
+  }
+  if (cl.upgrade?.pending.length) lines.push("", `Still to do after updating${cl.upgrade.from ? ` from ${cl.upgrade.from}` : ""}:`, ...cl.upgrade.pending.map((s) => `  ✘ ${s.title}: ${s.do ?? s.detail}`));
+  lines.push("", cl.next ? `Next: ${cl.next.title}. ${cl.next.do ?? ""}${cl.next.who ? ` (${WHO[cl.next.who]})` : ""}`.trim() : "Nothing left to do.");
+  return lines.join("\n");
+}
+
+// ---- For PMX's page: the same checklist in words the page may show (no terminal commands, BOARD rule)
+
+export interface SetupView {
+  at: string;
+  where: string;
+  next: { title: string; page: string } | null;
+  counts: Record<StepStatus, number>;
+  sections: { id: string; title: string; steps: { id: string; title: string; status: StepStatus; detail: string; page: string | null }[] }[];
+}
+
+/** Drops each clause that names a pmx command: the page points to /pmx-setup for those instead. */
+export function pageWords(t: string): string {
+  return t
+    .replace(/\s*[(:;,—-]?\s*(?:[Rr]un|[Tt]ry|with|then|use|see|or)?\s*`?\bpmx [a-z][^`;.)]*`?\)?/g, "")
+    .replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ").replace(/\s+([.,;:])/g, "$1").replace(/[:;,]\s*$/, "").trim();
+}
+
+export function checklistForPage(cl: Checklist | null): SetupView | null {
+  if (!cl) return null;
+  const open = (s: Step) => s.status === "todo" || s.status === "warn";
+  const page = (s: Step) => (s.page && !/\bpmx [a-z]/.test(s.page) ? s.page : PAGE_HINT);
+  return {
+    at: cl.at,
+    where: pageWords(cl.where) || "See each step below.",
+    next: cl.next ? { title: cl.next.title, page: page(cl.next) } : null,
+    counts: cl.counts,
+    sections: cl.sections.map((sec) => ({
+      id: sec.id, title: sec.title,
+      steps: sec.steps.filter((s) => s.status !== "skip" || sec.id === "work").map((s) => ({ id: s.id, title: s.title, status: s.status, detail: pageWords(s.detail), page: open(s) ? page(s) : null })),
+    })).filter((sec) => sec.steps.length),
+  };
+}

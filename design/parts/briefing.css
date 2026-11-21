@@ -1,0 +1,221 @@
+/* ---------- Briefing parts: what each group reads. Briefing register only (b-* type, measure column, figures to measure-wide). ---------- */
+
+/* ---------- Briefing: chapter nav (sticky bar: who it is for, the chapters, the vertical) ---------- */
+.b-nav { position: sticky; top: 0; z-index: 10; background: var(--bg); border-bottom: 1px solid var(--line) }
+.b-nav .in { display: flex; align-items: center; gap: var(--space-2) var(--space-5); max-width: var(--measure-wide); margin-inline: auto; padding-inline: var(--space-4) }
+.b-nav .who { display: flex; align-items: baseline; gap: var(--space-2); flex: none; color: var(--fg-2); font: 400 14px/20px var(--font); white-space: nowrap }
+.b-nav .who b { color: var(--fg); font-weight: 650 }
+.b-nav .ch { display: flex; flex: 1 1 auto; gap: var(--space-4); min-width: 0; list-style: none; padding: 0; overflow-x: auto; scrollbar-width: none }
+.b-nav .ch::-webkit-scrollbar { display: none }
+.b-nav .ch a { display: inline-flex; align-items: center; min-height: calc(var(--control) + var(--space-5)); color: var(--fg-2); font: 500 14px/20px var(--font); white-space: nowrap; text-decoration: none; text-underline-offset: var(--space-2); text-decoration-thickness: 2px; transition: color var(--dur-1) var(--ease) }
+.b-nav .ch a:hover { color: var(--fg); text-decoration-line: underline; text-decoration-color: var(--line-2) }
+.b-nav .ch a[aria-current] { color: var(--fg); font-weight: 650; text-decoration-line: underline; text-decoration-color: currentColor }
+/* The chapter row scrolls, so its focus ring is drawn inside the link. */
+.b-nav .ch a:focus-visible { outline-offset: -2px }
+/* Segmented control: the vertical switch here, the board's view switch below. One pressed button at a time. */
+.b-nav .vert, .b-road .lens { display: inline-flex; flex: none; gap: 2px; padding: 2px; border-radius: var(--r-m); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line) }
+.b-nav .vert { margin-left: auto }
+.b-nav .vert button, .b-road .lens button { min-height: var(--control-sm); padding: 0 var(--space-3); border: 0; border-radius: var(--r-s); background: none; color: var(--fg-2); font: 500 14px/20px var(--font); white-space: nowrap; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease) }
+.b-nav .vert button:hover:not([aria-pressed="true"]):not(:disabled), .b-road .lens button:hover:not([aria-pressed="true"]):not(:disabled) { background: var(--hover); color: var(--fg) }
+.b-nav .vert button[aria-pressed="true"], .b-road .lens button[aria-pressed="true"] { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: var(--shadow-1), inset 0 0 0 1px var(--line) }
+.b-nav .vert button:disabled, .b-road .lens button:disabled { opacity: .45; cursor: default }
+@media (max-width: 767px) { .b-nav .ch a { min-height: var(--touch) } .b-nav .vert button, .b-road .lens button { min-height: var(--touch) } }
+@media (max-width: 599px) {
+  .b-nav .in { flex-wrap: wrap; padding-top: var(--space-2) }
+  .b-nav .ch { order: 3; flex-basis: 100%; margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4) }
+  .b-nav .vert { flex: 1 1 auto }
+  .b-nav .vert button { flex: 1 1 0 }
+}
+
+/* ---------- Briefing: roadmap board (themes as rows, Now / Next / Later as columns) ---------- */
+.b-road { display: grid; gap: var(--space-4); max-width: var(--measure-wide) }
+.b-road .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4) }
+.b-road .bar p, .b-road .cap { color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-road .scroll { overflow-x: auto }
+.b-road table { width: 100%; min-width: 640px; border-collapse: collapse; table-layout: fixed }
+.b-road thead th { padding: 0 var(--space-4) var(--space-3) 0; border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: bottom; color: var(--fg); font: 600 14px/20px var(--font) }
+.b-road thead th:first-child { width: 26% }
+.b-road thead th small { display: block; color: var(--fg-2); font: 400 14px/20px var(--font); font-variant-numeric: tabular-nums }
+.b-road tbody th, .b-road td { padding: var(--space-4) var(--space-4) var(--space-5) 0; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; font-weight: 400 }
+/* Theme header: title, owner by name, tags. */
+.b-road .theme { display: grid; gap: 2px }
+.b-road .tt { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); color: var(--fg); font: 650 17px/26px var(--font); letter-spacing: -.005em; text-wrap: balance }
+.b-road .own { color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-road .tags { color: var(--fg-3); font: 400 14px/20px var(--font) }
+.b-road .loose .tt { color: var(--fg-2); font-weight: 500 }
+/* Entry: name, window, confidence as a word with its mark. */
+.b-road .it { display: grid; gap: 2px; justify-items: start }
+.b-road .it + .it { margin-top: var(--space-4) }
+.b-road .it .n { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); color: var(--fg); font: 500 17px/26px var(--font) }
+.b-road .it .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-3); color: var(--fg-2); font: 400 14px/20px var(--font); font-variant-numeric: tabular-nums }
+.b-road .conf { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+.b-road .conf::before { content: ""; width: calc(var(--space-2) + 2px); height: calc(var(--space-2) + 2px); flex: none; border-radius: 50%; box-shadow: inset 0 0 0 1.5px currentColor }
+.b-road .conf.committed::before { background: currentColor }
+.b-road .conf.likely::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%) }
+.b-road .conf.exploring::before { background: none }
+/* "What you can tell customers": the approved wording, quoted. */
+.b-road .it q { display: block; margin-top: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--r-m); background: var(--ok-soft); color: var(--fg); font: 400 14px/20px var(--font); quotes: "\201C" "\201D" }
+@media (max-width: 639px) {
+  .b-road table { min-width: 0; table-layout: auto }
+  .b-road table, .b-road tbody, .b-road tr, .b-road tbody th { display: block }
+  .b-road thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
+  .b-road tr { padding-block: var(--space-4); border-bottom: 1px solid var(--line) }
+  .b-road tbody th, .b-road td { padding: 0; border: 0 }
+  .b-road td { display: grid; grid-template-columns: var(--space-8) minmax(0, 1fr); gap: 0 var(--space-3); margin-top: var(--space-3) }
+  .b-road td:empty { display: none }
+  .b-road td::before { content: attr(data-lane); grid-row: 1 / span 9; color: var(--fg-2); font: 600 14px/26px var(--font) }
+  .b-road td > .it { grid-column: 2 }
+}
+
+/* ---------- Briefing: market size as nested squares, areas to scale ---------- */
+.b-market { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-5) var(--space-7); align-items: center; max-width: var(--measure-wide) }
+.b-market .pic { display: grid; gap: var(--space-3); justify-items: start; min-width: 0 }
+.b-market svg { display: block; max-width: 100%; height: auto; overflow: visible }
+.b-market .tam { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5 }
+.b-market .sam { fill: var(--accent) }
+.b-market .som { fill: var(--fg) }
+.b-market .tick { stroke: var(--fg); stroke-width: 1.5 }
+.b-market text { font-family: var(--font); font-variant-numeric: tabular-nums }
+.b-market .tv { font-size: 21px; font-weight: 700; letter-spacing: -.01em }
+.b-market .tn { font-size: 14px; font-weight: 500 }
+/* Each label takes the on-colour of the ground it sits on. */
+.b-market .on-soft { fill: var(--accent) }
+.b-market .on-accent { fill: var(--accent-fg) }
+.b-market .on-bg { fill: var(--fg) }
+.b-market .cap { color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-market .figs { grid-template-columns: minmax(0, 1fr); gap: var(--space-5) }
+@media (max-width: 719px) { .b-market { grid-template-columns: minmax(0, 1fr) } }
+
+/* ---------- Briefing: hold notice (a passage held back or withdrawn, in its own place and number) ---------- */
+.b-hold { display: grid; grid-template-columns: var(--space-7) minmax(0, var(--measure)); padding-block: var(--space-6); border-bottom: 1px solid var(--line) }
+.b-hold .no { color: var(--fg-3); font: 600 21px/28px var(--font); font-variant-numeric: tabular-nums }
+.b-hold .body { display: grid; gap: var(--space-3) }
+.b-hold h2 { color: var(--fg-2); font: 650 21px/28px var(--font); letter-spacing: -.01em }
+.b-hold .note { display: grid; gap: var(--space-1); padding: var(--space-4) var(--space-5); border-radius: var(--r-l); background: var(--held-soft) }
+.b-hold .note p { color: var(--fg); font: 400 17px/26px var(--font) }
+.b-hold .note .k { display: flex; align-items: flex-start; gap: var(--space-2); color: var(--held); font-weight: 600 }
+.b-hold .note .k svg.i { margin-block: var(--space-1) }
+.b-hold .note .why { color: var(--fg-2); font: 400 14px/20px var(--font) }
+@media (max-width: 599px) { .b-hold { grid-template-columns: var(--space-6) minmax(0, 1fr) } .b-hold .note { padding: var(--space-4) } }
+
+/* ---------- Briefing: enablement schedule as an agenda ---------- */
+.b-sched { display: grid; max-width: var(--measure) }
+.b-sched ol { list-style: none; padding: 0 }
+.b-sched .grp { padding-block: var(--space-5) var(--space-2); color: var(--fg-2); font: 600 14px/20px var(--font) }
+.b-sched .grp:first-child { padding-top: 0 }
+.b-sched li { display: grid; grid-template-columns: var(--space-8) minmax(0, 1fr); gap: var(--space-4); padding-block: var(--space-4); border-top: 1px solid var(--line) }
+.b-sched .d { display: grid; align-content: start; font-variant-numeric: tabular-nums }
+.b-sched .d b { font: 650 21px/28px var(--font); letter-spacing: -.01em }
+.b-sched .d span { color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-sched .s { display: grid; gap: var(--space-1); min-width: 0 }
+.b-sched h3 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); font: 600 17px/26px var(--font); text-wrap: balance }
+.b-sched .teach { color: var(--fg-2); font: 400 17px/26px var(--font) }
+.b-sched .meta { color: var(--fg-2); font: 400 14px/20px var(--font); font-variant-numeric: tabular-nums }
+.b-sched .meta b { color: var(--fg); font-weight: 500 }
+/* The next session takes a touch more weight beside its Next pill. */
+.b-sched .is-next h3 { font-weight: 650 }
+/* Past sessions step back: lighter title, smaller summary. */
+.b-sched .is-past .d b { color: var(--fg-3) }
+.b-sched .is-past h3 { color: var(--fg-2); font-weight: 500 }
+.b-sched .is-past .teach { color: var(--fg-3); font-size: 14px; line-height: 20px }
+.b-sched .none { padding-block: var(--space-4); border-top: 1px solid var(--line); color: var(--fg-2); font: 400 17px/26px var(--font) }
+@media (max-width: 599px) { .b-sched li { grid-template-columns: var(--space-7) minmax(0, 1fr); gap: var(--space-3) } .b-sched .teach { font-size: 16px; line-height: 24px } }
+
+/* ---------- Briefing: price table (plans as columns) ---------- */
+.b-price { display: grid; gap: var(--space-4); max-width: var(--measure-wide) }
+.b-price .plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4) }
+.b-price .plan { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--line); border-radius: var(--r-l); background: var(--card) }
+.b-price .plan.rec { border-color: var(--fg-3); box-shadow: var(--shadow-1) }
+.b-price .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) }
+.b-price h3 { font: 650 21px/28px var(--font); letter-spacing: -.01em }
+.b-price .p { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2) }
+.b-price .p b { font: 700 32px/38px var(--font); letter-spacing: -.018em; font-variant-numeric: tabular-nums }
+.b-price .p span { color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-price .aim { color: var(--fg-2); font: 400 17px/26px var(--font) }
+.b-price ul { display: grid; gap: var(--space-2); list-style: none; padding: var(--space-3) 0 0; border-top: 1px solid var(--line) }
+.b-price li { display: flex; align-items: flex-start; gap: var(--space-2); font: 400 14px/20px var(--font) }
+.b-price li svg.i { margin-top: 2px; color: var(--fg-2) }
+/* Internal only: the floor, set as a do-not-say line at the foot of each plan so the floors align. */
+.b-price .floor { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--space-3); margin-top: auto; padding: var(--space-2) var(--space-3); border-radius: var(--r-m); background: var(--held-soft) }
+.b-price .floor .k { color: var(--held); font: 600 14px/20px var(--font) }
+.b-price .floor b { color: var(--fg); font: 650 17px/26px var(--font); font-variant-numeric: tabular-nums }
+.b-price .cap { color: var(--fg-2); font: 400 14px/20px var(--font) }
+
+/* ---------- Briefing: executive summary (one line per released chapter) ---------- */
+.b-summary { display: grid; gap: var(--space-3); max-width: var(--measure-wide) }
+.b-summary h2 { font: 650 21px/28px var(--font); letter-spacing: -.01em }
+.b-summary ol { list-style: none; padding: 0 }
+.b-summary li { display: grid; grid-template-columns: calc(var(--space-9) + var(--space-8)) minmax(0, 1fr) auto; gap: var(--space-1) var(--space-5); align-items: baseline; padding-block: var(--space-4); border-top: 1px solid var(--line) }
+.b-summary .nm { color: var(--fg); font: 650 17px/26px var(--font); text-decoration: none; text-underline-offset: var(--space-1) }
+.b-summary a.nm:hover { text-decoration-line: underline; text-decoration-color: var(--line-2) }
+.b-summary .tk { color: var(--fg); font: 400 17px/26px var(--font) }
+.b-summary .is-held .tk { color: var(--held); font-weight: 500 }
+.b-summary .ed { display: flex; align-items: center; gap: var(--space-2); justify-self: end; color: var(--fg-2); font: 400 14px/20px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap }
+/* Everything not released yet, said once, quietly. */
+.b-summary .rest { padding-top: var(--space-4); border-top: 1px solid var(--line); color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-summary ol + .rest { margin-top: calc(-1 * var(--space-3)) }
+@media (max-width: 599px) { .b-summary li { grid-template-columns: minmax(0, 1fr) auto } .b-summary .tk { grid-column: 1 / -1 } }
+
+/* ---------- Briefing: footer (owner, edition, confidentiality, what the marks mean) ---------- */
+.b-foot { display: grid; gap: var(--space-4); max-width: var(--measure-wide); margin-top: var(--space-7); padding-block: var(--space-6) var(--space-9); border-top: 1px solid var(--line); color: var(--fg-2); font: 400 14px/20px var(--font) }
+.b-foot .rows { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-4) var(--space-6) }
+.b-foot .own, .b-foot .ed { display: grid; gap: 2px; align-content: start }
+.b-foot .ed { justify-items: end; text-align: right }
+.b-foot b { color: var(--fg); font-weight: 600 }
+/* Contact details are plain text, selected whole with one click. */
+.b-foot .sel { color: var(--fg); -webkit-user-select: all; user-select: all }
+.b-foot .chg { padding-top: var(--space-4); border-top: 1px solid var(--line) }
+@media (max-width: 599px) { .b-foot .ed { justify-items: start; text-align: left } }
+
+/* ---------- Review fixes for the briefing parts above (REVIEW-readers.md) ----------
+   :root raises each rule over the part it fixes, whatever their order. */
+/* R6, R31: the footer never widens the page; its lines wrap. The confidentiality sentence is plain text, not a pill. */
+:root .b-foot { grid-template-columns: minmax(0, 1fr) }
+:root .b-foot .rows > * { min-width: 0; max-width: 100% }
+:root .b-foot .ed > span { overflow-wrap: anywhere }
+/* R6: the roadmap's lens toggle wraps inside the column at phone width. */
+:root .b-road .lens { flex-wrap: wrap; max-width: 100% }
+:root .b-road .lens button { white-space: normal; text-align: left }
+:root .b-road .bar { min-width: 0 }
+/* R20: at desktop widths the chapter nav wraps instead of clipping the current chapter. Below 768px it stays one scrolling row. */
+@media (min-width: 768px) {
+  :root .b-nav .ch { flex-wrap: wrap; overflow-x: visible; row-gap: 0 }
+}
+/* R32: customer wording is the default case on the customer lens, so it is plain quoted text, not a green bubble. */
+:root .b-road .it q { padding: 0; border-radius: 0; background: none; color: var(--fg-2) }
+/* R38: the chapter names in the overview are links, and look like links. */
+:root .b-summary .nm { color: var(--accent); text-decoration: underline; text-decoration-color: var(--line-2) }
+:root .b-summary .nm:hover { text-decoration-color: currentColor }
+/* R19: the market squares are drawn in ink, not accent; no coloured fill behind text. Applies in reports and on reader pages. */
+:root .b-market .tam { fill: var(--bg); stroke: var(--line-2); stroke-width: 1.5 }
+:root .b-market .sam { fill: var(--line) }
+:root .b-market .som { fill: var(--fg-2) }
+:root .b-market .tick { stroke: var(--fg-2) }
+:root .b-market .on-soft, :root .b-market .on-accent, :root .b-market .on-bg { fill: var(--fg) }
+
+/* ---------- Briefing: print ---------- */
+@media print {
+  /* Paper is white and ink is black whatever the theme. This block is the one place raw colour values are allowed:
+     tokens follow the screen theme, and print must not. !important wins over every theme selector in the tokens part. */
+  /* >>> literal colours: print */
+  :root {
+    --bg: #fff !important; --sunken: #fff !important; --card: #fff !important; --hover: #fff !important; --select: #fff !important;
+    --line: #d0d0d0 !important; --line-2: #9a9a9a !important;
+    --fg: #000 !important; --fg-2: #333 !important; --fg-3: #555 !important;
+    --accent: #555 !important; --accent-soft: #e4e4e4 !important; --accent-fg: #fff !important;
+    --ok: #000 !important; --ok-soft: #f0f0f0 !important; --warn: #000 !important; --warn-soft: #f0f0f0 !important;
+    --bad: #000 !important; --bad-soft: #f0f0f0 !important; --held: #000 !important; --held-soft: #f0f0f0 !important;
+    --today: #000 !important; --shadow-1: none !important; --shadow: none !important;
+  }
+  /* <<< literal colours */
+  /* Keep the tints that carry meaning (squares, notices, quotes) when the browser drops backgrounds. */
+  .brief { max-width: none; padding-inline: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact }
+  .b-nav, .brief button, .brief .btn, .b-road .lens { display: none !important }
+  .brief a { color: inherit; text-decoration: none }
+  .brief a[href]::after { content: none }
+  .brief h1, .brief h2, .brief h3 { break-after: avoid }
+  .passage, .b-hold, .fig, .b-market, .b-road tr, .b-sched li, .b-price .plan, .b-summary li, .b-foot { break-inside: avoid }
+  .b-road .scroll { overflow: visible }
+  .b-road table { min-width: 0 }
+  .b-foot { padding-bottom: 0 }
+}

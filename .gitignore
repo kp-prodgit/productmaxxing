@@ -28,4 +28,6 @@ npm-debug.log*
 
 # Build
 dist/
+# The design system's built stylesheet is a source other repos vendor by hash, so it is committed.
+!design/dist/
 coverage/

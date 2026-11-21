@@ -19,6 +19,13 @@ export async function rememberTeamPr(pr: Stored): Promise<void> {
   checked = null;
 }
 
+/** Drops one from the list once it's applied (BOARD-9), without waiting for the next check. */
+export async function forgetTeamPr(id: string): Promise<void> {
+  const list = (await readJson<Stored[]>(file())) ?? [];
+  await writeJson(file(), list.filter((p) => p.id !== id));
+  checked = null;
+}
+
 export async function pendingTeamPrs(ctx: Pick<Ctx, "repo" | "keychain" | "exec" | "fetch">): Promise<PipelineData["pendingTeam"]> {
   const list = (await readJson<Stored[]>(file())) ?? [];
   if (!list.length) return [];

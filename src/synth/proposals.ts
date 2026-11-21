@@ -117,7 +117,7 @@ function pick(all: Proposal[], refs: string[]): { hit: Proposal[]; missing: stri
 }
 
 /** Marks each task in its synthesis receipt, so `pmx explain` and the flow view say what became of it (FLOW-1). */
-async function markReceipt(p: Proposal, posted: { identifier: string } | { dropped: true } | { duplicateOf: string }, now: Date): Promise<void> {
+async function markReceipt(p: Proposal, posted: { identifier: string } | { dropped: true } | { duplicateOf: string } | { todo: string }, now: Date): Promise<void> {
   const r = await readReceipt(p.receipt);
   const t = r?.synth?.tasks.find((x) => x.posted && "staged" in x.posted && x.posted.staged === p.id);
   if (!r || !t) return;
@@ -190,6 +190,26 @@ export async function dropProposals(refs: string[], now = new Date()): Promise<{
   });
   for (const p of r.dropped) await markReceipt(p, { dropped: true }, now);
   return r;
+}
+
+/**
+ * Takes one proposal off the list because the PM kept it as their own to-do instead (TODO-5). Nothing reaches the
+ * tracker, and its receipt says where it went. Null when it's no longer waiting.
+ */
+export async function takeProposal(ref: string): Promise<Proposal | null> {
+  return withLock(proposalsFile(), async () => {
+    const all = await readProposals();
+    const { hit } = pick(all, [ref]);
+    const p = hit[0];
+    if (!p) return null;
+    await save(all.filter((x) => x.id !== p.id));
+    return p;
+  });
+}
+
+/** Records in a proposal's receipt that it became the PM's to-do (TODO-5). */
+export function markKept(p: Proposal, todo: string, now = new Date()): Promise<void> {
+  return markReceipt(p, { todo }, now);
 }
 
 /** One proposal as the PM reviews it: what the tracker gets, then (marked) what only this Mac sees. */

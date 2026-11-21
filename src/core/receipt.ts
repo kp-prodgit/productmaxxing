@@ -95,7 +95,8 @@ export interface TaskReceipt {
    */
   /** `staged`: waiting for the PM's approval as that proposal (APPROVE-1); `dropped`: the PM said no. */
   /** `mergedInto`: the same need as a proposal already waiting, so its sources were added to that one (INPUT-2). */
-  posted?: { identifier: string } | { duplicateOf: string } | { dryRun: true } | { staged: string } | { dropped: true } | { mergedInto: string };
+  /** `todo`: the PM kept it as their own to-do, with that ID, instead of sending it (TODO-5). */
+  posted?: { identifier: string } | { duplicateOf: string } | { dryRun: true } | { staged: string } | { dropped: true } | { mergedInto: string } | { todo: string };
 }
 
 export type SizeFlag = "no-reason" | "cell-mismatch" | "count-below" | "count-above";
@@ -158,8 +159,20 @@ export async function readReceipt(id: string): Promise<RunReceipt | null> {
   return r && r.v <= SCHEMA.receipt ? r : null;
 }
 
+/** A synthesis run behind a task sent to Linear holds that task's evidence (RUN-3), so it's kept this long. */
+const KEEP_EVIDENCE_DAYS = 60;
+
 async function pruneReceipts(now: Date): Promise<void> {
   const ids = await listReceipts();
-  const cutoff = new Date(now.getTime() - KEEP_DAYS * 86400000).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
-  for (const [i, id] of ids.entries()) if (i >= KEEP_MAX || stamp(id) < cutoff) await rm(join(paths.receipts(), `${id}.json`), { force: true });
+  const at = (days: number) => new Date(now.getTime() - days * 86400000).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+  const cutoff = at(KEEP_DAYS);
+  const evidence = at(KEEP_EVIDENCE_DAYS);
+  for (const [i, id] of ids.entries()) {
+    if (i < KEEP_MAX && stamp(id) >= cutoff) continue;
+    if (id.startsWith("synthesize-") && stamp(id) >= evidence && (await feedsTasks(id))) continue;
+    await rm(join(paths.receipts(), `${id}.json`), { force: true });
+  }
 }
+
+const feedsTasks = async (id: string) =>
+  !!(await readJson<RunReceipt>(join(paths.receipts(), `${id}.json`)))?.synth?.tasks.some((t) => t.posted && "identifier" in t.posted);

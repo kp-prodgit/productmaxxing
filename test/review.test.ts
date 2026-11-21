@@ -8,6 +8,7 @@ import { RunLogStore } from "../src/core/runlog-store.js";
 import type { RunLogEntry } from "../src/core/runlog.js";
 import { services } from "../src/core/services.js";
 import type { Task } from "../src/core/types.js";
+import { failingCategories } from "../src/pull/failures.js";
 import { pull } from "../src/pull/pull.js";
 import { renderMarkdown } from "../src/review/markdown.js";
 import { acceptStats, decide, loadQueue } from "../src/review/queue.js";
@@ -111,6 +112,19 @@ describe("accept rate and auto-pause (REV-3)", () => {
 
     const after = [...entries, { type: "unpause", agent: "a", machine: "m", ts: "2026-11-26T00:00:00Z", category: "spec" } as RunLogEntry];
     expect(pausedFrom(after, team, now).size).toBe(0);
+  });
+
+  it("pauses a kind of work whose runs keep ending without a draft, across tasks (RUN-4)", () => {
+    const run = (taskId: string, outcome: string, ts: string, category = "spec") => ({ type: "run", agent: "a", machine: "m", ts, taskId, category, size: "S", skill: "s", skillVersion: "v", outcome, durationMs: 0, tokens: null, costUsd: null, runtime: "r" }) as RunLogEntry;
+    const now = new Date("2026-11-20T12:00:00Z");
+    const failing = [run("PMX-1", "failed", "2026-11-20T08:00:00Z"), run("PMX-1", "capped", "2026-11-20T08:30:00Z"), run("PMX-1", "refused", "2026-11-20T08:45:00Z"), run("PMX-2", "failed", "2026-11-20T09:00:00Z")];
+    expect(Object.fromEntries(failingCategories(failing))).toEqual({ spec: { runs: 3, tasks: 2 } });
+    expect(pausedFrom(failing, team, now).get("spec")).toBe("its last 3 runs, on 2 tasks, ended without a draft, so its skill may be broken; unpause with `pmx review --unpause spec`");
+    // One task failing is that task's problem: it moves to Blocked, and the kind of work keeps running.
+    expect(failingCategories([run("PMX-1", "failed", "2026-11-20T08:00:00Z"), run("PMX-1", "failed", "2026-11-20T08:30:00Z"), run("PMX-1", "failed", "2026-11-20T09:00:00Z")]).size).toBe(0);
+    // A draft in between, or an unpause, starts the count again; another kind of work doesn't touch it.
+    expect(failingCategories([...failing.slice(0, 2), run("PMX-3", "ok", "2026-11-20T08:50:00Z"), run("PMX-2", "failed", "2026-11-20T09:00:00Z"), run("PMX-9", "failed", "2026-11-20T09:10:00Z", "research-synthesis")]).size).toBe(0);
+    expect(pausedFrom([...failing, { type: "unpause", agent: "a", machine: "m", ts: "2026-11-20T10:00:00Z", category: "spec" } as RunLogEntry], team, now).size).toBe(0);
   });
 
   it("size calibration suggests new estimates when runs are far off (PULL-10)", () => {

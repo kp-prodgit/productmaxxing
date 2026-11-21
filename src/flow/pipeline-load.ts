@@ -1,4 +1,6 @@
-import { neededTasks, nextCronTime, taskRunHealth, taskState } from "../claude/tasks.js";
+import { appliedSchedule, LINEAR_SYNC_TASK, neededTasks, nextCronTime, taskRunHealth, taskState } from "../claude/tasks.js";
+import { checklistForPage, readHistory } from "../setup/checklist.js";
+import { webServerStatus } from "./web-server.js";
 import { budget, budgetBlock } from "../budget/provider.js";
 import { tickHealth } from "../commands/tick.js";
 import type { Ctx } from "../core/context.js";
@@ -58,7 +60,7 @@ export function relayWords(detail: string, waiting: number): { text: string; cmd
   const queued = waiting ? ` ${waiting} change${waiting === 1 ? " is" : "s are"} waiting to go to Linear.` : "";
   if (/not synced yet/.test(detail)) return { text: `Linear hasn't synced yet. PMX reaches Linear through a task in your Claude app; type /pmx-schedule there to set it up.${queued}`, cmd: "/pmx-schedule" };
   const h = detail.match(/last synced (\d+)h ago/);
-  if (h) return { text: `Linear last synced ${h[1]} hours ago. The "Sync Linear" task in your Claude app runs hourly on weekdays while the app is open; open Claude and check it ran.${queued}`, cmd: "/pmx-schedule" };
+  if (h) return { text: `Linear last synced ${h[1]} hours ago. A sync was missed, so agents may be working from an old copy of your tasks. The "Sync Linear" task in your Claude app runs only while the app is open and the Mac is awake; open Claude and check it ran.${queued}`, cmd: "/pmx-schedule" };
   if (/label\(s\) missing/.test(detail)) return { text: "Some of PMX's labels are missing in Linear, so cards can't move yet. The next Linear sync in your Claude app creates them." };
   if (/not this team's/.test(detail)) return { text: "The last Linear sync read a different project than your team's. Check your team's Linear settings, then let the next sync run.", cmd: "pmx doctor" };
   return { text: plain(detail.replace(/^Linear through Claude: /, "Linear sync: ")) };
@@ -93,11 +95,11 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   // Health: what's wrong, in words, and when each part last ran.
   const problems: HealthProblem[] = [];
   const facts: string[] = [];
-  const tick = tickHealth(state.lastTick);
+  const tick = tickHealth(state.lastTick, 3, ctx.now());
   if (tick && !tick.ok) problems.push({ text: plain(tick.detail), fix: "tab:automations" });
   const job = await ctx.launchd.installed().catch(() => null);
   if (!job) problems.push({ text: "Automatic runs are off, so PMX only works while you have it open. Turn them on and it checks for new meetings every 30 minutes.", cmd: "pmx init", action: "install-job", fix: "tab:automations" });
-  const tasks = await neededTasks(ctx.team, o.keychain);
+  const tasks = await neededTasks(ctx.team, o.keychain, ctx.personal.taskHours);
   const schedules: PipelineData["schedules"] = [];
   for (const t of tasks) {
     const st = await taskState(t);
@@ -105,13 +107,15 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     if (st === "missing") problems.push({ text: `"${t.title.replace(/^PMX: /, "")}" isn't set up in your Claude app yet. Type /pmx-schedule there and Claude sets it up.`, cmd: "/pmx-schedule", fix: "tab:automations" });
     else if (ran && !ran.ok) problems.push({ text: plain(`"${t.title.replace(/^PMX: /, "")}" ${ran.detail}`), fix: "tab:automations" });
     const run = state.taskRuns[t.id];
-    const cronHours = t.cron.split(/\s+/)[1] ?? "*";
-    const mins = Number(t.cron.split(/\s+/)[0]) || 0;
+    // What the Claude app has, which differs from `t` until /pmx-schedule applies a changed setting (CLAUDE-5).
+    const { cron, schedule } = st === "missing" ? t : await appliedSchedule(t);
+    const cronHours = cron.split(/\s+/)[1] ?? "*";
+    const mins = Number(cron.split(/\s+/)[0]) || 0;
     const hrs = cronHours === "*" ? [...Array(24).keys()] : cronHours.split(",").flatMap((p) => { const [a, b = a] = p.split("-").map(Number); return Array.from({ length: b! - a! + 1 }, (_, k) => a! + k); });
     schedules.push({
-      name: t.title.replace(/^PMX: /, ""), where: "Claude app", when: t.schedule, last: run?.finishedAt ?? run?.startedAt ?? null, next: nextCronTime(t.cron, now)?.toISOString() ?? null,
+      name: t.title.replace(/^PMX: /, ""), where: "Claude app", when: schedule, last: run?.finishedAt ?? run?.startedAt ?? null, next: nextCronTime(cron, now)?.toISOString() ?? null,
       ok: st !== "missing" && !!ran?.ok, detail: st === "missing" ? "not set up" : st === "outdated" ? "set up with an older prompt" : ran?.detail ?? "", node: t.id === "pmx-collect-meetings" ? "collect" : "inbox",
-      hours: hrs.map((h) => h + mins / 60), days: cronDays(t.cron.split(/\s+/)[4] ?? "*"),
+      hours: hrs.map((h) => h + mins / 60), days: cronDays(cron.split(/\s+/)[4] ?? "*"),
     });
   }
   schedules.push({
@@ -122,7 +126,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const access = await linearAccess(ctx.team, o.keychain).catch(() => "none" as const);
   let relay: { ok: boolean; problem?: string } = { ok: true };
   if (access === "relay") {
-    const r = await relayHealth(ctx.team, now);
+    const r = await relayHealth(ctx.team, now, { cron: (await appliedSchedule(LINEAR_SYNC_TASK)).cron });
     if (!r.ok) {
       const w = relayWords(r.detail, outbox.ops.length);
       problems.push({ ...w, fix: "tab:automations" });
@@ -185,6 +189,8 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     logbook: local ? buildLogbook({ now, agent: ctx.agent, todos, receipts, runlog: log }) : [],
     boardUrl: ctx.team.board?.url ?? ctx.personal.board?.url ?? null,
     roadmapUrl: ctx.team.roadmap?.url ?? null,
+    localPage: local ? await webServerStatus().catch(() => null) : null,
+    setup: local ? checklistForPage((await readHistory())?.last ?? null) : null,
     themes: (await openThemes(ctx.personal.repoPath)).map((t) => t.name),
     checks: graph.checks, health: { problems, facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
     teamCategories: ctx.team.categories, paused, autoPause: ctx.team.autoPause,

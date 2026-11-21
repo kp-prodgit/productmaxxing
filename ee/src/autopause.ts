@@ -3,11 +3,13 @@ import type { TeamConfig } from "../../src/core/config.js";
 import type { Ctx } from "../../src/core/context.js";
 import type { RunLogEntry } from "../../src/core/runlog.js";
 import { RunLogStore } from "../../src/core/runlog-store.js";
+import { failingCategories } from "../../src/pull/failures.js";
 import { acceptStats } from "../../src/review/queue.js";
 
 /**
  * Auto-pause (REV-3): a category whose accept rate falls below the threshold (default 30%) over
  * the window, with at least `minVerdicts` decisions, stops being pulled until someone unpauses it.
+ * So does one whose last runs all ended without a draft, across two or more tasks (RUN-4): those never reach review.
  * Computed from the team's run log, so every machine reaches the same answer. A brain pause
  * (BRAIN-2) holds until a later unpause.
  */
@@ -25,6 +27,8 @@ export function pausedFrom(entries: RunLogEntry[], team: Pick<TeamConfig, "autoP
     if (s.total >= minVerdicts && s.rate < threshold)
       out.set(cat, `accept rate ${(s.rate * 100).toFixed(0)}% over ${s.total} reviews (auto-pause below ${(threshold * 100).toFixed(0)}%); unpause with \`pmx review --unpause ${cat}\``);
   }
+  for (const [cat, f] of failingCategories(entries))
+    if (!out.has(cat)) out.set(cat, `its last ${f.runs} runs, on ${f.tasks} tasks, ended without a draft, so its skill may be broken; unpause with \`pmx review --unpause ${cat}\``);
   return out;
 }
 
@@ -37,5 +41,5 @@ export async function autoPaused(ctx: Ctx): Promise<Map<string, string>> {
 export async function unpause(ctx: Ctx, category: string): Promise<string> {
   if (!ctx.team.categories[category]) throw new Error(`Unknown category ${category}.`);
   await new RunLogStore(ctx).record({ type: "unpause", agent: ctx.agent, machine: ctx.personal.machineId, category });
-  return `Unpaused ${category}. Its accept rate starts fresh from now.`;
+  return `Unpaused ${category}. Its accept rate and failed runs start fresh from now.`;
 }

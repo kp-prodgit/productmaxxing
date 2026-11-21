@@ -249,7 +249,7 @@ describe("0.17.0: the board shows where to act (BOARD-4)", () => {
     const page = await readFile(pipelineTemplate(), "utf8");
     // Status → Flow lists the steps in order, with a count from every connection on the old map.
     expect(page).toMatch(/h\("ol", \{ class: "steps"/);
-    for (const id of ["c-f", "s-f", "f-h", "f-t", "f-d", "t-t", "d-a", "a-x", "a-i", "i-r", "r-g", "g-v", "v-d"]) expect(page).toContain(`"${id}"`);
+    for (const id of ["c-f", "s-f", "f-h", "f-t", "f-d", "t-t", "d-a", "a-x", "a-i", "i-b", "i-r", "r-g", "g-v", "v-d"]) expect(page).toContain(`"${id}"`);
     expect(page).toMatch(/addEventListener\("hashchange", onHash\)/);
     expect(page).toMatch(/document\.addEventListener\("keydown", \(e\) =>/);
     // Space and Enter belong to the focused control, never to a row selected behind it.

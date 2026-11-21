@@ -84,6 +84,8 @@ export interface Launchd {
   isLoaded(): Promise<boolean>;
   /** The job file's text, or null when there's none. */
   installed(): Promise<string | null>;
+  /** Whether a pass is running right now (UPGRADE-1 doesn't reload the job under it). */
+  running?(): Promise<boolean>;
 }
 
 export function macLaunchd(exec: Exec = defaultExec): Launchd {
@@ -103,6 +105,10 @@ export function macLaunchd(exec: Exec = defaultExec): Launchd {
       return (await exec("launchctl", ["print", `${domain}/${LAUNCHD_LABEL}`])).code === 0;
     },
     installed: () => readFile(paths.launchAgent(), "utf8").catch(() => null),
+    async running() {
+      const r = await exec("launchctl", ["print", `${domain}/${LAUNCHD_LABEL}`]);
+      return r.code === 0 && /^\s*state = running$/m.test(r.stdout);
+    },
   };
 }
 

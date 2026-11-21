@@ -4,13 +4,26 @@ This guide is written for **Claude Code** to follow on a PM's Mac. To use it, op
 
 > Install PMX following https://github.com/kp-prodgit/productmaxxing/blob/main/INSTALL.md
 
-Version: **0.34.0**. Package: `productmaxxing-0.34.0.tgz` from the [v0.34.0 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.34.0).
+Version: **0.35.0**. Package: `productmaxxing-0.35.0.tgz` from the [v0.35.0 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.35.0).
 
 ---
 
 ## Instructions for Claude
 
-Follow these steps in order. Report each step's result to the user in one line. Stop at the first step that fails, tell the user what failed and the fix below, and wait for them.
+This file gets PMX onto the Mac (steps 0 to 3). From step 4 on, **`pmx guide`** and **`pmx checklist`** drive everything: the guide explains what PMX is and how to walk the user through it, and the checklist says what's actually done on this Mac. Follow these steps in order. Report each step's result to the user in one line. Stop at the first step that fails, tell the user what failed and the fix below, and wait for them.
+
+### In short: what you're installing
+
+PMX turns the PM's customer meetings into sized, cited tasks; agents draft them and the PM reviews the drafts. It runs on this Mac:
+- a background job every 30 minutes while the Mac is awake;
+- Claude app scheduled tasks that collect meetings and sync Linear;
+- PMX's page, in Claude or on this Mac.
+
+Two people gate the work:
+- the PM approves proposed tasks before anything reaches Linear;
+- a teammate moves the tasks worth doing to Ready before any agent runs them.
+
+`pmx guide` has the full picture. Read it at step 4, before you explain anything to the user.
 
 ### Step 0: auto mode off
 
@@ -42,14 +55,14 @@ Fixes:
 
 If `pmx --version` printed a version, this is an upgrade. Note that version. Follow the same steps, with these differences:
 - **Tell the user what's new.** After step 3, run `pmx whats-new --since <the version you noted>` and summarize it for the user in a few lines, with the commands it suggests trying.
-- **An old version named Product Git (0.14.0 or older).** Product Git is now ProductMaxxing, and the npm package was renamed from `productgit` to `productmaxxing`. npm won't install the new package over the old one's `pmx` command, so in step 2 run `npm uninstall -g productgit` just before `npm install -g ./productmaxxing-0.34.0.tgz`. This keeps `~/.pmx`, settings and keychain items; the first `pmx` command afterwards moves the keychain items and the background job to their new names.
+- **An old version named Product Git (0.14.0 or older).** Product Git is now ProductMaxxing, and the npm package was renamed from `productgit` to `productmaxxing`. npm won't install the new package over the old one's `pmx` command, so in step 2 run `npm uninstall -g productgit` just before `npm install -g ./productmaxxing-0.35.0.tgz`. This keeps `~/.pmx`, settings and keychain items; the first `pmx` command afterwards moves the keychain items and the background job to their new names.
 - **Restart the Claude app before using the PMX page.** The Claude app keeps running PMX's server (`pmx mcp`) with the code it started with, so after an upgrade from 0.24.0 or older the PMX page in Claude talks to the old server until the app restarts. Ask the user to quit the Claude app completely (⌘Q, not just closing its window) and open it again. If you are running inside the Claude app, say this last, since quitting ends this session. `pmx doctor` warns (`flow.mcp-old`) while an old server is still running. From 0.25.1 on, PMX's server switches to a newly installed pmx by itself, and no restart is needed.
 - **Publish the user's PMX pages in Claude again.** A page published with `/pmx-flow` or `/pmx-board` keeps the code of the pmx that published it until it's published again. If `pmx whats-new` ends with "Update your PMX page(s) in Claude", use the `pmx-flow` skill (and `pmx-board`, if it's listed) in this session to publish each one again with the same link. If this session can't publish artifacts, ask the user to type `/pmx-flow` (and `/pmx-board`) in the Claude app.
 - **Never run `pmx uninstall`.** It deletes `~/.pmx` (the user's settings, to-dos, collected transcripts, drafts and run receipts), PMX's keychain items and the background job. Installing over the old version keeps all of them.
 - **An old copy on a different Node:** if the old `pmx` lives outside the folder `npm prefix -g` prints after any Node change (for example under `~/.nvm/`), it can stay first on PATH. Remove it with the Node it was installed with: `npm uninstall -g productmaxxing`.
 - **A folder the old version was built from** (a clone with `npm pack`) isn't used any more. The user can delete it.
-- **Step 4 still matters.** `pmx init` offers the saved answers as defaults, so it's quick. It asks again for any saved answer that's now invalid, offers to sign in PMX's Claude profile if it isn't, and registers the background job with the new Node's path and Claude Code's full path. A job from an older version may not find Claude Code at all.
-- **Step 6 updates older tasks.** `/pmx-schedule` updates each task whose prompt changed, creates missing ones and offers the always-allow rules.
+- **Step 5 still matters when the checklist asks for it.** `pmx init` offers the saved answers as defaults, so it's quick. It asks again for any saved answer that's now invalid, offers to sign in PMX's Claude profile if it isn't, and registers the background job with the new Node's path and Claude Code's full path. A job from an older version may not find Claude Code at all.
+- **Step 6 updates older tasks.** The checklist sends you to `/pmx-schedule`, which updates each task whose prompt changed, creates missing ones and offers the always-allow rules.
 
 ### Step 2: install the package
 
@@ -57,24 +70,28 @@ Download the package and its checksum file into a new empty folder, check the ch
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/productmaxxing-0.34.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.35.0/productmaxxing-0.35.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.35.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.34.0.tgz
+npm install -g ./productmaxxing-0.35.0.tgz
 ```
 
-If `shasum` doesn't print `productmaxxing-0.34.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
+If `shasum` doesn't print `productmaxxing-0.35.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
 
 **Joining a team that already uses PMX?** Install your team's version instead. Clone the team's PMX repo (ask the team lead for its URL), then run `npm install -g <repo>/.pmx/cli/productmaxxing.tgz`.
 
 ### Step 3: verify
 
-- `pmx --version` prints `0.34.0`, or the team's version.
+- `pmx --version` prints `0.35.0`, or the team's version.
 - `command -v pmx` is inside the folder `npm prefix -g` printed.
 
 If `pmx` isn't found, the npm global `bin` folder isn't on PATH. Tell the user to open a new Terminal window, or add `$(npm prefix -g)/bin` to their PATH.
 
-### Step 4: `pmx init`, with the user
+### Step 4: read the guide, and say where the user stands
+
+Run `pmx guide` and read all of it. Then run `pmx checklist --json` and tell the user where they stand, as the guide's "Working through the checklist" section says: what's done, what runs, what's missing, and the next step. On an upgrade, also run `pmx whats-new --since <the version you noted>` and summarize it in a few lines.
+
+### Step 5: `pmx init`, with the user (a new install, or when the checklist asks for it)
 
 `pmx init` asks questions only the user can answer, and reads tokens without showing them. Ask the user to run it themselves in Terminal. Don't run it for them, and never type a token or password for them.
 
@@ -82,31 +99,32 @@ Tell the user beforehand:
 - **The PMX repo** holds the team's shared skills, memory and settings. On their own: accept the default, and PMX creates one at `~/pmx`. Joining a team: give the folder where they cloned the team repo.
 - **Every answer is checked.** If they paste something by mistake, init asks again. At the end it shows a summary, and nothing is saved until they confirm.
 - **Sign in when asked.** PMX runs Claude Code with its own profile, so the user's personal setup never loads, and that profile needs its own sign-in. Init opens the browser for it. Without it, every agent run fails with "Not logged in". `pmx claude login` does it later.
-- **Say yes** to the background job, to the `/pmx-schedule` command, and to "Let PMX's scheduled tasks run pmx…". Without the last one, scheduled runs stop at permission prompts nobody sees.
+- **Say yes** to:
+  - the background job;
+  - the `/pmx-schedule` and `/pmx-setup` commands;
+  - "Let PMX's scheduled tasks run pmx…". Without this one, scheduled runs stop at permission prompts nobody sees.
 
-### Step 5: check the install
+### Step 6: work through the checklist
 
-Run `pmx doctor --json` and read the result:
-- `ok: true` means every required check passed. Read each id in `warnings` to the user, with its `detail` from `checks`.
-- When `ok` is false, `failed` lists the failed check ids. Find each one in `checks`, and read its `detail` to the user: it says what to do. The common ones: `profile.signed-in` (the user runs `pmx claude login`) and `schedule.job-claude` (the user runs `pmx init` again and says yes to the background job).
+Follow the guide's loop until `pmx checklist --json` has no required step left:
+1. Do or hand over the `next` step.
+2. Run the checklist again.
+3. Report what changed.
 
-### Step 6: scheduled tasks in the Claude app
-
-Ask the user to open the Claude desktop app, go to the Code tab, start a new session with auto mode off, and type `/pmx-schedule`. Claude creates PMX's scheduled tasks there. Teams using Linear can type `/pmx-board` for the team board.
-
-Then ask the user to click "Run now" on each new task in the app (Code tab → Scheduled), open the run, and choose "Always allow" for each approval it asks for, usually its first connector call (Linear, Google Drive, Granola…). A run waiting on an approval nobody answers blocks that task's later runs.
-
-Afterwards, run `pmx schedule` here and check that every task shows ✔ and says "last ran". A `!` saying a run didn't finish means it still waits for an approval.
+That covers:
+- the scheduled tasks in the Claude app (`/pmx-schedule`, then Run now and Always allow on each);
+- PMX's page and the team board;
+- Linear;
+- every step an upgrade still needs. `pmx checklist` lists them under "Still to do after updating", for the version this Mac came from.
 
 ### Step 7: report
 
 Tell the user:
-- the installed version, and for an upgrade, what's new (`pmx whats-new --since <old version>`) and which PMX pages in Claude you published again, or that they still need `/pmx-flow` or `/pmx-board`; and, after an upgrade from 0.24.0 or older, that they quit the Claude app (⌘Q) and open it again so it starts PMX's new server;
-- the doctor result, with any warnings left;
-- which scheduled tasks exist;
+- the installed version, and for an upgrade, what's new and what the update did (`pmx migrate`);
+- where they stand now: the checklist's `where`, what runs and when, and any optional steps left;
 - that they can switch auto mode back on now;
-- that `pmx update` keeps PMX current, and that the team lead uses `pmx update --latest` and then `pmx vendor --require`;
-- that `pmx flow --web` shows where their data went (meetings read and held, tasks, Linear issues, agent runs, spend), and that `pmx flow --install-skill` then `/pmx-flow` puts the same view in Claude (it also needs `pmx mcp --install`, which they run themselves).
+- that `/pmx-setup` in the Claude app (or `pmx checklist`) shows where they stand any time;
+- that `pmx update` keeps PMX current, and that the team lead uses `pmx update --latest` and then `pmx vendor --require`.
 
 ---
 

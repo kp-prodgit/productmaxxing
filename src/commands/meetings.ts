@@ -6,6 +6,7 @@ import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { loadState, markTaskRun } from "../core/state.js";
 import { localDay } from "../meetings/ledger.js";
+import { moveWork, type Place } from "../todo/move.js";
 import { completeTodo, formatTodos, loadTodos, refreshTodos, sendTodoToLinear, TODO_DAYS, TODO_MAX_DAYS, todoPeriod, todosInPeriod } from "../todo/todo.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
@@ -43,7 +44,7 @@ export const meetingCommands: Command[] = [
   {
     name: "todo",
     summary: "Your own to-dos from your meetings, including 1:1s; stays on this Mac. Shows and reads the last 7 days unless you pick a period",
-    usage: "pmx todo [--days N|all | --since today|Nd|YYYY-MM-DD] [--all] [--json] | pmx todo --refresh [--days N | --since …] [--dry-run] | pmx todo done <id> | pmx todo --me <name or email> | pmx todo --linear on|off | pmx todo linear <id>",
+    usage: "pmx todo [--days N|all | --since today|Nd|YYYY-MM-DD] [--all] [--json] | pmx todo --refresh [--days N | --since …] [--dry-run] | pmx todo done <id> | pmx todo --me <name or email> | pmx todo --linear on|off | pmx todo linear <id> (or pmx move <id> todo)",
     options: {
       refresh: { type: "boolean" }, since: { type: "string" }, days: { type: "string" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, json: { type: "boolean" },
       me: { type: "string", multiple: true }, linear: { type: "string" },
@@ -65,7 +66,7 @@ export const meetingCommands: Command[] = [
         if (on && !ctx.personal.todosToLinear && !(await a.ask.confirm("Let yourself send your own to-dos to your team's Linear project, one at a time? A to-do's words can come from a 1:1 or an internal meeting; only the words you send go, never the meeting's title or transcript.", false))) return 1;
         ctx.personal.todosToLinear = on;
         await savePersonalConfig(ctx.personal);
-        console.log(on ? "On. Send a to-do with `pmx todo linear <id>`, or Send to Linear on the board. Nothing is sent until you do." : "Off. Your to-dos stay on this Mac.");
+        console.log(on ? "On. Move a to-do with `pmx move <id> todo` (or `product`), or with Where in its details on the board. Nothing is sent until you do." : "Off. Your to-dos stay on this Mac.");
         return 0;
       }
       if (a.positionals[0] === "linear") {
@@ -97,6 +98,21 @@ export const meetingCommands: Command[] = [
       if (a.values.json) { console.log(JSON.stringify(shown, null, 2)); return 0; }
       console.log(shown.length ? `To-dos from ${period.label}${a.values.all ? ", done ones included" : ""}:\n${formatTodos(shown)}` : formatTodos([], period.label));
       if (older) console.log(`\n${older} ${a.values.all ? "" : "open "}to-do(s) from before that. See them with: pmx todo --days ${oldestDays > TODO_MAX_DAYS ? "all" : oldestDays}`);
+      return 0;
+    },
+  },
+  {
+    name: "move",
+    summary: "Move work between a private to-do, a to-do in Linear and a product task for the team, in any direction",
+    usage: "pmx move <to-do ID | proposal ID | PMX-12> private|todo|product [--kind <kind of work>] [--size S|M|L|XL]",
+    options: { kind: { type: "string" }, size: { type: "string" } },
+    async run(a) {
+      const [ref, to] = a.positionals;
+      if (!ref || !to) throw new Error("Usage: pmx move <to-do ID | proposal ID | PMX-12> private|todo|product [--kind <kind of work>]. `pmx todo` and `pmx proposals` list the IDs.");
+      const ctx = await a.ctx();
+      const r = await moveWork(ctx, () => services(ctx), ref, to.toLowerCase() as Place, { kind: a.values.kind, size: a.values.size });
+      console.log(r.message);
+      if (r.identifier?.startsWith("PENDING-")) console.log("It reaches Linear at the next Claude sync.");
       return 0;
     },
   },

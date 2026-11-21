@@ -1,6 +1,6 @@
 import { boardUrl, checkBoard, renderBoard } from "../claude/board.js";
 import { addAllowRules, ALLOW_RULES, missingAllowRules } from "../claude/permissions.js";
-import { appSkillInstalled, appSkillTarget, BOARD_SKILL, claudePresent, installAppSkill } from "../claude/skill.js";
+import { appSkillInstalled, appSkillTarget, BOARD_SKILL, claudePresent, installAppSkill, SETUP_SKILL } from "../claude/skill.js";
 import { linearAccess } from "../linear/access.js";
 import { createHash } from "node:crypto";
 import { access, constants, mkdir, stat } from "node:fs/promises";
@@ -283,10 +283,11 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
   // /pmx-board publishes the team board as a live artifact, offered only when Claude and Linear are both in use.
   const board = await checkBoard(team);
   const question = board.ok
-    ? "Add /pmx-schedule and /pmx-board commands to your Claude app, so Claude can create PMX's scheduled tasks and publish your team's live board?"
-    : "Add a /pmx-schedule command to your Claude app, so Claude can create PMX's scheduled tasks for you?";
+    ? "Add /pmx-schedule, /pmx-setup and /pmx-board to your Claude app, so Claude can create PMX's scheduled tasks, guide you through what's left and publish your team's live board?"
+    : "Add /pmx-schedule and /pmx-setup to your Claude app, so Claude can create PMX's scheduled tasks and guide you through what's left?";
   if (await ask.confirm(question, true)) {
-    for (const name of board.ok ? [undefined, BOARD_SKILL] as const : [undefined] as const) {
+    // SETUP-1: /pmx-setup is Claude's guide through the rest, from pmx checklist.
+    for (const name of board.ok ? [undefined, SETUP_SKILL, BOARD_SKILL] as const : [undefined, SETUP_SKILL] as const) {
       const r = await installAppSkill(name).catch(() => null);
       if (r === "kept-yours") out.warn(`Left your own ${appSkillTarget(name)} alone.`);
     }

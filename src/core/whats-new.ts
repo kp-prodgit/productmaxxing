@@ -19,6 +19,17 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.35.0", date: "2026-11-21", headline: "Know where you stand, and agent runs that get their quotes",
+    items: [
+      { what: "Every install, setup and update step, worked out from this Mac: what's done, what's missing, and who does the next step. In the Claude app, /pmx-setup has Claude walk you through it.", try: "pmx checklist" },
+      { what: "Updates finish what they can on their own, and list what's still to do after updating.", try: "pmx update" },
+      { what: "Agent runs now get the quotes behind each source from the Mac that proposed the task, so drafts that need citations can pass their checklist. A task that keeps failing moves to Blocked instead of holding up the queue." },
+      { what: "Move work between private, your to-do and a product task for the team, in any direction.", try: "pmx move <to-do> product --kind <kind>" },
+      { what: "The page in Claude opens this Mac's faster page, and the Flow map shows the team board between Linear's inbox and Ready." },
+      { what: "Choose when PMX's Claude tasks run, including nights and weekends.", try: "pmx schedule --hours always" },
+    ],
+  },
+  {
     version: "0.34.0", date: "2026-11-18", headline: "Customer evidence for PMX Engine",
     items: [
       { what: "Counts of approved tasks per category and roadmap theme, with the sources they cite and the first and last day: no titles, quotes or meetings. The head of product pipes them into PMX Engine's studio and maps each to a roadmap theme.", try: "pmx evidence" },

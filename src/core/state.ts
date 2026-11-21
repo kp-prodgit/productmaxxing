@@ -1,6 +1,9 @@
 import { readJson, writeJson } from "./fsutil.js";
 import { paths } from "./paths.js";
 
+/** A background pass is due every 30 minutes; none for 2.5 of them means the Mac slept, was off, or the job stopped (OBS-4). */
+export const TICK_GAP_MS = 75 * 60000;
+
 /** Personal machine state in `~/.pmx/state.json`. Never synced. */
 export interface State {
   lastDigestWeek: string | null;
@@ -23,6 +26,8 @@ export interface State {
   teamSync?: { checkedAt: string; result: string; okAt?: string | null } | null;
   /** The background job's last pass: which steps failed, and how many passes in a row had a failure. */
   lastTick: { at: string; failed: string[]; failStreak: number } | null;
+  /** OBS-4: stretches with no background pass (the Mac asleep or off), newest last, 14 days. */
+  tickGaps?: { from: string; to: string }[];
   /** Each Claude scheduled task's last run, as PMX saw it: its `--prompt` call starts one, its last step finishes it. */
   taskRuns: Record<string, { startedAt: string; finishedAt: string | null }>;
   /** The personal daily cap that applied each ledger day, so the flow view shows past days against their own cap (FLOW-1). */
@@ -48,6 +53,8 @@ export interface State {
   /** When this Mac moved from the ProductGit names (RENAME-1): keychain items, then the background job. */
   renamed?: { keychain?: string; launchd?: string } | null;
   whatsNew: { seen: string | null; since: string | null } | null;
+  /** UPGRADE-1: the pmx that last ran here, the version it came from, and each update step done (src/core/upgrade.ts). */
+  upgrade?: import("./upgrade.js").UpgradeRecord | null;
   /** When this Mac's pmx started tracking task runs. Older runs left no record, so "never ran" counts from here. */
   taskRunsSince: string | null;
 }
@@ -68,9 +75,15 @@ export async function saveState(s: State): Promise<void> {
   for (const d of days.slice(0, Math.max(0, days.length - 60))) delete s.ledger[d];
   for (const d of Object.keys(s.tokens ?? {}).sort().slice(0, Math.max(0, Object.keys(s.tokens ?? {}).length - 60))) delete s.tokens![d];
   for (const d of Object.keys(s.caps ?? {}).sort().slice(0, Math.max(0, Object.keys(s.caps ?? {}).length - 60))) delete s.caps[d];
-  const cutoff = new Date(Date.now() - 14 * 86400000).toISOString();
-  s.collectReports = (s.collectReports ?? []).filter((r) => r.at >= cutoff).slice(-200);
+  // The 14-day window is applied where a report is added, by PMX's own clock (recentReports); this only bounds the file.
+  s.collectReports = (s.collectReports ?? []).slice(-200);
   await writeJson(paths.state(), s);
+}
+
+/** The collection reports from the 14 days before `now`, the window FLOW-1 keeps. */
+export function recentReports<T extends { at: string }>(reports: T[], now: Date): T[] {
+  const cutoff = new Date(now.getTime() - 14 * 86400000).toISOString();
+  return reports.filter((r) => r.at >= cutoff);
 }
 
 export async function updateState(fn: (s: State) => void): Promise<State> {

@@ -74,6 +74,22 @@ export async function brainAccess(ctx: Ctx): Promise<{ policy: Policy; brain: Br
   return { policy, brain: teamBrain(ctx.team), source: "pmx.config.json" };
 }
 
+/** The brain as the checklist shows it: off and why, on another Mac, or on here with its last pass. */
+export async function brainStep(ctx: Ctx): Promise<import("../../src/setup/checklist.js").Step> {
+  const base = { id: "work.brain", title: "Automatic triage (the brain)", required: false } as const;
+  const access = await brainAccess(ctx).catch(() => null);
+  if (!access) return { ...base, status: "warn", detail: "PMX couldn't read the brain's settings from your org's admin policy", do: "pmx brain --status", who: "you", how: "terminal" };
+  const b = access.brain;
+  if (b.level === "off") return { ...base, status: "skip", detail: access.source === "pmx.config.json"
+    ? "off: nothing triages the pool automatically, so tasks become Ready only when a teammate moves them. A \"brain\" block in pmx.config.json turns it on (see pmx brain)."
+    : `off in your org's ${access.source}: an admin turns it on in the hosted app (Admin → Brain)` };
+  const where = b.machine ?? ctx.team.synthesizer;
+  if (!where) return { ...base, status: "warn", detail: `set to ${b.level}, but no Mac is chosen to run it, so it never runs`, do: "Choose the team's synthesis Mac in PMX's page (Settings → Team), or set brain.machine in pmx.config.json", who: "team-lead", how: "page" };
+  if (!isBrainMachine(ctx, b)) return { ...base, status: "done", detail: `${b.level}, every ${b.everyHours} h on ${where}'s Mac` };
+  const last = (await loadState()).lastBrainAt;
+  return { ...base, status: "done", detail: `${b.level}, every ${b.everyHours} h on this Mac; last pass ${last ? last.slice(0, 16).replace("T", " ") + " UTC" : "not yet"}` };
+}
+
 const isBrainMachine = (ctx: Ctx, b: BrainPolicy) => {
   const m = b.machine ?? ctx.team.synthesizer;
   return m === ctx.agent || m === ctx.personal.handle;
@@ -111,6 +127,8 @@ export function registerEe(): Command[] {
   });
 
   setHooks({
+    // SETUP-1 (#13): whether automatic triage runs, where, and why not, instead of it being silently off.
+    checklist: async (ctx) => (ctx ? [await brainStep(ctx)] : []),
     invite: async (invite) => {
       await login({ keychain: macKeychain(), label: machineId(), inviteCode: invite.inviteCode, open: openUrl });
       console.log("Joined the team and signed in to ProductMaxxing.");
@@ -131,9 +149,10 @@ export function registerEe(): Command[] {
       ];
     },
     status: async (ctx) => {
-      if (!ctx.team.controlPlane) return [];
+      const brain = `Brain: ${(await brainStep(ctx).catch(() => null))?.detail ?? "couldn't read its settings"}`;
+      if (!ctx.team.controlPlane) return [brain];
       const lic = await currentLicense(ctx.now(), ctx.team.controlPlane.orgId);
-      return [`Control plane: ${ctx.team.controlPlane.url} (org ${ctx.team.controlPlane.orgId}) · license ${lic.claims ? `${lic.claims.plan}, ${lic.claims.seats} seats` : ctx.team.lease === "cloud" ? lic.problem : "none needed (only cloud leases use one)"}`];
+      return [brain, `Control plane: ${ctx.team.controlPlane.url} (org ${ctx.team.controlPlane.orgId}) · license ${lic.claims ? `${lic.claims.plan}, ${lic.claims.seats} seats` : ctx.team.lease === "cloud" ? lic.problem : "none needed (only cloud leases use one)"}`];
     },
   });
 

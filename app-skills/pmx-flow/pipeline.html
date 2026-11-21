@@ -19,6 +19,7 @@
   /* The flow map: where data is (this Mac, Claude, Linear, your repo, kept private). */
   --mac: #2f5f86; --mac-soft: #e1ebf4; --claude: #7a3fc4; --claude-soft: #efe6fa; --linear: #0e6b5b; --linear-soft: #dcefe9; --repo: #6d5a2e; --repo-soft: #f1ecdf; --held: #9a5a06; --held-soft: #f7ead6;
   --shadow: 0 10px 30px rgba(20,24,35,.10), 0 1px 3px rgba(20,24,35,.06);
+  --shadow-1: 0 1px 2px rgba(20,24,35,.06), 0 1px 1px rgba(20,24,35,.04);
   --scrim: rgba(10,12,18,.35); --knob: #ffffff; --toast-hover: rgba(127,127,127,.25);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -32,15 +33,43 @@
   --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
   --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
   --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
-  --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark } }
+  --scrim: rgba(0,0,0,.6); --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121316; --sunken: #17191d; --card: #1b1d22; --hover: #22252b; --select: #1f2a44;
   --line: #2a2d34; --line-2: #383c45; --fg: #ececef; --fg-2: #a9aeb8; --fg-3: #8d929d;
   --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
   --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
   --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
-  --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark }
+  --scrim: rgba(0,0,0,.6); --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark }
 /* <<< tokens */
+/* >>> scale */
+:root {
+  /* The family names PMX Engine's parts use, drawn from the Workspace's own. */
+  --font-sans: var(--font); --font-mono: var(--mono);
+  /* Type: weight size/line-height family, for `font:`; -tracking is its letter-spacing. */
+  --t-title-1: 650 24px/30px var(--font-sans); --t-title-1-tracking: -0.01em;
+  --t-title-2: 650 20px/26px var(--font-sans); --t-title-2-tracking: -0.01em;
+  --t-title-3: 600 16px/22px var(--font-sans);
+  --t-body: 400 14px/20px var(--font-sans);
+  --t-strong: 600 14px/20px var(--font-sans);
+  --t-callout: 400 13px/18px var(--font-sans);
+  --t-caption: 400 12px/16px var(--font-sans);
+  --t-micro: 500 11px/14px var(--font-sans); --t-micro-tracking: 0.02em;
+  --b-display: 700 48px/52px var(--font-sans); --b-display-tracking: -0.022em;
+  --b-headline: 680 32px/38px var(--font-sans); --b-headline-tracking: -0.018em;
+  --b-standfirst: 400 21px/30px var(--font-sans); --b-standfirst-tracking: -0.005em;
+  --b-title: 650 21px/28px var(--font-sans); --b-title-tracking: -0.01em;
+  --b-body: 400 17px/26px var(--font-sans);
+  --b-note: 400 14px/20px var(--font-sans);
+  --b-figure: 700 56px/56px var(--font-sans); --b-figure-tracking: -0.03em;
+  --t-mono: 400 12px/16px var(--font-mono);
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px; --space-9: 96px;
+  --r-pill: 999px;
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 320ms;
+  --measure: 680px; --measure-wide: 960px; --rail: 72px; --nav: 244px; --control: 32px; --control-sm: 26px; --touch: 44px;
+  --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+/* <<< scale */
 html, body { height: 100% }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/20px var(--font); -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100% }
 * { box-sizing: border-box }
@@ -614,6 +643,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     <button type="button" class="ni" data-view="status"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Status<span class="dot bad" id="b-status" hidden></span></button>
     <div class="spacer"></div>
     <button type="button" class="conn off" id="conn"><i aria-hidden="true"></i><span><b>PMX on this Mac</b> · <span id="conn-t">Connecting…</span></span></button>
+    <button type="button" class="conn off" id="local" hidden><i aria-hidden="true"></i><span><b>Page on this Mac</b> · <span id="local-t">Not running</span></span></button>
     <button type="button" class="ni" data-view="settings"><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg>Settings</button>
     <button type="button" class="ni" id="act-new"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg>What's new<span class="badge num" id="b-version"></span></button>
     <button type="button" class="ni" id="act-keys"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>Help &amp; shortcuts</button>
@@ -981,7 +1011,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   // ================= routes =================
   // #inbox … #logbook, #plan, #digest, #agents, #flow (the map), #status[/flow|/activity], #settings/<section>. Links from before 0.23.0
   // land on their new home: #flow, #work, #automations, #sources, #privacy/<section>, #settings/<section> and so on.
-  const STABS = ["overview", "flow", "activity"];
+  const STABS = ["overview", "setup", "flow", "activity"];
   const ALIAS = { work: ["agents"], categories: ["agents"], skills: ["agents"], connections: ["flow"], automations: ["status", "overview"], schedules: ["settings", "schedule"], sources: ["settings", "sources"], rules: ["settings", "dnr"], privacy: ["settings", "dnr"], prefs: ["settings"], search: ["today"] };
   // Old privacy and settings sections, and the "rule:<id>" fixes PMX sends, by their new section.
   const RULE = { routes: "sources", fixed: "private", domains: "customers", dnr: "dnr", sizes: "sizes", gets: "linear", agent: "kinds", budget: "limits", digest: "digestset", "review-cap": "limits", team: "account", checks: null };
@@ -1181,7 +1211,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   function approve(list) {
     if (!list.length) return;
     later(list.map((p) => `p:${p.id}`), {
-      msg: list.length > 1 ? `Approved ${list.length} tasks. They go to Linear in a few seconds.` : `Approved "${list[0].title}". It goes to Linear in a few seconds.`,
+      msg: list.length > 1 ? `Approved ${list.length} tasks. They go to your team's pool in Linear; an agent takes one only after a teammate moves it to Ready.` : `Approved "${list[0].title}". It goes to your team's pool in Linear; an agent takes it only after a teammate moves it to Ready.`,
       label: "Couldn't approve", next: true,
       run: () => act("proposals", { action: "approve", ids: list.map((p) => p.id) }),
     });
@@ -1260,11 +1290,11 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const ps = props(), ws = waiting(), fx = fixes(), prs = teamPrs();
     const total = ps.length + ws.length + fx.length + prs.length;
     return [
-      head("inbox", "ic-inbox", "Inbox", "Decisions waiting for you. Nothing reaches Linear until you approve it.",
+      head("inbox", "ic-inbox", "Inbox", "Decisions waiting for you. Nothing reaches Linear until you approve it, and an approved task waits in the team's pool until a teammate moves it to Ready.",
         [ps.length > 1 ? btn(`Approve all ${ps.length}`, { on: () => approve(ps) }) : null]),
       total ? [
         ps.length ? null : synthCard(),
-        group("Tasks to approve", ps.map(propRow), { right: chip("Only you see these until you approve"), note: "From calls with customers. Each goes to Linear only when you approve it; your own to-dos never do." }),
+        group("Tasks to approve", ps.map(propRow), { right: chip("Only you see these until you approve"), note: "From calls with customers. Each goes to your team's pool in Linear only when you approve it, and an agent takes it only after a teammate moves it to Ready. Your own to-dos never go." }),
         group("Digest", ws.map((w) => row({
           key: `dg:${w.week}`, title: `Your digest for the week of ${weekOf(w.week)} is ready`,
           ck: sysMark("paper"), meta: [h("span", null, `${plural(w.sources, "source")} cited${w.held ? ` · ${w.held} kept private` : ""}`), h("span", null, "Nothing is shared until you approve it")],
@@ -1276,9 +1306,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         }))),
         group("Team changes", prs.map((p, i) => row({
           key: `tm:${i}`, title: p.changes.join("; ") || "Team settings change", ck: sysMark("pr"),
-          meta: [h("span", null, `Waiting for a teammate to approve · opened ${when(p.at)}`)],
-          acts: [p.url ? ext(p.url, "View PR") : null],
-        })), { note: "For your information: a teammate who looks after settings approves these." }),
+          meta: [h("span", null, localBranch(p.url) ? `Saved on this Mac only: your team repo has no remote, so no teammate reviews it · ${when(p.at)}` : `Waiting for a teammate to approve · opened ${when(p.at)}`)],
+          acts: [localBranch(p.url) ? btn("Apply now", { cls: "sm pri", on: (ev) => applyTeam(localBranch(p.url), ev.currentTarget) }) : p.url ? ext(p.url, "View PR") : null],
+        })), { note: prs.some((p) => localBranch(p.url)) ? "Your team repo has no remote, so team changes wait here until you apply them." : "For your information: a teammate who looks after settings approves these." }),
       ] : D.synth ? synthCard() : empty("inbox", `Inbox zero. ${emptyApprove()}`.trim()),
     ];
   };
@@ -1416,6 +1446,37 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     }
     sheetReturn = null;
   }
+  // ================= moving work: private, a to-do in Linear, a product task (TODO-5) =================
+  const WHERE_OPTS = [["private", "Private"], ["todo", "To-do in Linear"], ["product", "Product task"]];
+  async function moveTo(ref, to, o = {}) {
+    try { const r = await act("move", { ref, to, ...o }); toast(r.message || "Moved."); }
+    catch (e) { toast(`Couldn't move it: ${e.message}`, { error: true }); if (e.code === "not_paired") lostPairing(); }
+    load();
+  }
+  // A product task needs a kind of work and a size.
+  function askProduct(ref, title) {
+    const kinds = (D && D.categories) || [];
+    if (!kinds.length) { toast("Your team hasn't set up any kinds of work yet.", { error: true }); return; }
+    const kind = h("select", { class: "in", id: "mv-kind" }, kinds.map((c) => h("option", { value: c.id }, c.name)));
+    const size = h("select", { class: "in", id: "mv-size" }, ["S", "M", "L", "XL"].map((z) => h("option", { value: z }, z)));
+    const err = h("p", { class: "err", role: "alert" });
+    const go2 = h("button", { type: "submit", class: "btn pri" }, "Move");
+    openModal(h("form", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h", onsubmit: async (ev) => {
+      ev.preventDefault();
+      busyBtn(go2, "Moving…");
+      try { const r = await act("move", { ref, to: "product", kind: kind.value, size: size.value }); closeModal(false); closeSheet(false); toast(r.message || "Moved."); load(); }
+      catch (e) { go2.disabled = false; go2.textContent = "Move"; err.textContent = e.message; }
+    } }, h("h3", { id: "m-h", tabindex: "-1" }, "Make it a product task"),
+      h("div", { class: "mb" }, h("p", null, title), h("label", { class: "swl" }, "Kind of work", kind), h("label", { class: "swl" }, "Size", size), err),
+      h("div", { class: "mf" }, btn("Cancel", { cls: "ghost", on: () => closeModal() }), go2)));
+  }
+  // A team task nobody has started, taken as the PM's own to-do: kept in Linear as theirs, or taken out of it.
+  function askTake(t) {
+    const pick = (to) => btn(to === "todo" ? "To-do in Linear" : "Private", { cls: to === "todo" ? "pri" : "", on: () => { closeModal(); moveTo(t.identifier, to); } });
+    openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, `Take ${t.identifier} as your to-do?`),
+      h("div", { class: "mb" }, h("p", null, t.title), h("p", { class: "hint" }, "Agents stop seeing it. Private also cancels it in Linear.")),
+      h("div", { class: "mf" }, btn("Cancel", { cls: "ghost", on: () => closeModal() }), pick("private"), pick("todo"))));
+  }
   const WHEN_OPTS = [["today", "Today"], ["evening", "This Evening"], ["tomorrow", "Tomorrow"], ["someday", "Someday"], ["none", "No date"]];
   function drawSheet() {
     const it = findItem(S.sheet);
@@ -1428,15 +1489,18 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       const cur = x.when === "evening" ? "evening" : x.when === "someday" ? "someday" : x.due === tmr && !x.when ? "tomorrow" : x.when === "today" ? "today" : !x.due && !x.when ? "none" : null;
       const pick = (v, label) => place(x, v === "today" ? { due: null, when: "today" } : v === "evening" ? { due: null, when: "evening" } : v === "tomorrow" ? { due: tmr, when: null } : v === "someday" ? { due: null, when: "someday" } : { due: null, when: null }, label);
       const toLinear = !!(D.rules && D.rules.todosToLinear);
+      const here = x.linear ? "todo" : "private";
       parts = [top(x.linear ? [ic("link"), ` Also in Linear as ${x.linear}`] : [ic("lock"), " Only on this Mac"]),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.text),
           h("div", null, h("div", { class: "lbl", id: "when-l" }, "When"),
             h("div", { class: "when", role: "group", "aria-labelledby": "when-l" }, WHEN_OPTS.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": cur === v ? "true" : "false", onclick: () => pick(v, l) }, l)),
               h("label", { class: "swl" }, h("span", { class: "sr-only" }, "Due date"), h("input", { class: "in", type: "date", value: x.due || "", "aria-label": "Due date", onchange: (ev) => { if (ev.target.value) place(x, { due: ev.target.value, when: null }, dayLabel(ev.target.value)); } })))),
-          h("div", null, h("div", { class: "lbl" }, "From"), h("p", null, x.from === "Added by you" ? "You added it." : `${x.from}. The meeting stays on this Mac; only this to-do is shown here.`)),
-          x.linear ? null : h("p", { class: "hint" }, toLinear ? "Send to Linear shares only these words with your team, never the meeting's title or transcript." : "To-dos never leave this Mac. To track your own commitments in Linear, turn that on in Settings, under What Linear gets.")),
-        h("div", { class: "foot" }, btn("Mark done", { cls: "pri", icon: "check", on: () => { closeSheet(); complete(x); } }),
-          toLinear && !x.linear ? btn("Send to Linear", { on: async (ev) => { busyBtn(ev.currentTarget, "Sending…"); try { const r = await act("todo-linear", { id: x.id }); toast(r.message || "Sent."); } catch (e) { toast(`Couldn't send it: ${e.message}`, { error: true }); } await load(); } }) : null)];
+          h("div", null, h("div", { class: "lbl", id: "where-l" }, "Where"),
+            h("div", { class: "when", role: "group", "aria-labelledby": "where-l" }, WHERE_OPTS.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": here === v ? "true" : "false",
+              disabled: v !== "private" && !x.linear && !toLinear, onclick: () => { if (v === here) return; if (v === "product") askProduct(x.id, x.text); else { closeSheet(); moveTo(x.id, v); } } }, l)))),
+          h("div", null, h("div", { class: "lbl" }, "From"), h("p", null, x.from === "Added by you" ? "You added it." : /^Moved from /.test(x.from) ? `${x.from}.` : `${x.from}. The meeting stays on this Mac; only this to-do is shown here.`)),
+          x.linear ? null : h("p", { class: "hint" }, toLinear ? "Linear gets only these words, never the meeting's title or transcript." : "To move it to Linear, turn that on in Settings, under What Linear gets.")),
+        h("div", { class: "foot" }, btn("Mark done", { cls: "pri", icon: "check", on: () => { closeSheet(); complete(x); } }))];
     } else if (it.type === "proposal") {
       parts = [top("Proposed task · not in Linear yet"),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.title),
@@ -1446,7 +1510,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("div", { class: "two" },
             h("div", null, h("div", { class: "lbl" }, "Linear gets"), h("ul", null, h("li", null, "This title and summary"), h("li", null, "Kind of work and size"), h("li", null, "How many sources, and their dates"))),
             h("div", null, h("div", { class: "lbl" }, "Never gets"), h("ul", null, h("li", null, "Transcripts or quotes"), h("li", null, "Meeting titles"), h("li", null, "Who was in the meeting"))))),
-        h("div", { class: "foot" }, btn("Approve and send", { cls: "pri", on: () => { closeSheet(); approve([x]); } }), btn("Drop", { on: () => { closeSheet(); drop(x); } }))];
+        h("div", { class: "foot" }, btn("Approve and send", { cls: "pri", on: () => { closeSheet(); approve([x]); } }), btn("Keep as my to-do", { on: () => { closeSheet(); moveTo(x.id, "private"); } }), btn("Drop", { on: () => { closeSheet(); drop(x); } }))];
     } else {
       const ta = h("textarea", { class: "in", rows: 3, id: "sheet-note", "data-fk": `sheetnote-${k}`, maxlength: 2000, placeholder: "For a redo or reject: what should change, or why not", "aria-label": `Note for ${x.identifier}`, value: notes[k] || "", oninput: (ev) => (notes[k] = ev.target.value) });
       const need = (v) => { if (!(notes[k] || "").trim()) { ta.focus(); toast(v === "redo" ? "Add a note first, so the agent knows what to change." : "Add a note first, so the team knows why."); return; } closeSheet(); decide(x, v); };
@@ -1527,9 +1591,14 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         h("p", null, "Approved tasks land in the pool. A teammate moves the ones worth doing to Ready, and agents take only Ready tasks.")),
         D.boardUrl ? ext(D.boardUrl, "Open the team board", "btn pri") : h("div", null, h("p", { class: "small muted" }, "Your team's board isn't published in Claude yet."), terminal("/pmx-board"))),
       unknown.length ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Linear has tasks of a kind PMX doesn't know: "), unknown.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds that kind of work.")) : null,
+      (D.pool || []).length ? group("Not started", D.pool.map((t) => row({
+        key: `pl:${t.identifier}`, ghost: true, title: t.title, ck: sysMark("plan"),
+        meta: [chip(t.identifier), chip(t.status === "ready" ? "Ready" : "Pool"), t.category ? h("span", null, catName(t.category)) : null],
+        acts: [btn("Take as my to-do", { cls: "sm", on: () => askTake(t) })],
+      })), { plain: true }) : null,
       cats.length ? group("By kind of work", cats.map((c) => {
         const t = c.tasks || {};
-        const f = [[t.proposed, "to approve"], [t.inbox, "in the pool"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "rejected"]].filter(([n]) => n);
+        const f = [[t.proposed, "to approve"], [t.inbox, "in the pool"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "blocked"]].filter(([n]) => n);
         return row({ key: `pc:${c.id}`, ghost: true, title: c.name, ck: sysMark("plan"), meta: f.length ? f.map(([n, l]) => chip(`${n} ${l}`)) : [h("span", null, "No tasks of this kind yet.")] });
       }), { plain: true }) : empty("plan", "Your team hasn't set up any kinds of work yet, so there's nothing to plan."),
     ];
@@ -1650,6 +1719,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   ];
   const SZ = ["S", "M", "L", "XL"];
   const winText = () => (hours <= 24 ? "today" : `in the last ${Math.round(hours / 24)} days`);
+  // Why a kind of work is paused, as PMX gave it, without the command that resumes it: the page has its own Resume.
+  const pauseText = (why) => { const t = why.replace(/`([^`]+)`/g, "$1").replace(/[;.]?\s*(Run:?|unpause with)\s*pmx review --unpause \S+\.?/i, ""); return `${t.charAt(0).toUpperCase()}${t.slice(1)}${t.endsWith(".") ? "" : "."}`; };
+  const pauseLabel = (why) => /without a draft/.test(why) ? "Paused: runs keep failing" : /^accept rate/.test(why) ? "Paused: too many rejections" : "Paused";
   function quality(c) {
     const r = c.reviews, decided = r.accepted + r.redo + r.rejected;
     if (c.paused) return ["Paused", "bad"];
@@ -1666,7 +1738,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const splitName = (what) => { const m = (what || "").replace(/`([^`]+)`/g, "$1").match(/^([^.]{2,48})\.\s+(.+)$/s); return m ? [m[1], m[2]] : [what || "", ""]; };
   function categoryCard(c) {
     const t = c.tasks, r = c.reviews;
-    const flight = [[t.proposed, "to approve"], [t.inbox, "in the pool"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "rejected"]].filter(([n]) => n);
+    const flight = [[t.proposed, "to approve"], [t.inbox, "in the pool"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "blocked"]].filter(([n]) => n);
     const decided = r.accepted + r.redo + r.rejected;
     const [q, qk] = quality(c);
     const taking = state && state.accept[c.id] !== undefined ? state.accept[c.id] : c.takenOn;
@@ -1677,7 +1749,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       h("header", null,
         h("div", null, h("h3", null, c.name), h("p", null, c.produces || "Its instructions don't say what it produces.")),
         h("div", { class: "chips" }, c.externalFacing ? chip("Customer-facing") : null, chip(q, qk), chip(taking ? "Your agent takes these" : "Your agent skips these", taking ? "k" : ""))),
-      c.paused ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Agents don't take these right now. "), c.paused.replace(/`([^`]+)`/g, "$1").replace(/\s*Run:?\s*pmx review --unpause \S+\.?/i, "")), btn("Resume", { cls: "sm", on: (ev) => resume(c.id, ev.currentTarget) })) : null,
+      c.paused ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Agents don't take these right now. "), pauseText(c.paused)), btn("Resume", { cls: "sm", on: (ev) => resume(c.id, ev.currentTarget) })) : null,
       c.skill.missing ? h("div", { class: "banner bad", role: "note" }, h("span", null, `Its instructions (${c.skill.name}) are missing, so agents can't draft this kind of work. Ask whoever set up your team.`)) : null,
       h("div", { class: "cb" },
         h("div", null, h("span", { class: "lab" }, "Team's tasks"),
@@ -1758,6 +1830,30 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         a.run ? btn(isRunning ? "Running…" : "Run now", { cls: "sm", icon: isRunning ? null : "play", disabled: isRunning, on: (ev) => runNow(a.run, ev.currentTarget) }) : a.runNote ? h("small", { class: "faint" }, a.runNote) : null),
       a.fix && a.status !== "ok" ? h("div", { class: `fix${a.status === "failed" ? "" : " warn"}` }, h("span", null, a.fix.text), " ", fixControls(a.fix)) : null);
   }
+  // BOARD-9: team changes in a repo with no remote are a local branch ("branch:<name>"), applied from here.
+  const localBranch = (u) => (u && u.startsWith("branch:") ? u.slice(7) : null);
+  async function applyTeam(branch, el) {
+    if (el) busyBtn(el, "Applying…");
+    try { const r = await act("team-apply", { branch }); toast(r.message || "Applied."); await load(); }
+    catch (e) { render(); toast(`Couldn't apply them: ${e.message}`, { error: true }); }
+  }
+  // SETUP-1: where this Mac stands, step by step, from PMX's checklist (the background job refreshes it every pass).
+  const SETUP_PILL = { done: ["Done", ""], todo: ["To do", "bad"], warn: ["Look at this", "warn"], skip: ["Off", "off"] };
+  function setupCard(full) {
+    const s = D.setup;
+    if (!s) return full ? h("p", { class: "muted" }, "PMX hasn't worked out its checklist on this Mac yet. It does on the background job's next pass; in the Claude app, /pmx-setup does it now.") : null;
+    const left = s.counts.todo + s.counts.warn;
+    return h("section", { class: "sc", id: "setup-summary" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "Where you stand"), h("small", null, `${s.counts.done} steps done${left ? `, ${left} to look at` : ""} · checked ${low(when(s.at))}`)),
+      full ? null : btn("See every step", { cls: "sm ghost", on: () => { S.stab = "setup"; setRoute(true); render(); } })),
+      h("div", { class: "sc-b" }, h("div", { class: "sr" }, h("div", { class: "nm" }, s.where, s.next ? h("small", null, `Next: ${s.next.title}. ${s.next.page}`) : h("small", null, "Nothing left to do.")))));
+  }
+  function setupSteps() {
+    const s = D.setup;
+    return [setupCard(true), ...(s ? s.sections.map((sec) => h("section", { class: "sc", id: `setup-${sec.id}` }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, sec.title))),
+      h("div", { class: "sc-b" }, sec.steps.map((st) => h("div", { class: "sr", id: `setup-step-${st.id.replace(/[^a-z0-9-]/gi, "-")}` },
+        h("div", { class: "nm" }, st.title, h("small", null, st.detail), st.page ? h("small", null, h("b", null, "Next: "), st.page) : null),
+        pill(...SETUP_PILL[st.status])))))) : [])];
+  }
   function overview() {
     const checks = [...(D.checks || [])].sort((a, b) => ({ violated: 0, unknown: 1, ok: 2 }[a.status] - { violated: 0, unknown: 1, ok: 2 }[b.status]));
     const a = D.automations || [];
@@ -1765,6 +1861,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const tickA = a.find((x) => x.id === "job");
     return [
       healthLine(),
+      setupCard(false),
       h("section", { class: "sc" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "Privacy checks"), h("small", null, "PMX checks its own work every time it runs, comparing what it read against what reached Linear."))),
         h("div", { class: "sc-b" }, checks.length ? checks.map((c) => h("div", { class: "sr", id: `check-${c.id}` }, h("div", { class: "nm" }, c.label, h("small", null, c.detail)),
           pill(c.status === "ok" ? "Passed" : c.status === "violated" ? "Failed" : "Not run yet", c.status === "ok" ? "" : c.status === "violated" ? "bad" : "off")))
@@ -1798,20 +1895,22 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         "Sent to Claude with emails, phone numbers and names removed, and with no tools. 1:1s, hiring and anything on your do-not-read list never get here.", null],
       ["mac", "You decide", "On this Mac", [li("To-dos found", n0("t-t")), li("Tasks proposed", n0("d-a")), li("Dropped", n0("a-x")), li("Waiting for you now", props().length)],
         "Proposed tasks wait on this Mac exactly as Linear would get them. To-dos never leave this Mac.", { label: "Open Inbox", go: () => go("inbox") }],
-      ["linear", "Linear", "Your team's project", [li("Sent to Linear", n0("a-i"), "tasks"), li("Ready for agents now", n0("i-r"))],
+      ["linear", "Linear", "Your team's project", [li("Sent to Linear", n0("a-i"), "tasks"), li("In the pool now", n0("i-b"))],
         "A title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes.", { label: "Open Plan", go: () => go("plan") }],
+      ["linear", "Team board", "A teammate picks", [li("Ready to build now", n0("i-r"))],
+        "On your team's PMX board in Claude, a teammate moves the pool's tasks worth an agent's time to Ready. Agents take only Ready tasks; moving an issue between Linear's own status columns changes nothing.", D.boardUrl ? { label: "Open the team board", href: D.boardUrl } : { label: "Open Plan", go: () => go("plan") }],
       ["claude", "Agents draft", "Your team's agents", [li("Agent runs", n0("r-g"), tok(D.edges["r-g"] && D.edges["r-g"].tokens)), li("Drafts made", n0("g-v"))],
         "An agent takes one Ready task at a time, within your budget and review limit, and drafts it with the task text and team memory.", { label: "Open Agents", go: () => go("agents") }],
       ["", "Review", "For you", [li("Waiting for review", drafts().length), li("Accepted", n0("v-d"))],
         "Accept keeps a draft for your team; a redo or reject needs a short note and lowers that kind of work's accept rate.", { label: "Open Today", go: () => go("today") }],
     ];
-    const ids = [["c-f", "s-f"], ["f-h"], ["f-t", "f-d"], ["t-t", "d-a", "a-x"], ["a-i"], ["r-g", "g-v"], ["v-d"]];
+    const ids = [["c-f", "s-f"], ["f-h"], ["f-t", "f-d"], ["t-t", "d-a", "a-x"], ["a-i"], ["i-r"], ["r-g", "g-v"], ["v-d"]];
     return [
       h("p", { class: "small muted" }, `How meetings move through PMX ${winText()}. Transcripts never leave this Mac; Linear gets a task summary, and only after you approve it.`),
       h("ol", { class: "steps", "aria-label": "PMX's steps, in order" }, steps.map(([k, title, tag, lines, text, link], i) => h("li", { class: `step ${k}` },
         h("div", { class: "rail", "aria-hidden": "true" }, h("span", null, String(i + 1)), h("i")),
         h("div", { class: "box" }, h("header", null, h("b", null, title), chip(tag, k === "mac" ? "ok" : k === "claude" ? "k" : k === "linear" ? "warn" : "")),
-          h("ul", null, lines), lastLine(...ids[i]), h("p", null, text), link ? h("div", { class: "fixacts" }, btn(link.label, { cls: "sm ghost", on: link.go })) : null)))),
+          h("ul", null, lines), lastLine(...ids[i]), h("p", null, text), link ? h("div", { class: "fixacts" }, link.href ? ext(link.href, link.label, "btn sm ghost") : btn(link.label, { cls: "sm ghost", on: link.go })) : null)))),
     ];
   }
   const ACT_TAB = { today: ["today"], digest: ["digest"], work: ["agents"], flow: ["flow"], automations: ["status"], settings: ["settings"], sources: ["settings", "sources"], inbox: ["inbox"] };
@@ -1832,7 +1931,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return [
       head("shield", "", "Status", "Whether PMX is healthy and kept your data where it should.", [S.stab === "overview" ? null : winSelect()]),
       tabs,
-      h("div", { id: "stab-panel", role: "tabpanel", "aria-labelledby": `stab-${S.stab}` }, S.stab === "flow" ? flowSteps() : S.stab === "activity" ? activity() : overview()),
+      h("div", { id: "stab-panel", role: "tabpanel", "aria-labelledby": `stab-${S.stab}` }, S.stab === "flow" ? flowSteps() : S.stab === "activity" ? activity() : S.stab === "setup" ? setupSteps() : overview()),
     ];
   };
 
@@ -1852,14 +1951,15 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       todos:    { col: 4, y: 70, kind: "mac", tag: "ON YOUR MAC", title: "Your to-dos", sub: "stay on your Mac", queue: true },
       approve:  { col: 4, y: 190, kind: "mac", tag: "ON YOUR MAC", title: "You approve", sub: "you say yes or no", queue: true },
       dropped:  { col: 4, y: 320, kind: "mac", tag: "ON YOUR MAC", title: "Dropped", sub: "you said no" },
-      inbox:    { col: 5, y: 190, kind: "linear", tag: "IN LINEAR", title: "Linear inbox", sub: "PMX project" },
-      ready:    { col: 5, y: 320, kind: "linear", tag: "IN LINEAR", title: "Ready", sub: "picked for an agent", queue: true },
+      inbox:    { col: 5, y: 100, kind: "linear", tag: "IN LINEAR", title: "Pool", sub: "approved, not picked yet", queue: true },
+      board:    { col: 5, y: 215, kind: "linear", tag: "TEAM BOARD", title: "Team board", sub: "a teammate picks" },
+      ready:    { col: 5, y: 330, kind: "linear", tag: "IN LINEAR", title: "Ready to build", sub: "agents take only these", queue: true },
       agent:    { col: 4, y: 470, kind: "claude", tag: "CLAUDE AGENT", title: "Agent drafts", sub: "using its instructions" },
       review:   { col: 3, y: 470, kind: "repo", tag: "FOR YOU", title: "Drafts to review", sub: "accept, redo or reject", queue: true },
       done:     { col: 2, y: 470, kind: "repo", tag: "DONE", title: "Accepted", sub: "kept for your team" },
     };
     // The order the arrow keys and the list view walk the steps in: the way work flows.
-    const ORDER = ["collect", "filter", "held", "findtodo", "todos", "draft", "approve", "dropped", "inbox", "ready", "agent", "review", "done"];
+    const ORDER = ["collect", "filter", "held", "findtodo", "todos", "draft", "approve", "dropped", "inbox", "board", "ready", "agent", "review", "done"];
     const FIXED_EDGES = [
       ["c-f", "collect", "filter", "full", "Transcript files on this Mac. Nothing has left it at this point."],
       ["s-f", "slack", "filter", "status", "Threads from the channels your team approved, copied by your Claude app through your own connector. Never DMs."],
@@ -1870,7 +1970,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       ["d-a", "draft", "approve", "status", "Proposed tasks wait on this Mac, exactly as Linear would get them. Linear has none of them yet."],
       ["a-x", "approve", "dropped", "status", "Tasks you dropped. Nothing about them reaches Linear."],
       ["a-i", "approve", "inbox", "linear", "Title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes."],
-      ["i-r", "inbox", "ready", "status", "Tasks a teammate moved to Ready, counted now rather than over the window. Only Ready tasks are picked up."],
+      ["i-b", "inbox", "board", "status", "Approved tasks waiting in the pool, counted now rather than over the window. Your team's board shows them to a teammate, who decides which are worth an agent's time."],
+      ["i-r", "board", "ready", "status", "Tasks a teammate moved to Ready on the team board, counted now rather than over the window. Only Ready tasks are picked up. Moving an issue between Linear's own status columns changes nothing: PMX goes by its pmx-status label."],
       ["r-g", "ready", "agent", "model", "Your agent took a Ready task within your budget and review limit, and drafted it in PMX's own Claude setup with the task text and team memory.", "uturn"],
       ["g-v", "agent", "review", "status", "A draft in your team's repo, with a record of how it was made."],
       ["v-d", "review", "done", "status", "Someone accepted it. Rejected drafts lower that kind of work's accept rate."],
@@ -1887,8 +1988,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       todos: ["Your to-dos from your own meetings. They never leave this Mac.", [], null, "anytime"],
       approve: ["Every proposed task waits here until you approve or drop it. Approving sends it to Linear's inbox; dropping sends nothing.", ["gets"], "approve", "inbox"],
       dropped: ["Tasks you dropped. Nothing about them reaches Linear.", []],
-      inbox: ["Approved tasks arrive in Linear's PMX project as Inbox. A teammate moves the ones worth doing to Ready.", ["gets"], "linear", "plan"],
-      ready: ["Tasks a teammate moved to Ready. Agents pick up only these.", ["agent"], null, "plan"],
+      inbox: ["Approved tasks arrive in Linear's PMX project, in the pool. No agent takes them from here: they wait until a teammate picks them on the team board.", ["gets"], "linear", "plan"],
+      board: ["Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. A teammate looks at the pool and moves the tasks worth an agent's time to Ready. Approving decides what may leave your Mac; this step decides what agents spend budget on.", [], null, "plan"],
+      ready: ["Tasks a teammate moved to Ready. Agents pick up only these, one per pass, within each PM's budget and review limit.", ["agent"], null, "plan"],
       agent: ["Your agent takes one Ready task per pass, if it fits your budget and fewer drafts than your review limit are waiting. Each kind of work has its own instructions under Agents.", ["agent", "budget"], "pull"],
       review: ["Drafts made by agents, in your team's repo. Accept, ask for a redo, or reject.", ["agent"], "review", "today"],
       done: ["Accepted drafts. Each one's record shows how it was made and what it cost.", []],
@@ -1896,7 +1998,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       email: ["PMX doesn't read email.", []],
     };
     const RULELABEL = { routes: "Sources", fixed: "Always private", domains: "Who counts as a customer", dnr: "Do-not-read list", sizes: "Sizes", gets: "What Linear gets", agent: "Kinds of work", budget: "Budget and limits" };
-    const QUEUE_WORD = { approve: "to approve", review: "to review", todos: "open", ready: "ready" };
+    const QUEUE_WORD = { approve: "to approve", review: "to review", todos: "open", inbox: "in the pool", ready: "ready to build" };
+    // Arrows that count what's there now, not what moved in the window.
+    const NOW_EDGE = { "i-b": "In the pool now", "i-r": "Ready now" };
     const GO_WORD = { inbox: "Open Inbox", today: "Open Today", anytime: "Open Anytime", plan: "Open Plan" };
     const SVGN = "http://www.w3.org/2000/svg";
     // SVG elements. Styles go through the CSSOM: the local page's policy refuses style attributes.
@@ -1953,6 +2057,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       if (id === "approve") return D.needs.proposals;
       if (id === "review") return D.needs.drafts;
       if (id === "todos") return D.needs.todos || 0;
+      if (id === "inbox") return D.edges && D.edges["i-b"] ? D.edges["i-b"].n : 0;
       if (id === "ready") return D.edges && D.edges["i-r"] ? D.edges["i-r"].n : 0;
       return null;
     }
@@ -1970,7 +2075,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       const eg = s("g"), ng = s("g"), bg = s("g");
       for (const e of edges) {
         const g = geom(e);
-        eg.append(s("g", { class: `edge e-${e.kind}`, id: `edge-${e.id}`, "data-fk": `fe-${e.id}`, tabindex: -1, role: "button", "aria-label": `${edgeName(e)}: ${e.kind === "off" ? "not connected" : `${e.n} ${e.unit} ${e.id === "i-r" ? "now" : winText()}`}`, ...activate(() => select("edge", e.id, { user: true })) },
+        eg.append(s("g", { class: `edge e-${e.kind}`, id: `edge-${e.id}`, "data-fk": `fe-${e.id}`, tabindex: -1, role: "button", "aria-label": `${edgeName(e)}: ${e.kind === "off" ? "not connected" : `${e.n} ${e.unit}${NOW_EDGE[e.id] ? "" : ` ${winText()}`}`}`, ...activate(() => select("edge", e.id, { user: true })) },
           s("path", { class: "l", d: g.d, id: `path-${e.id}`, "marker-end": `url(#ar-${e.kind})` }), s("path", { class: "hit", d: g.d })));
         if (e.kind === "off") continue;
         const grew = prevN && prevN[e.id] !== undefined && e.n > prevN[e.id];
@@ -2083,7 +2188,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         const [cls, lead] = KINDTEXT[e.kind];
         const rules = e.to === "held" || e.from === "filter" ? ["fixed", "dnr"] : e.to === "inbox" ? ["gets"] : nodes[e.from].col === 0 ? ["routes"] : e.to === "agent" ? ["agent", "budget"] : [];
         return [toMap(), h("div", { class: "eyebrow" }, "Connection"), h("h2", { id: "fdetail-h", tabindex: "-1" }, `${nodes[e.from].title} → ${nodes[e.to].title}`),
-          h("dl", { class: "kv" }, h("dt", null, e.id === "i-r" ? "Ready now" : `Moved ${winText()}`), h("dd", null, e.kind === "off" ? "—" : `${e.n} ${e.unit}`),
+          h("dl", { class: "kv" }, h("dt", null, NOW_EDGE[e.id] || `Moved ${winText()}`), h("dd", null, e.kind === "off" ? "—" : `${e.n} ${e.unit}`),
             e.tokens ? [h("dt", null, "Text sent to Claude"), h("dd", null, `${fmt(e.tokens)} tokens`)] : null,
             h("dt", null, "Last time"), h("dd", null, e.kind === "off" ? "never" : when(e.last))),
           h("div", { class: `carry ${cls}` }, h("b", null, `${lead} `), e.carries),
@@ -2095,6 +2200,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       const [what, rules, autoId, where] = NODE_INFO[fsel.id] ?? [n.col === 0 ? "A meeting app. PMX never talks to it directly: the collection task in your Claude app reads it through your connector." : "", n.col === 0 ? ["routes"] : []];
       const out = [toMap(), h("div", { class: "eyebrow" }, n.tag || "Source"), h("h2", { id: "fdetail-h", tabindex: "-1" }, n.title), h("p", { class: "muted small" }, what)];
       const q = queueCount(fsel.id);
+      if (fsel.id === "board") {
+        out.push(h("dl", { class: "kv" }, h("dt", null, "In the pool now"), h("dd", null, String(queueCount("inbox") ?? 0)), h("dt", null, "Ready to build now"), h("dd", null, String(queueCount("ready") ?? 0))));
+        out.push(D.boardUrl ? h("div", { class: "links" }, ext(D.boardUrl, "Open the team board", "btn sm pri")) : h("div", null, h("p", { class: "small muted" }, "Your team's board isn't published in Claude yet."), terminal("/pmx-board")));
+      }
       if (where) out.push(h("div", { class: "links" }, q !== null ? h("span", { class: "small" }, h("b", null, String(q ?? 0)), ` ${QUEUE_WORD[fsel.id]}`) : null, btn(`${GO_WORD[where]} →`, { cls: q ? "sm pri" : "sm", fk: "fd-go", on: () => go(where) })));
       if (fsel.id === "filter" || fsel.id === "held") {
         out.push(h("h3", null, `Kept private ${winText()}, by reason`));
@@ -2326,7 +2435,13 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const r = (await act("what-if", { kind, value: v })).whatIf || {};
     return kind === "title" && r.meetings != null ? `it would have kept ${plural(r.meetings, "meeting")} and ${plural(r.tasks || 0, "task")} out in the last 14 days. ${r.note || ""}` : r.note || "PMX skips it from the next run.";
   };
-  const teamWaiting = () => { const prs = teamPrs(); return prs.length ? h("div", { class: "banner", role: "note" }, h("span", null, `${plural(prs.length, "team change is", "team changes are")} waiting for a teammate's approval.`), prs[prs.length - 1].url ? ext(prs[prs.length - 1].url, "View", "btn sm") : null) : null; };
+  const teamWaiting = () => {
+    const prs = teamPrs();
+    if (!prs.length) return null;
+    const last = prs[prs.length - 1], solo = localBranch(last.url);
+    return h("div", { class: "banner", role: "note" }, h("span", null, solo ? `${plural(prs.length, "team change is", "team changes are")} saved on this Mac: your team repo has no remote, so no teammate reviews ${prs.length === 1 ? "it" : "them"}. Apply ${prs.length === 1 ? "it" : "them"} to use ${prs.length === 1 ? "it" : "them"}.` : `${plural(prs.length, "team change is", "team changes are")} waiting for a teammate's approval.`),
+      solo ? btn("Apply now", { cls: "sm pri", on: (ev) => applyTeam(solo, ev.currentTarget) }) : last.url ? ext(last.url, "View", "btn sm") : null);
+  };
 
   // ================= Settings: sections =================
   const PREFS = [
@@ -2491,7 +2606,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       h("div", null, h("b", null, "Never has"), h("ul", null, h("li", null, "Transcript text or quotes (PMX drops a task that repeats 8 words of a meeting)"), h("li", null, "Meeting titles or attendees"), h("li", null, "Your to-dos, unless you send one yourself (below)"))),
       h("div", null, h("b", null, "Not in Linear at all"), h("ul", null, h("li", null, "Which meetings were processed: that's recorded in your team's repo, under codes only your team can match"))))), { badge: scopeChip("fixed") }),
       card("Your own to-dos", "Off unless you turn it on. To-dos come from all your meetings, 1:1s included, so they stay on this Mac.", h("div", { class: "sr" },
-        h("div", { class: "nm" }, "Let me send a to-do to Linear", h("small", null, "Adds Send to Linear to each to-do. Only that to-do's words go, as a commitment no agent picks up; never the meeting's title, transcript or attendees. Nothing is sent until you choose a to-do.")),
+        h("div", { class: "nm" }, "Let me send a to-do to Linear", h("small", null, "Lets a to-do move to Linear, as your own to-do or a product task. Only its words go; never the meeting's title, transcript or attendees. Nothing is sent until you move one.")),
         h("div", { class: "ctl" }, state.todosLinear !== original.todosLinear ? chip("Not saved yet", "new") : null, sw(state.todosLinear, "Let me send my own to-dos to Linear", () => { state.todosLinear = !state.todosLinear; changed(); }, { fk: "sw-todos-linear" }))), { badge: scopeChip("me") })]],
     schedule: ["Schedule", "What runs on its own. Run now starts it on this Mac and shows how it went.", () => {
       const a = D.automations || [];
@@ -2525,7 +2640,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         const c = cats.find((x) => x.id === k), req = !!state.required[k], on = req || !!state.accept[k];
         const rate = c && c.reviews.rate != null ? `Accepted ${Math.round(c.reviews.rate * 100)}%` : "No reviews yet";
         const broken = c && c.envProblems && c.envProblems.length ? c.envProblems : null;
-        const status = broken ? pill("Won't run", "bad") : c && c.paused ? pill("Paused: too many rejections", "bad") : pill(on ? "Taking work" : "Skipping", on ? "" : "off");
+        const status = broken ? pill("Won't run", "bad") : c && c.paused ? pill(pauseLabel(c.paused), "bad") : pill(on ? "Taking work" : "Skipping", on ? "" : "off");
         const pend = req !== original.required[k] ? chip("Not saved yet", "new") : on !== (original.required[k] || original.accept[k]) ? chip("Not saved yet", "new") : null;
         const ctlOn = req
           ? h("span", { class: "swl", "data-fk": `kind-req-${k}` }, ic("lock"), "Required by your team")
@@ -2580,12 +2695,30 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("div", { class: "sr" }, h("div", { class: "nm" }, "Connection", h("small", null, LOCAL ? "This page is served by PMX on this Mac. Buttons run here." : "This page reaches PMX on this Mac through the Claude app. Titles travel to this page only; they aren't stored on claude.ai or sent to Claude.")),
             pill(conn.state === "ok" && !conn.stale ? "Connected" : "Not answering", conn.state === "ok" && !conn.stale ? "" : "bad"),
             LOCAL ? null : btn("Disconnect this page", { cls: "sm danger", on: confirmUnpair })),
+          LOCAL ? null : h("div", { class: "sr" }, h("div", { class: "nm" }, "Page on this Mac", h("small", null, "This same page, served by PMX on this Mac outside Claude. It answers faster and works while the Claude app is closed. PMX opens it in your browser; its link never passes through Claude.")),
+            pill(localOn() ? `Running since ${hm(D.localPage.since)}` : "Not running", localOn() ? "" : "off"),
+            btn(localOn() ? "Open" : "Start and open", { cls: "sm pri", fk: "local-open", on: (ev) => openLocal(ev.currentTarget) }),
+            localOn() ? btn("Stop", { cls: "sm", fk: "local-stop", on: (ev) => stopLocal(ev.currentTarget) }) : null),
           h("div", { class: "sr" }, h("div", { class: "nm" }, "Appearance", h("small", null, "Follow your Mac, or always light or dark.")), themeButtons()),
         ]),
-        prs.length ? card("Team changes waiting", "Nothing changes for anyone until a teammate approves.", prs.map((p) => h("div", { class: "sr" }, h("div", { class: "nm" }, p.changes.join("; "), h("small", null, `Opened ${when(p.at)}`)), p.url ? ext(p.url, "View PR") : null))) : null,
+        prs.length ? card("Team changes waiting", prs.some((p) => localBranch(p.url)) ? "Your team repo has no remote, so these wait on this Mac until you apply them." : "Nothing changes for anyone until a teammate approves.", prs.map((p) => h("div", { class: "sr" }, h("div", { class: "nm" }, p.changes.join("; "), h("small", null, `${localBranch(p.url) ? "Saved" : "Opened"} ${when(p.at)}`)),
+          localBranch(p.url) ? btn("Apply now", { cls: "sm pri", on: (ev) => applyTeam(localBranch(p.url), ev.currentTarget) }) : p.url ? ext(p.url, "View PR") : null))) : null,
       ];
     }],
   };
+  // BOARD-8: this Mac's own page, from the page in Claude. PMX starts it if needed and opens it in the browser itself.
+  const localOn = () => !!(D && D.localPage && D.localPage.running);
+  async function openLocal(el) {
+    if (el) busyBtn(el, localOn() ? "Opening…" : "Starting…");
+    else toast(localOn() ? "Opening PMX's page on this Mac…" : "Starting PMX's page on this Mac…");
+    try { const r = await act("local-page", { action: "open" }); if (r.localPage) D.localPage = r.localPage; render(); toast(r.message || "Opened in your browser."); }
+    catch (e) { render(); toast(`Couldn't open it: ${e.message}`, { error: true }); }
+  }
+  async function stopLocal(el) {
+    if (el) busyBtn(el, "Stopping…");
+    try { const r = await act("local-page", { action: "stop" }); if (r.localPage) D.localPage = r.localPage; render(); toast(r.message || "Stopped."); }
+    catch (e) { render(); toast(`Couldn't stop it: ${e.message}`, { error: true }); }
+  }
   function confirmUnpair() {
     const go2 = btn("Disconnect", { cls: "pri", on: async (ev) => {
       busyBtn(ev.currentTarget, "Disconnecting…");
@@ -2648,7 +2781,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       kindBusy = false;
       if (r.prError) { kindMsg = { ok: false, text: `It couldn't be sent: ${r.prError}` }; render(); toast("The new kind of work couldn't be sent.", { error: true }); return; }
       kindForm = BLANK_KIND();
-      kindMsg = { ok: true, text: `Sent "${draft.name}" to your team for approval. When it merges, every PM on the team has it${draft.required ? " and their agents take it" : ", and your agent takes it"}.`, url: r.pr && r.pr.url };
+      kindMsg = localBranch(r.pr && r.pr.url)
+        ? { ok: true, text: `Saved "${draft.name}" on this Mac. Your team repo has no remote, so no teammate reviews it: apply it in the Inbox (Team changes) to add it.` }
+        : { ok: true, text: `Sent "${draft.name}" to your team for approval. When it merges, every PM on the team has it${draft.required ? " and their agents take it" : ", and your agent takes it"}.`, url: r.pr && r.pr.url };
       // Other unsaved settings stay as they are: the reload keeps edits in progress.
       await load();
       // The PM pressed Send, so the form redraws now even if a field still has focus.
@@ -2730,8 +2865,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       await load();
       if (keepTeam && state) { for (const k of TEAMKEYS) state[k] = keepTeam[k]; render(); }
       const saidMine = (r.applied || []).length ? `Saved for you: ${r.applied.join(" · ")}.` : mine ? "Saved your changes." : "";
-      result = { ok: !r.prError, text: [saidMine, r.pr ? "Sent your team's changes for approval." : "", r.prError ? `The team proposal couldn't be sent: ${r.prError}. Your team edits are still on the page; try again.` : ""].filter(Boolean).join(" "), link: r.pr && r.pr.url ? ext(r.pr.url, "View the pull request", "btn sm") : null };
-      toast(r.prError ? (mine ? "Saved your own changes. The team proposal failed." : "The team proposal failed.") : r.pr ? (mine ? "Saved, and your team's changes are waiting for approval." : "Your team's changes are waiting for approval.") : teamN ? "Saved." : "Saved your changes. They apply from the next run.", { error: !!r.prError });
+      const solo = r.pr && localBranch(r.pr.url);
+      result = { ok: !r.prError, text: [saidMine, solo ? "Saved your team's changes on this Mac. Your team repo has no remote, so no teammate reviews them: apply them in the Inbox to use them." : r.pr ? "Sent your team's changes for approval." : "", r.prError ? `The team proposal couldn't be sent: ${r.prError}. Your team edits are still on the page; try again.` : ""].filter(Boolean).join(" "), link: r.pr && r.pr.url && !solo ? ext(r.pr.url, "View the pull request", "btn sm") : null };
+      toast(r.prError ? (mine ? "Saved your own changes. The team proposal failed." : "The team proposal failed.") : solo ? "Saved. Apply your team's changes in the Inbox." : r.pr ? (mine ? "Saved, and your team's changes are waiting for approval." : "Your team's changes are waiting for approval.") : teamN ? "Saved." : "Saved your changes. They apply from the next run.", { error: !!r.prError });
     } catch (e) {
       applying = false;
       if (e.status === 409) { loosenOk = false; result = { ok: false, text: "Some of these let more of your meetings through. Tick the box to confirm, then save again." }; }
@@ -2834,6 +2970,12 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     cc.className = `conn${connected ? "" : conn.state === "error" || conn.stale ? " bad" : " off"}`;
     $("conn-t").textContent = connected ? "Connected" : conn.state === "pairing" ? "Waiting for your OK" : conn.state === "connect" || conn.state === "declined" ? "Not connected" : conn.state === "loading" ? "Connecting…" : "Not answering";
     cc.setAttribute("aria-label", `PMX on this Mac: ${$("conn-t").textContent}. How this page reaches PMX`);
+    // BOARD-8: in Claude, the way to this Mac's own page, and whether it's running. Its link never comes here.
+    const lp = $("local"), lpOn = localOn();
+    lp.hidden = LOCAL || !connected;
+    lp.className = `conn${lpOn ? "" : " off"}`;
+    $("local-t").textContent = lpOn ? "Running" : "Not running";
+    lp.setAttribute("aria-label", `Open PMX's page on this Mac, outside Claude. ${lpOn ? `Running since ${hm(D.localPage.since)}` : "Not running: PMX starts it"}.`);
     $("tb-b").textContent = nIn ? `Inbox ${nIn}` : "";
     $("fab").hidden = !(ok && LISTS.includes(S.view) && !S.q);
     const b = $("banner");
@@ -2926,6 +3068,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       : [h("p", null, "PMX is registered with the Claude app on this Mac. When you click a button here, the Claude app starts PMX in the background, runs that one action and shows the result. Nothing runs in Terminal."),
         h("p", null, "Meeting titles and to-dos travel from PMX to this page only. They aren't stored on claude.ai and aren't sent to Claude."), conn.msg ? h("p", { class: "err" }, conn.msg) : null]),
     h("div", { class: "mf" }, !LOCAL && conn.state !== "ok" && conn.state !== "pairing" ? btn("Connect", { cls: "pri", on: () => { closeModal(); conn.state === "error" ? start() : pairNow(); } }) : null, btn("Got it", { on: () => closeModal() })))));
+  $("local").addEventListener("click", () => openLocal(null));
   $("fab").addEventListener("click", quickEntry);
   document.querySelectorAll(".nav [data-view]").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
   $("q").addEventListener("input", (ev) => { S.q = ev.target.value.trim().toLowerCase(); S.sel = null; render(); });

@@ -11,10 +11,10 @@ The easy way: open Claude Code and say *"Install PMX following https://github.co
 By hand, with Node 22.12 or later (24 recommended: `brew install node`):
 
 ```bash
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/productmaxxing-0.34.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.35.0/productmaxxing-0.35.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.35.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.34.0.tgz
+npm install -g ./productmaxxing-0.35.0.tgz
 pmx init
 ```
 
@@ -23,10 +23,13 @@ The release package is prebuilt and has no dependencies, so installing it downlo
 `pmx init` doesn't ask for working hours: PMX works whenever this Mac is on and awake. It asks for your company's email domain, so it can tell colleagues from customers (without one it holds every meeting). On a Claude plan it sets no dollar cap of your own, because the dollars are only an estimate; your plan's own limits and your team's cap still apply. It explains the PMX repo, checks every answer (and asks again if one is wrong), shows a summary, and saves nothing until you confirm. Then it sets up or joins your team's PMX repo, stores tokens in the keychain, writes a clean run profile and registers one background job. If the Claude desktop app is on your Mac, it also offers to add PMX's local server to it, so the `/pmx-flow` workspace in Claude works with nothing running in Terminal. Then:
 
 ```bash
+pmx checklist     # where this Mac stands: each install, setup and update step, what runs, what's next (--json for Claude)
 pmx doctor        # green/red checklist, including every clean-profile check (--json for scripts)
 pmx claude login  # sign in PMX's own Claude profile, which agent runs use
 pmx digest        # this week's digest from your transcripts, approved before it's committed
 ```
+
+Not sure where you stand? In the Claude app, type `/pmx-setup`. Claude runs `pmx guide` (written for Claude, for the version you have) and `pmx checklist`. It tells you what's done, what runs and what's missing, then walks you through the next step. The checklist is worked out from what's actually on this Mac each time. The background job refreshes it every pass, and PMX's page shows it under Status → Setup.
 
 The skills also install as a Claude Code plugin: `/plugin marketplace add kp-prodgit/productmaxxing`.
 
@@ -35,6 +38,9 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | Command | What it does |
 |---|---|
 | `init` | Set up this Mac: PMX repo, clean profile, skills, keychain, background job |
+| `checklist` | Where this Mac stands: every install, setup and update step with what's done, what runs and the next step and who does it. `--json` for Claude, `--fix` redoes what an update does by itself, `--install-skill` adds `/pmx-setup` |
+| `guide` | The guide Claude follows to install, set up, update and check PMX with you, for this version |
+| `migrate` | What the last update did on this Mac and what's still to do (`pmx update` runs it) |
 | `doctor` | Checklist; fails if any clean-profile check is missing; `--json` for install scripts and Claude |
 | `digest` | Weekly digest from allowlisted sources, every claim cited, approved before commit |
 | `status` | Config, kill switch, today's usage (tokens, and dollars at list prices) and recent runs |
@@ -54,9 +60,10 @@ The skills also install as a Claude Code plugin: `/plugin marketplace add kp-pro
 | `skills` | The Claude skills PMX can use, what each does, when it runs, and whether your team's copy differs from the built-in one |
 | `linear` | How PMX reaches Linear: through your Claude app's Linear connector by default (`status`); `written` lists everything PMX wrote there, `tidy` rewrites what older versions wrote (meeting excerpts, meeting titles), `withdraw <id>` cancels an issue and removes its text; `key` stores an API key instead (advanced) |
 | `board` | The team board as a live Claude artifact (only when you use Claude and Linear): the link, `--open`, and `--install-skill` for `/pmx-board`, which publishes it from inside the Claude app |
-| `schedule` | The scheduled tasks PMX needs in your Claude app and whether each is set up and current; `--install-skill` adds `/pmx-schedule`, which creates or updates them from inside the Claude app; `--allow` lets them run `pmx` without stopping for permission |
+| `schedule` | The scheduled tasks PMX needs in your Claude app and whether each is set up and current; `--install-skill` adds `/pmx-schedule`, which creates or updates them from inside the Claude app; `--allow` lets them run `pmx` without stopping for permission; `--hours weekdays\|always` sets when they run |
 | `collect` | Calls and channel threads from your Claude connectors (Granola, Google Meet, Momentum, Slack…): `--prompt` prints the scheduled task's instructions, `--check` validates what it saved and deletes anything from a place your team didn't approve |
 | `todo` | Your own to-dos from your meetings, including 1:1s; never leaves your Mac. `--refresh` reads today's unread meetings, `done <id>` checks one off |
+| `move` | Move work between a private to-do, a to-do in Linear (yours; agents skip it) and a product task for the team, in any direction: `pmx move <to-do, proposal or PMX-12> private\|todo\|product`, with `--kind` (and `--size`) for product. Taking work out of Linear cancels it there with a comment, never deletes it |
 | `synthesize` | Today's unprocessed customer calls and approved channel threads → proposed, sized tasks waiting for your approval (`pmx proposals`). A meeting saved by two recorders is read once, and a need already open or waiting gets the new sources instead of a second task |
 | `company` | Roll teams' PMX tasks up into company-level themes; reads tasks, never transcripts |
 | `pull` | Claim the best ready task that fits the budget and the review cap, and run it (dry run in week one) |
@@ -87,13 +94,15 @@ PMX reaches Linear **through your Claude app** by default, with no API key or si
 
 Advanced: `pmx linear key` stores a Linear API key in the keychain, and PMX then talks to Linear directly. The company roll-up needs one, because it reads several projects. Teams on the hosted app use its Linear connection.
 
+**Agents that run unattended.** Through the Claude app, PMX sees Linear only as of the last sync, and its changes wait for the next one. The sync runs only while the Claude app is open and the Mac is awake, on weekdays from 8:00 to 18:00 unless you change it (`pmx schedule --hours always`). On a Mac that runs agents overnight or at weekends, store a Linear key: a task moved to Ready is then seen on the next background pass, within 30 minutes. `pmx status`, `pmx doctor` and the board say when a sync was missed.
+
 ### PMX's scheduled tasks
 
 PMX can't create tasks in your Claude app itself, but Claude can. `pmx init` offers to add a `/pmx-schedule` command to your Claude app (or run `pmx schedule --install-skill`). Open the Claude desktop app (Code tab), start a session **with auto mode off** (auto mode can deny the scheduled-tasks tool without saying why), and type `/pmx-schedule`. Claude creates the tasks this machine needs (meeting collection, and the Linear sync), or updates ones with an older prompt. Then click "Run now" on each task once and approve what it asks.
 
 - **Permissions.** A scheduled run stops at any permission prompt nobody answers, and blocks that task's later runs. `pmx init` offers, and `pmx schedule --allow` adds, always-allow rules for PMX's own command and folder (`Bash(pmx *)`, `Read(~/.pmx/**)`, `Edit(~/.pmx/**)`) to your Claude settings. Connectors still ask once, on the first "Run now".
 - **This Mac only.** The tasks call `pmx` and write to `~/.pmx`, so they can't run in the cloud.
-- **When they run.** Times are your Mac's local time. Tasks run while the Claude app is open and the Mac is awake; a run missed while the app was closed happens once when it opens again.
+- **When they run.** Times are your Mac's local time. Tasks run while the Claude app is open and the Mac is awake; a run missed while the app was closed happens once when it opens again. By default the Linear sync runs every hour from 8:00 to 18:00 on weekdays and meeting collection at 12:30 and 17:30 on weekdays. `pmx schedule --hours always` runs the sync every hour of every day and collection every day; `--hours weekdays` goes back. Then type `/pmx-schedule` again: each task's description says when it runs, so PMX knows which tasks to move. If you change a task's schedule yourself in the Claude app, PMX keeps your change until you change `--hours`.
 - **Where to see them.** Claude app → Code tab → Scheduled → the task → Runs. `pmx schedule` and `pmx doctor` say which tasks are missing or out of date, when each last ran, and which ones haven't run or didn't finish. A run that waits for an approval blocks that task's later runs: open it and choose "Always allow".
 
 ### The board inside Claude
@@ -105,6 +114,13 @@ Share it from the artifact's Share menu, then add `"board": { "url": "<link>" }`
 ## Updating
 
 Your team's PMX repo holds the CLI package everyone installs (`.pmx/cli/productmaxxing.tgz`), so a team moves to a new version together. After any update, the first `pmx` command says what's new, once; `pmx whats-new` shows it again.
+
+Each update does what it can by itself, once, on the first `pmx` command after it, based on the version this Mac came from:
+- it refreshes PMX's commands in the Claude app, and adds new ones;
+- it points the Claude app's PMX server at the new pmx;
+- it refreshes the background job's Node and Claude Code paths.
+
+What only you or Claude can do shows up in `pmx checklist` under "Still to do after updating", until it's done: republish a page, update a scheduled task, restart the Claude app, commit the team package. `pmx update` ends with that list (`pmx migrate`).
 
 **Existing machines: what to do**
 
@@ -120,11 +136,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/productmaxxing-0.34.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.34.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.35.0/productmaxxing-0.35.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.35.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.34.0.tgz
+npm install -g ./productmaxxing-0.35.0.tgz
 pmx whats-new --since <the version you had>
 ```
 

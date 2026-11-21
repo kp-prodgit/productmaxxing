@@ -117,9 +117,9 @@ describe("phase 3 gate (PMX's half)", () => {
         expect(text, rel).not.toMatch(/findPmxe\([^)]*\)[\s\S]{0,200}exec\(/);
       }
     }
-    // The bridge's only pmxe commands: its version, doctor and whats-new as JSON, and the studio.
+    // The bridge's only pmxe commands: its version, doctor, whats-new and its checklist (SETUP-1) as JSON, and the studio.
     const runs = [...(await readFile(bridge, "utf8")).matchAll(/\[\s*("[^"]+"(?:\s*,\s*"[^"]+")*)\s*\]/g)].map((m) => m[1]!.replace(/\s+/g, ""));
-    expect(new Set(runs)).toEqual(new Set(['"--version"', '"doctor","--json"', '"whats-new","--json"', '"studio"']));
+    expect(new Set(runs)).toEqual(new Set(['"--version"', '"doctor","--json"', '"whats-new","--json"', '"checklist","--json"', '"studio"']));
     // Only doctor, whats-new and open reach the bridge.
     const users = [];
     for (const f of files) if (f !== bridge && /from "\.\.\/engine\/bridge\.js"/.test(await readFile(f, "utf8"))) users.push(f.slice(src.length + 1));

@@ -1,7 +1,7 @@
 import { scriptedAsker } from "../core/ask.js";
 import { isoWeek, type Ctx } from "../core/context.js";
 import { killSwitchOn } from "../core/killswitch.js";
-import { loadState, updateState } from "../core/state.js";
+import { loadState, updateState, TICK_GAP_MS } from "../core/state.js";
 import { runDigest } from "./digest.js";
 
 export type TickStep = (ctx: Ctx) => Promise<string | null>;
@@ -43,14 +43,22 @@ export async function runTick(ctx: Ctx, steps: [string, TickStep][]): Promise<st
 export async function recordTick(lines: string[], now = new Date()): Promise<void> {
   const failed = lines.filter((l) => /^[\w-]+: failed: /.test(l));
   await updateState((s) => {
+    // OBS-4: a pass that comes long after the last one means the Mac slept (or was off) in between, and nothing ran.
+    if (s.lastTick && now.getTime() - Date.parse(s.lastTick.at) > TICK_GAP_MS)
+      s.tickGaps = [...(s.tickGaps ?? []).filter((g) => now.getTime() - Date.parse(g.to) < 14 * 86400000), { from: s.lastTick.at, to: now.toISOString() }].slice(-20);
     s.lastTick = { at: now.toISOString(), failed, failStreak: failed.length ? (s.lastTick?.failStreak ?? 0) + 1 : 0 };
   }).catch(() => {});
 }
 
 /** What `pmx status` and `pmx doctor` say about the background job's recent passes. Null before its first pass. */
-export function tickHealth(t: { at: string; failed: string[]; failStreak: number } | null, minStreak = 3): { ok: boolean; detail: string } | null {
+export function tickHealth(t: { at: string; failed: string[]; failStreak: number } | null, minStreak = 3, now?: Date): { ok: boolean; detail: string } | null {
   if (!t) return null;
   const when = t.at.slice(0, 16).replace("T", " ");
+  // OBS-4: no pass for a while is the Mac asleep or off, or the job stopped. Either way nothing runs.
+  if (now && now.getTime() - Date.parse(t.at) > TICK_GAP_MS) {
+    const h = (now.getTime() - Date.parse(t.at)) / 3600000;
+    return { ok: false, detail: `background job hasn't run since ${when} UTC (${h < 48 ? `${h.toFixed(1)} h` : `${Math.round(h / 24)} days`} ago): this Mac was probably asleep or off, and PMX runs only while it's awake` };
+  }
   if (!t.failed.length) return { ok: true, detail: `background job's last pass ${when} UTC: no failures` };
   const first = (t.failed[0] ?? "").slice(0, 300);
   return {

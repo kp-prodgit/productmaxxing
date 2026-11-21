@@ -1,0 +1,33 @@
+<!-- @dsCard group="Flows" height=438 -->
+<!doctype html><html><head><meta charset="utf-8"><style>.pv{padding:24px;display:grid;gap:32px}</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-mac" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M11 3l1.9 5.6L18.5 10l-5.6 1.9L11 17.5l-1.9-5.6L3.5 10l5.6-1.4L11 3z"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16.5 6.5l2.5 2.5M14 9l2 2"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+<symbol id="i-board" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15M14.5 4.5v15"/></symbol>
+<symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="5.5" r="2"/><circle cx="7" cy="18.5" r="2"/><circle cx="17" cy="7.5" r="2"/><path d="M7 7.5v9M17 9.5c0 4.5-10 3-10 7"/></symbol>
+<symbol id="i-page" viewBox="0 0 24 24"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M9.5 12.5h5M9.5 16h5"/></symbol>
+<symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 3.5 3 3-3 3"/><path d="M4 11.5v-1a4 4 0 0 1 4-4h12"/><path d="m7 20.5-3-3 3-3"/><path d="M20 12.5v1a4 4 0 0 1-4 4H4"/></symbol>
+</defs></svg>
+<div class="pv">
+<figure class="flow-fig">
+<figcaption><b>PMX and PMX Engine meet at two narrow bridges, and each ends at a person.</b><span>Released strategy goes to the product managers. Customer evidence comes back to you as counts. Nothing moves unless a person approves it.</span></figcaption>
+<ol class="flow">
+<li class="lane"><span class="lane-name">From PMX Engine</span><ol>
+<li class="station at-mac"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg>PMX Engine, on your Mac</span><b>Strategy is released</b><small>Product managers come last, after you approve them.</small></div></li>
+<li class="station at-reader"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-page"/></svg>Product managers' page</span><b>Product managers read it</b><small>What Engineering sees, with a switch per vertical.</small></div></li>
+</ol></li>
+<li class="lane"><span class="lane-name">Into PMX</span><ol>
+<li class="station at-you"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-person"/></svg>You and a code owner</span><b>A second code owner merges</b><small>Claude opens the pull request from what the page shows.</small></div></li>
+<li class="station at-repo"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-branch"/></svg>In the PMX repo</span><b>Team memory</b><small>Agents read it. No task copies it.</small></div></li>
+<li class="station at-linear"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-board"/></svg>In Linear</span><b>Open themes become labels</b><small>Only themes every group may see.</small></div><p class="flow-note"><b>Restricted theme:</b> never a label.</p></li>
+</ol></li>
+<li class="lane"><span class="lane-name">Back to PMX Engine</span><ol>
+<li class="station at-mac"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg>PMX, on your Mac</span><b>Evidence comes back as counts</b><small>Tasks and sources per theme. No titles or quotes.</small></div></li>
+<li class="station at-you"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-person"/></svg>You, in the studio</span><b>You accept each count</b><small>Mapped to a roadmap theme. It never reaches a page.</small></div></li>
+</ol></li>
+</ol>
+</figure>
+</div></body></html>

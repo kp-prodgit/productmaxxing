@@ -1,6 +1,6 @@
 {
   "name": "productmaxxing",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "description": "ProductMaxxing: synthesize product signals into sized work and let each PM's agent draft it, paced by human review.",
   "license": "Apache-2.0",
   "type": "module",
@@ -13,6 +13,9 @@
     "skills",
     "app-skills",
     "templates",
+    "design",
+    "!design/components/**/preview.html",
+    "GUIDE.md",
     "ee/LICENSE",
     "LICENSE",
     "NOTICE",

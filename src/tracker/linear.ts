@@ -192,6 +192,9 @@ export function linearTracker(o: LinearOpts): Tracker {
     async setSize(id, size) {
       await setGroupLabel(id, "size", size);
     },
+    async setCategory(id, category) {
+      await setGroupLabel(id, "category", category);
+    },
     async setPriority(id, priority) {
       await inProject(id);
       await gql(`mutation($id: String!, $i: IssueUpdateInput!) { issueUpdate(id: $id, input: $i) { success } }`, { id, i: { priority } });

@@ -47,6 +47,8 @@ export interface Tracker {
   setStatus(id: string, status: Status): Promise<void>;
   setAgent(id: string, agent: string | null): Promise<void>;
   setSize(id: string, size: Size): Promise<void>;
+  /** The kind of work (pmx-category label). Only a PM moving work between their to-dos and the team's tasks calls it. */
+  setCategory(id: string, category: string): Promise<void>;
   /** 1 urgent … 4 low, 0 none (Linear's scale). */
   setPriority(id: string, priority: number): Promise<void>;
   comment(id: string, body: string): Promise<void>;
@@ -58,8 +60,8 @@ export interface Tracker {
   /** Marks a lodged meeting done (completed in the tracker) or blocked, with the tasks it produced. */
   finishMeeting(id: string, o: { status: "done" | "blocked"; tasks: string[]; note: string }): Promise<void>;
   /**
-   * Replaces an issue's title or description, and with `cancel` moves it to canceled (TIDY-1). Only `pmx linear tidy`
-   * and `pmx linear withdraw` call it, to take back what PMX wrote. Never deletes.
+   * Replaces an issue's title or description, and with `cancel` moves it to canceled (TIDY-1). Only `pmx linear tidy`,
+   * `pmx linear withdraw` and `pmx move` call it, to take back or reword what PMX wrote. Never deletes.
    */
   rewrite(id: string, o: { title?: string; description?: string; cancel?: boolean }): Promise<void>;
 }
@@ -106,6 +108,7 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
     async setStatus(id, status) { must(id).status = status; },
     async setAgent(id, agent) { must(id).agent = agent; },
     async setSize(id, size) { must(id).size = size; },
+    async setCategory(id, category) { must(id).category = category; },
     async setPriority(id, priority) { must(id).priority = priority; },
     async comment(id, body) {
       must(id);

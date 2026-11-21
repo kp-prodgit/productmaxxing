@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Exec } from "./exec.js";
 import { packageRoot } from "./skills.js";
 import { VENDORED_CLI } from "./vendor.js";
@@ -16,9 +16,28 @@ export type UpdateOutcome =
   | { result: "needs-sudo"; version: string; command: string }
   | { result: "failed"; version: string; error: string };
 
+const installRoot = () => process.env.PMX_INSTALL_ROOT_FOR_TESTS ?? packageRoot();
+
 /** A pmx run from a source checkout (`npm link` or a symlink to dist): never overwritten by an update. */
-export async function isDevInstall(root = process.env.PMX_INSTALL_ROOT_FOR_TESTS ?? packageRoot()): Promise<boolean> {
+export async function isDevInstall(root = installRoot()): Promise<boolean> {
   return stat(join(root, ".git")).then(() => true, () => false);
+}
+
+/**
+ * The folder this pmx was installed under, when it isn't npm's global folder. A package at
+ * `<prefix>/lib/node_modules/productmaxxing` came from `npm install -g --prefix <prefix>` (for example
+ * /opt/homebrew, when npm's own folder needs sudo). An update must use the same prefix, or npm asks for sudo
+ * in its own folder, or installs a second pmx there that the PATH may never reach.
+ */
+export async function installPrefix(exec: Exec, root = installRoot()): Promise<string | null> {
+  const real = await realpath(root).catch(() => root);
+  const modules = dirname(real);
+  if (basename(modules) !== "node_modules" || basename(dirname(modules)) !== "lib") return null;
+  const prefix = dirname(dirname(modules));
+  const r = await exec("npm", ["prefix", "-g"], { timeoutMs: 30000 });
+  const global = r.code === 0 ? r.stdout.trim() : "";
+  if (global && (await realpath(global).catch(() => global)) === prefix) return null;
+  return prefix;
 }
 
 /**
@@ -37,13 +56,15 @@ export async function installTeamVersion(repoPath: string, exec: Exec, o: { forc
 }
 
 async function npmInstall(tgz: string, version: string, exec: Exec): Promise<UpdateOutcome> {
-  const r = await exec("npm", ["install", "-g", tgz], { timeoutMs: 300000 });
+  const prefix = await installPrefix(exec);
+  const args = ["install", "-g", ...(prefix ? ["--prefix", prefix] : []), tgz];
+  const r = await exec("npm", args, { timeoutMs: 300000 });
   if (r.code === 0) {
     // The new pmx says what changed since this one, once (NEW-1).
     await markUpdatingFrom(currentVersion());
     return { result: "updated", version };
   }
-  if (/EACCES|permission denied/i.test(r.stderr)) return { result: "needs-sudo", version, command: `sudo npm install -g "${tgz}"` };
+  if (/EACCES|permission denied/i.test(r.stderr)) return { result: "needs-sudo", version, command: `sudo npm install -g ${prefix ? `--prefix "${prefix}" ` : ""}"${tgz}"` };
   return { result: "failed", version, error: r.stderr.trim().split("\n").slice(-3).join(" ") || `npm exited ${r.code}` };
 }
 

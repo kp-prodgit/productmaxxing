@@ -27,7 +27,7 @@ const BUILT_IN_CATEGORIES = new Set(Object.keys(DEFAULT_TEAM.categories));
 export type PipelineLevel = "local" | "shared";
 
 /** The connections on the map. Sources each get their own edge into collection (`src:<connector>`). */
-export const EDGE_IDS = ["c-f", "s-f", "f-h", "f-t", "f-d", "t-t", "d-a", "a-x", "a-i", "i-r", "r-g", "g-v", "v-d"] as const;
+export const EDGE_IDS = ["c-f", "s-f", "f-h", "f-t", "f-d", "t-t", "d-a", "a-x", "a-i", "i-b", "i-r", "r-g", "g-v", "v-d"] as const;
 export type EdgeId = (typeof EDGE_IDS)[number];
 
 export interface PipelineEdge {
@@ -103,6 +103,11 @@ export interface PipelineData {
   /** The team's open roadmap themes (EQ-38), for the proposals' theme picker. Local level only, like the proposals. */
   themes?: string[];
   drafts: { identifier: string; title: string; url: string | null; since: string | null }[];
+  /**
+   * The team's tasks nobody has started (pool and Ready), newest first, so the PM can take one as their own to-do
+   * (TODO-5). Local level only. Absent from boards before 0.35.0.
+   */
+  pool?: { identifier: string; title: string; url: string | null; status: string; category: string | null }[];
   /** Open to-dos. Local level only: they never leave the Mac. */
   /** `at`: the meeting's day, or the day the PM added it; the board's period picker filters on it (TODO-4). */
   todos: { id: string; text: string; due: string | null; from: string; at: string; when: "today" | "evening" | "someday" | null; linear?: string | null }[];
@@ -112,6 +117,10 @@ export interface PipelineData {
   boardUrl?: string | null;
   /** The product managers' page in PMX Engine, when the team has one (CLI-7). A link from team config, never content. */
   roadmapUrl?: string | null;
+  /** BOARD-8: whether this Mac's own page runs, for the Claude app's page. Never its link. This Mac's page only. */
+  localPage?: { running: boolean; since: string | null } | null;
+  /** SETUP-1: where this Mac stands, from the background job's last checklist. This Mac's page only. */
+  setup?: import("../setup/checklist.js").SetupView | null;
   /** Team settings pull requests opened from the board that are still open. */
   pendingTeam: { url: string; at: string; changes: string[] }[];
   /** `problems` stays plain text for boards published before 0.17.0; `items` carries each one's fix. */
@@ -175,10 +184,12 @@ export interface PipelineInputs {
   collectReports: { at: string; connector: string | null; saved: number; inputs?: { id: string; shape: "calls" | "channels"; saved: number }[] }[];
   todosCreated: string[];
   /** Open to-dos on this Mac. */
-  openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string }; linear?: string | null }[];
+  openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string }; linear?: string | null; receiptId?: string }[];
   logbook?: LogbookEntry[];
   boardUrl?: string | null;
   roadmapUrl?: string | null;
+  localPage?: { running: boolean; since: string | null } | null;
+  setup?: import("../setup/checklist.js").SetupView | null;
   themes?: string[];
   pendingTeam?: PipelineData["pendingTeam"];
   proposals: Proposal[];
@@ -323,6 +334,8 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
   const verdicts = (i.runlog ?? []).filter((e): e is Extract<RunLogEntry, { type: "verdict" }> => e.type === "verdict" && inWin(e.ts));
   const tasksNow = i.issues.filter((x) => !x.meeting);
   const ready = tasksNow.filter((x) => x.status === "ready");
+  // The pool: approved team tasks a teammate hasn't picked on the team board yet (BOARD-7). The PM's own to-dos aren't team work.
+  const pool = tasksNow.filter((x) => x.status === "inbox" && x.category !== COMMITMENT);
   const review = tasksNow.filter((x) => x.status === "review");
 
   const edges: Record<EdgeId, PipelineEdge> = {
@@ -335,6 +348,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     "d-a": { n: proposed.length, unit: "tasks", last: latest(proposed.map((x) => x.at)) },
     "a-x": { n: dropped.length, unit: "tasks", last: latest(dropped.map((x) => x.at)) },
     "a-i": { n: posted.length, unit: "tasks", last: latest(posted.map((x) => x.at)) },
+    "i-b": { n: pool.length, unit: "tasks in the pool now", last: i.linearSyncedAt },
     "i-r": { n: ready.length, unit: "tasks ready now", last: i.linearSyncedAt },
     "r-g": { n: runs.length, unit: "runs", tokens: runs.reduce((a, e) => a + (e.tokens ?? 0), 0), last: latest(runs.map((e) => e.ts)) },
     "g-v": { n: runs.filter((e) => e.outcome === "ok").length, unit: "drafts", last: latest(runs.filter((e) => e.outcome === "ok").map((e) => e.ts)) },
@@ -382,10 +396,15 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
       from: p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
     })) : [],
     drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null })),
-    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, at: t.source.at.slice(0, 10), ...(t.linear ? { linear: t.linear } : {}), from: t.source.title === "Added by you" ? "Added by you" : `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
+    pool: local ? tasksNow.filter((x) => (x.status === "inbox" || x.status === "ready") && x.category !== COMMITMENT).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, 50)
+      .map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, status: x.status!, category: x.category ?? null })) : [],
+    // A to-do from no meeting (added by the PM, or taken from the team's list) says so as it is; the rest name their meeting.
+    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, at: t.source.at.slice(0, 10), ...(t.linear ? { linear: t.linear } : {}), from: t.source.title === "Added by you" || t.receiptId === "" ? t.source.title : `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
     logbook: local ? i.logbook ?? [] : [],
     boardUrl: i.boardUrl ?? null,
     roadmapUrl: i.roadmapUrl ?? null,
+    localPage: local ? i.localPage ?? null : null,
+    setup: local ? i.setup ?? null : null,
     themes: local ? i.themes ?? [] : [],
     pendingTeam: i.pendingTeam ?? [],
     health: { ok: !problems.length, problems: problems.map((p) => p.text), items: problems, facts: i.health.facts },

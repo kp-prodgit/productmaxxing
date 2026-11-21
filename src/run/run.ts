@@ -2,11 +2,11 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { recordSpend } from "../budget/provider.js";
 import type { Ctx } from "../core/context.js";
-import { writeFileIn } from "../core/git.js";
+import { writeFileIn, type Git } from "../core/git.js";
 import { outputHost } from "../core/host.js";
 import { paths } from "../core/paths.js";
 import { RunLogStore } from "../core/runlog-store.js";
-import { idsIn, materializeOutput, resolveEnv, skillMeta, validateEnv } from "../core/skillcheck.js";
+import { idsIn, materializeOutput, resolveEnv, skillMeta, validateEnv, type EnvDef } from "../core/skillcheck.js";
 import { loadSkill, skillBody, verifySkill } from "../core/skills.js";
 import { checkRun, envTrustProblem, isSupportedEnv, runInstructions, scaffoldProblem, stagePaths } from "./environments.js";
 import { updateState } from "../core/state.js";
@@ -14,13 +14,18 @@ import type { Task } from "../core/types.js";
 import type { LeaseInfo } from "../lease/types.js";
 import type { Services } from "../core/services.js";
 import { profileSummary, type RunRecord } from "./record.js";
+import { evidenceBlock, taskEvidence, type Evidence } from "./evidence.js";
+import { failStreak } from "../pull/failures.js";
 
 export function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
 }
 
-/** The task snapshot the agent sees: only human-approved task text, with source quotes as data (SEC-1). */
-export function taskSnapshot(t: Task, output: string): string {
+/**
+ * The task snapshot the agent sees: only human-approved task text, with source quotes as data (SEC-1). The quotes
+ * come from this Mac (RUN-3): Linear has only the sources' IDs (PRIV-6).
+ */
+export function taskSnapshot(t: Task, output: string, evidence: Evidence = { sources: [], missing: [] }): string {
   const notes = [...t.description.matchAll(/^pmx:note (.+)$/gm)].map((m) => `- ${m[1]}`);
   return [
     `# ${t.identifier}: ${t.title}`,
@@ -31,11 +36,15 @@ export function taskSnapshot(t: Task, output: string): string {
     "",
     "<task_data>",
     t.description.replaceAll("</task_data>", "[removed]").replace(/^pmx:(source|note) .*$/gm, "").trim(),
+    ...(evidence.sources.length ? ["", ...evidenceBlock(evidence)] : []),
     "</task_data>",
     "",
     ...(notes.length ? ["## Reviewer notes from your team", "", "A teammate reviewed an earlier draft and asked for a redo. Address these:", "", ...notes, ""] : []),
   ].join("\n");
 }
+
+/** Failed runs in a row before a task moves to Blocked (PULL-11). */
+export const FAILS_TO_BLOCK = 2;
 
 export interface RunOutcome {
   outcome: "ok" | "failed" | "capped";
@@ -64,8 +73,37 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
   await tracker.setStatus(task.id, "running");
   const wt = await ctx.repo.worktree(dir, branch, baseRef);
   let keepBranch = false;
+  // RUN-4: what the agent wrote when its draft didn't pass, kept on this Mac only. A later draft replaces it.
+  const failedBranch = `pmx/failed/${task.identifier}`;
+  let keptDraft = false;
+  /**
+   * PULL-11: every way a run can end without a draft comes here, so a task that can't produce one stops taking the
+   * queue's turn. One comment per change of state: back to Ready once, then Blocked.
+   */
+  const noDraft = async (head: string): Promise<string> => {
+    const streak = await failStreak(log, task.identifier).catch(() => 1);
+    const blocked = streak >= FAILS_TO_BLOCK;
+    const kept = keptDraft
+      ? ` What the agent wrote is kept on ${ctx.agent}'s Mac, on the local branch ${failedBranch} of the team repo. It isn't pushed: it may quote meetings that stay on that Mac.`
+      : "";
+    await tracker.comment(task.id, `${head}${kept} ${blocked
+      ? `That's ${streak} runs in a row without a draft, so it's moved to Blocked and no agent picks it up. Fix the task or its skill, then move it back to Ready.`
+      : "Returned to ready. Other ready tasks run before it."}`);
+    await tracker.setAgent(task.id, null);
+    await tracker.setStatus(task.id, blocked ? "blocked" : "ready");
+    return blocked ? `; moved to Blocked after ${streak} runs in a row without a draft` : "";
+  };
   try {
-    const skill = await loadSkill(wt.cwd, skillName);
+    const skill = await loadSkill(wt.cwd, skillName).catch(() => null);
+    if (!skill) {
+      await log.record({
+        type: "run", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier, category, size: task.size ?? "?",
+        skill: skillName, skillVersion: "-", outcome: "failed", durationMs: 0, tokens: null, costUsd: null, runtime: ctx.runtime.name,
+      });
+      const why = `its skill ${skillName} isn't in the team repo, the org skills or PMX's own`;
+      const note = await noDraft(`ProductMaxxing run by ${ctx.agent} skipped ${task.identifier} before starting an agent: ${why}.`);
+      return { outcome: "failed", prUrl: null, message: `${task.identifier}: failed (${why})${note}` };
+    }
     const meta = skillMeta(skill.text);
     const env = resolveEnv(meta, category);
     const output = materializeOutput(env, category, task.identifier);
@@ -82,12 +120,16 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
     else if (!verdict.ok) skip = verdict.reason ?? "skill is not allowed to run";
     else if (env.kind === "prototype") skip = await scaffoldProblem(wt.cwd, env, output);
     if (skip) {
-      await tracker.comment(task.id, `ProductMaxxing run by ${ctx.agent} skipped ${task.identifier}: ${skip}. Returned to ready.`);
-      await tracker.setAgent(task.id, null);
-      await tracker.setStatus(task.id, "ready");
-      return { outcome: "failed", prUrl: null, message: `${task.identifier}: failed (${skip})` };
+      // Logged like a failed run that cost nothing, so it backs off like one instead of coming first on every pass.
+      await log.record({
+        type: "run", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier, category, size: task.size ?? "?",
+        skill: skillName, skillVersion: skill.version, outcome: "failed", durationMs: 0, tokens: null, costUsd: null, runtime: ctx.runtime.name,
+      });
+      const note = await noDraft(`ProductMaxxing run by ${ctx.agent} skipped ${task.identifier} before starting an agent: ${skip}.`);
+      return { outcome: "failed", prUrl: null, message: `${task.identifier}: failed (${skip})${note}` };
     }
-    const snapshot = taskSnapshot(task, output);
+    const evidence = await taskEvidence(ctx, task);
+    const snapshot = taskSnapshot(task, output, evidence);
     await writeFileIn(wt.cwd, ".pmx/tmp/task.md", snapshot);
 
     const probe = await ctx.runtime.probe(team);
@@ -134,10 +176,9 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
 
     if (outcome !== "ok") {
       const why = result.capped ? "hit the per-run cap" : result.error ?? check.problems.join("; ");
-      await tracker.comment(task.id, `ProductMaxxing run by ${ctx.agent} did not produce a draft: ${why}. Returned to ready.`);
-      await tracker.setAgent(task.id, null);
-      await tracker.setStatus(task.id, "ready");
-      return { outcome, prUrl: null, message: `${task.identifier}: ${outcome} (${why})` };
+      keptDraft = await keepDraft(wt, env, record, `${task.identifier}: ${task.title} (didn't pass)\n\nWritten by ProductMaxxing (${ctx.agent}) with ${skillName}@${skill.version}. Not a draft for review: ${why}.\nKept on this Mac only; never pushed.`, ctx.personal.handle);
+      const note = await noDraft(`ProductMaxxing run by ${ctx.agent} did not produce a draft: ${why}.`);
+      return { outcome, prUrl: null, message: `${task.identifier}: ${outcome} (${why})${keptDraft ? `; what it wrote is on ${failedBranch}` : ""}${note}` };
     }
 
     await rm(join(wt.cwd, ".pmx", "tmp"), { recursive: true, force: true });
@@ -165,6 +206,7 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
         `| Skill | ${skillName}@${skill.version} |`,
         `| Model | ${team.model} |`,
         `| Output | ${check.ref} (${env.output.kind}) |`,
+        `| Sources | ${evidence.sources.length ? `${evidence.sources.map((x) => x.id).join(", ")}, quoted from ${ctx.agent}'s Mac` : "none quoted"}${evidence.missing.length ? ` (not here: ${evidence.missing.map((x) => x.id).join(", ")})` : ""} |`,
         `| Clean profile | ${record.profile.checksFailed.length ? "❌ " + record.profile.checksFailed.join(", ") : "✅ all checks passed"} |`,
         `| ${checkLabel} | ${check.ok ? "✅" : "⚠️ " + check.problems.join("; ")} |`,
         `| Run record | \`.pmx/runs/${task.identifier}.json\` |`,
@@ -188,6 +230,31 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
   } finally {
     await svc.lease.release(task.id, ctx.agent).catch(() => {});
     await ctx.repo.removeWorktree(dir);
-    if (!keepBranch) await ctx.repo.raw(["branch", "-D", branch]);
+    // A kept draft moves off the task's branch, so the next run starts clean from the base again.
+    const moved = keptDraft && (await ctx.repo.raw(["branch", "-M", branch, failedBranch])).code === 0;
+    if (!moved && !keepBranch) await ctx.repo.raw(["branch", "-D", branch]);
+    // A draft that reached review replaces what an earlier run left behind.
+    if (keepBranch) await ctx.repo.raw(["branch", "-D", failedBranch]);
+  }
+}
+
+/**
+ * RUN-4: commits what the agent wrote on the task's branch, which this Mac keeps (renamed) and never pushes, so a
+ * reviewer can see why the draft didn't pass. Returns false, keeping nothing, when the agent wrote nothing.
+ */
+async function keepDraft(wt: Git, env: EnvDef, record: RunRecord, message: string, handle: string): Promise<boolean> {
+  try {
+    await rm(join(wt.cwd, ".pmx", "tmp"), { recursive: true, force: true });
+    const wrote = (await wt.raw(["status", "--porcelain", "--untracked-files=all"])).stdout.trim();
+    if (!wrote) return false;
+    await writeFileIn(wt.cwd, `.pmx/runs/${record.task.identifier}.json`, JSON.stringify(record, null, 2) + "\n");
+    // A missing output path fails `git add` as a whole; the run record alone isn't worth keeping.
+    if ((await wt.raw(["add", ...stagePaths(env)])).code !== 0) return false;
+    const staged = (await wt.raw(["diff", "--cached", "--name-only"])).stdout.split("\n").filter((f) => f && !f.startsWith(".pmx/"));
+    if (!staged.length) return false;
+    await wt.ok(["-c", "user.name=pmx", "-c", `user.email=${handle}@pmx.local`, "commit", "-q", "-m", message]);
+    return true;
+  } catch {
+    return false;
   }
 }

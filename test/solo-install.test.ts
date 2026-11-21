@@ -180,7 +180,9 @@ describe("0.10.0: a solo install that works", () => {
     expect(guide).toContain(`releases/download/v${v}/productmaxxing-${v}.tgz`);
     expect(guide).toContain(`releases/download/v${v}/SHA256SUMS`);
     expect(guide.indexOf("auto mode off")).toBeLessThan(guide.indexOf("Step 1"));
-    expect(guide).toContain("pmx doctor --json");
+    // SETUP-1: from step 4 on, the guide this pmx ships and its checklist drive the install (the checklist holds every doctor check).
+    expect(guide).toContain("pmx guide");
+    expect(guide).toContain("pmx checklist --json");
     // The README's manual install and its update steps name this release too.
     const readme = await readFile(join(root, "README.md"), "utf8");
     expect(readme).toContain(`releases/download/v${v}/productmaxxing-${v}.tgz`);

@@ -12,7 +12,9 @@ import { packageRoot } from "../core/skills.js";
 export const APP_SKILL = "pmx-schedule";
 export const BOARD_SKILL = "pmx-board";
 export const FLOW_SKILL = "pmx-flow";
-export type AppSkill = typeof APP_SKILL | typeof BOARD_SKILL | typeof FLOW_SKILL;
+/** SETUP-1: Claude's guide through installing, updating and checking PMX, from `pmx checklist`. */
+export const SETUP_SKILL = "pmx-setup";
+export type AppSkill = typeof APP_SKILL | typeof BOARD_SKILL | typeof FLOW_SKILL | typeof SETUP_SKILL;
 const MARKER = "Installed by ProductMaxxing";
 
 export const appSkillSource = (name: AppSkill = APP_SKILL) => join(packageRoot(), "app-skills", name, "SKILL.md");
@@ -37,6 +39,17 @@ export async function appSkillInstalled(name: AppSkill = APP_SKILL): Promise<boo
   return readFile(appSkillTarget(name), "utf8").then((t) => t.includes(`name: ${name}`), () => false);
 }
 
+/** Whether the copy in the Claude app is one PMX wrote (and may refresh), not the PM's own. */
+export async function skillInstalledByPmx(name: AppSkill): Promise<boolean> {
+  return readFile(appSkillTarget(name), "utf8").then((t) => t.includes(MARKER), () => false);
+}
+
+/** Whether the copy in the Claude app is this version's. */
+export async function appSkillCurrent(name: AppSkill): Promise<boolean> {
+  const [want, have] = await Promise.all([readFile(appSkillSource(name), "utf8"), readFile(appSkillTarget(name), "utf8").catch(() => null)]);
+  return have === want;
+}
+
 /** Whether this Mac has a Claude app or Claude Code home, which is where these commands live. */
 export async function claudePresent(): Promise<boolean> {
   return stat(claudeAppHome()).then((s) => s.isDirectory(), () => false);
@@ -45,7 +58,7 @@ export async function claudePresent(): Promise<boolean> {
 /** After an update, refreshes the commands PMX installed earlier. Never adds one the PM didn't install. */
 export async function refreshAppSkills(): Promise<AppSkill[]> {
   const out: AppSkill[] = [];
-  for (const name of [APP_SKILL, BOARD_SKILL, FLOW_SKILL] as const) {
+  for (const name of [APP_SKILL, BOARD_SKILL, FLOW_SKILL, SETUP_SKILL] as const) {
     const have = await readFile(appSkillTarget(name), "utf8").catch(() => null);
     if (have?.includes(MARKER) && (await installAppSkill(name)) === "updated") out.push(name);
   }

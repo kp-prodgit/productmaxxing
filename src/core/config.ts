@@ -141,6 +141,11 @@ export interface PersonalConfig {
    */
   todosToLinear?: boolean;
   /**
+   * CLAUDE-5 (0.35.0): when PMX's Claude tasks run on this Mac. "weekdays" (the default) is working hours on weekdays;
+   * "always" runs the Linear sync every hour and collection every day, for a Mac that runs agents unattended.
+   */
+  taskHours?: "weekdays" | "always";
+  /**
    * Phase 2 of joining PMX and PMX Engine: "hidden" keeps the Studio entry out of this Mac's PMX page. It appears only
    * where PMX Engine is installed, so a PM never sees it; `pmx open --hide-studio` / `--show-studio` set this.
    */

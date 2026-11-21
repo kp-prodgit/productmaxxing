@@ -6,6 +6,7 @@ import { exec, type Exec } from "../src/core/exec.js";
 import { memoryKeychain } from "../src/core/keychain.js";
 import { fakeLaunchd, plist } from "../src/core/launchd.js";
 import { paths } from "../src/core/paths.js";
+import { updateState } from "../src/core/state.js";
 import { runDoctor } from "../src/commands/doctor.js";
 import { runInit } from "../src/commands/init.js";
 import { loadTeamConfig } from "../src/core/config.js";
@@ -80,6 +81,27 @@ describe("pmx init and doctor (CLI-2, CLI-3)", () => {
     const checks = await runDoctor({ personal: p, team: await loadTeamConfig(repo), keychain, launchd: fakeLaunchd(), exec: withClaude });
     const failedProfile = checks.filter((c) => c.id.startsWith("profile.") && !c.ok);
     expect(failedProfile.length).toBeGreaterThanOrEqual(9);
+  });
+
+  it("doctor says when there's no background job, and when auto-update stopped checking (COMPAT-6)", async () => {
+    const root = await tmp();
+    const repo = join(root, "pmx");
+    const keychain = memoryKeychain();
+    const p = await runInit({
+      ask: scriptedAsker({ "PMX repo checkout": repo, transcripts: join(root, "t"), "background job": false }),
+      keychain, launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x",
+    });
+    const team = { ...(await loadTeamConfig(repo)), cli: { min: "0.1.0", autoUpdate: true } };
+    await updateState((s) => { s.autoUpdate = { checkedAt: "2026-11-05T07:11:47.006Z", result: "current", version: "0.6.0", notifiedFor: null }; });
+    const at = (iso: string) => runDoctor({ personal: p, team, keychain, launchd: fakeLaunchd(), exec: withClaude, now: () => new Date(iso) });
+
+    const late = await at("2026-11-19T07:00:00Z");
+    // A missing job reads as missing, with what to do; not as the passing line with a warning mark.
+    expect(late.find((c) => c.id === "schedule.launchd")).toMatchObject({ ok: false, detail: expect.stringMatching(/^no background job on this Mac.*pmx init/) });
+    expect(late.find((c) => c.id === "cli.auto-update")).toMatchObject({ ok: false, detail: expect.stringContaining("current, 13 days ago: the background job hasn't checked since") });
+
+    const soon = await at("2026-11-05T09:00:00Z");
+    expect(soon.find((c) => c.id === "cli.auto-update")).toMatchObject({ ok: true, detail: "auto-update on; last check 2026-11-05 07:11: current" });
   });
 
   it("gives the launchd job a PATH that finds the Claude Code installer's ~/.local/bin", () => {

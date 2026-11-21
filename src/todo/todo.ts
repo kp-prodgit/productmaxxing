@@ -279,6 +279,53 @@ export async function placeTodo(id: string, p: { due?: unknown; when?: unknown; 
   });
 }
 
+/** One to-do by its ID or a unique prefix of it, as `pmx todo` shows them. */
+export async function getTodo(id: string): Promise<Todo> {
+  return find(await loadTodos(), id);
+}
+
+/**
+ * A to-do that came from somewhere else: a proposal the PM kept for themself, or a task taken off the team's list
+ * (TODO-5). An open to-do with the same words is reused rather than doubled, and takes the Linear link if it has none.
+ */
+export async function keepTodo(input: { text: string; due?: string | null; why?: string; source?: Todo["source"]; receiptId?: string; linear?: string | null }, now: Date): Promise<Todo> {
+  const text = input.text.replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!text) throw new Error("Give the to-do some words.");
+  return mutateTodos((s) => {
+    const same = s.items.find((x) => x.status === "open" && norm(x.text) === norm(text));
+    if (same) {
+      if (input.linear && !same.linear) same.linear = input.linear;
+      return same;
+    }
+    const todo: Todo = {
+      id: createHash("sha256").update(`kept\n${now.toISOString()}\n${text}\n${Math.random()}`).digest("hex").slice(0, 6),
+      text, due: input.due ?? null, why: input.why ?? "", when: null,
+      source: input.source ?? { title: "Added by you", at: now.toISOString().slice(0, 10), keys: [] },
+      status: "open", createdAt: now.toISOString(), doneAt: null, receiptId: input.receiptId ?? "", linear: input.linear ?? null,
+    };
+    s.items.push(todo);
+    return todo;
+  });
+}
+
+/** Sets or clears the Linear issue a to-do is tracked as (TODO-5). */
+export async function linkTodo(id: string, linear: string | null): Promise<Todo> {
+  return mutateTodos((s) => {
+    const t = find(s, id);
+    t.linear = linear;
+    return t;
+  });
+}
+
+/** Takes a to-do off the PM's list because it is now a team task (TODO-5). */
+export async function removeTodo(id: string): Promise<Todo> {
+  return mutateTodos((s) => {
+    const t = find(s, id);
+    s.items = s.items.filter((x) => x !== t);
+    return t;
+  });
+}
+
 /**
  * The Linear category a PM's own commitment goes in (SIG-7). No skill has it, so agents never pick it up, and the
  * board doesn't flag it as a category nobody handles.

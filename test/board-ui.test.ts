@@ -282,12 +282,23 @@ describe("Settings: Linear, digest and limits", () => {
     await ui.click(ui.button("Save Changes", "#savebar"));
     expect(ui.button("Propose to your team", "#review")).toBeTruthy();
     await ui.click(ui.button("Propose to your team", "#review"));
-    await ui.until(() => /Sent your team's changes for approval|couldn't be sent/.test(ui!.text("#review")), "the proposal");
-    expect(ui.text("#review")).toMatch(/Sent your team's changes for approval/);
+    // BOARD-9: this test repo has no remote, so the change stays a local branch the PM applies.
+    await ui.until(() => /Saved your team's changes on this Mac|couldn't be sent/.test(ui!.text("#review")), "the proposal");
+    expect(ui.text("#review")).toMatch(/Saved your team's changes on this Mac\. Your team repo has no remote, so no teammate reviews them/);
     await ui.click(ui.button("Done", "#review"));
     expect((ui.$("#revcap") as HTMLInputElement).value).toBe(before);
-    expect(ui.text()).toMatch(/1 team change is waiting for a teammate's approval/);
+    expect(ui.text()).toMatch(/1 team change is saved on this Mac: your team repo has no remote/);
     expect(ui.bar()).toMatch(/No unsaved changes/);
+
+    // BOARD-9 (#16): with no remote, nobody merges it: the PM applies it, and it's the team's setting from then on.
+    const { git } = await import("./helpers.js");
+    const repo = ui.ctx.personal.repoPath;
+    await ui.click(ui.button("Apply now", "main"));
+    await ui.until(() => /Applied your team's settings/.test(ui!.text("#toast")), "the change to apply");
+    expect(ui.posts.filter((p) => p[0] === "team-apply")).toEqual([["team-apply", { branch: expect.stringMatching(/^pmx\/settings-\d{14}$/) }]]);
+    expect(JSON.parse(await git(repo, "show", "main:pmx.config.json")).reviewQueueCap).toBe(Number(before === "4" ? "5" : "4"));
+    expect(await git(repo, "branch", "--list", "pmx/settings-*")).toBe("");
+    await ui.until(() => !/team change is saved on this Mac/.test(ui!.text()), "the waiting note to go");
   }, T);
 });
 
@@ -490,8 +501,9 @@ describe("Settings: your team's own kinds of work (JOB-8, JOB-9)", () => {
     await ui.click(ui.button("Save Changes", "#savebar"));
     expect(ui.text("#review")).toMatch(/Require Spec drafting for everyone on the team/);
     await ui.click(ui.button("Propose to your team", "#review"));
-    await ui.until(() => /Sent your team's changes for approval|couldn't be sent/.test(ui!.text("#review")), "the proposal");
-    expect(ui.text("#review")).toMatch(/Sent your team's changes for approval/);
+    // BOARD-9: this test repo has no remote, so the change stays a local branch the PM applies.
+    await ui.until(() => /Saved your team's changes on this Mac|couldn't be sent/.test(ui!.text("#review")), "the proposal");
+    expect(ui.text("#review")).toMatch(/Saved your team's changes on this Mac\. Your team repo has no remote, so no teammate reviews them/);
     expect(JSON.parse(await branchFile(ui, "pmx.config.json")).categories.spec).toEqual({ skill: "pmx-spec", required: true });
     // Nothing changes until it merges: the PM's own setting is untouched.
     expect((await loadPersonalConfig()).categories).toEqual(["spec"]);
@@ -512,8 +524,8 @@ describe("Settings: your team's own kinds of work (JOB-8, JOB-9)", () => {
     await ui.type("#kf-when", "A customer asks to see how something would work");
     await ui.type("#kf-steps", "Name the one user and moment it's for");
     await ui.click(ui.button("Send to your team for approval"));
-    await ui.until(() => /Sent "Prototype brief"|couldn't be sent/.test(ui!.text()), "the proposal");
-    expect(ui.text()).toMatch(/Sent "Prototype brief" to your team for approval/);
+    await ui.until(() => /Saved "Prototype brief"|couldn't be sent/.test(ui!.text()), "the proposal");
+    expect(ui.text()).toMatch(/Saved "Prototype brief" on this Mac/);
     expect(ui.bar()).toMatch(/2 unsaved changes/);
   }, T);
 
@@ -534,8 +546,8 @@ describe("Settings: your team's own kinds of work (JOB-8, JOB-9)", () => {
     await ui.type("#kf-steps", "Lead with the change that matters most\nGive every risk a source");
     await ui.click(ui.switchFor("It goes outside the team"));
     await ui.click(ui.button("Send to your team for approval"));
-    await ui.until(() => /Sent "Stakeholder update" to your team for approval|couldn't be sent/.test(ui!.text()), "the proposal");
-    expect(ui.text()).toMatch(/Sent "Stakeholder update" to your team for approval\. When it merges, every PM on the team has it, and your agent takes it\./);
+    await ui.until(() => /Saved "Stakeholder update" on this Mac|couldn't be sent/.test(ui!.text()), "the proposal");
+    expect(ui.text()).toMatch(/Saved "Stakeholder update" on this Mac\. Your team repo has no remote, so no teammate reviews it: apply it in the Inbox/);
     const sent = ui.posts.find((p) => p[0] === "changes")![1].changes[0];
     expect(sent).toMatchObject({ kind: "new-kind", draft: { name: "Stakeholder update", stage: "operate", sections: ["Headline", "What changed", "Risks"], externalFacing: true, required: false } });
     expect(JSON.parse(await branchFile(ui, "pmx.config.json")).categories["stakeholder-update"]).toEqual({ skill: "stakeholder-update", externalFacing: true });
@@ -543,6 +555,6 @@ describe("Settings: your team's own kinds of work (JOB-8, JOB-9)", () => {
     expect((await loadPersonalConfig()).categories).toEqual(["spec", "stakeholder-update"]);
     // The form is empty again, and the pull request shows as waiting.
     expect((ui.$("#kf-name") as HTMLInputElement).value).toBe("");
-    expect(ui.text()).toMatch(/1 team change is waiting for a teammate's approval/);
+    expect(ui.text()).toMatch(/1 team change is saved on this Mac/);
   }, T);
 });

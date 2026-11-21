@@ -17,6 +17,7 @@ import { writeProfile } from "./core/profile.js";
 import { paths } from "./core/paths.js";
 import { announceOnce, markSeen, QUIET_COMMANDS } from "./core/whats-new.js";
 import { migrateFromProductGit } from "./core/rename.js";
+import { markFreshInstall, upgradeOnStart } from "./core/upgrade.js";
 import { commands as core } from "./commands/index.js";
 import { registerEe } from "../ee/src/index.js";
 
@@ -69,6 +70,11 @@ async function main(argv: string[]): Promise<number> {
   if (cmd.name !== "mcp" && cmd.name !== "uninstall") {
     const handed = await migrateFromProductGit({ exec, launchd: macLaunchd(), cli: fileURLToPath(import.meta.url), argv, say: (s) => process.stderr.write(`${s}\n`) });
     if (handed !== null) return handed;
+    // UPGRADE-1: after an update, what this Mac needs from the new version, once (the background job reloads itself
+    // only from a command someone runs). Never stops the command: a step that fails waits for the next one.
+    const up = await upgradeOnStart({ exec, launchd: macLaunchd(), cliPath: fileURLToPath(import.meta.url), interactive: cmd.name !== "tick" }).catch(() => null);
+    if (up?.did.some((x) => x.did !== "nothing to do") && cmd.name !== "tick" && cmd.name !== "migrate" && !QUIET_COMMANDS.has(cmd.name))
+      process.stderr.write(`Updated this Mac for pmx ${up.to}: ${up.did.filter((x) => x.did !== "nothing to do").map((x) => x.did).join("; ")}. What's left: pmx checklist\n`);
   }
   // NEW-1: after an update, the first command says what's new, once, on stderr.
   const fresh = cmd.name === "init" && !(await stat(paths.config()).then(() => true, () => false));
@@ -85,7 +91,10 @@ async function main(argv: string[]): Promise<number> {
     cliPath: fileURLToPath(import.meta.url),
   });
   // A fresh install starts up to date.
-  if (fresh && code === 0) await markSeen();
+  if (fresh && code === 0) {
+    await markSeen();
+    await markFreshInstall();
+  }
   return code;
 }
 

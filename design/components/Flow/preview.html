@@ -1,0 +1,40 @@
+<!-- @dsCard group="Flows" height=958 -->
+<!doctype html><html><head><meta charset="utf-8"><style>.pv{padding:24px;display:grid;gap:40px}.pv .narrow{max-width:400px}</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-mac" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M11 3l1.9 5.6L18.5 10l-5.6 1.9L11 17.5l-1.9-5.6L3.5 10l5.6-1.4L11 3z"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16.5 6.5l2.5 2.5M14 9l2 2"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+<symbol id="i-board" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15M14.5 4.5v15"/></symbol>
+<symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="5.5" r="2"/><circle cx="7" cy="18.5" r="2"/><circle cx="17" cy="7.5" r="2"/><path d="M7 7.5v9M17 9.5c0 4.5-10 3-10 7"/></symbol>
+<symbol id="i-page" viewBox="0 0 24 24"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M9.5 12.5h5M9.5 16h5"/></symbol>
+<symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 3.5 3 3-3 3"/><path d="M4 11.5v-1a4 4 0 0 1 4-4h12"/><path d="m7 20.5-3-3 3-3"/><path d="M20 12.5v1a4 4 0 0 1-4 4H4"/></symbol>
+</defs></svg>
+<div class="pv">
+
+<figure class="flow-fig">
+<figcaption><b>Vision, edition 2 is ready for Engineering. It waits on you.</b><span>Done stations show a check and the date. The current one is filled, and later ones are outlined.</span></figcaption>
+<ol class="flow">
+<li class="lane"><span class="lane-name">In the studio, on your Mac</span><ol>
+<li class="station at-mac is-done"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg>On your Mac</span><b>Write and mark sections</b><small>Choose who sees each one.</small><span class="stamp"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Done · 18 Nov</span></div></li>
+<li class="station at-you is-done"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-person"/></svg>You, in the studio</span><b>You release</b><small>Edition 2. Nobody has it yet.</small><span class="stamp"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>Done · 19 Nov</span></div></li>
+<li class="station at-you is-now"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-key"/></svg>You, on your Mac</span><b>You approve for Engineering</b><small>Type Engineering in the dialog.</small><span class="stamp">Now · waiting on you</span></div><p class="flow-note"><b>Don't approve:</b> nothing is sent.</p></li>
+</ol></li>
+<li class="station at-claude is-later"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg>In the Claude app</span><b>Claude sends it</b><small>To Engineering's three pages.</small></div></li>
+<li class="station at-mac is-later"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg>PMX Engine, on your Mac</span><b>PMX Engine checks it</b><small>Every page against the plan.</small></div><p class="flow-note"><b>Not as planned:</b> it stops and names the page.</p></li>
+<li class="station at-reader is-later"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-page"/></svg>Each group's page</span><b>Engineering reads it</b><small>In Claude, updated in place.</small></div></li>
+</ol>
+</figure>
+
+<figure class="flow-fig narrow">
+<figcaption><b>PMX's evidence comes back to you as counts, never words.</b><span>At 400px wide the same flow runs downwards.</span></figcaption>
+<ol class="flow">
+<li class="station at-repo"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-branch"/></svg>In the PMX repo</span><b>Team memory</b><small>Released strategy that agents read.</small></div></li>
+<li class="station at-linear"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-board"/></svg>In Linear</span><b>Open themes become labels</b><small>Only themes every group may see.</small></div></li>
+<li class="station at-mac"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg>PMX, on your Mac</span><b>Evidence comes back as counts</b><small>Tasks and sources per theme. No quotes.</small></div></li>
+<li class="station at-you"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-person"/></svg>You, in the studio</span><b>You accept each count</b><small>It never reaches a page.</small></div><p class="flow-note"><b>Dropped:</b> nothing changes.</p></li>
+</ol>
+</figure>
+
+</div></body></html>

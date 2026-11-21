@@ -1,4 +1,5 @@
 import { readFile, rename, stat, writeFile } from "node:fs/promises";
+import { readHistory } from "../setup/checklist.js";
 import { VERSIONED_NODE } from "../core/launchd.js";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -31,6 +32,12 @@ export const MCP_TOOLS = [
     description: "ProductMaxxing (PMX) pipeline board: counts of meetings and Slack threads read, held and sent to Claude, tasks proposed and sent to Linear, agent runs and reviews in a time window, plus the skills, scheduled tasks, rules and privacy checks. Counts only: no meeting or proposal titles, no do-not-read entries.",
     inputSchema: { type: "object", additionalProperties: false, properties: { hours: { type: "integer", minimum: 1, maximum: 336, description: "How far back to look (default 168, a week)." } } },
     annotations: { title: "PMX pipeline", readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "checklist",
+    description: "Where this Mac stands with ProductMaxxing (PMX), step by step: what's installed, set up, running and still missing, what the last update still needs, and the next step with who does it. Read-only: the background job's last check (format 1, the same shape as `pmx checklist --json`). Use it to tell the user where they stand before guiding them; /pmx-setup has the full guide.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+    annotations: { title: "PMX checklist", readOnlyHint: true, openWorldHint: false },
   },
   {
     name: "flow_graph",
@@ -123,6 +130,10 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>, deps: McpDeps
           if (!Number.isInteger(hours) || hours < 1 || hours > 336) return result({ error: "hours must be a whole number from 1 to 336" }, true);
           const c = await ctx();
           return result(await loadPipeline(c, { level: "shared", hours, keychain: c.keychain }));
+        }
+        if (name === "checklist") {
+          const last = (await readHistory())?.last;
+          return result(last ?? { error: "PMX hasn't worked out its checklist on this Mac yet. Run `pmx checklist` in a shell, or wait for the background job's next pass." }, !last);
         }
         if (name === "flow_graph") {
           const hours = args.hours === undefined ? 24 : Number(args.hours);

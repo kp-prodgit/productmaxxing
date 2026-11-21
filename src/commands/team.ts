@@ -108,7 +108,8 @@ export const teamCommands: Command[] = [
       for (const d of r.duplicates) console.log(`· not posted: ${d}`);
       for (const u of r.unthemed) console.log(`· ${u}`);
       for (const m of r.missing) console.log(`· no proposal ${m}`);
-      if (r.posted.length) console.log(`${r.posted.length} task(s) sent to the PMX inbox${r.posted.some((p) => p.identifier.startsWith("PENDING-")) ? ", reaching Linear at the next Claude sync" : ""}. Move one to ready to let agents pull it.`);
+      // APPROVE-1 (#11): approving is one gate; a teammate making a task Ready is the other, and agents wait for it.
+      if (r.posted.length) console.log(`${r.posted.length} task(s) approved and sent to your team's pool in Linear${r.posted.some((p) => p.identifier.startsWith("PENDING-")) ? " (they reach Linear at the next Claude sync)" : ""}. No agent takes them until a teammate moves them to Ready on the team board.`);
       return r.missing.length ? 1 : 0;
     },
   },

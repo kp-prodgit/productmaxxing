@@ -29,6 +29,10 @@ export interface SelectInput {
   /** Categories auto-paused for a low accept rate (REV-3) or blocked by admin policy. */
   pausedCategories: Map<string, string>;
   leasedTaskIds: Set<string>;
+  /** Failed runs in a row per task, by Linear identifier (PULL-11). A task that just failed runs after the others. */
+  failStreaks?: Map<string, number>;
+  /** Tasks this Mac can't run, by task ID, and why: their evidence is elsewhere (RUN-3). */
+  unrunnable?: Map<string, string>;
 }
 
 /** Linear priority: 1 urgent … 4 low, 0 none (sorted last). */
@@ -44,9 +48,10 @@ export function selectTasks(i: SelectInput): Selection {
   const paused = budgetBlock(i.budget);
   if (paused) blockers.push(paused);
 
+  const failed = (t: Task) => i.failStreaks?.get(t.identifier) ?? 0;
   const ready = i.tasks
     .filter((t) => t.status === "ready")
-    .sort((a, b) => prio(a) - prio(b) || a.createdAt.localeCompare(b.createdAt));
+    .sort((a, b) => Math.sign(failed(a)) - Math.sign(failed(b)) || prio(a) - prio(b) || a.createdAt.localeCompare(b.createdAt));
 
   const decisions: Decision[] = ready.map((t) => {
     const no = (why: string): Decision => ({ task: t, ok: false, why });
@@ -55,12 +60,15 @@ export function selectTasks(i: SelectInput): Selection {
     const paused = i.pausedCategories.get(t.category);
     if (paused) return no(`${t.category} is paused: ${paused}`);
     if (!t.size) return no("no size label");
+    const elsewhere = i.unrunnable?.get(t.id);
+    if (elsewhere) return no(elsewhere);
     if (i.leasedTaskIds.has(t.id)) return no("already claimed by another agent");
     const est = i.team.sizes[t.size];
     if (est.costUsd > i.budget.remainingUsd) return no(`size ${t.size} needs ~$${est.costUsd.toFixed(2)}, $${i.budget.remainingUsd.toFixed(2)} left`);
     if ((t.size === "L" || t.size === "XL") && i.budget.minutesToReset < est.minutes)
       return no(`size ${t.size} takes ~${est.minutes} min, only ${i.budget.minutesToReset} min until the budget resets`);
-    return { task: t, ok: true, why: `fits: ${t.size} ~$${est.costUsd.toFixed(2)}, priority ${t.priority || "none"}` };
+    const f = failed(t);
+    return { task: t, ok: true, why: `fits: ${t.size} ~$${est.costUsd.toFixed(2)}, priority ${t.priority || "none"}${f ? `; its last ${f === 1 ? "run" : `${f} runs`} failed, so it goes after the others` : ""}` };
   });
 
   return { blockers, decisions, candidates: blockers.length ? [] : decisions.filter((d) => d.ok).map((d) => d.task) };

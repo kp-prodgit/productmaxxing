@@ -1,0 +1,210 @@
+/* ---------- Shell: the labelled nav and the work area ---------- */
+.app { display: grid; grid-template-columns: var(--nav) minmax(0, 1fr); height: 100%; min-height: 0 }
+.app > .nav { display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-2); padding-left: max(var(--space-2), env(safe-area-inset-left, 0px)); background: var(--sunken); border-right: 1px solid var(--line) }
+.nav .ws { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: 2px var(--space-2) var(--space-4) }
+.nav .ws > div { min-width: 0 }
+.nav .ws .logo { display: grid; place-items: center; flex: none; width: var(--control-sm); height: var(--control-sm); border-radius: var(--r-s); background: var(--fg); color: var(--bg); font: 700 11px/14px var(--font); letter-spacing: .02em }
+.nav .ws b { display: block; font: 600 14px/20px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.nav .ws small { display: block; color: var(--fg-2); font: 400 12px/16px var(--font) }
+.nav .label { margin: var(--space-4) var(--space-3) var(--space-1); color: var(--fg-2); font: 500 11px/14px var(--font); letter-spacing: .02em }
+.nav .ni { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--control); padding: 0 var(--space-3); border: 0; border-radius: var(--r-m); background: none; color: var(--fg); font: 400 14px/20px var(--font); text-align: left; text-decoration: none; transition: background var(--dur-1) var(--ease) }
+.nav .ni svg.i { color: var(--fg-2) }
+.nav .ni:hover { background: var(--hover) }
+.nav .ni[aria-current="page"] { background: var(--select); font-weight: 500 }
+.nav .ni[aria-current="page"] svg.i { color: var(--fg) }
+.nav .ni:disabled, .nav .ni[aria-disabled="true"] { opacity: .45; cursor: default; background: none }
+.nav .ni .badge { margin-left: auto; color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums }
+.nav .foot { display: grid; gap: 2px; margin-top: auto; padding-top: var(--space-4) }
+.app > .main { position: relative; min-width: 0; min-height: 0; overflow-y: auto }
+.app .page { max-width: calc(var(--measure) + 2 * var(--space-6)); margin-inline: auto; padding: 0 var(--space-6) var(--space-9) }
+/* The top bar and the scrim exist only at phone width, where the nav becomes a drawer. */
+.app .topbar { display: none }
+.app > .navscrim { display: none }
+@media (max-width: 767px) { .nav .ni { min-height: var(--touch) } }
+@media (max-width: 639px) {
+  .app { grid-template-columns: minmax(0, 1fr) }
+  .app > .nav { position: fixed; inset: 0 auto 0 0; z-index: 25; width: min(var(--nav), 86vw); padding-top: max(var(--space-4), env(safe-area-inset-top, 0px)); border-right: 0; box-shadow: var(--shadow); transform: translateX(-100%); visibility: hidden; transition: transform var(--dur-3) var(--ease), visibility 0s linear var(--dur-3) }
+  .app.navopen > .nav { transform: none; visibility: visible; transition: transform var(--dur-3) var(--ease) }
+  .app.navopen > .navscrim { display: block; position: fixed; inset: 0; z-index: 24; background: var(--scrim) }
+  .app .topbar { display: flex; align-items: center; gap: var(--space-2); position: sticky; top: 0; z-index: 4; padding: max(var(--space-1), env(safe-area-inset-top, 0px)) var(--space-4) var(--space-1) var(--space-2); background: var(--bg); border-bottom: 1px solid var(--line) }
+  .app .topbar .navbtn { display: grid; place-items: center; width: var(--touch); height: var(--touch); padding: 0; border: 0; border-radius: var(--r-s); background: none; color: var(--fg) }
+  .app .topbar .navbtn:hover { background: var(--hover) }
+  .app .topbar b { font: 600 14px/20px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .app .page { padding-inline: var(--space-4) }
+}
+
+/* ---------- List: a group heading and its rows ---------- */
+.group + .group { margin-top: var(--space-5) }
+.group > ul, .group > ol { list-style: none; padding: 0; display: grid }
+.group .gh { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-1) var(--space-2); padding: 0 var(--space-3) var(--space-2); margin-bottom: var(--space-1); border-bottom: 1px solid var(--line) }
+.group .gh h2 { color: var(--fg); font: 650 14px/20px var(--font) }
+.group .gh .c { color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums }
+.group .gh .r { display: flex; align-items: center; gap: var(--space-2); margin-left: auto }
+.row { position: relative; display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--r-m); transition: background var(--dur-1) var(--ease) }
+.row:hover { background: var(--hover) }
+.row.sel, .row[aria-current="true"] { background: var(--select) }
+.row:focus-visible, .row:has(a.t:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-m) }
+/* Leading slot: an icon or a check, centred on the title's first line. */
+.row .lead { position: relative; z-index: 1; display: inline-flex; align-items: center; flex: none; min-height: 20px; color: var(--fg-2) }
+.row .body { flex: 1; min-width: 0 }
+.row .t { display: block; color: var(--fg); font: 400 14px/20px var(--font); overflow-wrap: anywhere; text-decoration: none }
+/* A linked title makes the whole row the target; the trailing slot stays above it. */
+.row a.t::after { content: ""; position: absolute; inset: 0; border-radius: var(--r-m) }
+.row a.t:focus-visible { outline: none }
+.row .m { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin-top: 2px; color: var(--fg-2); font: 400 12px/16px var(--font) }
+.row .m svg.i { width: 13px; height: 13px }
+.row .acts { position: relative; z-index: 1; display: flex; align-items: center; gap: var(--space-2); flex: none; align-self: center }
+.row.done .lead { color: var(--ok) }
+.row.done .t { color: var(--fg-2); text-decoration: line-through; text-decoration-color: var(--fg-3) }
+.row[aria-disabled="true"] { color: var(--fg-3); cursor: default }
+.row[aria-disabled="true"]:hover { background: none }
+.row[aria-disabled="true"] .t { color: var(--fg-3) }
+@media (max-width: 767px) { .row { padding-block: var(--space-3) } }
+
+/* ---------- Queue: what is waiting on you, the next one first ---------- */
+.queue { list-style: none; padding: 0; display: grid }
+.queue > li { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding: var(--space-3); border-top: 1px solid var(--line) }
+.queue .body { flex: 1 1 calc(var(--space-9) * 2.5); min-width: 0; display: grid; gap: 2px }
+.queue .t { color: var(--fg); font: 400 14px/20px var(--font); overflow-wrap: anywhere }
+.queue .m { color: var(--fg-2); font: 400 12px/16px var(--font) }
+.queue > li > .btn { flex: none }
+/* The lead: the one thing to do next, raised as the object of the screen. */
+.queue > li:first-child { margin-bottom: var(--space-2); padding: var(--space-4) var(--space-5); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); box-shadow: var(--shadow-1) }
+.queue > li:first-child + li { border-top: 0 }
+.queue > li:first-child .t { font: 600 16px/22px var(--font); text-wrap: balance }
+.queue > li:first-child .m { font: 400 13px/18px var(--font) }
+@media (max-width: 599px) { .queue > li:first-child { padding: var(--space-4) } }
+
+/* ---------- Table: rows of facts, and the coverage matrix ---------- */
+.tbl { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-m) }
+.tbl table { width: 100%; border-collapse: collapse; font: 400 14px/20px var(--font) }
+.tbl th, .tbl td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle }
+.tbl thead th { background: var(--fg); color: var(--bg); font: 600 12px/16px var(--font); white-space: nowrap; vertical-align: bottom; border-bottom-color: var(--fg) }
+.tbl thead th:first-child { border-top-left-radius: calc(var(--r-m) - 1px) }
+.tbl thead th:last-child { border-top-right-radius: calc(var(--r-m) - 1px) }
+.tbl.zebra tbody tr:nth-child(even) { background: var(--sunken) }
+.tbl tr.is-total > * { border-top: 1px solid var(--line-2); font-weight: 650; background: var(--sunken) }
+/* Comparison: a Before and a Now column side by side. The changed cell is marked by weight, never by colour alone. */
+.tbl.cmp td.was { color: var(--fg-2) }
+.tbl.cmp td.now.is-changed { font-weight: 650 }
+.tbl tbody th { color: var(--fg); font: 600 14px/20px var(--font) }
+.tbl tbody tr:last-child > * { border-bottom: 0 }
+.tbl tbody tr { transition: background var(--dur-1) var(--ease) }
+.tbl tbody tr:hover { background: var(--hover) }
+.tbl td.m { color: var(--fg-2) }
+.tbl .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap }
+/* Matrix: items down, scopes across. The usual state is a quiet dash; only exceptions carry a pill. */
+.tbl.matrix td { white-space: nowrap }
+.tbl.matrix td.nil::before { content: "\2013"; content: "\2013" / ""; color: var(--fg-3) }
+.tbl.matrix tbody th { position: sticky; left: 0; z-index: 1; background: var(--card); min-width: calc(var(--space-9) + var(--space-8)) }
+.tbl.matrix thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--fg) }
+.tbl.matrix tbody tr:hover th { background: var(--hover) }
+
+/* ---------- Banner: one sentence about the whole screen ---------- */
+.banner { display: flex; align-items: flex-start; flex-wrap: wrap; gap: var(--space-1) var(--space-3); padding: var(--space-3); border-radius: var(--r-m); background: var(--warn-soft); color: var(--fg); font: 400 13px/18px var(--font) }
+.banner > svg.i { margin-top: 1px; color: var(--warn) }
+.banner > p { flex: 1 1 calc(var(--space-9) * 2.5); min-width: 0 }
+.banner a { margin-left: auto; color: var(--fg); font-weight: 600; white-space: nowrap; text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; transition: text-decoration-color var(--dur-1) var(--ease) }
+.banner a:hover { text-decoration-color: currentColor }
+.banner.info { background: var(--accent-soft) }
+.banner.info > svg.i { color: var(--accent) }
+.banner.warn { background: var(--warn-soft) }
+.banner.bad { background: var(--bad-soft) }
+.banner.bad > svg.i { color: var(--bad) }
+.banner.held { background: var(--held-soft) }
+.banner.held > svg.i { color: var(--held) }
+@media (max-width: 767px) { .banner a { display: inline-flex; align-items: center; min-height: var(--touch); margin-block: calc(var(--space-3) * -1) } }
+
+/* ---------- Toast: it happened, with a way back ---------- */
+.toast { position: fixed; left: 50%; bottom: max(var(--space-6), env(safe-area-inset-bottom, 0px)); z-index: 40; display: flex; align-items: center; gap: var(--space-3); max-width: min(var(--measure), calc(100% - 2 * var(--space-4))); min-height: calc(var(--control-sm) + 2 * var(--space-2)); padding: 0 var(--space-4); border-radius: var(--r-m); background: var(--fg); color: var(--bg); box-shadow: var(--shadow); font: 400 13px/18px var(--font); transform: translate(-50%, calc(100% + var(--space-9))); visibility: hidden; transition: transform var(--dur-2) var(--ease), visibility 0s linear var(--dur-2) }
+.toast.show { transform: translate(-50%, 0); visibility: visible; transition: transform var(--dur-2) var(--ease) }
+.toast .tt { flex: 1; min-width: 0; overflow-wrap: anywhere }
+.toast button, .toast a { display: inline-flex; align-items: center; min-height: var(--control-sm); margin-right: calc(var(--space-2) * -1); padding: 0 var(--space-2); border: 0; border-radius: var(--r-s); background: none; color: var(--bg); font: 600 13px/18px var(--font); white-space: nowrap; text-decoration: none; transition: background var(--dur-1) var(--ease) }
+.toast button:hover, .toast a:hover { background: var(--toast-hover) }
+.toast :focus-visible { outline-color: var(--bg) }
+@media (max-width: 767px) { .toast button, .toast a { min-height: var(--touch) } }
+
+/* ---------- Dialog: a question before a consequential act ---------- */
+.scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: start center; padding: 12vh var(--space-4) var(--space-4); overflow-y: auto; background: var(--scrim) }
+.modal { display: flex; flex-direction: column; width: min(560px, 100%); overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-l); box-shadow: var(--shadow) }
+.modal > h2 { padding: var(--space-5) var(--space-5) var(--space-1); font: 650 20px/26px var(--font); letter-spacing: -.01em; text-wrap: balance }
+.modal .mb { display: grid; gap: var(--space-3); padding: var(--space-2) var(--space-5) var(--space-5); color: var(--fg-2) }
+.modal .mb b { color: var(--fg); font-weight: 600 }
+.modal .mf { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) var(--space-5); background: var(--sunken); border-top: 1px solid var(--line) }
+/* Waiting on your Mac: the act is confirmed in a system dialog, so the move is the person's, over there. */
+.modal .mac { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-3); padding: var(--space-4); border-radius: var(--r-m); background: var(--mac-soft); color: var(--fg) }
+.modal .mac > svg.i { color: var(--mac) }
+.modal .mac > b { font: 600 14px/20px var(--font) }
+.modal .mac .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; color: var(--mac); animation: pmx-spin calc(var(--dur-2) * 4) linear infinite }
+.modal .mac > p { grid-column: 2 / -1; color: var(--fg-2); font: 400 13px/18px var(--font) }
+@media (max-width: 599px) { .modal > h2 { padding-inline: var(--space-4) } .modal .mb, .modal .mf { padding-inline: var(--space-4) } .modal .mf .btn { flex: 1 1 auto } }
+
+/* ---------- Sheet: detail at the side, the list still in view ---------- */
+.sheet { position: fixed; top: 0; right: 0; bottom: 0; z-index: 20; display: flex; flex-direction: column; width: min(420px, 100%); padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) 0; background: var(--card); border-left: 1px solid var(--line); box-shadow: var(--shadow); transform: translateX(100%); visibility: hidden; transition: transform var(--dur-3) var(--ease), visibility 0s linear var(--dur-3) }
+.sheet.open { transform: none; visibility: visible; transition: transform var(--dur-3) var(--ease) }
+.sheet > header { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-3) var(--space-3) var(--space-5); border-bottom: 1px solid var(--line) }
+.sheet > header h2 { flex: 1; min-width: 0; font: 600 16px/22px var(--font); text-wrap: balance; overflow-wrap: anywhere }
+.sheet > header .x { width: var(--control); padding: 0 }
+.sheet .sb { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-5); padding: var(--space-5) }
+.sheet .sb h3 { margin-bottom: var(--space-1); color: var(--fg-2); font: 500 11px/14px var(--font); letter-spacing: .02em }
+.sheet .sb p { color: var(--fg); overflow-wrap: anywhere }
+.sheet > footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) var(--space-5); background: var(--card); border-top: 1px solid var(--line) }
+@media (max-width: 767px) { .sheet > header .x { width: var(--touch) } }
+@media (max-width: 599px) { .sheet > header { padding-left: var(--space-4) } .sheet .sb { padding: var(--space-4) } .sheet > footer { padding-inline: var(--space-4) } }
+
+/* ---------- Skeleton: the shape of what is loading ---------- */
+.skel { display: block; height: var(--space-9); border-radius: var(--r-l); background: linear-gradient(90deg, var(--hover) 30%, var(--card) 50%, var(--hover) 70%) 0 0 / 300% 100%; animation: pmx-shimmer calc(var(--dur-3) * 5) var(--ease) infinite }
+.skel.line { height: var(--space-3); margin-block: var(--space-1); border-radius: var(--r-s) }
+.skel.line.sm { height: var(--space-2) }
+.skel.line.mid { width: 70% }
+.skel.line.short { width: 40% }
+.skel.dot { width: var(--space-4); height: var(--space-4); border-radius: 50% }
+.skel.ctl { width: var(--space-9); height: var(--control); border-radius: var(--r-s) }
+@keyframes pmx-shimmer { from { background-position: 100% 0 } to { background-position: 0 0 } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; background: var(--hover) } }
+
+/* ---------- People: a person by name, never by initials alone ---------- */
+.who { position: relative; display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font: 500 13px/18px var(--font); white-space: nowrap }
+.who .av { display: grid; place-items: center; flex: none; width: var(--space-5); height: var(--space-5); border-radius: 50%; background: var(--hover); color: var(--fg-2); font: 600 11px/14px var(--font); letter-spacing: .02em }
+.who .role { color: var(--fg-2); font-weight: 400 }
+.who .more { color: var(--fg-2) }
+/* The full list: read by screen readers at rest, shown under the name on hover and focus. */
+.who .all { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap }
+.who:hover .all, .who:focus-visible .all { top: calc(100% + var(--space-1)); left: 0; z-index: 10; width: auto; height: auto; overflow: visible; clip: auto; padding: var(--space-1) var(--space-2); border-radius: var(--r-s); background: var(--fg); color: var(--bg); box-shadow: var(--shadow); font: 400 12px/16px var(--font) }
+.app .page.wide { max-width: calc(var(--measure-wide) + 2 * var(--space-6)) }
+.app .page.full { max-width: none }
+
+/* ---------- Review fixes for the parts above (REVIEW-studio.md, REVIEW-readers.md) ---------- */
+/* S50: skip link, hidden until focused, first in the tab order */
+.skip { position: fixed; top: var(--space-2); left: var(--space-2); z-index: 60; padding: var(--space-2) var(--space-3); border-radius: var(--r-s); background: var(--card); color: var(--fg); box-shadow: var(--shadow); font: 500 13px/18px var(--font); transform: translateY(calc(-100% - var(--space-4))) }
+.skip:not(:focus) { clip-path: inset(50%); box-shadow: none }
+.skip:focus { transform: none }
+/* S49: the nav count meets 4.5:1 in light */
+.nav .ni .badge { color: var(--fg-2) }
+/* S52: link buttons in a row's actions, and a row's title link, are at least the touch size under 768px */
+@media (max-width: 767px) {
+  .row .acts > .link, .row .m > .link, .gh .r .link, .tbl button.link { display: inline-flex; align-items: center; min-height: var(--touch) }
+  .row .body > a.t { display: inline-flex; align-items: center; min-height: var(--touch) }
+}
+/* S2: a table's screen-reader-only cells are positioned inside its own scroller, so they never widen the page. */
+.tbl { position: relative }
+/* S6: a dialog always fits the window. The header and footer stay put; the body scrolls. */
+.modal { max-height: calc(100vh - 12vh - var(--space-4)); max-height: calc(100dvh - 12vh - var(--space-4)) }
+.modal > h2, .modal .mf { flex: none }
+.modal .mb { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain }
+/* S39: behind a dialog the page goes grey, so its own filled button no longer competes */
+.scrim { backdrop-filter: grayscale(1); -webkit-backdrop-filter: grayscale(1) }
+/* S8: an open Sheet is modal. The page behind is dimmed by the scrim and inert (the screen sets `inert` on .app),
+   its filled button is quiet, so the sheet's own button is the one fill. The section the sheet is about stays lit above the scrim.
+   On wide screens the sheet pushes the work area left instead of covering it. */
+body:has(> .sheet.open) { --sheet-w: calc(var(--space-9) * 4 + var(--space-5) + var(--space-3)) }
+body:has(> .sheet.open)::before { content: ""; position: fixed; inset: 0; z-index: 19; background: var(--scrim) }
+body:has(> .sheet.open) .app .btn.pri { background: var(--card); border-color: var(--line-2); color: var(--fg); font-weight: 500 }
+body:has(> .sheet.open) .sec.is-selected, body:has(> .sheet.open) .canvas .entry.is-selected { z-index: 20 }
+.sheet { width: min(var(--sheet-w, calc(var(--space-9) * 4 + var(--space-5) + var(--space-3))), 100%) }
+@media (min-width: 1280px) {
+  body:has(> .sheet.open) .app > .main { padding-right: var(--sheet-w) }
+  body:has(> .sheet.open) .app > .main .page { transition: max-width var(--dur-3) var(--ease) }
+}
+/* S8 / S39: the page behind a dialog is inert too (the screen sets `inert`); its fill stays quiet under the scrim. */
+body:has(> .scrim) .app .btn.pri, body:has(> .scrim) > .sheet .btn.pri { background: var(--card); border-color: var(--line-2); color: var(--fg); font-weight: 500 }

@@ -167,7 +167,8 @@ describe("0.25.0: setup fixes from a tester's report", () => {
     expect(page).toContain('runNow("synthesize"');
     expect(page).toContain("What happened to each meeting");
     expect(page).toContain("To-dos come from all of them, 1:1s included, and never leave this Mac.");
-    expect(page).toContain('act("todo-linear"');
+    // A to-do reaches Linear through Where in its details (TODO-5), which moves it.
+    expect(page).toContain('act("move", { ref, to, ...o })');
     expect(page).toMatch(/const PERSONAL = \[[^\]]*"todosLinear"\]/);
     expect(page).toContain("old_server:");
     expect(page).toMatch(/unknown tool\|tool not found/);

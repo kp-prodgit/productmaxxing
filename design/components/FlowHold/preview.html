@@ -1,0 +1,26 @@
+<!-- @dsCard group="Flows" height=380 -->
+<!doctype html><html><head><meta charset="utf-8"><style>.pv{padding:24px;display:grid;gap:32px}</style></head><body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-mac" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M11 3l1.9 5.6L18.5 10l-5.6 1.9L11 17.5l-1.9-5.6L3.5 10l5.6-1.4L11 3z"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.7-8.7M16.5 6.5l2.5 2.5M14 9l2 2"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+<symbol id="i-board" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15M14.5 4.5v15"/></symbol>
+<symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="5.5" r="2"/><circle cx="7" cy="18.5" r="2"/><circle cx="17" cy="7.5" r="2"/><path d="M7 7.5v9M17 9.5c0 4.5-10 3-10 7"/></symbol>
+<symbol id="i-page" viewBox="0 0 24 24"><path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4M9.5 12.5h5M9.5 16h5"/></symbol>
+<symbol id="i-repeat" viewBox="0 0 24 24"><path d="m17 3.5 3 3-3 3"/><path d="M4 11.5v-1a4 4 0 0 1 4-4h12"/><path d="m7 20.5-3-3 3-3"/><path d="M20 12.5v1a4 4 0 0 1-4 4H4"/></symbol>
+</defs></svg>
+<div class="pv">
+<figure class="flow-fig">
+<figcaption><b>One approval takes a section back from every page that has it.</b><span>It changes what the pages show from now on. It does not reach copies, screenshots or anything already said.</span></figcaption>
+<ol class="flow">
+<li class="station at-reader"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-page"/></svg>Each group's page</span><b>A released section is wrong</b><small>A reader tells you, or you see it yourself.</small></div></li>
+<li class="station at-you"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-key"/></svg>You, on your Mac</span><b>You hold back or withdraw</b><small>A withdrawal also says what to say instead.</small></div><p class="flow-note"><b>Cancel:</b> every page keeps the section.</p></li>
+<li class="station at-claude"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg>In the Claude app</span><b>Claude sends it now</b><small>One command per group, the latest group first.</small></div><p class="flow-note"><b>In team memory too:</b> a pull request takes it out. Git history keeps the old text.</p></li>
+<li class="station at-reader"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-page"/></svg>Each group's page</span><b>Pages show the notice instead</b><small>Your note, and when the next update is due.</small></div></li>
+<li class="station at-mac"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-mac"/></svg>In the studio, on your Mac</span><b>You revise the section</b><small>Nobody sees the change yet.</small></div></li>
+<li class="station at-you"><div class="node"><span class="place"><svg class="i" aria-hidden="true"><use href="#i-person"/></svg>You, in the studio</span><b>You release again</b><small>Then approve each group, in order, as before.</small></div></li>
+</ol>
+</figure>
+</div></body></html>

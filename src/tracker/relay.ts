@@ -7,6 +7,7 @@ import { paths } from "../core/paths.js";
 import { CANARY_REFUSAL, hasCanary } from "../core/canary.js";
 import { SIZES, STATUSES, type Size, type Status, type Task } from "../core/types.js";
 import { GROUPS, kindOf, toMeeting, toTask } from "./linear.js";
+import { nextCronTime } from "../core/cron.js";
 import { meetingDescription, meetingTitle, type MeetingEntry, type NewMeeting, type NewTask, type Tracker } from "./types.js";
 
 /**
@@ -200,6 +201,7 @@ export function relayTracker(team: TeamConfig, warn: (m: string) => void = () =>
     setStatus: (id, s: Status) => setLabel(id, GROUPS.status, s),
     setAgent: (id, a) => setLabel(id, GROUPS.agent, a),
     setSize: (id, s) => setLabel(id, GROUPS.size, s),
+    setCategory: (id, c) => setLabel(id, GROUPS.category, c),
     async setPriority(id, priority) {
       await enqueue({ kind: "set-priority", target: target(await nodeFor(id)), priority });
     },
@@ -280,8 +282,15 @@ For every Linear document in project ${projectId} whose title starts with \`pmx-
 Run \`pmx linear relay --check\` and report what it prints. Don't change anything else in Linear or in any other app.`;
 }
 
-/** For `pmx doctor`: how the relay is doing, read-only (unlike `checkRelay`, it never changes a file). */
-export async function relayHealth(team: TeamConfig, now = new Date()): Promise<{ ok: boolean; detail: string }> {
+/** A sync that's this late after it was due counts as missed: the Claude app was closed, the Mac asleep, or the run stuck. */
+const GRACE_MS = 90 * 60000;
+
+/**
+ * For `pmx doctor`, `pmx status` and the board: how the relay is doing, read-only (unlike `checkRelay`, it never
+ * changes a file). `cron` is the sync task's schedule (CLAUDE-5): the relay is behind once a sync it was due for is
+ * missed, so a task moved to Ready overnight isn't silently invisible until a six-hour limit passes.
+ */
+export async function relayHealth(team: TeamConfig, now = new Date(), o: { cron?: string } = {}): Promise<{ ok: boolean; detail: string }> {
   const snap = await readSnapshot();
   const ops = (await readOutbox()).ops;
   const failing = ops.filter((o) => (o.failures ?? 0) > 0).length;
@@ -292,7 +301,9 @@ export async function relayHealth(team: TeamConfig, now = new Date()): Promise<{
     return { ok: false, detail: `Linear through Claude: the snapshot is for project ${snap.projectId}, not this team's; ${how}` };
   const age = now.getTime() - Date.parse(snap.syncedAt);
   const hours = Math.round(age / 3600000);
-  if (!(age <= STALE_MS)) return { ok: false, detail: `Linear through Claude: last synced ${hours}h ago (${queue}); ${how}` };
+  const due = o.cron ? nextCronTime(o.cron, new Date(snap.syncedAt)) : null;
+  const behind = due ? now.getTime() - due.getTime() > GRACE_MS : !(age <= STALE_MS);
+  if (behind) return { ok: false, detail: `Linear through Claude: last synced ${hours}h ago${due ? `, and missed the sync due at ${due.toTimeString().slice(0, 5)}` : ""} (${queue}); ${how}` };
   const missing = snap.labels ? pmxLabels(team).filter((l) => !snap.labels!.includes(l)) : [];
   if (missing.length) return { ok: false, detail: `Linear through Claude: ${missing.length} PMX label(s) missing in Linear (${missing.slice(0, 4).join(", ")}${missing.length > 4 ? ", …" : ""}), so the board can't move cards; the next sync creates them: ${how}` };
   return { ok: !failing, detail: `Linear through Claude: synced ${hours ? `${hours}h` : "under an hour"} ago, ${queue}` };

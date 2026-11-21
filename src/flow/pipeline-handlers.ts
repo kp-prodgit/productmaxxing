@@ -5,10 +5,13 @@ import { approveProposals, dropProposals, setProposalTheme } from "../synth/prop
 import { applyPersonal, checkChange, describe, isTeamChange, loosens, proposeTeamChanges, saveTakes } from "./actions.js";
 import { checkNeverIngest, whatIf } from "./edit.js";
 import { loadPipeline } from "./pipeline-load.js";
-import { rememberTeamPr } from "./team-prs.js";
+import { forgetTeamPr, rememberTeamPr } from "./team-prs.js";
+import { localHost } from "../core/host.js";
 import { digestAction } from "./digests.js";
 import { startJob } from "./jobs.js";
 import { addTodo, completeTodo, placeTodo, sendTodoToLinear } from "../todo/todo.js";
+import { moveWork, PLACES, type Place } from "../todo/move.js";
+import { openWebServer, stopWebServer, webServerStatus } from "./web-server.js";
 import type { PipelineActions } from "./pipeline-act.js";
 import { mkdir } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -38,7 +41,7 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
       }
       const r = await approveProposals(ctx, await services(ctx), ids);
       const pending = r.posted.some((p) => p.identifier.startsWith("PENDING-"));
-      return [r.posted.length ? `Sent ${r.posted.map((p) => p.identifier).join(", ")} to the PMX inbox${pending ? "; it reaches Linear at the next Claude sync" : ""}.` : "", ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`)].filter(Boolean).join(" ") || "Nothing to approve.";
+      return [r.posted.length ? `Approved ${r.posted.map((p) => p.identifier).join(", ")}: ${r.posted.length === 1 ? "it goes" : "they go"} to your team's pool in Linear${pending ? " at the next Claude sync" : ""}. An agent takes ${r.posted.length === 1 ? "it" : "one"} only after a teammate moves it to Ready.` : "", ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`)].filter(Boolean).join(" ") || "Nothing to approve.";
     },
     async proposalTheme(id: string, theme: string | null) {
       try {
@@ -69,6 +72,19 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
         } catch (e: any) { prError = e.message; }
       }
       return { status: 200, body: { applied, pr, prError } };
+    },
+    /**
+     * BOARD-9 (#16): a team repo with no remote can't open a pull request, so team settings from the board stay a local
+     * branch. Applying it merges it into the PM's checkout, as accepting a pull request would.
+     */
+    async teamApply(branch: string) {
+      if (!/^pmx\/settings-\d{14}$/.test(branch)) return { status: 400, body: { error: "That isn't a team settings branch from PMX." } };
+      if (await ctx.repo.hasRemote()) return { status: 409, body: { error: "Your team repo has a remote, so this is a pull request: a teammate approves and merges it there." } };
+      try {
+        await localHost(ctx.repo).accept(branch);
+        await forgetTeamPr(branch);
+        return { status: 200, body: { message: "Applied your team's settings. They take effect from PMX's next run." } };
+      } catch (e: any) { return { status: 500, body: { error: e.message } }; }
     },
     /** A draft pull request decided from the board, as `pmx review` would. */
     async review(identifier: string, verdict: string, note: string) {
@@ -114,6 +130,14 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
         return { status: 200, body: { message: r.already ? `Already in Linear as ${r.identifier}.` : `Sent to Linear as ${r.identifier}: ${r.text}` } };
       } catch (e: any) { return { status: 400, body: { error: e.message.replace(/`([^`]+)`/g, "$1") } }; }
     },
+    /** TODO-5: a to-do, a proposal or a team task moved to private, to-do or product, as `pmx move` does. */
+    async move(input: { ref: string; to: string; kind?: string; size?: string }) {
+      if (!/^[\w-]{3,64}$/.test(input.ref) || !(PLACES as readonly string[]).includes(input.to)) return { status: 400, body: { error: "Unknown move." } };
+      try {
+        const r = await moveWork(ctx, () => services(ctx), input.ref, input.to as Place, { kind: input.kind, size: input.size });
+        return { status: 200, body: { message: r.message + (r.identifier?.startsWith("PENDING-") ? " It reaches Linear at the next Claude sync." : ""), moved: r } };
+      } catch (e: any) { return { status: 400, body: { error: e.message.replace(/ \(--kind\)/, "").replace(/`([^`]+)`/g, "$1") } }; }
+    },
     /** A paused category resumed from the board, as `pmx review --unpause` does (Team plan). */
     async resume(category: string) {
       if (!(category in ctx.team.categories)) return { status: 400, body: { error: "Unknown category." } };
@@ -121,6 +145,21 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
       if (!unpauseHandler) return { status: 409, body: { error: "Resuming a paused category comes with the Team plan." } };
       try { return { status: 200, body: { message: String(await unpauseHandler(ctx, category)).replace(/`([^`]+)`/g, "$1") } }; }
       catch (e: any) { return { status: 400, body: { error: e.message } }; }
+    },
+    /**
+     * BOARD-8: this Mac's own page, from the Claude app's page. "open" starts it if it isn't running and opens it in the
+     * PM's browser, as `pmx open` does; "stop" stops it. The page's link never leaves this Mac.
+     */
+    async localPage(action: string) {
+      if (action !== "open" && action !== "stop") return { status: 400, body: { error: `Unknown action "${action}".` } };
+      try {
+        if (action === "open") {
+          const r = await openWebServer(ctx.exec);
+          return { status: 200, body: { message: r.started ? "Started PMX's page on this Mac and opened it in your browser." : "Opened PMX's page on this Mac in your browser.", localPage: await webServerStatus() } };
+        }
+        const stopped = await stopWebServer();
+        return { status: 200, body: { message: stopped ? "Stopped PMX's page on this Mac." : "PMX's page on this Mac wasn't running.", localPage: await webServerStatus() } };
+      } catch (e: any) { return { status: 500, body: { error: e.message } }; }
     },
     /** One-click setup from the board. "install-job" registers the background job, as `pmx init` does when you say yes. */
     async setup(action: string) {

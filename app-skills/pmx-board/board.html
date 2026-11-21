@@ -16,6 +16,7 @@
   /* The flow map: where data is (this Mac, Claude, Linear, your repo, kept private). */
   --mac: #2f5f86; --mac-soft: #e1ebf4; --claude: #7a3fc4; --claude-soft: #efe6fa; --linear: #0e6b5b; --linear-soft: #dcefe9; --repo: #6d5a2e; --repo-soft: #f1ecdf; --held: #9a5a06; --held-soft: #f7ead6;
   --shadow: 0 10px 30px rgba(20,24,35,.10), 0 1px 3px rgba(20,24,35,.06);
+  --shadow-1: 0 1px 2px rgba(20,24,35,.06), 0 1px 1px rgba(20,24,35,.04);
   --scrim: rgba(10,12,18,.35); --knob: #ffffff; --toast-hover: rgba(127,127,127,.25);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
@@ -29,15 +30,43 @@
   --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
   --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
   --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
-  --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark } }
+  --scrim: rgba(0,0,0,.6); --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121316; --sunken: #17191d; --card: #1b1d22; --hover: #22252b; --select: #1f2a44;
   --line: #2a2d34; --line-2: #383c45; --fg: #ececef; --fg-2: #a9aeb8; --fg-3: #8d929d;
   --accent: #6f97ff; --accent-soft: #1d2741; --accent-fg: #0d1220;
   --today: #f5c242; --ok: #4fcf86; --ok-soft: #14281d; --warn: #f0b04a; --warn-soft: #2c2312; --bad: #f07272; --bad-soft: #2e1718;
   --ic-up: #f07a8c; --ic-any: #5cc9b8; --mac: #7fb0db; --mac-soft: #1b2a37; --claude: #b892f0; --claude-soft: #2a2140; --linear: #5cc9b1; --linear-soft: #15332d; --repo: #d4bb7c; --repo-soft: #302a1b; --held: #e4a956; --held-soft: #3a2c17;
-  --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark }
+  --scrim: rgba(0,0,0,.6); --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow: 0 10px 30px rgba(0,0,0,.45); color-scheme: dark }
 /* <<< tokens */
+/* >>> scale */
+:root {
+  /* The family names PMX Engine's parts use, drawn from the Workspace's own. */
+  --font-sans: var(--font); --font-mono: var(--mono);
+  /* Type: weight size/line-height family, for `font:`; -tracking is its letter-spacing. */
+  --t-title-1: 650 24px/30px var(--font-sans); --t-title-1-tracking: -0.01em;
+  --t-title-2: 650 20px/26px var(--font-sans); --t-title-2-tracking: -0.01em;
+  --t-title-3: 600 16px/22px var(--font-sans);
+  --t-body: 400 14px/20px var(--font-sans);
+  --t-strong: 600 14px/20px var(--font-sans);
+  --t-callout: 400 13px/18px var(--font-sans);
+  --t-caption: 400 12px/16px var(--font-sans);
+  --t-micro: 500 11px/14px var(--font-sans); --t-micro-tracking: 0.02em;
+  --b-display: 700 48px/52px var(--font-sans); --b-display-tracking: -0.022em;
+  --b-headline: 680 32px/38px var(--font-sans); --b-headline-tracking: -0.018em;
+  --b-standfirst: 400 21px/30px var(--font-sans); --b-standfirst-tracking: -0.005em;
+  --b-title: 650 21px/28px var(--font-sans); --b-title-tracking: -0.01em;
+  --b-body: 400 17px/26px var(--font-sans);
+  --b-note: 400 14px/20px var(--font-sans);
+  --b-figure: 700 56px/56px var(--font-sans); --b-figure-tracking: -0.03em;
+  --t-mono: 400 12px/16px var(--font-mono);
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px; --space-9: 96px;
+  --r-pill: 999px;
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 320ms;
+  --measure: 680px; --measure-wide: 960px; --rail: 72px; --nav: 244px; --control: 32px; --control-sm: 26px; --touch: 44px;
+  --ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+/* <<< scale */
 /* The board's own names, drawn from the shared tokens, and its lane colours. */
 :root {
   --surface: var(--card); --surface-2: var(--hover); --muted: var(--fg-2); --faint: var(--fg-3); --sans: var(--font); --radius: var(--r-s);

@@ -2,7 +2,7 @@ import { stalePages } from "../claude/pages.js";
 import { neverSynthesized } from "../synth/status.js";
 import { agentHandle } from "../core/config.js";
 import { oldServerNote, oldServers } from "../mcp/handoff.js";
-import { neededTasks, taskRunHealth, taskState } from "../claude/tasks.js";
+import { appliedSchedule, LINEAR_SYNC_TASK, neededTasks, taskRunHealth, taskState } from "../claude/tasks.js";
 import { nodeSupported, profileSignedIn, resolveClaude } from "../core/claude-bin.js";
 import { missingAllowRules } from "../claude/permissions.js";
 import { linearAccess } from "../linear/access.js";
@@ -35,6 +35,9 @@ import { mcpHealth } from "../mcp/server.js";
 import { teamSyncProblem } from "./team-sync.js";
 import { engineChecks } from "../engine/bridge.js";
 import { readThemes, THEMES_FORMAT } from "../synth/themes.js";
+
+/** Days without an update check before `pmx doctor` says the background job isn't checking. */
+export const AUTO_UPDATE_STALE_DAYS = 2;
 
 export interface DoctorDeps {
   team: TeamConfig | null;
@@ -153,7 +156,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
       : `team package is pmx ${vendored}`, "warn");
   // Claude tasks (CLAUDE-1): PMX can't create them, so doctor says which are missing.
   const fix = (await appSkillInstalled()) ? "type /pmx-schedule in the Claude app" : "run `pmx schedule`";
-  const tasks = await neededTasks(d.team, d.keychain);
+  const tasks = await neededTasks(d.team, d.keychain, d.personal.taskHours);
   for (const t of tasks) {
     const state = await taskState(t);
     add(`claude.task.${t.id}`, state === "current", `Claude scheduled task "${t.title}"${state === "current" ? "" : state === "outdated" ? ` has an older prompt: ${fix}` : ` is missing: ${fix}`}`, "warn");
@@ -181,8 +184,11 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (d.team.cli?.autoUpdate) {
     const au = st.autoUpdate;
     const stuck = au && (au.result === "needs-sudo" || au.result === "failed");
-    add("cli.auto-update", !stuck, au
-      ? `auto-update on; last check ${au.checkedAt.slice(0, 16).replace("T", " ")}: ${stuck ? `pmx ${au.version} is waiting, run \`pmx update\`` : au.result === "dev-install" ? "source checkout, not replaced" : au.result}`
+    // The job checks hourly while the Mac is awake; days without a check mean it isn't running, whatever the last result said.
+    const days = au ? Math.floor(((d.now?.() ?? new Date()).getTime() - Date.parse(au.checkedAt)) / 86400000) : 0;
+    const stale = days >= AUTO_UPDATE_STALE_DAYS;
+    add("cli.auto-update", !stuck && !stale, au
+      ? `auto-update on; last check ${au.checkedAt.slice(0, 16).replace("T", " ")}: ${stuck ? `pmx ${au.version} is waiting, run \`pmx update\`` : au.result === "dev-install" ? "source checkout, not replaced" : au.result}${stale ? `, ${days} days ago: the background job hasn't checked since` : ""}`
       : "auto-update on; the background job hasn't checked yet", "warn");
   }
   // JOB-10: a checkout that stopped following the team's repo means different kinds of work from everyone else's.
@@ -237,7 +243,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (access === "key") add("secrets.linear", true, "Linear API key in the keychain");
   if (access === "signed-in") add("secrets.linear", true, "signed in to Linear");
   if (access === "relay") {
-    const h = await relayHealth(d.team);
+    const h = await relayHealth(d.team, d.now?.() ?? new Date(), { cron: (await appliedSchedule(LINEAR_SYNC_TASK)).cron });
     add("linear.relay", h.ok, h.detail, "warn");
   }
 
@@ -245,8 +251,11 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   const plan = d.personal.plan;
   add("model.plan", plan !== "free", plan === "free" ? "Claude Free doesn't include Claude Code: PMX needs a Pro, Max, Team or Enterprise plan" : `model plan "${plan}"`, "warn");
 
-  add("schedule.launchd", await d.launchd.isLoaded(), "one launchd job registered (runs `pmx tick` every 30 min)", "warn");
-  const tick = tickHealth(st.lastTick);
+  const jobLoaded = await d.launchd.isLoaded();
+  add("schedule.launchd", jobLoaded, jobLoaded
+    ? "one launchd job registered (runs `pmx tick` every 30 min)"
+    : "no background job on this Mac, so PMX doesn't pull your team's repo, update itself or run on its own: turn on automatic runs on your PMX page, or run `pmx init`", "warn");
+  const tick = tickHealth(st.lastTick, 3, d.now?.() ?? new Date());
   if (tick) add("schedule.tick", tick.ok, tick.detail, "warn");
 
   const git = new Git(repo, d.exec);

@@ -76,7 +76,7 @@ export const jobsCommands: Command[] = [
         console.log([
           `Sent "${draft.name}" (${made}) to your team for approval: ${pr.url}`,
           "",
-          "When a code owner merges it, every PM on the team has it, and synthesis can propose it.",
+          "When a code owner merges it, every PM on the team has it, and synthesis can suggest it.",
           draft.required ? "It's required, so every PM's agent takes it." : "Your agent takes it once it merges; each teammate chooses in Settings → Kinds of work.",
         ].join("\n"));
         return 0;

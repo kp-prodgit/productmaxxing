@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
 import { packageRoot } from "../core/skills.js";
-import { currentVersion } from "../core/version.js";
+import { compareVersions, currentVersion } from "../core/version.js";
+import { boardStale } from "./board.js";
 import { BOARD_SKILL, FLOW_SKILL } from "./skill.js";
 
 /**
@@ -32,16 +33,21 @@ export function installedVersion(): string {
   }
 }
 
+/** FLOW-8: a PMX page published with 0.36.0 or later updates itself after a PMX update (it declares `artifact`). */
+export const SELF_UPDATE_SINCE = "0.36.0";
+export const selfUpdating = (v: string | null | undefined) => !!v && (compareVersions(v, SELF_UPDATE_SINCE) ?? -1) >= 0;
+
 /**
- * The pages this Mac published with a pmx other than `version`. The team board counts only when this Mac published it:
+ * The pages this Mac published that Claude has to publish again: the workspace from before 0.36.0 with a pmx other
+ * than `version` (a newer one updates itself the next time it's opened), and the team board when its page changed. The team board counts only when this Mac published it:
  * a board someone else shared in pmx.config.json is theirs to update.
  */
 export function stalePages(team: Pick<TeamConfig, "board"> | null, personal: Pick<PersonalConfig, "flow" | "board"> | null, version = installedVersion()): StalePage[] {
   const out: StalePage[] = [];
   const f = personal?.flow;
-  if (f?.url && f.version !== version) out.push({ skill: FLOW_SKILL, title: "PMX workspace", url: f.url, publishedVersion: f.version ?? null, version });
+  if (f?.url && f.version !== version && !selfUpdating(f.version)) out.push({ skill: FLOW_SKILL, title: "PMX workspace", url: f.url, publishedVersion: f.version ?? null, version });
   const b = personal?.board;
-  if (b?.url && (!team?.board?.url || team.board.url === b.url) && b.version !== version)
+  if (b?.url && (!team?.board?.url || team.board.url === b.url) && boardStale(b, version))
     out.push({ skill: BOARD_SKILL, title: "PMX team board", url: b.url, publishedVersion: b.version ?? null, version });
   return out;
 }

@@ -243,8 +243,8 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
       const st = t.posted;
       add({
         // A task the PM hasn't approved stays theirs: shared views show its title only once it's in Linear.
-        id, kind: "task", stage: 3, run: r.id, label: local || (st && ("identifier" in st || "duplicateOf" in st)) ? t.title : `Proposed task ${idx + 1}`, at: r.at,
-        status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : st && "mergedInto" in st ? "added to a waiting proposal" : st && "todo" in st ? "kept as a to-do" : st && "duplicateOf" in st ? "heard again" : "proposed",
+        id, kind: "task", stage: 3, run: r.id, label: local || (st && ("identifier" in st || "duplicateOf" in st)) ? t.title : `New task ${idx + 1}`, at: r.at,
+        status: r.dryRun ? "dry-run" : st && "staged" in st ? "waiting for approval" : st && "dropped" in st ? "dropped" : st && "mergedInto" in st ? "added to a task waiting for approval" : st && "todo" in st ? "kept as a to-do" : st && "duplicateOf" in st ? "heard again" : "suggested",
         meta: { category: t.category, size: t.size, why: t.sizing?.why ?? null, flags: t.sizing?.flags.join(", ") || null, sources: t.sources.length },
       });
       link(runId, id, "synthesized");
@@ -356,11 +356,11 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
     : { id: "runlog-chain", status: "violated", label: "Agent history is untouched", detail: i.chain.problems.slice(0, 3).join("; ") });
   else checks.push({ id: "runlog-chain", status: "unknown", label: "Agent history", detail: "Nothing recorded yet: no agent has run a task." });
   if (!team) checks.push(oldLinks || unresolved
-    ? { id: "links", status: "unknown", label: "Every Linear task traces back to its run", detail: [oldLinks ? `${pl(oldLinks, "task")} matched by title (older runs don't record the issue; drawn dashed)` : "", unresolved ? `${pl(unresolved, "task waits", "tasks wait")} for the next Linear sync` : ""].filter(Boolean).join("; ") }
-    : { id: "links", status: "ok", label: "Every Linear task traces back to its run", detail: "Every task that went to Linear in this window records the issue it became." });
+    ? { id: "links", status: "unknown", label: "Every Linear task traces back to its run", detail: [oldLinks ? `${pl(oldLinks, "task")} matched by title (older runs don't record which Linear task; drawn dashed)` : "", unresolved ? `${pl(unresolved, "task waits", "tasks wait")} for the next Linear sync` : ""].filter(Boolean).join("; ") }
+    : { id: "links", status: "ok", label: "Every Linear task traces back to its run", detail: "Every task that went to Linear in this window records the Linear task it became." });
 
   if (!team && !receipts.length) gaps.push("No PMX run on this Mac in this window. Widen the window, or check `pmx schedule`.");
-  if (i.issues === null && !team) gaps.push("No copy of Linear yet: issues appear after the next Linear sync.");
+  if (i.issues === null && !team) gaps.push("No copy of Linear yet: tasks appear after the next Linear sync.");
   const oldest = i.receipts.map((r) => r.at).sort()[0] ?? null;
   if (!team && oldest && oldest > since.toISOString()) gaps.push(`PMX keeps run records for 14 days; the oldest here is from ${oldest.slice(0, 10)}.`);
   if (!team) for (const e of (i.runlog ?? []).filter((x) => inWindow(x.ts) && x.agent === i.agent && (x.type === "synthesize" || x.type === "digest")))
@@ -388,7 +388,7 @@ export function trustClaims(g: FlowGraph): string[] {
     for (const n of g.nodes) if (n.status === "held") byRule.set(String(n.meta.ruleLabel), (byRule.get(String(n.meta.ruleLabel)) ?? 0) + 1);
     if (byRule.size) out.push(`Held: ${[...byRule].map(([k, v]) => `${v} ${k.toLowerCase()}`).join(", ")}.`);
   }
-  out.push(`${s.tasks} task(s) proposed, ${s.registered} in Linear; ${s.executions} agent run(s).`);
+  out.push(`${s.tasks} task(s) suggested, ${s.registered} in Linear; ${s.executions} agent run(s).`);
   if (s.capUsd !== null) out.push(`$${s.spentUsd.toFixed(2)} spent in this window; today's cap is $${s.capUsd.toFixed(2)}.`);
   for (const c of g.checks) out.push(`${c.status === "ok" ? "✔" : c.status === "violated" ? "✘" : "?"} ${c.label}: ${c.detail}`);
   return out;

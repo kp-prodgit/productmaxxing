@@ -3,7 +3,7 @@
 <!-- Installed by ProductMaxxing. `pmx board --html` fills in the config below; /pmx-board publishes it as a Claude artifact (BOARD-1). -->
 <script type="application/json" id="pmx-config">{"team":"","teamKey":"","projectId":"","version":""}</script>
 <style>
-/* Layout: a five-lane pipeline (pool → ready → in flight → review → done); one lane at a time on phones. */
+/* Layout: a five-lane pipeline (backlog → ready → in flight → review → done); one lane at a time on phones. */
 /* The PMX Workspace's colour and type tokens, copied byte for byte from app-skills/pmx-flow/pipeline.html (test/tokens.test.ts). */
 /* >>> tokens */
 :root {
@@ -153,7 +153,7 @@ header .sub code { font-family: var(--mono); font-size: 12px }
 </header>
 <div id="banner"></div>
 <div class="filters" id="filters" hidden>
-  <label for="f-category">Category<select id="f-category"><option value="">Any</option></select></label>
+  <label for="f-category">Kind of work<select id="f-category"><option value="">Any</option></select></label>
   <label for="f-size">Size<select id="f-size"><option value="">Any</option></select></label>
   <label for="f-who">Agent<select id="f-who"><option value="">Anyone</option></select></label>
   <label for="f-q" class="q">Search<input id="f-q" type="search" placeholder="Title or ID"></label>
@@ -166,7 +166,7 @@ header .sub code { font-family: var(--mono); font-size: 12px }
   const CFG = JSON.parse(document.getElementById("pmx-config").textContent || "{}");
   const LINEAR = "Linear";
   const ZONES = [
-    { key: "pool", title: "Pool", hint: "New work. Triage it to Ready.", color: "--inbox" },
+    { key: "pool", title: "Backlog", hint: "New work. Triage it to Ready.", color: "--inbox" },
     { key: "ready", title: "Ready", hint: "Agents pick these up on their next run.", color: "--ready" },
     { key: "inFlight", title: "In flight", hint: "Claimed, running or blocked.", color: "--running" },
     { key: "review", title: "Review", hint: "Drafts waiting for a human.", color: "--review" },
@@ -374,14 +374,14 @@ header .sub code { font-family: var(--mono); font-size: 12px }
       const input = { id: card.identifier, addLabels: add };
       if (remove.length) input.removeLabels = remove;
       await S.mcp.callTool(LINEAR, "save_issue", input);
-      S.notes[card.uuid] = { text: to === "ready" ? "Moved to Ready." : "Moved back to the pool." };
+      S.notes[card.uuid] = { text: to === "ready" ? "Moved to Ready." : "Moved back to the backlog." };
       await S.mcp.invalidate(LINEAR, "list_issues").catch(() => {});
     } catch (e) {
       delete S.busy[card.uuid];
       const code = e && e.code;
       const text = code === "server_unavailable" || code === "upstream_error" || code === "cancelled"
         ? "Linear didn't confirm the change. Refresh to see whether it went through before trying again."
-        : code === "approval_required" ? "Linear needs your OK to change issues. Try again and allow it when Claude asks."
+        : code === "approval_required" ? "Linear needs your OK to change tasks. Try again and allow it when Claude asks."
         : code === "tool_error" ? `Linear refused the change: ${e.message || "no reason given"}.`
         : `The change didn't go through (${code || "unknown error"}).`;
       S.notes[card.uuid] = { err: true, text };
@@ -413,7 +413,7 @@ header .sub code { font-family: var(--mono); font-size: 12px }
         pr ? h("a", { href: pr, target: "_blank", rel: "noopener" }, "Open the draft's pull request") : null,
         h("span", { class: "note" }, "Accept or redo it with pmx review.")));
     }
-    if (busy) el.append(h("div", { class: "note" }, busy === "ready" ? "Moving to Ready…" : "Moving back to the pool…"));
+    if (busy) el.append(h("div", { class: "note" }, busy === "ready" ? "Moving to Ready…" : "Moving back to the backlog…"));
     else if (zone === "pool" || zone === "ready") el.append(actionsEl(c, zone, L));
     const note = S.notes[c.uuid];
     if (note && !busy) el.append(h("div", { class: "note" + (note.err ? " err" : ""), role: note.err ? "alert" : "status" }, note.text));
@@ -423,18 +423,18 @@ header .sub code { font-family: var(--mono); font-size: 12px }
     const row = h("div", { class: "actions" });
     if (!S.mcp) return row;
     if (S.open !== c.uuid) {
-      row.append(h("button", { type: "button", onclick: () => { S.open = c.uuid; render(); } }, zone === "pool" ? "Make ready" : "Back to pool"));
+      row.append(h("button", { type: "button", onclick: () => { S.open = c.uuid; render(); } }, zone === "pool" ? "Make ready" : "Back to backlog"));
       return row;
     }
     if (zone === "ready") {
       row.append(h("span", { class: "note" }, "Agents stop picking this up."),
-        h("button", { type: "button", class: "go", onclick: () => move(c, "inbox") }, "Move to pool"),
+        h("button", { type: "button", class: "go", onclick: () => move(c, "inbox") }, "Move to backlog"),
         h("button", { type: "button", onclick: () => { S.open = null; render(); } }, "Cancel"));
       return row;
     }
     const cats = Object.keys(L.ids["pmx-category"] || {}).sort();
     const sizes = SIZES.filter((s) => (L.ids["pmx-size"] || {})[s]);
-    const catSel = h("select", { id: "cat-" + c.uuid, "aria-label": "Category" }, h("option", { value: "" }, "Category…"), cats.map((x) => h("option", { value: x, selected: x === c.category }, x)));
+    const catSel = h("select", { id: "cat-" + c.uuid, "aria-label": "Kind of work" }, h("option", { value: "" }, "Kind of work…"), cats.map((x) => h("option", { value: x, selected: x === c.category }, x)));
     const sizeSel = h("select", { id: "size-" + c.uuid, "aria-label": "Size" }, h("option", { value: "" }, "Size…"), sizes.map((x) => h("option", { value: x, selected: x === c.size }, x)));
     const go = h("button", { type: "button", class: "go" }, "Move to Ready");
     const sync = () => { go.disabled = !catSel.value || !sizeSel.value; };
@@ -478,7 +478,7 @@ header .sub code { font-family: var(--mono); font-size: 12px }
       const noLabels = S.labels && !L.ids["pmx-status"];
       banner.append(h("div", { class: "banner warn", role: "status" }, h("span", null, noLabels
         ? "Linear has no PMX labels yet, so there's nothing to show. The Linear sync creates them on its next run: in the Claude app, Code tab → Scheduled → \"PMX: sync Linear through Claude\" → Run now."
-        : "No PMX tasks in this project yet. PMX proposes tasks from your customer calls; approve them in Terminal with `pmx proposals`, and they show up here after the next Linear sync.")));
+        : "No PMX tasks in this project yet. PMX suggests tasks from your customer calls; a PM approves them on PMX's page, and they show up here after the next Linear sync.")));
     }
     // Filters
     $("filters").hidden = !all;
@@ -502,11 +502,11 @@ header .sub code { font-family: var(--mono); font-size: 12px }
       if (!list) {
         if (!S.issuesErr) box.append(h("div", { class: "skeleton" }), h("div", { class: "skeleton" }));
       } else if (!list.length) {
-        box.append(h("div", { class: "empty" }, F.category || F.size || F.who || F.q ? "Nothing matches the filters." : z.key === "pool" ? "Nothing new. Tasks you approve with `pmx proposals` land here." : "Nothing here."));
+        box.append(h("div", { class: "empty" }, F.category || F.size || F.who || F.q ? "Nothing matches the filters." : z.key === "pool" ? "Nothing new. Tasks a PM approves on PMX's page land here." : "Nothing here."));
       } else if (z.key === "ready") {
-        // Group Ready by category, the way agents pick work up.
+        // Group Ready by kind of work, the way agents pick work up.
         const groups = {};
-        for (const c of list) (groups[c.category || "uncategorized"] ||= []).push(c);
+        for (const c of list) (groups[c.category || "no kind of work"] ||= []).push(c);
         for (const [g, cs] of Object.entries(groups).sort()) { box.append(h("div", { class: "group" }, `${g} · ${cs.length}`)); for (const c of cs) box.append(cardEl(c, z.key, L)); }
       } else {
         const shown = z.key === "done" ? list.slice(0, DONE_SHOWN) : list;

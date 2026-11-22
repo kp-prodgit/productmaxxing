@@ -33,7 +33,7 @@ export interface Automation {
   /** Why it can't run from here, when it can't. */
   runNote: string | null;
   /** How to fix it when it isn't healthy: an action the board can take, or a Terminal command as a fallback. */
-  fix: { text: string; action?: string; cmd?: string } | null;
+  fix: { text: string; action?: string; cmd?: string; step?: string; label?: string } | null;
 }
 
 export interface ActivityItem {
@@ -51,6 +51,8 @@ export interface AutomationInputs {
   installedAt: string;
   jobInstalled: boolean;
   lastTick: { at: string; failed: string[]; failStreak: number } | null;
+  /** APPROVE-3: the team offers Start now, so the PM's approval can make a task Ready. */
+  startNow?: boolean;
   tickOk: boolean;
   schedules: { id?: string; name: string; last: string | null; next: string | null; ok: boolean; detail: string; when: string; node: string | null }[];
   collectReports: { at: string; connector: string | null; saved: number; skipped?: Record<string, number> }[];
@@ -141,17 +143,17 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   // 0.25.0: with no synthesis Mac chosen, each Mac proposes tasks from its own calls (SIG-6).
   const synthHere = !i.synthesizer || isMe(i.synthesizer);
   out.push({
-    id: "synthesize", group: "work", name: "Propose tasks from customer calls", by: "auto", where: synthHere ? "This Mac and Claude" : "The team's synthesis Mac",
-    what: `Claude reads customer calls${i.synthesizer ? " and approved Slack threads" : " you collected"}, with private details removed, and proposes sized tasks. Nothing goes to Linear until you approve.${i.synthesizer ? "" : " With no synthesis Mac chosen, each Mac does this for its own calls; your team can pick one Mac to do it for everyone under Sources."}`,
+    id: "synthesize", group: "work", name: "Suggest tasks from customer calls", by: "auto", where: synthHere ? "This Mac and Claude" : "The team's synthesis Mac",
+    what: `Claude reads customer calls${i.synthesizer ? " and approved Slack threads" : " you collected"}, with private details removed, and suggests sized tasks. Nothing goes to Linear until you approve.${i.synthesizer ? "" : " With no synthesis Mac chosen, each Mac does this for its own calls; your team can pick one Mac to do it for everyone under Sources."}`,
     cadence: "every 30 minutes for new calls; Slack every 6 hours", last: synthHere ? latest([i.lastSynthAt, synthR?.at]) : synthR?.at ?? null, next: synthHere ? nextPass : null, tab: "today",
     ...(!i.tracker ? { status: "off" as const, statusText: "No task tracker set up", fix: null } : synthHere ? (viaJob("synthesize") ?? ok()) : ok("Runs on another Mac")),
-    result: synthR?.synth ? `${plural(synthR.synth.tasks.length, "task")} proposed from ${plural(synthR.sources.filter((s) => s.decision === "used").length, "source")}` : null,
+    result: synthR?.synth ? `${plural(synthR.synth.tasks.length, "task")} suggested from ${plural(synthR.sources.filter((s) => s.decision === "used").length, "source")}` : null,
     run: synthHere && i.tracker && !i.killSwitch.on ? "synthesize" : null, runNote: synthHere ? null : `Runs on ${i.synthesizer ?? "the team's synthesis Mac"}, so every call is read once for the whole team.`,
   });
   out.push({
-    id: "approve", group: "work", name: "You approve proposed tasks", by: "you", where: "You, on this page", tab: "today",
-    what: "Every proposed task waits for you. Approving sends it to Linear's inbox; dropping sends nothing.",
-    cadence: "whenever tasks are proposed", last: null, next: null,
+    id: "approve", group: "work", name: "You approve new tasks", by: "you", where: "You, on this page", tab: "today",
+    what: i.startNow ? "Every new task waits for you. Start now sends it to Linear as Ready for agents; Later sends it to your team's backlog; dropping sends nothing." : "Every new task waits for you. Approving sends it to your team's backlog in Linear; dropping sends nothing.",
+    cadence: "whenever tasks are suggested", last: null, next: null,
     status: i.proposals ? "waiting" : "ok", statusText: i.proposals ? `${i.proposals} waiting for you` : "Nothing waiting", fix: null,
     result: null, run: null, runNote: null,
   });
@@ -159,7 +161,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
     id: "linear", group: "work", name: "Keep Linear in sync", by: "auto", where: i.linear.mode === "relay" ? "Claude app" : "Linear",
     what: i.linear.mode === "relay" ? "Claude reads your PMX project in Linear and applies the changes PMX queued: new tasks, labels and comments. PMX itself holds no Linear key." : i.linear.mode === "none" ? "PMX isn't connected to Linear." : "PMX reads and updates your PMX project in Linear directly, as it works.",
     cadence: i.linear.mode === "relay" ? (sched(/linear/i)?.when ?? "hourly on weekdays, 8:00–18:00") : "as PMX works", last: i.linear.syncedAt, next: sched(/linear/i)?.next ?? null, tab: "flow",
-    ...(i.linear.mode === "none" ? { status: "setup" as const, statusText: "Not connected", fix: { text: "Connect Linear so approved tasks have somewhere to go.", cmd: "pmx linear login" } }
+    ...(i.linear.mode === "none" ? { status: "setup" as const, statusText: "Not connected", fix: { text: "Connect Linear so approved tasks have somewhere to go.", cmd: "/pmx-setup" } }
       : i.linear.mode === "relay" && !sched(/linear/i) ? { status: "setup" as const, statusText: "Not set up", fix: { text: "Type /pmx-schedule in the Claude app to set up the Linear sync.", cmd: "/pmx-schedule" } }
       : i.linear.mode === "relay" && !sched(/linear/i)!.ok ? { status: "attention" as const, statusText: "Behind", fix: { text: `It ${sched(/linear/i)!.detail}. Open the Claude app and check its Scheduled tasks.`, cmd: "/pmx-schedule" } }
       : i.linear.mode === "relay" && i.linear.ok === false ? { status: "attention" as const, statusText: i.linear.syncedAt ? `Last synced ${Math.round((i.now.getTime() - Date.parse(i.linear.syncedAt)) / 3600000)} h ago` : "Not synced yet", fix: { text: i.linear.problem ?? "The Linear sync is behind. Open the Claude app and check its Scheduled tasks.", cmd: "/pmx-schedule" } }
@@ -184,7 +186,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   const pull = viaJob("pull");
   out.push({
     id: "pull", group: "agents", name: "Your agent picks up Ready work", by: "both", where: "This Mac and Claude", tab: "work",
-    what: "When a teammate moves a task to Ready in Linear, your agent takes one per pass, drafts it with that kind of work's instructions, and opens it for your review. It stays within your budget and review limit.",
+    what: `When a task is Ready (${i.startNow ? "you started it, or someone moved it to Ready on the team board" : "a teammate moved it there in Linear"}), your agent takes one per background run, drafts it with that kind of work's instructions, and opens it for your review. It stays within your budget and review limit.`,
     cadence: "every 30 minutes, one task at a time", last: lastRun?.ts ?? null, next: nextPass,
     ...(!i.tracker ? { status: "off" as const, statusText: "No task tracker set up", fix: null }
       : pull ?? (dry ? { status: "attention" as const, statusText: "Practice mode", fix: { text: `For your first week your agent only says what it would pick, without running. Real runs start ${new Date(dryUntil).toDateString()}.` } }
@@ -227,11 +229,11 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   // ---- Upkeep ----
   out.push({
     id: "job", group: "upkeep", name: "Automatic runs on this Mac", by: "auto", where: "This Mac",
-    what: "The background pass that does everything above on time. It runs every 30 minutes while this Mac is awake.",
+    what: "The background run that does everything above on time. It runs every 30 minutes while this Mac is awake.",
     cadence: "every 30 minutes while awake", last: i.lastTick?.at ?? null, next: nextPass, tab: null,
     ...(i.killSwitch.on ? { status: "off" as const, statusText: "Stopped by your team", fix: { text: `Your team turned on the emergency stop${i.killSwitch.reason ? `: ${i.killSwitch.reason}` : ""}. Nothing runs until they turn it off.` } }
-      : !i.jobInstalled ? { status: "setup" as const, statusText: "Off", fix: { text: "PMX only works while you have it open. Turn on automatic runs and it checks every 30 minutes on its own.", action: "install-job", cmd: "pmx init" } }
-      : !i.tickOk ? { status: "failed" as const, statusText: `Failing (${plural(i.lastTick?.failStreak ?? 0, "pass", "passes")} in a row)`, fix: { text: (i.lastTick?.failed[0] ?? "").slice(0, 240) } }
+      : !i.jobInstalled ? { status: "setup" as const, statusText: "Off", fix: { text: "PMX only works while you have it open. Turn on automatic runs and it checks every 30 minutes on its own.", action: "install-job", step: "job.installed", label: "Turn on automatic runs" } }
+      : !i.tickOk ? { status: "failed" as const, statusText: `Failing (${plural(i.lastTick?.failStreak ?? 0, "run")} in a row)`, fix: { text: (i.lastTick?.failed[0] ?? "").slice(0, 240) } }
       : i.lastTick?.failed.length ? { status: "attention" as const, statusText: "One step failed last time", fix: { text: (i.lastTick.failed[0] ?? "").slice(0, 240) } }
       : !i.lastTick ? { status: "attention" as const, statusText: "Hasn't run yet", fix: null } : ok()),
     result: i.lastTick ? (i.lastTick.failed.length ? plural(i.lastTick.failed.length, "step") + " failed" : "Every step ran") : null,
@@ -242,20 +244,20 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
     what: i.autoUpdate.on ? "PMX installs the version your team requires, at most once an hour, and tells you what's new." : "Your team hasn't turned on automatic updates. PMX tells you when your team requires a newer version.",
     cadence: i.autoUpdate.on ? "hourly" : "off", last: i.autoUpdate.state?.checkedAt ?? null,
     next: i.autoUpdate.on && nextPass ? new Date(Math.max(Date.parse(nextPass), i.autoUpdate.state ? Date.parse(i.autoUpdate.state.checkedAt) + 60 * MIN : 0)).toISOString() : null, tab: null,
-    ...(i.autoUpdate.on && !i.jobInstalled ? { status: "off" as const, statusText: "Waits for automatic runs", fix: null } : i.autoUpdate.state && ["needs-sudo", "failed"].includes(i.autoUpdate.state.result) ? { status: "attention" as const, statusText: "Update waiting", fix: { text: `Your team is on pmx ${i.autoUpdate.state.version ?? "a newer version"}, but it couldn't install on its own.`, cmd: "pmx update" } } : ok(i.autoUpdate.on ? "On" : "Off")),
+    ...(i.autoUpdate.on && !i.jobInstalled ? { status: "off" as const, statusText: "Waits for automatic runs", fix: null } : i.autoUpdate.state && ["needs-sudo", "failed"].includes(i.autoUpdate.state.result) ? { status: "attention" as const, statusText: "Update waiting", fix: { text: `Your team is on pmx ${i.autoUpdate.state.version ?? "a newer version"}, but it couldn't install on its own.`, step: "cli.auto-update", label: "Update PMX" } } : ok(i.autoUpdate.on ? "On" : "Off")),
     result: `You have pmx ${i.autoUpdate.version}`, run: "update", runNote: null,
   });
   out.push({
     id: "events", group: "upkeep", name: "Usage analytics", by: "auto", where: "This Mac",
-    what: "Counts with no meeting content (how many meetings were read, tasks proposed, drafts accepted) go to your team's PMX account, if you signed in and left analytics on.",
+    what: "Counts with no meeting content (how many meetings were read, tasks suggested, drafts accepted) go to your team's PMX account, if you signed in and left analytics on.",
     cadence: i.analytics ? "every 30 minutes" : "off", last: i.lastEventSyncAt, next: i.analytics ? nextPass : null, tab: null,
     ...(i.analytics ? viaJob("events") ?? ok("On") : { status: "off" as const, statusText: "Off", fix: null }), result: null,
     run: i.analytics && !i.killSwitch.on ? "events" : null, runNote: null,
   });
   out.push({
     id: "team-changes", group: "upkeep", name: "Team settings in review", by: "you", where: "Your team's repo",
-    what: "Changes to team settings you proposed from this page. A teammate who owns the settings approves them; nothing changes until then.",
-    cadence: "when you propose one", last: null, next: null, tab: "settings",
+    what: "Changes to team settings you sent from this page. A teammate who owns the settings approves them; nothing changes until then.",
+    cadence: "when you send one", last: null, next: null, tab: "settings",
     status: i.pendingTeam ? "waiting" : "ok", statusText: i.pendingTeam ? `${plural(i.pendingTeam, "change")} in review` : "None open", fix: null, result: null, run: null, runNote: null,
   });
 
@@ -279,19 +281,20 @@ export function buildActivity(i: { now: Date; hours: number; agent: string; rece
     if (r.at < since || r.dryRun) continue;
     const used = r.sources.filter((s) => s.decision === "used").length, held = r.sources.filter((s) => s.decision === "left-out").length;
     if (r.type === "todo" && r.todo?.added.length) out.push({ at: r.at, kind: "todo", text: `Found ${plural(r.todo.added.length, "to-do")} in your meetings`, tab: "today" });
-    if (r.type === "synthesize" && (used || held)) out.push({ at: r.at, kind: "propose", text: `Read ${plural(used, "customer source")}${held ? `, kept ${held} private` : ""}; proposed ${plural(r.synth?.tasks.length ?? 0, "task")}`, tab: "today" });
+    if (r.type === "synthesize" && (used || held)) out.push({ at: r.at, kind: "propose", text: `Read ${plural(used, "customer source")}${held ? `, kept ${held} private` : ""}; suggested ${plural(r.synth?.tasks.length ?? 0, "task")}`, tab: "today" });
     if (r.type === "digest") out.push({ at: r.at, kind: "digest", text: r.outcome === "staged" ? `Your digest for the week of ${weekLabel(isoWeekOf(r.at))} was built: ${plural(used, "source")} cited` : r.outcome === "no-signal" ? "No customer calls to digest this week" : "The weekly digest failed", tab: "digest", bad: r.outcome === "failed" });
   }
   for (const e of i.runlog ?? []) {
     if (e.ts < since) continue;
     if (e.type === "run" && e.agent === i.agent) out.push({ at: e.ts, kind: "agent", text: e.outcome === "ok" ? `Your agent drafted ${e.taskId} (${e.category})` : `Your agent couldn't finish ${e.taskId}: ${e.outcome}`, tab: e.outcome === "ok" ? "today" : "work", bad: e.outcome !== "ok" });
     if (e.type === "verdict") out.push({ at: e.ts, kind: "review", text: `${e.taskId} ${{ accepted: "accepted and merged", redo: "sent back for a redo", rejected: "rejected" }[e.verdict]}${e.agent === i.agent ? "" : " by a teammate"}`, tab: "work" });
-    if (e.type === "release" && e.agent === i.agent) out.push({ at: e.ts, kind: "release", text: `${e.taskId} went back to Ready (${{ stale: "its agent stopped answering", manual: "released by hand", redo: "redo", failed: "the run failed", brain: "the brain moved it" }[e.reason]})`, tab: null });
+    if (e.type === "release" && e.agent === i.agent) out.push({ at: e.ts, kind: "release", text: `${e.taskId} went back to Ready (${{ stale: "its agent stopped answering", manual: "released by hand", redo: "redo", failed: "the run failed", brain: "the brain moved it", retry: "you tried it again after failed runs" }[e.reason]})`, tab: null });
+    if (e.type === "drop" && e.agent === i.agent) out.push({ at: e.ts, kind: "release", text: `${e.taskId} was dropped after failed runs`, tab: null });
     if (e.type === "digest" && e.agent === i.agent && e.outcome !== "staged") {
       const wk = weekLabel(e.week ?? isoWeekOf(e.ts));
       out.push({ at: e.ts, kind: "digest", text: e.outcome === "approved" ? `You approved the digest for the week of ${wk}` : `You discarded the digest for the week of ${wk}`, tab: "digest" });
     }
   }
-  if (i.lastTick?.failed.length && i.lastTick.at >= since) out.push({ at: i.lastTick.at, kind: "problem", text: `${plural(i.lastTick.failed.length, "step")} of the background pass failed`, tab: "automations", bad: true });
+  if (i.lastTick?.failed.length && i.lastTick.at >= since) out.push({ at: i.lastTick.at, kind: "problem", text: `${plural(i.lastTick.failed.length, "step")} of the background run failed`, tab: "automations", bad: true });
   return out.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 40);
 }

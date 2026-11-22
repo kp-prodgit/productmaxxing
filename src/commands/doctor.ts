@@ -2,12 +2,12 @@ import { stalePages } from "../claude/pages.js";
 import { neverSynthesized } from "../synth/status.js";
 import { agentHandle } from "../core/config.js";
 import { oldServerNote, oldServers } from "../mcp/handoff.js";
-import { appliedSchedule, LINEAR_SYNC_TASK, neededTasks, taskRunHealth, taskState } from "../claude/tasks.js";
+import { neededTasks, syncDueCron, taskRunHealth, taskState } from "../claude/tasks.js";
 import { nodeSupported, profileSignedIn, resolveClaude } from "../core/claude-bin.js";
 import { missingAllowRules } from "../claude/permissions.js";
 import { linearAccess } from "../linear/access.js";
 import { relayHealth } from "../tracker/relay.js";
-import { boardUrl, checkBoard } from "../claude/board.js";
+import { boardStale, boardUrl, checkBoard } from "../claude/board.js";
 import { appSkillInstalled, BOARD_SKILL, claudePresent } from "../claude/skill.js";
 import { loadState } from "../core/state.js";
 import { VENDORED_CLI } from "../core/vendor.js";
@@ -156,7 +156,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
       : `team package is pmx ${vendored}`, "warn");
   // Claude tasks (CLAUDE-1): PMX can't create them, so doctor says which are missing.
   const fix = (await appSkillInstalled()) ? "type /pmx-schedule in the Claude app" : "run `pmx schedule`";
-  const tasks = await neededTasks(d.team, d.keychain, d.personal.taskHours);
+  const tasks = await neededTasks(d.team, d.keychain);
   for (const t of tasks) {
     const state = await taskState(t);
     add(`claude.task.${t.id}`, state === "current", `Claude scheduled task "${t.title}"${state === "current" ? "" : state === "outdated" ? ` has an older prompt: ${fix}` : ` is missing: ${fix}`}`, "warn");
@@ -173,9 +173,10 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   // The Claude board (BOARD-1), only where Claude and Linear are both in use.
   if ((await checkBoard(d.team)).ok) {
     const b = boardUrl(d.team, d.personal);
-    const stale = b?.source === "personal" && d.personal.board?.version !== current;
+    // The board reads Linear only: it needs publishing again only when its page changed (0.36.0).
+    const stale = b?.source === "personal" && boardStale(d.personal.board, current);
     const how = (await appSkillInstalled(BOARD_SKILL)) ? "type /pmx-board in the Claude app" : "run `pmx board --install-skill`, then type /pmx-board in the Claude app";
-    add("claude.board", !!b && !stale, b ? `team board ${b.url}${stale ? `: published with an older pmx; ${how} to update it` : ""}` : `no Claude board yet: ${how}`, "warn");
+    add("claude.board", !!b && !stale, b ? `team board ${b.url}${stale ? `: published with an older pmx, and its page changed since; ${how} to update it` : ""}` : `no Claude board yet: ${how}`, "warn");
   }
   const st = await loadState();
   // SIG-6: Linear connected and meetings collected, but no task ever proposed on this Mac.
@@ -243,7 +244,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (access === "key") add("secrets.linear", true, "Linear API key in the keychain");
   if (access === "signed-in") add("secrets.linear", true, "signed in to Linear");
   if (access === "relay") {
-    const h = await relayHealth(d.team, d.now?.() ?? new Date(), { cron: (await appliedSchedule(LINEAR_SYNC_TASK)).cron });
+    const h = await relayHealth(d.team, d.now?.() ?? new Date(), { cron: await syncDueCron(d.personal.taskHours) });
     add("linear.relay", h.ok, h.detail, "warn");
   }
 
@@ -260,7 +261,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
 
   const git = new Git(repo, d.exec);
   const ks = await killSwitchOn(git).catch(() => ({ on: false, reason: null }));
-  add("killswitch", !ks.on, ks.on ? `kill switch is ON (${ks.reason}): no agent will pull` : "kill switch off", "warn");
+  add("killswitch", !ks.on, ks.on ? `kill switch is ON (${ks.reason}): no agent takes work` : "kill switch off", "warn");
 
   const store = new RunLogStore({ repo: git, exec: d.exec });
   const v = !(await store.exists())

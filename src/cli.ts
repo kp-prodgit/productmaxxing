@@ -66,8 +66,9 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
   // RENAME-1: a Mac still on the ProductGit names moves over first. When the old package was swapped out, the new
-  // pmx already ran this command, so its exit code is the answer.
-  if (cmd.name !== "mcp" && cmd.name !== "uninstall") {
+  // pmx already ran this command, so its exit code is the answer. `install` (INSTALL-3) skips this and the update steps:
+  // it may run from npx's copy of PMX, which must never become what the background job or the Claude app runs.
+  if (cmd.name !== "mcp" && cmd.name !== "uninstall" && cmd.name !== "install") {
     const handed = await migrateFromProductGit({ exec, launchd: macLaunchd(), cli: fileURLToPath(import.meta.url), argv, say: (s) => process.stderr.write(`${s}\n`) });
     if (handed !== null) return handed;
     // UPGRADE-1: after an update, what this Mac needs from the new version, once (the background job reloads itself

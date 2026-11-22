@@ -122,7 +122,7 @@ describe("evidence for agent runs (RUN-3)", () => {
     const other = await testCtx({ repo, runtime: rt, team: { internalDomains: ["us.com"] } });
     const sel = await plan(other, await services(other, { tracker }));
     expect(sel.candidates).toEqual([]);
-    expect(sel.decisions[0]!.why).toBe("its sources are quoted only on the Mac that proposed it, and a spec draft must cite its sources 2 times");
+    expect(sel.decisions[0]!.why).toBe("its sources are quoted only on the Mac that suggested it, and a spec draft must cite its sources 2 times");
     // A task with no sources at all says so too.
     await tracker.createInbox({ title: "By hand", description: "Typed into Linear.", category: "spec", size: "S", sources: [] }).then((t) => tracker.setStatus(t.id, "ready"));
     expect((await plan(other, await services(other, { tracker }))).decisions.map((d) => d.why)).toContain("it names no sources, and a spec draft must cite its sources 2 times");

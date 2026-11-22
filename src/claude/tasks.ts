@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { TeamConfig } from "../core/config.js";
+import { savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
 import type { Keychain } from "../core/keychain.js";
 import { loadState, updateState } from "../core/state.js";
 import { linearAccess } from "../linear/access.js";
@@ -25,12 +25,12 @@ export interface ClaudeTask {
 export const COLLECT_TASK: ClaudeTask = {
   id: "pmx-collect-meetings",
   title: "PMX: collect meetings and update to-dos",
-  schedule: "every weekday at 12:30 and 17:30",
-  cron: "30 12,17 * * 1-5",
+  schedule: "every day at 12:30 and 17:30",
+  cron: "30 12,17 * * *",
   why: "copies new meeting transcripts from your meeting connector (Granola, Fireflies…) and refreshes your to-dos",
   prompt: `You are running ProductMaxxing's (PMX) meeting collection on this Mac. ProductMaxxing is a command-line tool installed as \`pmx\`.
 
-1. Run \`pmx collect --prompt\` in a shell. It prints the exact instructions for this run: which meeting connector to use, which meetings to fetch and skip, and where and how to save each transcript.
+1. Run \`pmx collect --prompt\` in a shell. It prints the exact instructions for this run: which meeting connector to use, which meetings to fetch and skip, and where and how to save each transcript. If it says this run is outside the user's working hours, stop there: report that one line and do nothing else.
 2. Follow those printed instructions exactly. Copy transcripts word for word; never summarize them. Do not send, post, share or change anything in any app or connector.
 3. When the instructions say so, run \`pmx collect --check\`.
 4. Then run \`pmx todo --refresh\`.
@@ -44,12 +44,12 @@ Never create, change, run or delete scheduled tasks, and never use /pmx-schedule
 export const LINEAR_SYNC_TASK: ClaudeTask = {
   id: "pmx-sync-linear",
   title: "PMX: sync Linear through Claude",
-  schedule: "every hour from 8:00 to 18:00 on weekdays",
-  cron: "0 8-18 * * 1-5",
+  schedule: "every hour, every day",
+  cron: "0 * * * *",
   why: "carries PMX's changes to Linear and brings back the project, because PMX reaches Linear through your Claude app",
   prompt: `You are syncing ProductMaxxing (PMX) with Linear on this Mac. ProductMaxxing is a command-line tool installed as \`pmx\`.
 
-1. Run \`pmx linear relay --prompt\` in a shell. It prints this run's exact instructions: which Linear project to use, the changes PMX queued, and how to export the project.
+1. Run \`pmx linear relay --prompt\` in a shell. It prints this run's exact instructions: which Linear project to use, the changes PMX queued, and how to export the project. If it says this run is outside the user's working hours, stop there: report that one line and do nothing else.
 2. Follow them exactly with the Linear connector. Change only what they list, only in that project, and never delete anything.
 3. Run \`pmx linear relay --check\` and report what it prints.
 
@@ -59,27 +59,61 @@ Never create, change, run or delete scheduled tasks, and never use /pmx-schedule
 };
 
 /**
- * When PMX's Claude tasks run (CLAUDE-5): working hours on weekdays, the default, or around the clock for a Mac that
- * runs agents overnight and at weekends. `pmx schedule --hours` sets it for this Mac.
+ * When PMX's Claude tasks do their work (CLAUDE-6): working hours on weekdays, the default, or around the clock for a
+ * Mac that runs agents overnight and at weekends. From 0.36.0 it's a PMX setting only (`taskHours`): the Claude app
+ * starts each task on the same schedule every day, and its first step asks PMX whether this run is inside the PM's
+ * hours (`taskDue`), so changing the hours never needs /pmx-schedule again.
  */
 export const TASK_HOURS = ["weekdays", "always"] as const;
 export type TaskHours = (typeof TASK_HOURS)[number];
+/** Since when the hours are PMX's own setting, and the tasks' schedule in the app no longer depends on them. */
+export const HOURS_IN_PMX_SINCE = "0.36.0";
+/**
+ * Each task's two windows: "weekdays" is when it works on working hours (and the schedule the app had for them before
+ * 0.36.0), "always" is around the clock, which is also what the app runs from 0.36.0.
+ */
 const TIMES: Record<string, Record<TaskHours, { cron: string; schedule: string }>> = {
-  [COLLECT_TASK.id]: { weekdays: { cron: COLLECT_TASK.cron, schedule: COLLECT_TASK.schedule }, always: { cron: "30 12,17 * * *", schedule: "every day at 12:30 and 17:30" } },
-  [LINEAR_SYNC_TASK.id]: { weekdays: { cron: LINEAR_SYNC_TASK.cron, schedule: LINEAR_SYNC_TASK.schedule }, always: { cron: "0 * * * *", schedule: "every hour, every day" } },
+  [COLLECT_TASK.id]: { weekdays: { cron: "30 12,17 * * 1-5", schedule: "every weekday at 12:30 and 17:30" }, always: { cron: COLLECT_TASK.cron, schedule: COLLECT_TASK.schedule } },
+  [LINEAR_SYNC_TASK.id]: { weekdays: { cron: "0 8-18 * * 1-5", schedule: "every hour from 8:00 to 18:00 on weekdays" }, always: { cron: LINEAR_SYNC_TASK.cron, schedule: LINEAR_SYNC_TASK.schedule } },
 };
 
-/** The task with the schedule for these hours. */
-export function atHours(t: ClaudeTask, hours: TaskHours = "weekdays"): ClaudeTask {
-  const x = TIMES[t.id]?.[hours];
-  return x ? { ...t, ...x } : t;
+/** When the task does its work with these hours: its schedule in the app, less the runs PMX stops as outside them. */
+export function workingTimes(t: ClaudeTask, hours: TaskHours = "weekdays"): { cron: string; schedule: string } {
+  return TIMES[t.id]?.[hours] ?? { cron: t.cron, schedule: t.schedule };
 }
 
+/**
+ * Whether a run starting now is inside the PM's hours (CLAUDE-6). On working hours, the Linear sync works on weekdays
+ * from 8:00 until 19:00 (the 18:00 run may start late) and collection on weekdays; around the clock, always.
+ */
+export function taskDue(t: Pick<ClaudeTask, "id">, hours: TaskHours = "weekdays", now = new Date()): { due: boolean; why: string } {
+  if (hours === "always") return { due: true, why: "PMX works around the clock on this Mac" };
+  const weekday = now.getDay() >= 1 && now.getDay() <= 5;
+  if (t.id === LINEAR_SYNC_TASK.id) {
+    const h = now.getHours();
+    return weekday && h >= 8 && h < 19 ? { due: true, why: "inside your working hours" } : { due: false, why: "outside your working hours (weekdays, 8:00 to 18:00)" };
+  }
+  return weekday ? { due: true, why: "inside your working hours" } : { due: false, why: "outside your working hours (weekdays only)" };
+}
+
+/** Saves the PM's hours (`pmx schedule --hours`, the page's Schedule buttons) and says what changes. Nothing in the app does. */
+export async function setTaskHours(personal: PersonalConfig, hours: TaskHours): Promise<string> {
+  personal.taskHours = hours;
+  await savePersonalConfig(personal);
+  return hours === "always"
+    ? "PMX's Claude tasks now work whenever PMX runs: the Linear sync every hour, every day, and meeting collection every day. They still run only while the Claude app is open and the Mac is awake. Nothing changes in the Claude app."
+    : "PMX's Claude tasks now work in your working hours: the Linear sync every hour from 8:00 to 18:00 on weekdays, and meeting collection at 12:30 and 17:30 on weekdays. Outside them each run starts briefly and stops. Nothing changes in the Claude app.";
+}
+
+/** What a task's first step prints outside the PM's hours, so Claude stops at once. */
+export const outsideHours = (why: string) =>
+  `PMX: this run is ${why}, so there's nothing to do now. Stop here: report "Outside working hours, nothing to do." and do nothing else. (Change the hours on PMX's page: Health → Settings → Schedule.)`;
+
 /** Which tasks this machine needs: collection always; the Linear sync only when nothing else reaches Linear. */
-export async function neededTasks(team: TeamConfig | null, keychain: Keychain, hours: TaskHours = "weekdays"): Promise<ClaudeTask[]> {
+export async function neededTasks(team: TeamConfig | null, keychain: Keychain): Promise<ClaudeTask[]> {
   const out = [COLLECT_TASK];
   if ((await linearAccess(team, keychain)) === "relay") out.push(LINEAR_SYNC_TASK);
-  return out.map((t) => atHours(t, hours));
+  return out;
 }
 
 /** Where the Claude app keeps each scheduled task's file. The schedule itself lives in the app. */
@@ -102,25 +136,39 @@ async function taskFileParts(id: string): Promise<{ body: string; description: s
   return { body: raw.replace(/^---\n[\s\S]*?\n---\n/, "").trim(), description: front.match(/^description:\s*(.*)$/m)?.[1]?.trim().replace(/^["']|["']$/g, "") };
 }
 
-/** The schedule the Claude app has for a task, read from its description. One PMX didn't write counts as the weekday one. */
-export async function appliedSchedule(t: ClaudeTask): Promise<{ cron: string; schedule: string }> {
+/**
+ * The schedule the Claude app has for a task, read from its description. `known` is false for a description PMX didn't
+ * write (a schedule the PM set themselves), which counts as the weekday one. A pre-0.35.0 one, with no schedule in it,
+ * is PMX's weekday schedule.
+ */
+export async function appliedSchedule(t: ClaudeTask): Promise<{ cron: string; schedule: string; known?: boolean }> {
   const times = TIMES[t.id];
   if (!times) return { cron: t.cron, schedule: t.schedule };
-  const said = (await taskFileParts(t.id))?.description?.match(/ Runs (.+)\.$/)?.[1];
-  return Object.values(times).find((x) => x.schedule === said) ?? times.weekdays;
+  const description = (await taskFileParts(t.id))?.description;
+  const said = description?.match(/ Runs (.+)\.$/)?.[1];
+  const hit = Object.values(times).find((x) => x.schedule === said);
+  return hit ? { ...hit, known: true } : { ...times.weekdays, known: description === undefined || description === legacyDescription(t) };
 }
 
 /**
- * Whether the task's file exists and still holds PMX's current prompt, description and schedule. An outdated one gets
- * them from /pmx-schedule. A file with no description line (older Claude apps) is judged by its prompt only.
+ * When the Linear sync was due, for "is PMX's copy of Linear behind?": the app's schedule, less the hours PMX stops a
+ * run in. A task from before 0.36.0 still runs on the schedule the app has.
+ */
+export async function syncDueCron(hours: TaskHours = "weekdays"): Promise<string> {
+  const a = await appliedSchedule(LINEAR_SYNC_TASK);
+  return a.cron === LINEAR_SYNC_TASK.cron ? workingTimes(LINEAR_SYNC_TASK, hours).cron : a.cron;
+}
+
+/**
+ * Whether the task's file exists and still holds PMX's current prompt and description. An outdated one gets them from
+ * /pmx-schedule. A file with no description line (older Claude apps) is judged by its prompt only.
  */
 export async function taskState(t: ClaudeTask): Promise<TaskState> {
   const f = await taskFileParts(t.id);
   if (f === null) return "missing";
   if (f.body !== t.prompt.trim()) return "outdated";
-  const weekdays = (TIMES[t.id]?.weekdays.cron ?? t.cron) === t.cron;
-  if (f.description === undefined) return weekdays ? "current" : "outdated";
-  return f.description === taskDescription(t) || (weekdays && f.description === legacyDescription(t)) ? "current" : "outdated";
+  if (f.description === undefined) return "current";
+  return f.description === taskDescription(t) ? "current" : "outdated";
 }
 
 export { nextCronTime };
@@ -167,18 +215,19 @@ ${t.prompt}`;
 }
 
 /** What `/pmx-schedule` reads (`pmx schedule --json`): the tasks to create or bring up to date, in the scheduled-tasks tool's terms. */
-export async function tasksJson(team: TeamConfig | null, keychain: Keychain, hours: TaskHours = "weekdays") {
+export async function tasksJson(team: TeamConfig | null, keychain: Keychain) {
   type Entry = { taskId: string; title: string; description: string; cronExpression: string; prompt: string; reschedule?: boolean };
   const missing: Entry[] = [];
   const outdated: Entry[] = [];
   const present: string[] = [];
-  for (const t of await neededTasks(team, keychain, hours)) {
+  for (const t of await neededTasks(team, keychain)) {
     const state = await taskState(t);
     const entry = { taskId: t.id, title: t.title, description: taskDescription(t), cronExpression: t.cron, prompt: t.prompt };
     if (state === "current") present.push(t.id);
     else if (state === "missing") missing.push(entry);
-    // `reschedule`: the PM changed when PMX's tasks run, so /pmx-schedule changes this task's schedule too (CLAUDE-5).
-    else outdated.push({ ...entry, reschedule: (await appliedSchedule(t)).cron !== t.cron });
+    // `reschedule`: the app has an older schedule PMX gave it, so /pmx-schedule changes it too (CLAUDE-6). A schedule
+    // the PM set themselves stays.
+    else { const a = await appliedSchedule(t); outdated.push({ ...entry, reschedule: !!a.known && a.cron !== t.cron }); }
   }
   return { missing, outdated, present, allowRulesMissing: await missingAllowRules() };
 }
@@ -189,10 +238,11 @@ export const TASK_FACTS = [
   "Times are this Mac's local time. They run while the Claude app is open and the Mac is awake; a run missed while it was closed happens once when the app opens again.",
   "See them and each run's history in the Claude app: Code tab → Scheduled → the task → Runs.",
   "PMX reads each task's prompt from ~/.claude/scheduled-tasks/<task ID>/SKILL.md, and sees a run when the task calls pmx. The schedule itself lives in the Claude app.",
+  "Your working hours are PMX's own setting: each run asks PMX first and stops at once outside them, so changing them needs nothing in the Claude app.",
 ];
 
 export async function formatTasks(team: TeamConfig | null, keychain: Keychain, hours: TaskHours = "weekdays"): Promise<string> {
-  const need = await neededTasks(team, keychain, hours);
+  const need = await neededTasks(team, keychain);
   const lines: string[] = [];
   const todo: ClaudeTask[] = [];
   for (const t of need) {
@@ -200,9 +250,13 @@ export async function formatTasks(team: TeamConfig | null, keychain: Keychain, h
     if (state !== "current") todo.push(t);
     const ran = state === "missing" ? null : await taskRunHealth(t);
     const mark = state === "missing" ? "✘" : state === "outdated" || !ran?.ok ? "!" : "✔";
-    const moved = state === "outdated" && (await appliedSchedule(t)).cron !== t.cron;
-    lines.push(`${mark} ${t.title}: ${state === "current" ? `set up, ${t.schedule}` : moved ? `set up ${(await appliedSchedule(t)).schedule}; you asked for ${t.schedule}` : state === "outdated" ? "set up with an older prompt" : "missing"}${ran ? `; ${ran.detail}` : ""}. It ${t.why}.`);
+    const applied = await appliedSchedule(t);
+    const moved = state === "outdated" && !!applied.known && applied.cron !== t.cron;
+    lines.push(`${mark} ${t.title}: ${state === "current" ? `set up, ${t.schedule}; works ${workingTimes(t, hours).schedule}` : state === "outdated" ? `set up with an older prompt${moved ? ` and schedule (${applied.schedule}; PMX now asks for ${t.schedule})` : ""}` : "missing"}${ran ? `; ${ran.detail}` : ""}. It ${t.why}.`);
   }
+  lines.push("", hours === "always"
+    ? "Working hours: around the clock (pmx schedule --hours weekdays for weekdays only)."
+    : "Working hours: weekdays, the Linear sync from 8:00 to 18:00 (pmx schedule --hours always for every day). Outside them each run starts briefly and stops.");
   const rules = await missingAllowRules();
   if (rules.length) lines.push("", `! Scheduled runs stop at permission prompts nobody answers. \`pmx schedule --allow\` adds always-allow rules for PMX's own command and folder to your Claude settings (${rules.join(", ")}).`);
   lines.push("", ...TASK_FACTS.map((f) => `· ${f}`));

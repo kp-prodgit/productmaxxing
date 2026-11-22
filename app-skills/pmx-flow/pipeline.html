@@ -4,9 +4,10 @@
 <style>
 /* Installed by ProductMaxxing. `pmx flow --web` serves this page on this Mac; /pmx-flow publishes it as a Claude artifact
    that reaches PMX through the Claude app (BOARD-3, BOARD-6, FLOW-5).
-   Layout: a SaaS shell. A fixed left nav on a sunken surface (Things-style lists, then Team, System and the account),
-   one calm work column (max 780px), a detail sheet that slides in from the right, and Settings as a two-pane admin
-   screen with a Save Changes bar. Every value is built as DOM text: nothing from PMX is ever parsed as HTML. */
+   Layout: a SaaS shell. A fixed left nav on a sunken surface (Needs you, the Work and Health areas, then My to-dos as
+   Things-style lists, and the account), one calm work column (max 780px), a detail sheet that slides in from the
+   right, and Settings as a two-pane admin tab of Health with a Save Changes bar (BOARD-10). Every value is built as
+   DOM text: nothing from PMX is ever parsed as HTML. */
 /* The colour and type tokens. The team board and PMX Engine's studio copy the lines between the two marks byte for byte; tests compare them. */
 /* >>> tokens */
 :root {
@@ -154,6 +155,8 @@ code, .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere
 .group { margin-top: 26px }
 .group:first-of-type { margin-top: 0 }
 .gh { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 0 0 6px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px }
+/* SETUP-3: PMX Engine's own steps, after PMX's in Health → Setup. */
+#setup-engine { margin: 30px 0 12px }
 .gh h2 { margin: 0; font-size: 14px; font-weight: 650; color: var(--accent) }
 .gh.plain h2 { color: var(--fg) }
 .gh .dn { font-size: 20px; margin-right: 6px }
@@ -172,6 +175,10 @@ code, .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere
 .row .m .soon { color: var(--fg); font-weight: 600 }
 .row .m a { color: var(--fg-2) }
 .row .m svg.i { width: 13px; height: 13px }
+/* Needs you: who acts and what the card waits for; how long it has waited (.over past 3 days); a task's history. */
+.row .m .wf b { color: var(--fg); font-weight: 600 }
+.row .m .age { display: inline-flex; gap: 4px; align-items: center }
+.row .hist { margin-top: 2px; font-size: 12px; color: var(--fg-3); overflow-wrap: anywhere }
 .row .acts { display: flex; gap: 6px; flex: none; align-self: center; flex-wrap: wrap; justify-content: flex-end }
 .row .acts .sa { display: none }
 .row:hover .acts .sa, .row.sel .acts .sa, .row:focus-within .acts .sa { display: inline-flex }
@@ -226,13 +233,11 @@ code, .mono { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere
 textarea.in { width: 100%; resize: vertical; line-height: 20px }
 select.in { padding-right: 6px }
 input.in[type="number"] { width: 84px }
-details.term { font-size: 12px; color: var(--fg-3); margin-top: 6px; flex-basis: 100% }
-details.term summary { cursor: pointer; display: inline; list-style: none }
-details.term summary::-webkit-details-marker { display: none }
-details.term summary::after { content: " ›" }
-details.term[open] summary::after { content: " ⌄" }
 .cmdline { font-family: var(--mono); font-size: 12px; background: var(--hover); border-radius: var(--r-s); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 6px; display: flex; gap: 8px; justify-content: space-between; align-items: center; color: var(--fg-2) }
 .cmdline button { border: 0; background: none; font-family: var(--font); font-size: 12px; color: var(--fg-2); padding: 0 4px; min-height: 24px }
+/* SETUP-2: a slash command for the Claude app, with Copy. */
+.cmdline.slash { font-family: var(--font); flex-basis: 100%; max-width: 420px }
+.cmdline.slash code { font-family: var(--mono); color: var(--fg) }
 .fixacts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center }
 
 /* detail sheet */
@@ -459,16 +464,13 @@ dl.kv dt { color: var(--fg-3) } dl.kv dd { margin: 0; overflow-wrap: anywhere }
 .loading { color: var(--fg-3); padding: 48px 4px; text-align: center }
 
 /* settings */
-.set { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 100% }
-.set-side { border-right: 1px solid var(--line); padding: 28px 14px 28px 28px; min-width: 0 }
-.back { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--fg-2); padding: 4px 6px 4px 0; margin-bottom: 20px; font-size: 13px }
-.back:hover { color: var(--fg) }
-.set-side h1 { margin: 0; font-size: 19px; font-weight: 650 }
-.set-side h1:focus { outline: none }
-.set-side > p { margin: 4px 0 22px; color: var(--fg-2); font-size: 13px }
-.set-side h6 { margin: 18px 8px 6px; font-size: 11.5px; font-weight: 500; color: var(--fg-3) }
+/* Health → Settings: grouped sections on the left, the section on the right, inside the Health page. */
+.set { display: grid; grid-template-columns: 210px minmax(0, 1fr) }
+.set-side { border-right: 1px solid var(--line); padding: 0 14px 24px 0; min-width: 0 }
+.set-side h6 { margin: 14px 8px 6px; font-size: 11.5px; font-weight: 500; color: var(--fg-3) }
+.set-side h6:first-of-type { margin-top: 0 }
 .set-side .ni { padding: 7px 10px }
-.set-main { padding: 28px max(32px, env(safe-area-inset-right, 0px)) 40px 36px; max-width: 860px; min-width: 0 }
+.set-main { padding: 0 0 40px 32px; max-width: 860px; min-width: 0 }
 .set-main > h2 { margin: 0; font-size: 18px; font-weight: 650 }
 .set-main > p.d { margin: 4px 0 22px; color: var(--fg-2) }
 .sc { border: 1px solid var(--line); background: var(--sunken); border-radius: var(--r-l); padding: 4px; margin-bottom: 18px; min-width: 0 }
@@ -545,8 +547,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   .app { grid-template-columns: 208px minmax(0, 1fr) }
   .page { padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)) }
   .set { grid-template-columns: 184px minmax(0, 1fr) }
-  .set-side { padding: 22px 8px 22px 16px }
-  .set-main { padding: 22px 24px 40px }
+  .set-side { padding: 0 8px 22px 0 }
+  .set-main { padding: 0 0 40px 22px }
   .cat .cb { grid-template-columns: minmax(0, 1fr) }
   .cat .cb > div { border-right: 0; border-bottom: 1px solid var(--line) }
   .cat .cb > div:last-child { border-bottom: 0 }
@@ -555,9 +557,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
 .set-pick { display: none }
 @media (max-width: 760px) {
   .set { grid-template-columns: minmax(0, 1fr) }
-  .set-side { border-right: 0; border-bottom: 1px solid var(--line); padding: 18px 24px 12px }
+  .set-side { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 12px }
   .set-side nav { display: none }
-  .set-side > p { margin-bottom: 10px }
+  .set-main { padding: 18px 0 40px }
   .set-pick { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--fg-2) }
   .set-pick select { flex: 1; max-width: 360px }
 }
@@ -577,8 +579,6 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   .row .acts { flex-basis: 100%; padding-left: 31px; justify-content: flex-start }
   .row .acts .sa { display: inline-flex }
   .btn { padding: 8px 12px } .btn.sm { padding: 6px 10px }
-  .set-side { padding: 18px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px)) }
-  .set-main { padding: 20px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px)) }
   .two { grid-template-columns: 1fr }
   .sizes4 { grid-template-columns: 1fr 1fr }
   .weekrow { grid-template-columns: 1fr auto }
@@ -619,6 +619,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   <symbol id="i-hash" viewBox="0 0 24 24"><path d="M5 9h15M4 15h15M10 3 8 21M16 3l-2 18"/></symbol>
   <symbol id="i-mac" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></symbol>
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5.5 21V4M5.5 4.5h11l-2.2 4 2.2 4h-11"/></symbol>
   <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
 </svg>
 
@@ -626,32 +627,28 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   <aside class="nav" id="nav" aria-label="Workspace">
     <div class="ws"><div class="logo" aria-hidden="true">PMX</div><div><b id="ws-name">PMX</b><small id="ws-sub"></small></div></div>
     <label class="search"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="q" type="search" placeholder="Search" aria-label="Search your workspace" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></label>
-    <button type="button" class="ni" data-view="inbox"><svg class="i ic-inbox" aria-hidden="true"><use href="#i-inbox"/></svg>Inbox<span class="badge num" id="b-inbox"></span></button>
+    <button type="button" class="ni" data-view="needs"><svg class="i ic-inbox" aria-hidden="true"><use href="#i-inbox"/></svg>Needs you<span class="badge num" id="b-needs"></span></button>
+    <button type="button" class="ni" data-view="work"><svg class="i" aria-hidden="true"><use href="#i-plan"/></svg>Work</button>
+    <!-- Strategy: PMX Engine, shown only when PMX on this Mac finds it (BOARD-11). -->
+    <button type="button" class="ni" data-view="strategy" id="nav-strategy" hidden><svg class="i" aria-hidden="true"><use href="#i-flag"/></svg>Strategy</button>
+    <a class="ni" id="act-roadmap" target="_blank" rel="noopener noreferrer" hidden><svg class="i" aria-hidden="true"><use href="#i-ext"/></svg>Roadmap</a>
+    <button type="button" class="ni" data-view="health"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Health<span class="dot bad" id="b-health" hidden></span></button>
+    <h6>My to-dos</h6>
     <button type="button" class="ni" data-view="today"><svg class="i ic-today" aria-hidden="true"><use href="#i-star"/></svg>Today<span class="badge num" id="b-today"></span></button>
     <button type="button" class="ni" data-view="upcoming"><svg class="i ic-up" aria-hidden="true"><use href="#i-cal"/></svg>Upcoming</button>
     <button type="button" class="ni" data-view="anytime"><svg class="i ic-any" aria-hidden="true"><use href="#i-layers"/></svg>Anytime</button>
     <button type="button" class="ni" data-view="logbook"><svg class="i ic-log" aria-hidden="true"><use href="#i-book"/></svg>Logbook</button>
-    <h6>Team</h6>
-    <button type="button" class="ni" data-view="plan"><svg class="i" aria-hidden="true"><use href="#i-plan"/></svg>Plan<span class="badge num" id="b-plan"></span></button>
-    <button type="button" class="ni" data-view="digest"><svg class="i" aria-hidden="true"><use href="#i-paper"/></svg>Digest<span class="dot" id="b-digest" hidden></span></button>
-    <button type="button" class="ni" data-view="agents"><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg>Agents</button>
-    <a class="ni" id="act-roadmap" target="_blank" rel="noopener noreferrer" hidden><svg class="i" aria-hidden="true"><use href="#i-ext"/></svg>Roadmap</a>
-    <h6 id="nav-engine" hidden>Engine</h6>
-    <button type="button" class="ni" id="act-studio" hidden><svg class="i" aria-hidden="true"><use href="#i-ext"/></svg>Studio</button>
-    <h6>System</h6>
-    <button type="button" class="ni" data-view="flow"><svg class="i" aria-hidden="true"><use href="#i-flow"/></svg>Flow</button>
-    <button type="button" class="ni" data-view="status"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg>Status<span class="dot bad" id="b-status" hidden></span></button>
     <div class="spacer"></div>
     <button type="button" class="conn off" id="conn"><i aria-hidden="true"></i><span><b>PMX on this Mac</b> · <span id="conn-t">Connecting…</span></span></button>
     <button type="button" class="conn off" id="local" hidden><i aria-hidden="true"></i><span><b>Page on this Mac</b> · <span id="local-t">Not running</span></span></button>
-    <button type="button" class="ni" data-view="settings"><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg>Settings</button>
+    <button type="button" class="ni" id="act-settings"><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg>Settings</button>
     <button type="button" class="ni" id="act-new"><svg class="i" aria-hidden="true"><use href="#i-spark"/></svg>What's new<span class="badge num" id="b-version"></span></button>
     <button type="button" class="ni" id="act-keys"><svg class="i" aria-hidden="true"><use href="#i-help"/></svg>Help &amp; shortcuts</button>
     <button type="button" class="ni" id="act-theme"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg>Appearance</button>
   </aside>
   <div class="navscrim" id="navscrim" hidden></div>
   <main class="main" id="main">
-    <div class="topbar"><button type="button" id="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="nav"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></button><b id="tb-title">Today</b><span class="tb-b" id="tb-b"></span></div>
+    <div class="topbar"><button type="button" id="menu" aria-label="Open navigation" aria-expanded="false" aria-controls="nav"><svg class="i" aria-hidden="true"><use href="#i-menu"/></svg></button><b id="tb-title">Needs you</b><span class="tb-b" id="tb-b"></span></div>
     <div class="banner" id="banner" role="alert" hidden></div>
     <div id="view"><p class="loading">Loading from PMX…</p></div>
   </main>
@@ -684,7 +681,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   if (LOCAL) {
     const lp = new URLSearchParams(location.hash.slice(1));
     TOKEN = lp.get("t") || store.get("pmx-t", SS) || "";
-    if (lp.get("t")) { store.set("pmx-t", TOKEN, SS); try { history.replaceState(null, "", `${location.pathname}#${lp.get("tab") || "today"}`); } catch {} }
+    if (lp.get("t")) { store.set("pmx-t", TOKEN, SS); try { history.replaceState(null, "", `${location.pathname}#${lp.get("tab") || "needs"}`); } catch {} }
   }
   // The pairing key (FLOW-4, PRIV-7): kept only in this page's own storage, or in memory where storage is blocked.
   let memKey = null;
@@ -844,10 +841,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch { b.textContent = "Select and copy it"; }
     setTimeout(() => (b.textContent = was), 1600);
   }
-  // Terminal is a fallback behind a disclosure, never the first thing a PM sees.
-  const terminal = (cmd, label = "Prefer Terminal?") => cmd ? h("details", { class: "term" }, h("summary", null, cmd.startsWith("/") ? "How do I do that?" : label),
-    cmd.startsWith("/") ? h("div", { class: "cmdline" }, h("span", null, `In the Claude app, type ${cmd} in a new chat.`))
-      : h("div", { class: "cmdline" }, h("span", null, cmd), h("button", { type: "button", onclick: (ev) => copy(cmd, ev.currentTarget) }, "Copy"))) : null;
+  // SETUP-2: what Claude does is a slash command to type in the Claude app, with Copy. The page never names a pmx
+  // command, open or behind a disclosure: what PMX can do itself is a button, and anything else is said in words.
+  const slash = (cmd, say = true) => cmd && /^\/[a-z][\w-]*( [\w.@-]{1,80}){0,2}$/.test(cmd) ? h("div", { class: "cmdline slash" },
+    h("span", null, say ? "In the Claude app, type " : null, h("code", null, cmd)), h("button", { type: "button", "aria-label": `Copy ${cmd}`, onclick: (ev) => copy(cmd, ev.currentTarget) }, "Copy")) : null;
   const busyBtn = (b, text) => { if (!b) return; b.disabled = true; b.replaceChildren(h("span", { class: "spin", "aria-hidden": "true" }), text); };
 
   // ================= state =================
@@ -856,10 +853,16 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   // ok | loading | connect | pairing | declined | error
   let conn = { state: "loading", msg: "", code: null };
   let preview = null;               // the unpaired counts shown on the Connect screen
-  const S = { view: "today", pref: "sources", stab: "overview", sel: null, why: new Set(), note: null, q: "", back: "today", sheet: null, someday: false };
-  const VIEWS = ["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "flow", "status", "settings"];
-  const TITLES = { inbox: "Inbox", today: "Today", upcoming: "Upcoming", anytime: "Anytime", logbook: "Logbook", plan: "Plan", digest: "Digest", agents: "Agents", flow: "Flow", status: "Status", settings: "Settings" };
-  const LISTS = ["inbox", "today", "upcoming", "anytime"];
+  // BOARD-10: Needs you (every decision waiting for the PM), two areas with tabs (Work, Health), then the PM's own to-dos.
+  // Strategy (BOARD-11) is PMX Engine, only where PMX on this Mac finds it; Health gets more tabs as PMX shows more.
+  const S = { view: "needs", wtab: "tasks", htab: "overview", pref: "sources", sel: null, why: new Set(), note: null, q: "", sheet: null, someday: false };
+  const VIEWS = ["needs", "work", "strategy", "health", "today", "upcoming", "anytime", "logbook"];
+  const AREAS = { work: ["tasks", "agents", "digest"], health: ["overview", "running", "setup", "activity", "steps", "flow", "settings"] };
+  const TITLES = { needs: "Needs you", work: "Work", strategy: "Strategy", health: "Health", today: "Today", upcoming: "Upcoming", anytime: "Anytime", logbook: "Logbook" };
+  const TABNAMES = { tasks: "Tasks", agents: "Agents", digest: "Digest", overview: "Overview", running: "Running", setup: "Setup", activity: "Activity", steps: "Steps", flow: "Flow", settings: "Settings" };
+  const LISTS = ["today", "upcoming", "anytime"];
+  const tabOf = (v) => (v === "work" ? S.wtab : v === "health" ? S.htab : null);
+  const inSettings = () => S.view === "health" && S.htab === "settings";
   const notes = {};                 // notes typed for a redo or reject, kept across refreshes
   const typed = {};                 // text typed into add boxes, kept across redraws
 
@@ -941,11 +944,12 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   // ================= loading =================
   function loadError(e) {
     if (LOCAL) {
-      if (e.status === 403 || !TOKEN) return { msg: "This link is from a PMX board that has stopped or restarted. In Terminal, run pmx flow --web: it opens the board that's running, or starts it again.", cmd: "pmx flow --web" };
-      if (e.status === 0) return { msg: "PMX isn't answering on this Mac. The Terminal window that opened this page may have closed.", cmd: "pmx flow --web" };
+      // OBS-5: this page stops by itself after a few hours nobody used it; the page in Claude starts it again.
+      if (e.status === 403 || !TOKEN) return { msg: "This link is from a PMX page that has stopped or restarted. Open it again from your PMX page in the Claude app (Settings, then Account, then Page on this Mac), or ask Claude there to open PMX's page." };
+      if (e.status === 0) return { msg: "PMX's page on this Mac isn't running any more: it stops by itself after a few hours with nobody using it. Open it again from your PMX page in the Claude app (Settings, then Account, then Page on this Mac), or ask Claude there to open PMX's page." };
       return { msg: `PMX couldn't read its records: ${e.message}` };
     }
-    return { msg: HELP[e.code] || e.message, cmd: e.code === "server_not_connected" || e.code === "no_app" ? "pmx mcp --install" : null };
+    return { msg: HELP[e.code] || e.message, cmd: e.code === "server_not_connected" || e.code === "no_app" ? "/pmx-setup" : null };
   }
   let renderLater = false;
   const typing = () => { const a = document.activeElement; return !!a && a.id !== "q" && !!a.closest && !!a.closest("input:not([type=checkbox]):not([type=radio]), textarea, select, [contenteditable]"); };
@@ -959,6 +963,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       conn = { state: "ok", msg: "", code: null };
       initRules();
       jobNews();
+      selfUpdated();
+      setTimeout(selfUpdate, 0);
     } catch (e) {
       if (seq !== loadSeq) return false;
       if (e.code === "not_paired") { lostPairing(true); return false; }
@@ -977,6 +983,53 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   function lostPairing(quiet) {
     setKey(null); D = null; conn = { state: "connect", msg: quiet ? "" : "This page was disconnected from PMX. Connect it again.", code: null };
     render();
+  }
+
+  // ================= The page updates itself after a PMX update (FLOW-8) =================
+  // In the Claude app, when PMX on this Mac is newer than this page, a viewer who can write the page publishes PMX's
+  // newer page over it, once: the page /pmx-flow would publish, in the document shape the Artifact tool publishes,
+  // with the platform's own reset taken from this page's live head. A viewer who can't write it, a conflict, or a page
+  // whose capabilities would change leaves it as it is, without trying again; Needs you then says to type /pmx-flow.
+  const SELF = { tried: false, state: null };
+  const SELF_SKELETON = (reset, html) => `<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${reset}</style></head><body>${html}</body></html>`;
+  const LEAVE = ["conflict", "not_granted", "not_writer", "not_declared", "consent_required", "capability_disabled", "capability_removed"];
+  async function selfUpdate() {
+    if (LOCAL || SELF.tried || !D || !D.version || !CFG.version || !older(CFG.version, D.version)) return;
+    SELF.tried = true;
+    const key = `pmx-selfpub:${D.version}`;
+    // Once per version in this tab, across the reload a publish causes; never again on a viewer who can't write.
+    if (store.get(key, SS) || store.get(key) === "no") { SELF.state = "left"; return; }
+    const first = document.head && document.head.querySelector("style");
+    const reset = first ? first.textContent : null;
+    if (reset == null) { SELF.state = "no-reset"; render(); return; }
+    let art = null;
+    try { art = window.claude && typeof window.claude.use === "function" ? await window.claude.use("artifact") : null; } catch { art = null; }
+    if (!art || typeof art.publish !== "function") { SELF.state = "unavailable"; render(); return; }
+    try { const u = await window.claude.use("user"); if (u && typeof u.canEdit === "function" && (await u.canEdit()) === false) { store.set(key, "no"); SELF.state = "left"; return; } } catch {}
+    let page = null;
+    try { page = await act("page-html", {}); } catch { page = null; }
+    if (!page || typeof page.html !== "string" || page.version !== D.version) { SELF.state = "unavailable"; render(); return; }
+    if (!CFG.caps || JSON.stringify(page.capabilities) !== CFG.caps) { SELF.state = "caps"; render(); return; }
+    store.set(key, "1", SS);
+    store.set("pmx-selfpub-done", page.version, SS);
+    SELF.state = "publishing";
+    toast(`Updating this page to PMX ${page.version}…`);
+    try {
+      await art.publish(SELF_SKELETON(reset, page.html));
+      act("page-published", { version: page.version }).catch(() => {});
+    } catch (e) {
+      store.set("pmx-selfpub-done", null, SS);
+      const c = e && e.code;
+      if (c === "not_writer" || c === "not_granted" || c === "consent_required") store.set(key, "no");
+      SELF.state = LEAVE.includes(c) ? "left" : "unavailable";
+      render();
+    }
+  }
+  // The newer page, after the reload its publish caused: tells PMX the version it now runs, once.
+  function selfUpdated() {
+    if (LOCAL || !D || store.get("pmx-selfpub-done", SS) !== CFG.version) return;
+    store.set("pmx-selfpub-done", null, SS);
+    act("page-published", { version: CFG.version }).catch(() => {});
   }
 
   // ================= Run now and its progress =================
@@ -1009,26 +1062,38 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   }
 
   // ================= routes =================
-  // #inbox … #logbook, #plan, #digest, #agents, #flow (the map), #status[/flow|/activity], #settings/<section>. Links from before 0.23.0
-  // land on their new home: #flow, #work, #automations, #sources, #privacy/<section>, #settings/<section> and so on.
-  const STABS = ["overview", "setup", "flow", "activity"];
-  const ALIAS = { work: ["agents"], categories: ["agents"], skills: ["agents"], connections: ["flow"], automations: ["status", "overview"], schedules: ["settings", "schedule"], sources: ["settings", "sources"], rules: ["settings", "dnr"], privacy: ["settings", "dnr"], prefs: ["settings"], search: ["today"] };
+  // #needs, #work[/agents|/digest], #health[/setup|/activity|/steps|/flow], #health/settings/<section>, and the to-do
+  // lists #today … #logbook. Links from before 0.36.0 land on their new home (BOARD-10): #inbox on Needs you; #plan,
+  // #agents and #digest on their Work tab; #status[/…], #flow and #settings/<section> on their Health tab. Links from
+  // before 0.23.0 too: #categories, #skills, #connections, #automations, #sources, #privacy/<section> and so on.
+  const OLD = { inbox: ["needs"], plan: ["work", "tasks"], agents: ["work", "agents"], digest: ["work", "digest"], flow: ["health", "flow"],
+    categories: ["work", "agents"], skills: ["work", "agents"], connections: ["health", "flow"], automations: ["health", "overview"],
+    schedules: ["health", "settings", "schedule"], sources: ["health", "settings", "sources"], search: ["today"] };
+  // Status's tabs by their new name: its list of the steps is Health → Steps, beside the map.
+  const STATUS_TAB = { overview: "overview", setup: "setup", activity: "activity", flow: "steps" };
   // Old privacy and settings sections, and the "rule:<id>" fixes PMX sends, by their new section.
   const RULE = { routes: "sources", fixed: "private", domains: "customers", dnr: "dnr", sizes: "sizes", gets: "linear", agent: "kinds", budget: "limits", digest: "digestset", "review-cap": "limits", team: "account", checks: null };
+  const settingsSub = (b) => (b ? (PANES[b] ? b : RULE[b]) || undefined : undefined);
   function parseRoute(hash) {
-    const [a, b] = String(hash || "").replace(/^#/, "").split("/");
+    const [a, b, c] = String(hash || "").replace(/^#/, "").split("/");
     if (!a) return null;
-    if ((a === "privacy" || a === "rules") && b === "checks") return { view: "status", stab: "overview" };
-    if (a === "settings" || a === "privacy" || a === "rules" || a === "prefs") {
-      const sub = b ? (PANES[b] ? b : RULE[b]) : a === "privacy" ? "dnr" : null;
-      return { view: "settings", sub: sub || undefined };
-    }
-    if (a === "status") return { view: "status", stab: STABS.includes(b) ? b : "overview" };
-    if (ALIAS[a]) { const [v, s] = ALIAS[a]; return v === "status" ? { view: v, stab: s || "overview" } : { view: v, sub: s }; }
+    if ((a === "privacy" || a === "rules") && b === "checks") return { view: "health", tab: "overview" };
+    if (a === "settings" || a === "privacy" || a === "rules" || a === "prefs") return { view: "health", tab: "settings", sub: b ? settingsSub(b) : a === "privacy" ? "dnr" : undefined };
+    if (a === "health" && b === "settings") return { view: "health", tab: "settings", sub: settingsSub(c) };
+    if (a === "status") return { view: "health", tab: STATUS_TAB[b] || "overview" };
+    if (AREAS[a]) return { view: a, tab: AREAS[a].includes(b) ? b : AREAS[a][0] };
+    if (OLD[a]) { const [view, tab, sub] = OLD[a]; return { view, tab, sub }; }
     if (VIEWS.includes(a)) return { view: a };
     return null;
   }
-  const routeOf = () => (S.view === "settings" ? `settings/${S.pref}` : S.view === "status" && S.stab !== "overview" ? `status/${S.stab}` : S.view);
+  const routeOf = () => {
+    const t = tabOf(S.view);
+    if (S.view === "health" && t === "settings") return `health/settings/${S.pref}`;
+    return t && t !== AREAS[S.view][0] ? `${S.view}/${t}` : S.view;
+  };
+  // A place's name, for "Open …" buttons.
+  const placeName = (r) => (r.view === "health" ? (r.tab === "settings" ? (FIXLABEL[r.sub] || "Settings") : r.tab && r.tab !== "overview" ? TABNAMES[r.tab] : "Health")
+    : r.view === "work" ? (r.tab && r.tab !== "tasks" ? TABNAMES[r.tab] : "Work") : TITLES[r.view]);
   function setRoute(push) {
     const r = `#${routeOf()}`;
     if (location.hash === r) return;
@@ -1037,30 +1102,39 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   }
   function applyRoute(r) {
     if (!r) return;
-    if (r.view === "settings") { if (S.view !== "settings") S.back = S.view; if (r.sub) S.pref = r.sub; }
-    if (r.view === "status") S.stab = r.stab || "overview";
+    if (r.view === "work") S.wtab = r.tab || "tasks";
+    if (r.view === "health") S.htab = r.tab || "overview";
+    if (r.sub) S.pref = r.sub;
     S.view = r.view;
   }
+  // Leaving Settings with unsaved changes asks first.
+  const leavesSettings = (v, tab) => inSettings() && !(v === "health" && tab === "settings") && dirty();
   function onHash() {
     const r = parseRoute(location.hash);
     if (!r) return;
-    if (S.view === "settings" && r.view !== "settings" && dirty()) { setRoute(false); return confirmLeave(() => { discard(); applyRoute(r); afterGo(); }); }
-    applyRoute(r); afterGo();
+    if (leavesSettings(r.view, r.tab)) { setRoute(false); return confirmLeave(() => { discard(); applyRoute(r); setRoute(false); afterGo(); }); }
+    // An old link shows its new address once it lands.
+    applyRoute(r); setRoute(false); afterGo();
   }
   window.addEventListener("hashchange", onHash);
   window.addEventListener("popstate", onHash);
+  // go("work", { tab: "agents" }); an area without a tab opens the tab it showed last.
   function go(v, o = {}) {
-    if (S.view === "settings" && v !== "settings" && dirty() && !o.force) return confirmLeave(() => { discard(); go(v, { ...o, force: true }); });
-    if (v === "settings") { if (S.view !== "settings") S.back = S.view; if (o.sub) S.pref = o.sub; }
-    if (v === "status" && o.stab) S.stab = o.stab;
+    const tab = AREAS[v] ? o.tab || tabOf(v) : null;
+    if (leavesSettings(v, tab) && !o.force) return confirmLeave(() => { discard(); go(v, { ...o, force: true }); });
+    if (v === "work") S.wtab = tab;
+    if (v === "health") S.htab = tab;
+    if (o.sub) S.pref = o.sub;
     S.view = v;
     if (S.q && !o.keepQ) { S.q = ""; $("q").value = ""; }
     setRoute(o.push !== false);
     afterGo(o);
   }
   function afterGo(o = {}) {
+    // Health → Running asks PMX again each time it opens (OBS-5).
+    if (!(S.view === "health" && S.htab === "running")) RUN = { data: null, busy: false, err: null, seq: RUN.seq + 1 };
     S.sel = null; closeSheet(false); closeNav(false); closeModal(false);
-    store.set("pmx-view", S.view);
+    store.set("pmx-view", routeOf());
     render();
     $("main").scrollTop = 0;
     if (o.focus !== false) requestAnimationFrame(() => document.querySelector("#view h1")?.focus({ preventScroll: true }));
@@ -1069,25 +1143,55 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const FIXLABEL = { sources: "Sources", private: "Always private", customers: "Who counts as a customer", dnr: "Do-not-read list", sizes: "Sizes", linear: "What Linear gets", kinds: "Kinds of work", limits: "Budget and limits", digestset: "Digest settings", account: "Account", schedule: "Schedule" };
   function fixTarget(fix) {
     if (!fix) return null;
-    if (fix.startsWith("rule:")) { const sub = RULE[fix.slice(5)]; return sub ? { view: "settings", sub, label: `Open ${FIXLABEL[sub]}` } : { view: "status", stab: "overview", label: "See privacy checks" }; }
-    if (fix.startsWith("check:")) return { view: "status", stab: "overview", label: "See privacy checks" };
-    if (fix.startsWith("tab:")) { const r = parseRoute(fix.slice(4)); return r ? { ...r, label: r.view === "settings" ? `Open ${FIXLABEL[r.sub] || "Settings"}` : `Open ${TITLES[r.view]}` } : null; }
+    if (fix.startsWith("rule:")) { const sub = RULE[fix.slice(5)]; return sub ? { view: "health", tab: "settings", sub, label: `Open ${FIXLABEL[sub]}` } : { view: "health", tab: "overview", label: "See privacy checks" }; }
+    if (fix.startsWith("check:")) return { view: "health", tab: "overview", label: "See privacy checks" };
+    if (fix.startsWith("tab:")) { const r = parseRoute(fix.slice(4)); return r ? { ...r, label: `Open ${placeName(r)}` } : null; }
     return null;
   }
-  // One button for a fix: what this page can do about it, else the place that fixes it; Terminal only behind a disclosure.
+  const toSettings = (sub, o = {}) => go("health", { tab: "settings", sub, ...o });
+  // One button for a fix (SETUP-2): the setup step PMX does itself, else the place that fixes it, and the slash command
+  // Claude does it with. Never a pmx command: an older PMX's Terminal fallbacks aren't shown.
+  const stepOf = (id) => (D && D.setup ? D.setup.sections.flatMap((x) => x.steps).find((x) => x.id === id) : null) || null;
   function fixControls(f, o = {}) {
     if (!f) return null;
     const out = [];
-    if (f.action === "install-job") out.push(btn("Turn on automatic runs", { cls: `sm${o.primary === false ? "" : " pri"}`, on: (ev) => setupAction("install-job", ev.currentTarget) }));
+    const pri = o.primary === false ? "" : " pri";
+    if (f.step) { const st = stepOf(f.step); out.push(fixButton(f.step, f.label || (st && st.fix && st.fix.label) || "Fix it", !!(st && st.fix && st.fix.asks), pri)); }
+    else if (f.action === "install-job") out.push(btn("Turn on automatic runs", { cls: `sm${pri}`, on: (ev) => setupAction("install-job", ev.currentTarget) }));
     const t = !o.noGo && fixTarget(f.fix);
-    if (t) out.push(btn(t.label, { cls: "sm", on: () => go(t.view, { sub: t.sub, stab: t.stab }) }));
-    return [out.length ? h("span", { class: "fixacts" }, out) : null, f.cmd ? terminal(f.cmd, f.action ? "Prefer Terminal?" : "How do I fix it?") : null];
+    if (t) out.push(btn(t.label, { cls: "sm", on: () => go(t.view, { sub: t.sub, tab: t.tab }) }));
+    return [out.length ? h("span", { class: "fixacts" }, out) : null, f.cmd ? slash(f.cmd) : null];
+  }
+  // A step PMX does itself. One that changes the background job or the Claude app's settings carries the Mac mark:
+  // PMX asks in a dialog on the Mac first, as Connect does.
+  const fixButton = (step, label, asks, pri = " pri") => btn(label, { cls: `sm${pri}`, icon: asks ? "mac" : null, title: asks ? "PMX asks you in a dialog on your Mac" : null, fk: `fix-${step}`, on: (ev) => fixStep(step, ev.currentTarget, asks) });
+  async function fixStep(step, b, asks) {
+    busyBtn(b, asks ? "Check your Mac…" : "Working…");
+    try { const r = await act("checklist-fix", { step }); if (r.setup && D) D.setup = r.setup; render(); toast(r.message || "Done."); }
+    catch (e) { if (e.body && e.body.setup && D) D.setup = e.body.setup; render(); toast(e.message, { error: true }); if (e.code === "not_paired") { lostPairing(); return; } }
+    await load();
+  }
+  // How the checklist says an open step gets done: a button, a slash command, a sentence and a link, or a place here.
+  const linkLabel = (u) => { try { const x = new URL(u); return /\/artifact\//.test(x.pathname) ? "Open the team board" : `Open ${x.hostname.replace(/^www\./, "")}`; } catch { return "Open"; } };
+  function stepFix(st, o = {}) {
+    const f = st && st.fix;
+    if (!f) return null;
+    if (f.kind === "pmx") return h("span", { class: "fixacts" }, fixButton(st.id, f.label || "Fix it", !!f.asks, o.pri === false ? "" : " pri"));
+    if (f.kind === "claude") return slash(f.command, false);
+    if (f.kind === "person") return f.link && /^https:\/\//.test(f.link) ? h("span", { class: "fixacts" }, ext(f.link, linkLabel(f.link))) : null;
+    if (f.kind === "page") { const t = fixTarget(f.to); return t ? h("span", { class: "fixacts" }, btn(f.label || t.label, { cls: "sm", on: () => go(t.view, { sub: t.sub, tab: t.tab }) })) : null; }
+    return null;
   }
 
   // ================= what the lists hold =================
   const shown = (k) => !held.has(k);
   const props = () => ((D && D.proposals) || []).filter((p) => shown(`p:${p.id}`));
   const drafts = () => ((D && D.drafts) || []).filter((d) => shown(`r:${d.identifier}`));
+  // APPROVE-3: Start now only when PMX on this Mac says the team offers it, so an older server is never sent "start".
+  const startOn = () => !!(D && D.rules && D.rules.startNow === true);
+  const relayOn = () => !!(D && D.freshness && D.freshness.linearSyncedAt);
+  // PULL-12: tasks PMX stopped after failed runs in a row.
+  const stoppedList = () => ((D && D.stopped) || []).filter((t) => shown(`st:${t.identifier}`));
   // TODO-4: to-dos from meetings in a period, the last 7 days unless the PM picks another; remembered on this browser.
   const TODO_PERIODS = [["0", "Today"], ["7", "Last 7 days"], ["14", "Last 14 days"], ["30", "Last 30 days"], ["90", "Last 90 days"], ["all", "All time"]];
   let todoDays = (() => { const v = store.get("pmx-todo-days"); return TODO_PERIODS.some(([k]) => k === v) ? v : "7"; })();
@@ -1115,14 +1219,58 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const older = (a, b) => { const x = verN(a), y = verN(b); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
   const serverFix = () => (!LOCAL && D && D.version && CFG.version && older(D.version, CFG.version)
     ? [{ text: `The Claude app is still running PMX's server from pmx ${D.version}, older than this page (${CFG.version}), so some of it may not work. Quit the Claude app completely (⌘Q, not just its window) and open it again.` }] : []);
-  const fixes = () => [...serverFix(), ...(D && D.health ? D.health.items || (D.health.problems || []).map((text) => ({ text })) : [])];
+  // FLOW-8: a page older than PMX that couldn't publish the newer page over itself says how to update it.
+  const pageFix = () => (!LOCAL && D && D.version && CFG.version && older(CFG.version, D.version) && ["no-reset", "unavailable", "caps"].includes(SELF.state)
+    ? [{ text: `This page is from pmx ${CFG.version}, and PMX on this Mac is ${D.version}. Type /pmx-flow in the Claude app to update it; it keeps its link.`, cmd: "/pmx-flow" }] : []);
+  const fixes = () => [...serverFix(), ...pageFix(), ...(D && D.health ? D.health.items || (D.health.problems || []).map((text) => ({ text })) : [])];
   const teamPrs = () => (D && D.pendingTeam) || [];
+  // Needs you's card from the setup checklist: its next step, only when PMX can't do its job without it (SETUP-1).
+  const setupNext = () => { const s = D && D.setup; return s && s.next && s.next.required !== false ? s.next : null; };
+  // BOARD-11: PMX Engine, where PMX on this Mac finds it: read live as labels, at most once a minute, and kept nowhere.
+  const engine = () => (D && D.engine) || null;
+  const engineMine = () => ((engine() && engine().waiting) || []).filter((w) => w.who === "you");
+  // Every card Needs you shows. The same rules as needsYou() in src/flow/needs.ts, so `pmx status` agrees with the badge.
+  const needsCount = () => (D ? drafts().length + stoppedList().length + props().length + waiting().length + fixes().length + (setupNext() ? 1 : 0) + teamPrs().length + engineMine().length : 0);
+  // The review cap (PULL-4) counts this PM's own drafts; a board from before 0.36.0 doesn't say whose, so every draft counts.
+  const capReached = () => { const c = D && D.rules && D.rules.reviewCap; return !!c && drafts().filter((d) => d.mine !== false).length >= c; };
   const isDueToday = (t) => !!t.due && diffDays(t.due) <= 0;
   const onToday = (t) => t.when === "today" || t.when === "evening" || isDueToday(t);
   const catName = (id) => (((D && D.categories) || []).find((c) => c.id === id) || { name: id }).name;
   const automation = (id) => ((D && D.automations) || []).find((a) => a.id === id);
   // Search: titles, where each came from, and what Linear would get.
   const hit = (...fields) => !S.q || fields.some((f) => String(f || "").toLowerCase().includes(S.q));
+  // How long a card has waited, from the item's own time, marked past 3 days. No time, no age: never a guess.
+  const nowMs = () => (D && Date.parse(D.at)) || Date.now();
+  function age(iso) {
+    const t = Date.parse(iso || "");
+    if (!Number.isFinite(t)) return null;
+    const ms = Math.max(0, nowMs() - t), old = ms > 3 * 864e5;
+    const text = ms < 36e5 ? "waiting under an hour" : ms < 864e5 ? `waiting ${plural(Math.floor(ms / 36e5), "hour")}` : `waiting ${plural(Math.floor(ms / 864e5), "day")}`;
+    return h("span", { class: `age${old ? " over" : ""}`, title: `Since ${when(iso)}` }, old ? ic("warn") : null, text);
+  }
+  // Who acts on a card, and what it waits for.
+  const WHO = { you: "You", claude: "You, with Claude", teammate: "A teammate", "team-lead": "Your team lead" };
+  const waitsFor = (who, what) => h("span", { class: "wf" }, h("b", null, who), ` · ${what}`);
+  // A task's history in one line, from what this page already has: approvals and reviews in the Logbook, agent runs in
+  // the activity, and the item's own times. Nothing is fetched for it.
+  const HISTWORD = { approved: "approved", accepted: "accepted", redo: "redo asked", rejected: "rejected" };
+  const shortDay = (iso) => new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" });
+  function taskHistory(id, own = []) {
+    const ev = own.filter(([at]) => at);
+    for (const e of (D && D.logbook) || []) if (e.ref === id && HISTWORD[e.kind]) ev.push([e.at, HISTWORD[e.kind]]);
+    for (const a of (D && D.activity) || []) {
+      if (!String(a.text || "").split(/[^A-Za-z0-9-]+/).includes(id)) continue;
+      const w = a.kind === "agent" ? (a.bad ? "a run failed" : "drafted") : a.kind === "review" ? (/accepted/.test(a.text) ? "accepted" : /redo/.test(a.text) ? "redo asked" : "rejected")
+        : a.kind === "release" ? (/dropped/.test(a.text) ? "dropped" : "back to Ready") : null;
+      if (w) ev.push([a.at, w]);
+    }
+    const seen = new Set(), out = [];
+    for (const [at, w] of ev.sort((x, y) => String(x[0]).localeCompare(String(y[0])))) {
+      const k = `${w}@${dayOf(at)}`;
+      if (!seen.has(k)) { seen.add(k); out.push(`${w} ${shortDay(at)}`); }
+    }
+    return out.length ? h("p", { class: "hist" }, `History: ${out.slice(-6).join(" · ")}`) : null;
+  }
 
   // ================= rows =================
   const ckBtn = (cls, label, on) => h("button", { type: "button", class: `ck ${cls}`, "aria-label": label, onclick: on }, tick());
@@ -1140,6 +1288,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     if (!rows.length && !o.keep) return null;
     return h("section", { class: "group", "aria-label": typeof title === "string" ? title : o.aria },
       h("div", { class: `gh${o.plain ? " plain" : ""}` }, h("h2", null, title), o.count === false ? null : h("span", { class: "c num" }, String(o.count ?? rows.length)), o.right ? h("span", { class: "r" }, o.right) : null),
+      o.banner || null,
       o.note ? h("p", { class: "gnote" }, o.note) : null,
       list(rows));
   }
@@ -1167,16 +1316,38 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       acts: [btn("Open", { cls: "sm ghost", on: () => openSheet(k) })],
     });
   }
+  // APPROVE-3: Start now (approve and make Ready), Later (approve to the backlog) and Drop. A team that has a teammate
+  // decide what agents take turns Start now off: then it's Approve and Drop, as before.
   function propRow(p) {
-    const k = `p:${p.id}`, open = S.why.has(k);
+    const k = `p:${p.id}`, open = S.why.has(k), now = startOn();
     return row({
       key: k, open: true, title: p.title,
-      ck: ckBtn("prop", `Approve: ${p.title}`, () => approve([p])),
+      ck: ckBtn("prop", now ? `Start now: ${p.title}` : `Approve: ${p.title}`, () => approve([p], now)),
       meta: [chip(`${catName(p.category)} · ${p.size}`, "k"), p.theme ? chip(`Theme: ${p.theme}`) : null, h("span", null, p.from),
+        waitsFor("You", now ? "start it now, later or drop it" : "approve or drop it"), age(p.at),
         h("button", { type: "button", class: "link", "aria-expanded": open ? "true" : "false", onclick: () => { open ? S.why.delete(k) : S.why.add(k); render(); } }, open ? "Hide why" : "Why?")],
       extra: open ? h("div", { class: "why" }, h("b", null, "What Linear would get: "), p.description, themePick(p)) : null,
-      acts: [btn("Approve", { cls: "sm pri", on: () => approve([p]) }), btn("Drop", { cls: "sm sa", on: () => drop(p) })],
+      acts: now
+        ? [btn("Start now", { cls: "sm pri", title: "Approve it and make it Ready for agents", on: () => approve([p], true) }), btn("Later", { cls: "sm", title: "Approve it to your team's backlog, for later", on: () => approve([p], false) }), btn("Drop", { cls: "sm sa", on: () => drop(p) })]
+        : [btn("Approve", { cls: "sm pri", on: () => approve([p], false) }), btn("Drop", { cls: "sm sa", on: () => drop(p) })],
     });
+  }
+  // PULL-12: a task PMX stopped after failed runs, with what the PM can do about it. Self-contained, so it can move.
+  function stoppedRow(t) {
+    const k = `st:${t.identifier}`;
+    return row({
+      key: k, title: t.title, aria: `${t.identifier}: ${t.title}`,
+      ck: sysMark("warn", "bad"),
+      meta: [chip(t.identifier), h("span", null, `Stopped after ${plural(t.runs, "failed run")} in a row`), waitsFor("You", "try it again, edit it or drop it"), age(t.at)],
+      extra: t.reason ? h("p", { class: "small" }, t.reason) : null,
+      acts: [btn("Try again", { cls: "sm pri", title: "Back to Ready, with its count of failed runs started over", on: () => stoppedAct(t, "retry") }),
+        t.url ? ext(t.url, "Edit task") : null,
+        btn("Drop", { cls: "sm sa", title: "No agent takes it again", on: () => stoppedAct(t, "drop") })],
+    });
+  }
+  function stoppedGroup() {
+    const st = stoppedList();
+    return group("Stopped after failed runs", st.map(stoppedRow), { note: "Agents stopped taking these after their runs failed in a row. Try again puts a task back in Ready with its count started over; Edit task opens it in Linear, so you can make it clearer first; Drop takes it out of the agents' queue for good." });
   }
   // EQ-38: the roadmap theme a task carries to Linear as a pmx-theme label. Only the team's open themes are offered.
   function themePick(p) {
@@ -1194,7 +1365,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return row({
       key: k, open: true, title: d.title, aria: `${d.identifier}: ${d.title}`,
       ck: h("button", { type: "button", class: "ck sys", "aria-label": `Open draft ${d.identifier}`, onclick: () => openSheet(k) }, ic("pr")),
-      meta: [chip(d.identifier), d.since ? h("span", null, `Waiting since ${when(d.since)}`) : null, d.url ? h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, "Open in Linear") : null],
+      meta: [chip(d.identifier), waitsFor("You", "accept it, ask for a redo or reject it"), age(d.draftedAt), d.url ? h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, "Open in Linear") : null],
       extra: noting ? noteForm(d, S.note.v) : null,
       acts: [btn("Accept", { cls: "sm pri", on: () => decide(d, "accepted") }), btn("Redo", { cls: "sm sa", on: () => askNote(k, "redo") }), btn("Reject", { cls: "sm ghost sa", on: () => askNote(k, "rejected") })],
     });
@@ -1208,12 +1379,27 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   function askNote(k, v) { S.note = { key: k, v }; closeSheet(false); render(); requestAnimationFrame(() => document.querySelector(`[data-fk="note-${CSS.escape(k)}"]`)?.focus()); }
 
   // ================= actions with Undo =================
-  function approve(list) {
+  // What happens next, in plain words: when the task reaches agents. Through Claude's Linear sync, at the next sync.
+  function approvedMsg(list, start) {
+    const one = list.length === 1, what = one ? `"${list[0].title}"` : `${list.length} tasks`;
+    const sync = relayOn() ? " at the next Linear sync" : "";
+    if (start) return `Started ${what}. ${one ? "It becomes" : "They become"} Ready for agents in Linear${sync || " now"}, and ${one ? "an agent takes it" : "agents take them"} from there.`;
+    if (startOn()) return `Approved ${what} for later. ${one ? "It waits" : "They wait"} in your team's backlog in Linear${sync}; move ${one ? "it" : "one"} to Ready on the team board when you want an agent on it.`;
+    return `Approved ${what}. ${one ? "It goes" : "They go"} to your team's backlog in Linear${sync}; an agent takes ${one ? "it" : "one"} only after a teammate moves it to Ready.`;
+  }
+  function approve(list, start = false) {
     if (!list.length) return;
     later(list.map((p) => `p:${p.id}`), {
-      msg: list.length > 1 ? `Approved ${list.length} tasks. They go to your team's pool in Linear; an agent takes one only after a teammate moves it to Ready.` : `Approved "${list[0].title}". It goes to your team's pool in Linear; an agent takes it only after a teammate moves it to Ready.`,
-      label: "Couldn't approve", next: true,
-      run: () => act("proposals", { action: "approve", ids: list.map((p) => p.id) }),
+      msg: approvedMsg(list, start),
+      label: start ? "Couldn't start it" : "Couldn't approve", next: true,
+      run: () => act("proposals", { action: start ? "start" : "approve", ids: list.map((p) => p.id) }),
+    });
+  }
+  function stoppedAct(t, action) {
+    later([`st:${t.identifier}`], {
+      msg: action === "retry" ? `Trying ${t.identifier} again. It goes back to Ready${relayOn() ? " at the next Linear sync" : ""}, with its count of failed runs started over.` : `Dropped ${t.identifier}. No agent takes it again; it moves to canceled in Linear${relayOn() ? " at the next Linear sync" : ""}.`,
+      label: action === "retry" ? "Couldn't try it again" : "Couldn't drop it", next: true,
+      run: () => act("stopped", { identifier: t.identifier, action }),
     });
   }
   function drop(p) {
@@ -1255,8 +1441,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const nextCollect = () => { const c = automation("collect"); return c && c.next ? `New calls are read ${low(when(c.next)).replace(/^today /, "today at ")}.` : ""; };
   function emptyApprove() {
     const sy = automation("synthesize"), job = automation("job");
-    if (sy && sy.status !== "ok" && sy.statusText) return `No tasks are being proposed yet: ${low(sy.statusText)}.`;
-    if (job && job.status === "setup") return "Tasks are proposed once automatic runs are on.";
+    if (sy && sy.status !== "ok" && sy.statusText) return `No tasks are being suggested yet: ${low(sy.statusText)}.`;
+    if (job && job.status === "setup") return "Tasks are suggested once automatic runs are on.";
     return nextCollect();
   }
   // ================= Why no tasks are waiting (SIG-6) =================
@@ -1274,42 +1460,136 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const facts = sy.where === "here" ? [`Last synthesis: ${sy.lastRunAt ? ago(sy.lastRunAt) : "never"}`,
       sy.counts.meetings ? `last ${sy.days} days: ${plural(sy.counts.meetings, "meeting")}, ${sy.counts.read} read for tasks, ${sy.counts.pending} not read yet, ${sy.counts.held} kept out` : null].filter(Boolean).join(" · ") : null;
     const ms = sy.meetings || [];
-    return h("section", { class: "sc synth", "aria-label": "Proposed tasks" },
+    return h("section", { class: "sc synth", "aria-label": "New tasks" },
       h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "No tasks are waiting for you"), facts ? h("small", null, facts) : null),
         canRun ? btn(busy ? "Reading meetings…" : `Run synthesis now${est}`, { cls: "sm pri", icon: busy ? null : "play", disabled: busy, on: (ev) => runNow("synthesize", ev.currentTarget) }) : null),
       h("div", { class: "sc-b pad" },
         h("p", null, sy.reason),
-        canRun ? h("p", { class: "hint" }, `Synthesis only proposes tasks: each waits here for you, and nothing reaches Linear until you approve it.${est ? " Its cost counts toward your daily budget." : ""}`) : null,
+        canRun ? h("p", { class: "hint" }, `Synthesis only suggests tasks: each waits here for you, and nothing reaches Linear until you approve it.${est ? " Its cost counts toward your daily budget." : ""}`) : null,
         ms.length ? h("details", { class: "why" }, h("summary", null, `What happened to each meeting (${ms.length})`),
           h("ul", { class: "mlist" }, ms.map((m) => h("li", null, h("span", { class: "d faint num" }, when(m.at)), h("span", { class: "t" }, m.title || "A meeting (its title stays private)"),
             pill(m.outcome === "held" ? `Kept out: ${m.label}` : OUTCOME[m.outcome][0], OUTCOME[m.outcome][1]))))) : null,
         splitNote()));
   }
-  const V = {};
-  V.inbox = () => {
-    const ps = props(), ws = waiting(), fx = fixes(), prs = teamPrs();
-    const total = ps.length + ws.length + fx.length + prs.length;
+  // ================= PMX Engine's moves (BOARD-11) =================
+  // A move in PMX Engine: whose it is, where it's made and since when. The head of product's own moves are cards in
+  // Needs you and the Strategy area; the page in Claude can't open a tab on this Mac, so "Open in the studio" asks PMX
+  // to open it there. Approving, signing off and holding stay in the studio, which asks on the Mac. A slash command is
+  // shown where Claude does the step; never an Engine or PMX command.
+  const EWHO = { you: "You", claude: "Claude", "a colleague": "A colleague" };
+  async function openStudioAt(place, b) {
+    busyBtn(b, "Opening…");
+    try { const r = await act("engine-open", { place }); toast(r.message || "Opening the studio."); }
+    catch (e) { toast(e.message, { error: true }); if (e.code === "not_paired") { lostPairing(); return; } }
+    render();
+  }
+  const studioBtn = (place, label = "Open in the studio", pri = false) => btn(label, { cls: `sm${pri ? " pri" : ""}`, icon: "ext", title: "Opens PMX Engine's studio in your browser on this Mac", fk: `studio-${place}`, on: (ev) => openStudioAt(place, ev.currentTarget) });
+  function engineRow(w) {
+    const mine = w.who === "you";
+    const what = !mine ? (w.who === "claude" ? "its move, in the Claude app" : "their move; nothing waits on you")
+      : w.where === "studio" ? "do it in the studio" : w.where === "claude app" ? (w.command ? "type the command in the Claude app" : "do it in the Claude app") : "do it";
+    return row({
+      key: `en:${w.id}`, title: w.label, ck: sysMark("flag"),
+      meta: [waitsFor(EWHO[w.who] || "You", what), age(w.since)],
+      extra: mine && w.command ? slash(w.command) : null,
+      // A move made in the studio opens at its place there (its Home when Engine gave none PMX knows).
+      acts: mine && (w.where === "studio" || (w.place && !w.command)) ? [studioBtn(w.place || "home", undefined, w.where === "studio")] : null,
+    });
+  }
+  const NEXTWHO = { you: "yours", claude: "Claude's", "a colleague": "a colleague's" };
+  function releaseRow(r) {
+    return row({
+      key: `er:${r.id}`, title: r.label, ck: sysMark("layers"),
+      meta: [h("span", null, r.reached.length ? `Reached ${and(r.reached)}` : "Reached no audience yet"), h("span", null, r.waiting.length ? `Still to come: ${and(r.waiting)}` : "Every audience has it")],
+      extra: r.next ? h("p", { class: "small" }, h("b", null, "Next: "), r.next.step, h("span", { class: "faint" }, ` (${NEXTWHO[r.next.who] || "yours"}, for ${r.next.group})`)) : null,
+    });
+  }
+  // Why Engine can't say where it stands here, in one sentence; null when it can.
+  function engineLead(e) {
+    if (e.state === "old") return "This PMX Engine is too old to show here.";
+    if (e.state === "error") return "PMX Engine didn't say where it stands just now, so it can't show here.";
+    if (e.state === "problem") return `${e.problem || "PMX Engine is installed on this Mac but didn't start"}. Health, then Setup, says what to do.`;
+    if (!e.workspace) return "PMX Engine has no workspace on this Mac yet. The studio's first questions set one up.";
+    return null;
+  }
+  // ================= Strategy: PMX Engine on this Mac (BOARD-11) =================
+  function strategyView() {
+    const e = engine();
+    const mine = engineMine(), others = e.waiting.filter((w) => w.who !== "you"), rel = e.releases || [], lead = engineLead(e);
+    const live = e.state === "ok" && !!e.workspace;
     return [
-      head("inbox", "ic-inbox", "Inbox", "Decisions waiting for you. Nothing reaches Linear until you approve it, and an approved task waits in the team's pool until a teammate moves it to Ready.",
-        [ps.length > 1 ? btn(`Approve all ${ps.length}`, { on: () => approve(ps) }) : null]),
-      total ? [
-        ps.length ? null : synthCard(),
-        group("Tasks to approve", ps.map(propRow), { right: chip("Only you see these until you approve"), note: "From calls with customers. Each goes to your team's pool in Linear only when you approve it, and an agent takes it only after a teammate moves it to Ready. Your own to-dos never go." }),
-        group("Digest", ws.map((w) => row({
+      head("flag", "", "Strategy", `${e.workspace ? `${e.workspace}, in PMX Engine` : "PMX Engine"}${e.version ? ` ${e.version}` : ""} on this Mac, read ${low(ago(e.at))}. What waits on whom, and where each release has reached. Approving, signing off and holding happen in the studio, which asks you on the Mac.`,
+        [!lead ? studioBtn("home", "Open the studio") : null]),
+      lead ? h("div", { class: "callout", role: "status", id: "engine-lead" }, h("div", null, h("b", null, lead)), e.state !== "problem" ? studioBtn("home", "Open the studio", true) : null) : null,
+      group("Waiting on you", mine.map(engineRow), { note: "Your moves in PMX Engine, the ones that move a release on first. Each opens where it's made." }),
+      group("Waiting on Claude or a colleague", others.map(engineRow)),
+      group("Releases in flight", rel.map(releaseRow), { note: "Each release, hold or withdrawal on its way: the audiences it reached, those still to come, and its next step." }),
+      live && e.pages && e.pages.count ? group("Pages", [row({ key: "en-pages", ghost: true, title: `${e.pages.ready} of ${plural(e.pages.count, "page")} ready to receive releases`, ck: sysMark("paper"),
+        acts: e.pages.ready < e.pages.count ? [studioBtn("pages")] : null })], { count: false }) : null,
+      live && !mine.length && !others.length && !rel.length ? empty("check", "Nothing in PMX Engine waits on anyone right now.") : null,
+    ];
+  }
+  // ================= PMX Engine's checklist, after PMX's (SETUP-3) =================
+  function engineSetup() {
+    const e = engine(), c = e && e.checklist;
+    if (!c) return null;
+    const left = c.counts.todo + c.counts.warn;
+    const secs = c.sections.map((sec) => [sec, sec.steps.filter((st) => st.status !== "skip")]).filter(([, steps]) => steps.length);
+    return [
+      h("div", { class: "gh", id: "setup-engine" }, h("h2", null, "PMX Engine")),
+      h("section", { class: "sc", id: "setup-engine-summary" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "Where it stands"), h("small", null, `PMX Engine ${c.version} · ${plural(c.counts.done, "step")} done${left ? `, ${left} to look at` : ""} · checked ${low(when(c.at))}`))),
+        h("div", { class: "sc-b" }, h("div", { class: "sr" }, h("div", { class: "nm" }, c.where, h("small", null, c.next ? `Next: ${c.next.title}.` : "Nothing left to do."))))),
+      secs.map(([sec, steps]) => h("section", { class: "sc", id: `setup-engine-${sec.id}` }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, sec.title))),
+        h("div", { class: "sc-b" }, steps.map((st) => h("div", { class: "sr", id: `setup-engine-step-${st.id.replace(/[^a-z0-9-]/gi, "-")}` },
+          h("div", { class: "nm" }, st.title, st.detail ? h("small", null, st.detail) : null, st.place ? h("span", { class: "fixacts" }, studioBtn(st.place)) : st.command ? slash(st.command) : null),
+          pill(...SETUP_PILL[st.status])))))),
+    ];
+  }
+  const V = {};
+  // ================= Needs you (BOARD-10) =================
+  // Every decision waiting for the PM, in one list, ordered by what frees the most work: drafts first (the agent waits
+  // for them), then tasks stopped after failed runs, tasks to approve, the digest, fixes and team changes. Each card
+  // says who acts, what it waits for and how long it has waited.
+  V.needs = () => {
+    const r = drafts(), ps = props(), ws = waiting(), fx = fixes(), su = setupNext(), prs = teamPrs(), now = startOn();
+    const capN = D.rules && D.rules.reviewCap, paused = capReached();
+    return [
+      head("inbox", "ic-inbox", "Needs you", now
+        ? "Decisions waiting for you, the ones that free the most work first. Nothing reaches Linear until you say so: Start now makes a task Ready for agents, and Later puts it in your team's backlog."
+        : "Decisions waiting for you, the ones that free the most work first. Nothing reaches Linear until you approve it, and an approved task waits in the team's backlog until a teammate moves it to Ready."),
+      needsCount() ? [
+        group("Drafts to review", r.map(draftRow), {
+          banner: paused ? h("div", { class: "banner", role: "note", id: "review-cap" }, h("span", null, h("b", null, "Your agent is paused. "), `It takes no new work while ${plural(capN, "of your drafts waits", "of your drafts wait")} for review. Review one and it starts again.`)) : null,
+          note: "Agents drafted these for your team. Accept keeps a draft; a redo or a reject needs a short note.",
+        }),
+        stoppedGroup(),
+        group("Tasks to approve", ps.map(propRow), { right: [ps.length > 1 ? btn(now ? `Start all ${ps.length}` : `Approve all ${ps.length}`, { cls: "sm", on: () => approve(ps, now) }) : null, chip("Only you see these until you approve")], note: now
+          ? `From calls with customers. Nothing goes to Linear until you choose. Start now sends a task as Ready for agents${relayOn() ? " at the next Linear sync" : ""}; Later sends it to your team's backlog, where it waits until someone moves it to Ready. Your own to-dos never go.`
+          : "From calls with customers. Each goes to your team's backlog in Linear only when you approve it, and an agent takes it only after a teammate moves it to Ready. Your own to-dos never go." }),
+        group("Weekly digest", ws.map((w) => row({
           key: `dg:${w.week}`, title: `Your digest for the week of ${weekOf(w.week)} is ready`,
-          ck: sysMark("paper"), meta: [h("span", null, `${plural(w.sources, "source")} cited${w.held ? ` · ${w.held} kept private` : ""}`), h("span", null, "Nothing is shared until you approve it")],
-          acts: [btn("Read it", { cls: "sm pri", on: () => go("digest") })],
+          ck: sysMark("paper"), meta: [h("span", null, `${plural(w.sources, "source")} cited${w.held ? ` · ${w.held} kept private` : ""}`), waitsFor("You", "read it and approve it; nothing is shared until you do"), age(w.at)],
+          acts: [btn("Read it", { cls: "sm pri", on: () => go("work", { tab: "digest" }) })],
         }))),
-        group("Needs a fix", fx.map((x, i) => row({
-          key: `fx:${i}`, title: x.text, ck: sysMark("warn", /failed|stop|violat/i.test(x.text) ? "bad" : "warn"),
-          extra: fixControls(x),
-        }))),
+        group("Needs a fix", [
+          ...fx.map((x, i) => row({
+            key: `fx:${i}`, title: x.text, ck: sysMark("warn", /failed|stop|violat/i.test(x.text) ? "bad" : "warn"),
+            meta: [waitsFor(x.cmd && x.cmd.startsWith("/") && !x.step ? WHO.claude : "You", x.step ? "click it, and PMX does it" : "fix it")], extra: fixControls(x),
+          })),
+          su ? row({
+            key: "fx:setup", title: `Next setup step: ${su.title}`, ck: sysMark("warn", "warn"),
+            meta: [waitsFor(su.fix && su.fix.kind === "pmx" ? "You" : WHO[su.who] || "You", su.fix && su.fix.kind === "pmx" ? "click it, and PMX does it; PMX can't do its job without it" : "do this step; PMX can't do its job without it")],
+            extra: [h("p", { class: "small" }, su.page), stepFix(su), h("span", { class: "fixacts" }, btn("See every step", { cls: "sm", on: () => go("health", { tab: "setup" }) }))],
+          }) : null,
+        ].filter(Boolean)),
         group("Team changes", prs.map((p, i) => row({
           key: `tm:${i}`, title: p.changes.join("; ") || "Team settings change", ck: sysMark("pr"),
-          meta: [h("span", null, localBranch(p.url) ? `Saved on this Mac only: your team repo has no remote, so no teammate reviews it · ${when(p.at)}` : `Waiting for a teammate to approve · opened ${when(p.at)}`)],
+          meta: [localBranch(p.url) ? waitsFor("You", "apply it: your team repo has no remote, so no teammate reviews it") : waitsFor("A teammate", "approve it"), age(p.at)],
           acts: [localBranch(p.url) ? btn("Apply now", { cls: "sm pri", on: (ev) => applyTeam(localBranch(p.url), ev.currentTarget) }) : p.url ? ext(p.url, "View PR") : null],
         })), { note: prs.some((p) => localBranch(p.url)) ? "Your team repo has no remote, so team changes wait here until you apply them." : "For your information: a teammate who looks after settings approves these." }),
-      ] : D.synth ? synthCard() : empty("inbox", `Inbox zero. ${emptyApprove()}`.trim()),
+        // BOARD-11: the head of product's own moves in PMX Engine, last, where Engine is on this Mac.
+        group("PMX Engine", engineMine().map(engineRow), { right: btn("Open Strategy", { cls: "sm", on: () => go("strategy") }), note: "Your moves in PMX Engine, read from it on this Mac. Open in the studio opens the studio in your browser on the Mac." }),
+      ] : [nextStrip(), empty("check", "Nothing needs you right now.")],
     ];
   };
   function nextStrip() {
@@ -1318,22 +1598,21 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     if (c && c.next) out.push(h("span", null, ic("mic"), `Next collection ${low(when(c.next))}`));
     const dg = D.digest;
     if (dg && !dg.waiting.length && dg.next) out.push(h("span", null, ic("paper"), `Digest builds ${low(dayLabel(dg.next))}`));
-    const n = props().length;
-    if (n) out.push(h("button", { type: "button", onclick: () => go("inbox") }, ic("inbox"), `${plural(n, "task")} waiting in Inbox`));
+    const n = S.view === "needs" ? 0 : needsCount();
+    if (n) out.push(h("button", { type: "button", onclick: () => go("needs") }, ic("inbox"), `${plural(n, "thing needs", "things need")} you`));
     return out.length ? h("div", { class: "strip" }, out) : null;
   }
+  // Today holds the PM's own to-dos only; drafts to review are in Needs you.
   V.today = () => {
-    const t = todos().filter(onToday), r = drafts();
+    const t = todos().filter(onToday);
     const day = t.filter((x) => x.when !== "evening"), eve = t.filter((x) => x.when === "evening");
-    const capN = D.rules && D.rules.reviewCap;
     return [
-      head("star", "ic-today", "Today", "Your to-dos for today and drafts to review. To-dos are yours alone and never leave this Mac.", [periodSelect()]), nextStrip(),
+      head("star", "ic-today", "Today", "Your to-dos for today. They're yours alone and never leave this Mac.", [periodSelect()]), nextStrip(),
       periodNote(onToday),
-      t.length || r.length ? [
-        group("Reviews", r.map(draftRow), { plain: true, note: capN && r.length >= capN ? `Agents stop taking new work while ${capN} drafts wait. Review one to let them continue.` : null }),
+      t.length ? [
         group("To-dos", day.map(todoRow), { plain: true }),
         group("This Evening", eve.map(todoRow), { plain: true }),
-      ] : empty("star", "Nothing due today. Drafts to review and to-dos from today's calls show up here."),
+      ] : empty("star", "Nothing due today. To-dos from today's calls show up here."),
     ];
   };
   // What PMX runs next, by day, from each automation's next run and the digest's build day.
@@ -1373,7 +1652,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const sd = some.length ? h("details", { class: "someday", open: S.someday, ontoggle: (ev) => (S.someday = ev.currentTarget.open) },
       h("summary", null, ic("chev"), "Someday ", chip(String(some.length))), list(some.map(todoRow))) : null;
     return [
-      head("layers", "ic-any", "Anytime", "To-dos with no date yet, by the meeting they came from. They stay on this Mac; tasks for Linear wait in your Inbox.", [periodSelect()]),
+      head("layers", "ic-any", "Anytime", "To-dos with no date yet, by the meeting they came from. They stay on this Mac; tasks for Linear wait in Needs you.", [periodSelect()]),
       periodNote((t) => !t.due),
       keys.length ? keys.map((k) => group(k, by.get(k).map(todoRow), { plain: true })) : empty("layers", "No open to-dos without a date."),
       sd,
@@ -1407,7 +1686,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return [
       head("search", "", "Search", null),
       h("div", { class: "callout", role: "status" }, h("div", null, h("b", null, `Filtered by "${$("q").value.trim()}"`), h("p", null, n ? `${plural(n, "match", "matches")} across your lists.` : "No matches.")), btn("Clear", { cls: "sm", on: clearSearch })),
-      n ? [group("Tasks to approve", ps.map(propRow)), group("Reviews", rs.map(draftRow), { plain: true }), group("To-dos", ts.map(todoRow), { plain: true }), group("Logbook", lb.map((e, i) => logRow(e, i)), { plain: true })]
+      n ? [group("Drafts to review", rs.map(draftRow), { plain: true }), group("Tasks to approve", ps.map(propRow)), group("To-dos", ts.map(todoRow), { plain: true }), group("Logbook", lb.map((e, i) => logRow(e, i)), { plain: true })]
         : empty("search", "No matches. Search looks at titles, where each came from, and what Linear would get."),
     ];
   };
@@ -1502,7 +1781,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           x.linear ? null : h("p", { class: "hint" }, toLinear ? "Linear gets only these words, never the meeting's title or transcript." : "To move it to Linear, turn that on in Settings, under What Linear gets.")),
         h("div", { class: "foot" }, btn("Mark done", { cls: "pri", icon: "check", on: () => { closeSheet(); complete(x); } }))];
     } else if (it.type === "proposal") {
-      parts = [top("Proposed task · not in Linear yet"),
+      parts = [top("New task · not in Linear yet"),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.title),
           h("div", { class: "chips" }, chip(catName(x.category), "k"), chip(`Size ${x.size}`)),
           h("div", null, h("div", { class: "lbl" }, "What Linear would get"), h("p", { class: "desc" }, x.description)),
@@ -1510,13 +1789,16 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("div", { class: "two" },
             h("div", null, h("div", { class: "lbl" }, "Linear gets"), h("ul", null, h("li", null, "This title and summary"), h("li", null, "Kind of work and size"), h("li", null, "How many sources, and their dates"))),
             h("div", null, h("div", { class: "lbl" }, "Never gets"), h("ul", null, h("li", null, "Transcripts or quotes"), h("li", null, "Meeting titles"), h("li", null, "Who was in the meeting"))))),
-        h("div", { class: "foot" }, btn("Approve and send", { cls: "pri", on: () => { closeSheet(); approve([x]); } }), btn("Keep as my to-do", { on: () => { closeSheet(); moveTo(x.id, "private"); } }), btn("Drop", { on: () => { closeSheet(); drop(x); } }))];
+        h("div", { class: "foot" }, startOn()
+          ? [btn("Start now", { cls: "pri", on: () => { closeSheet(); approve([x], true); } }), btn("Later", { on: () => { closeSheet(); approve([x], false); } })]
+          : btn("Approve and send", { cls: "pri", on: () => { closeSheet(); approve([x], false); } }),
+          btn("Keep as my to-do", { on: () => { closeSheet(); moveTo(x.id, "private"); } }), btn("Drop", { on: () => { closeSheet(); drop(x); } }))];
     } else {
       const ta = h("textarea", { class: "in", rows: 3, id: "sheet-note", "data-fk": `sheetnote-${k}`, maxlength: 2000, placeholder: "For a redo or reject: what should change, or why not", "aria-label": `Note for ${x.identifier}`, value: notes[k] || "", oninput: (ev) => (notes[k] = ev.target.value) });
       const need = (v) => { if (!(notes[k] || "").trim()) { ta.focus(); toast(v === "redo" ? "Add a note first, so the agent knows what to change." : "Add a note first, so the team knows why."); return; } closeSheet(); decide(x, v); };
       parts = [top(`${x.identifier} · draft to review`),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.title),
-          h("p", null, `An agent drafted this for your team${x.since ? `; it's been waiting since ${when(x.since)}` : ""}. Accept keeps it; a redo or reject needs a short note.`),
+          h("p", null, `An agent drafted this for your team${x.draftedAt ? `; it's been waiting since ${when(x.draftedAt)}` : ""}. Accept keeps it; a redo or reject needs a short note.`),
           x.url ? h("div", null, ext(x.url, "Open in Linear")) : null,
           h("div", null, h("div", { class: "lbl" }, "Note"), ta)),
         h("div", { class: "foot" }, btn("Accept", { cls: "pri", on: () => { closeSheet(); decide(x, "accepted"); } }), btn("Ask for a redo", { on: () => need("redo") }), btn("Reject", { cls: "ghost danger", on: () => need("rejected") }))];
@@ -1578,31 +1860,76 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     openModal(form);
   }
 
-  // ================= Plan =================
+  // ================= Work: the team's tasks by where they are (BOARD-10) =================
   const sumTasks = (k) => ((D.categories) || []).reduce((a, c) => a + ((c.tasks && c.tasks[k]) || 0), 0);
-  V.plan = () => {
+  // A team task nobody has started (the backlog or Ready), with Take as my to-do (TODO-5).
+  const poolRow = (t) => row({
+    key: `pl:${t.identifier}`, ghost: true, title: t.title, ck: sysMark("plan"),
+    meta: [chip(t.identifier), chip(t.status === "ready" ? "Ready" : "Backlog"), t.category ? h("span", null, catName(t.category)) : null],
+    extra: taskHistory(t.identifier),
+    acts: [btn("Take as my to-do", { cls: "sm", on: () => askTake(t) })],
+  });
+  const countRow = (key, icon, title, meta, acts) => row({ key, ghost: true, title, ck: sysMark(icon), meta: meta ? [h("span", null, meta)] : null, acts });
+  function workTasks() {
     const cats = D.categories || [];
     const stat = (label, n) => h("div", { class: "stat" }, h("small", null, label), h("b", { class: "num" }, String(n)));
     const unknown = D.unknownCategories || [];
-    return [
-      head("plan", "", "Plan", "Where your team's tasks are, from approval to done."),
-      h("div", { class: "cards" }, stat("Waiting for you", props().length), stat("Pool", sumTasks("inbox")), stat("Ready for agents", sumTasks("ready")), stat("Agents working", sumTasks("working")), stat("In review", sumTasks("review")), stat("Done", sumTasks("done"))),
-      h("div", { class: "callout" }, h("div", null, h("b", null, "Pick what agents take next on the team board"),
-        h("p", null, "Approved tasks land in the pool. A teammate moves the ones worth doing to Ready, and agents take only Ready tasks.")),
-        D.boardUrl ? ext(D.boardUrl, "Open the team board", "btn pri") : h("div", null, h("p", { class: "small muted" }, "Your team's board isn't published in Claude yet."), terminal("/pmx-board"))),
-      unknown.length ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Linear has tasks of a kind PMX doesn't know: "), unknown.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds that kind of work.")) : null,
-      (D.pool || []).length ? group("Not started", D.pool.map((t) => row({
-        key: `pl:${t.identifier}`, ghost: true, title: t.title, ck: sysMark("plan"),
-        meta: [chip(t.identifier), chip(t.status === "ready" ? "Ready" : "Pool"), t.category ? h("span", null, catName(t.category)) : null],
-        acts: [btn("Take as my to-do", { cls: "sm", on: () => askTake(t) })],
-      })), { plain: true }) : null,
-      cats.length ? group("By kind of work", cats.map((c) => {
-        const t = c.tasks || {};
-        const f = [[t.proposed, "to approve"], [t.inbox, "in the pool"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "blocked"]].filter(([n]) => n);
-        return row({ key: `pc:${c.id}`, ghost: true, title: c.name, ck: sysMark("plan"), meta: f.length ? f.map(([n, l]) => chip(`${n} ${l}`)) : [h("span", null, "No tasks of this kind yet.")] });
-      }), { plain: true }) : empty("plan", "Your team hasn't set up any kinds of work yet, so there's nothing to plan."),
-    ];
-  };
+    const pool = D.pool || [], ps = props(), st = stoppedList();
+    const working = sumTasks("working"), done = sumTasks("done"), byHand = Math.max(0, sumTasks("blocked") - ((D.stopped || []).length));
+    const toNeeds = btn("Open Needs you", { cls: "sm", on: () => go("needs") });
+    return {
+      sub: "Your team's tasks by where they are, from approval to done.",
+      body: [
+        h("div", { class: "cards" }, stat("Waiting for you", ps.length), stat("Backlog", sumTasks("inbox")), stat("Ready for agents", sumTasks("ready")), stat("Agents working", working), stat("In review", sumTasks("review")), stat("Done", done)),
+        h("div", { class: "callout" }, h("div", null, h("b", null, "Pick what agents take next on the team board"),
+          h("p", null, startOn() ? "Tasks you start from Needs you go straight to Ready. Tasks approved for later land in the backlog: move the ones worth doing to Ready on the team board. Agents take only Ready tasks." : "Approved tasks land in the backlog. A teammate moves the ones worth doing to Ready, and agents take only Ready tasks.")),
+          D.boardUrl ? ext(D.boardUrl, "Open the team board", "btn pri") : h("div", null, h("p", { class: "small muted" }, "Your team's board isn't published in Claude yet."), slash("/pmx-board"))),
+        unknown.length ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Linear has tasks of a kind PMX doesn't know: "), unknown.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds that kind of work.")) : null,
+        ps.length ? group("To approve", [countRow("wk:approve", "inbox", `${plural(ps.length, "new task waits", "new tasks wait")} for you`, startOn() ? "Start now, Later or Drop each one." : "Approve or drop each one.", [toNeeds])], { plain: true, count: ps.length })
+          : D.synth ? synthCard() : group("To approve", [countRow("wk:approve", "inbox", "Nothing waits for your approval", emptyApprove() || null)], { plain: true, count: 0 }),
+        group("In the backlog", pool.filter((t) => t.status !== "ready").map(poolRow), { plain: true, note: "Approved, and waiting until someone moves them to Ready on the team board. Agents don't take these." }),
+        group("Ready and being drafted", [...pool.filter((t) => t.status === "ready").map(poolRow), working ? countRow("wk:working", "bot", `${plural(working, "task is", "tasks are")} being drafted by agents now`) : null].filter(Boolean),
+          { plain: true, count: pool.filter((t) => t.status === "ready").length + working }),
+        group("To review", drafts().map((d) => row({
+          key: `wr:${d.identifier}`, ghost: true, title: d.title, ck: sysMark("pr"),
+          meta: [chip(d.identifier), age(d.draftedAt), d.url ? h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, "Open in Linear") : null],
+          extra: taskHistory(d.identifier, [[d.draftedAt, "drafted"]]),
+          acts: [btn("Review", { cls: "sm", on: () => go("needs") })],
+        })), { plain: true }),
+        group("Blocked or stopped", [...st.map((t) => row({
+          key: `ws:${t.identifier}`, ghost: true, title: t.title, ck: sysMark("warn", "bad"),
+          meta: [chip(t.identifier), h("span", null, `Stopped after ${plural(t.runs, "failed run")} in a row`)],
+          extra: taskHistory(t.identifier, [[t.at, `stopped after ${plural(t.runs, "failed run")}`]]),
+          acts: [btn("Decide", { cls: "sm", on: () => go("needs") })],
+        })), byHand ? countRow("wk:blocked", "warn", `${plural(byHand, "task")} a person moved to Blocked`, "They wait in Linear until someone moves them back to Ready.") : null].filter(Boolean),
+          { plain: true, count: st.length + byHand }),
+        group("Done", done ? [countRow("wk:done", "check", `${plural(done, "task")} done`, "Accepted drafts, kept for your team.")] : [], { plain: true, count: done }),
+        cats.length ? group("By kind of work", cats.map((c) => {
+          const t = c.tasks || {};
+          const f = [[t.proposed, "to approve"], [t.inbox, "in the backlog"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "blocked"]].filter(([n]) => n);
+          return row({ key: `pc:${c.id}`, ghost: true, title: c.name, ck: sysMark("plan"), meta: f.length ? f.map(([n, l]) => chip(`${n} ${l}`)) : [h("span", null, "No tasks of this kind yet.")] });
+        }), { plain: true }) : empty("plan", "Your team hasn't set up any kinds of work yet, so there's nothing to plan."),
+      ],
+    };
+  }
+  // The Work and Health areas: one heading, the area's tabs, and the open tab under them.
+  function areaTabs(v) {
+    const tabs = AREAS[v], cur = tabOf(v);
+    return h("div", { class: "tabs", role: "tablist", "aria-label": TITLES[v] }, tabs.map((t) => h("button", { type: "button", role: "tab", id: `tab-${t}`, "aria-selected": cur === t ? "true" : "false", "aria-controls": "area-panel", tabindex: cur === t ? "0" : "-1",
+      onclick: () => { go(v, { tab: t, focus: false }); $(`tab-${tabOf(v)}`)?.focus(); },
+      onkeydown: (ev) => {
+        if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+        ev.preventDefault();
+        const next = tabs[(tabs.indexOf(t) + (ev.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+        go(v, { tab: next, focus: false, push: false }); $(`tab-${tabOf(v)}`)?.focus();
+      } }, TABNAMES[t])));
+  }
+  function area(v, t) {
+    return [head(v === "work" ? "plan" : "shield", "", TITLES[v], t.sub, t.acts), areaTabs(v), h("div", { id: "area-panel", role: "tabpanel", "aria-labelledby": `tab-${tabOf(v)}` }, t.body)];
+  }
+  const WORK = { tasks: () => workTasks(), agents: () => agentsTab(), digest: () => digestTab() };
+  V.work = () => area("work", WORK[S.wtab]());
+  V.strategy = () => (engine() ? strategyView() : V.needs());
 
   // ================= Digest (BOARD-5) =================
   // The digest is Markdown written by PMX. It's shown as text nodes, never as HTML: headings, bullets, bold, italics,
@@ -1674,9 +2001,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
             : [btn("Reject", { cls: "ghost danger", disabled: digestBusy, on: () => rejectDigest(w) }), btn("Edit", { on: () => { editing = { week: w.week, text: w.markdown }; render(); requestAnimationFrame(() => document.querySelector(`[data-fk="dged-${w.week}"]`)?.focus()); } })],
           btn(isEdit ? "Save and approve" : "Approve and share", { cls: "pri", disabled: digestBusy, on: (ev) => digestAct(w, "approve", ev.currentTarget, "Sharing…") }))));
   }
-  V.digest = () => {
+  // Work → Digest.
+  function digestTab() {
     const dg = D.digest;
-    if (!dg) return [head("paper", "", "Digest", null), empty("paper", "This PMX is too old to show the digest. Update it to see it here.")];
+    if (!dg) return { body: empty("paper", "This PMX is too old to show the digest. Update it to see it here.") };
     const ws = waiting();
     const isRunning = running("digest");
     const replaces = ws.some((w) => w.week === dg.week);
@@ -1689,24 +2017,24 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     });
     const first = ws[0];
     const hist = (dg.history || []).filter((x) => x.status !== "waiting");
-    return [
-      head("paper", "", "Digest", first ? `The week of ${weekOf(first.week)} is waiting for your approval. Approving opens a pull request in your team's repo${dg.dm.on ? " and sends you a Slack DM" : ""}.` : "A weekly summary of what customers said, with a source for every claim.",
-        [first && !(editing && editing.week === first.week) ? btn("Edit", { on: () => { editing = { week: first.week, text: first.markdown || "" }; render(); } }) : null,
-          first ? btn("Reject", { cls: "ghost danger", on: () => rejectDigest(first) }) : null,
-          first && first.markdown != null ? btn("Approve and share", { cls: "pri", disabled: digestBusy, on: (ev) => digestAct(first, "approve", ev.currentTarget, "Sharing…") }) : null]),
-      ws.length ? ws.map(readerCard) : h("div", { class: "callout" }, h("div", null, h("b", null, "Nothing to read right now"), h("p", null, `Your next digest is built ${diffDays(dg.next) === 0 ? "today" : `on ${dayLabel(dg.next)}`}, by the first automatic run that day.`))),
+    return {
+      sub: first ? `The week of ${weekOf(first.week)} is waiting for your approval. Approving opens a pull request in your team's repo${dg.dm.on ? " and sends you a Slack DM" : ""}.` : "A weekly summary of what customers said, with a source for every claim.",
+      acts: [first && !(editing && editing.week === first.week) ? btn("Edit", { on: () => { editing = { week: first.week, text: first.markdown || "" }; render(); } }) : null,
+        first ? btn("Reject", { cls: "ghost danger", on: () => rejectDigest(first) }) : null,
+        first && first.markdown != null ? btn("Approve and share", { cls: "pri", disabled: digestBusy, on: (ev) => digestAct(first, "approve", ev.currentTarget, "Sharing…") }) : null],
+      body: [ws.length ? ws.map(readerCard) : h("div", { class: "callout" }, h("div", null, h("b", null, "Nothing to read right now"), h("p", null, `Your next digest is built ${diffDays(dg.next) === 0 ? "today" : `on ${dayLabel(dg.next)}`}, by the first automatic run that day.`))),
       h("section", { class: "sc" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "How it works"), h("small", null, "Claude reads the week's customer calls with private details removed, writes the top customer themes and follow-ups, and cites a source for every claim. PMX deletes any claim without one. Nothing is shared until you approve it, and never with Linear.")), build),
         h("div", { class: "sc-b" },
-          h("div", { class: "sr" }, h("div", { class: "nm" }, "Built on", h("small", null, `${DAYS[dg.weekday]}s · next ${dayLabel(dg.next)}`)), btn("Change", { cls: "sm ghost", on: () => go("settings", { sub: "digestset" }) })),
+          h("div", { class: "sr" }, h("div", { class: "nm" }, "Built on", h("small", null, `${DAYS[dg.weekday]}s · next ${dayLabel(dg.next)}`)), btn("Change", { cls: "sm ghost", on: () => toSettings("digestset") })),
           h("div", { class: "sr" }, h("div", { class: "nm" }, "Reads", h("small", null, dg.reads.length ? dg.reads.join("; ") : "Nothing yet"))),
           h("div", { class: "sr" }, h("div", { class: "nm" }, "Shared with", h("small", null, `Your team, in its PMX repo${dg.dm.on ? ", and your Slack DMs" : ""}`))))),
       h("section", { class: "group" }, h("div", { class: "gh plain" }, h("h2", null, "Past weeks"), h("span", { class: "c num" }, String(hist.length))),
         hist.length ? hist.map((x) => h("div", { class: "weekrow" }, h("b", { title: x.week }, `Week of ${weekOf(x.week)}`), h("span", null, chip(DSTATUS[x.status][0], DSTATUS[x.status][1])),
           h("span", { class: "muted" }, x.status === "no-signal" ? "Nothing to sum up" : [plural(x.sources, "source"), x.held ? `${x.held} kept private` : "", x.removedClaims ? `${plural(x.removedClaims, "claim")} removed` : "", x.costUsd ? `about $${x.costUsd.toFixed(2)}` : ""].filter(Boolean).join(" · ")),
           x.url && !x.url.startsWith("branch:") ? ext(x.url, "Open", "btn sm ghost") : h("span", { class: "faint small" }, when(x.at))))
-          : h("p", { class: "gnote" }, "No past digests yet.")),
-    ];
-  };
+          : h("p", { class: "gnote" }, "No past digests yet."))],
+    };
+  }
 
   // ================= Agents (CAT-1, CAT-2) =================
   // The product lifecycle each kind of work belongs to, in order. A skill without a stage goes last.
@@ -1738,7 +2066,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const splitName = (what) => { const m = (what || "").replace(/`([^`]+)`/g, "$1").match(/^([^.]{2,48})\.\s+(.+)$/s); return m ? [m[1], m[2]] : [what || "", ""]; };
   function categoryCard(c) {
     const t = c.tasks, r = c.reviews;
-    const flight = [[t.proposed, "to approve"], [t.inbox, "in the pool"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "blocked"]].filter(([n]) => n);
+    const flight = [[t.proposed, "to approve"], [t.inbox, "in the backlog"], [t.ready, "ready"], [t.working, "being drafted"], [t.review, "to review"], [t.done, "done"], [t.blocked, "blocked"]].filter(([n]) => n);
     const decided = r.accepted + r.redo + r.rejected;
     const [q, qk] = quality(c);
     const taking = state && state.accept[c.id] !== undefined ? state.accept[c.id] : c.takenOn;
@@ -1755,7 +2083,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         h("div", null, h("span", { class: "lab" }, "Team's tasks"),
           flight.length ? h("div", { class: "chips" }, flight.map(([n, l]) => chip(`${n} ${l}`))) : h("span", { class: "faint" }, "No tasks of this kind yet."),
           h("span", { class: "faint small" }, c.runs.n ? `${plural(c.runs.n, "agent run")}, ${plural(c.runs.drafts, "draft")} ${winText()}` : `No agent runs ${winText()}`),
-          t.review ? h("button", { type: "button", class: "link small", onclick: () => go("today") }, `${plural(t.review, "draft")} to review`) : null),
+          t.review ? h("button", { type: "button", class: "link small", onclick: () => go("needs") }, `${plural(t.review, "draft")} to review`) : null),
         h("div", null, h("span", { class: "lab" }, "Accepted"),
           r.rate == null ? h("span", { class: "muted" }, `No drafts reviewed in the last ${r.days} days.`) : h("span", { class: "rate" }, `${pct}%`),
           r.rate == null ? null : h("div", { class: "meter", role: "img", "aria-label": `${pct}% accepted; agents pause below ${Math.round(r.pauseBelow * 100)}%` }, bar, mark),
@@ -1772,7 +2100,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("dt", null, "Instructions"), h("dd", null, h("code", null, c.skill.name), c.skill.copy ? ` · ${c.skill.copy === "team's copy" ? "customized by your team" : "standard"}` : ""),
           h("dt", null, "Draft file"), h("dd", null, c.output ? h("code", null, c.output.replace("{id}", "<task>")) : "not named"))));
   }
-  V.agents = () => {
+  // Work → Agents.
+  function agentsTab() {
     const cats = D.categories || [];
     const known = LIFECYCLE.map(([k]) => k);
     const groups = LIFECYCLE.map(([k, l, d]) => ({ k, l, d, cats: cats.filter((c) => c.stage === k) }));
@@ -1782,9 +2111,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const available = skills.filter((k) => k.category && !inCats.has(k.name) && !cats.some((c) => c.id === k.category));
     const under = skills.filter((k) => !k.category && !inCats.has(k.name));
     const taking = cats.filter((c) => (state ? state.accept[c.id] : c.takenOn) && !c.paused).length;
-    return [
-      head("bot", "", "Agents", `The kinds of work agents draft, and how often you accept what they make. Your agent takes ${taking} of ${cats.length}.`, [btn("Choose kinds of work", { on: () => go("settings", { sub: "kinds" }) })]),
-      (D.unknownCategories || []).length ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Linear has tasks of a kind PMX doesn't know: "), D.unknownCategories.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds it.")) : null,
+    return {
+      sub: `The kinds of work agents draft, and how often you accept what they make. Your agent takes ${taking} of ${cats.length}.`,
+      acts: [btn("Choose kinds of work", { on: () => toSettings("kinds") })],
+      body: [(D.unknownCategories || []).length ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Linear has tasks of a kind PMX doesn't know: "), D.unknownCategories.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds it.")) : null,
       cats.length ? groups.filter((g) => g.cats.length).map((g) => h("section", { class: "stage", "aria-label": g.l }, h("h3", null, g.l), h("p", null, g.d), g.cats.map(categoryCard)))
         : empty("bot", "Your team hasn't set up any kinds of work yet, so agents have nothing to draft."),
       available.length ? group("Available to add", available.map((k) => row({ key: `av:${k.name}`, ghost: true, title: splitName(k.what)[0], ck: sysMark("plus"), meta: [h("span", null, splitName(k.what)[1])] })), { plain: true, note: "PMX ships instructions for these. Your team can turn one on for everyone." }) : null,
@@ -1793,13 +2123,13 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("li", null, "Write its instructions as a skill in your team's repo: what the draft is, the sections it must have and how many sources it cites. Copying one of PMX's skills is the quickest start."),
           h("li", null, "Add it to your team's settings, with a name and description that say what the work is. That's what Claude reads when it picks a kind for a task."),
           h("li", null, "Describe what S, M, L and XL mean for it, so Claude can size its tasks."),
-          h("li", null, "Propose all three as one change. Once a teammate approves it, PMX proposes tasks of the new kind, and each PM chooses whether their agent takes them on."))),
+          h("li", null, "Send all three to your team as one change. Once a teammate approves it, PMX suggests tasks of the new kind, and each PM chooses whether their agent takes them on."))),
       under.length ? h("details", { class: "someday" }, h("summary", null, ic("chev"), `Under the hood · ${plural(under.length, "set", "sets")} of instructions PMX uses for its own steps`),
-        list(under.map((k) => row({ key: `sk:${k.name}`, ghost: true, title: splitName(k.what)[0] || k.name, ck: sysMark("spark"), meta: [h("span", null, k.where), h("span", null, k.runs ? plural(k.runs, "run") : "not run"), h("span", null, `${k.name} · ${k.copy === "team's copy" ? "customized by your team" : "standard"}`)] })))) : null,
-    ];
-  };
+        list(under.map((k) => row({ key: `sk:${k.name}`, ghost: true, title: splitName(k.what)[0] || k.name, ck: sysMark("spark"), meta: [h("span", null, k.where), h("span", null, k.runs ? plural(k.runs, "run") : "not run"), h("span", null, `${k.name} · ${k.copy === "team's copy" ? "customized by your team" : "standard"}`)] })))) : null],
+    };
+  }
 
-  // ================= Status =================
+  // ================= Health: Overview, Setup, Activity, Steps, Flow and Settings (BOARD-10) =================
   const GROUPS = [["in", "Bring meetings in"], ["work", "Turn them into work"], ["agents", "Agents"], ["upkeep", "Keep PMX running"]];
   const STATUSPILL = { ok: "", failed: "bad", attention: "warn", setup: "warn", waiting: "warn", off: "off", paused: "off" };
   const winSelect = () => h("label", { class: "swl" }, "Window", h("select", { class: "in", "aria-label": "Time window", value: String(hours), onchange: (ev) => { hours = Number(ev.target.value); load(); } },
@@ -1817,7 +2147,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const sub = [f.lastCollect ? `Last collection ${ago(f.lastCollect)}` : "No collection yet", f.linearSyncedAt ? `Linear synced ${ago(f.linearSyncedAt)}` : null, `Updated ${hm(D.at)}`].filter(Boolean).join(" · ");
     return h("div", { class: `statusline ${kind}` }, h("span", { class: "bigic" }, ic(kind === "ok" ? "check" : "warn")),
       h("div", null, h("b", null, title), h("small", null, sub)),
-      fx.length ? btn("Fix in Inbox", { cls: "sm", on: () => go("inbox") }) : null);
+      fx.length ? btn("Fix in Needs you", { cls: "sm", on: () => go("needs") }) : null);
   }
   function autoRow(a) {
     const job = (D.jobs || []).find((j) => j.step === a.run);
@@ -1837,22 +2167,22 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     try { const r = await act("team-apply", { branch }); toast(r.message || "Applied."); await load(); }
     catch (e) { render(); toast(`Couldn't apply them: ${e.message}`, { error: true }); }
   }
-  // SETUP-1: where this Mac stands, step by step, from PMX's checklist (the background job refreshes it every pass).
+  // SETUP-1: where this Mac stands, step by step, from PMX's checklist (the background job refreshes it every run).
   const SETUP_PILL = { done: ["Done", ""], todo: ["To do", "bad"], warn: ["Look at this", "warn"], skip: ["Off", "off"] };
   function setupCard(full) {
     const s = D.setup;
-    if (!s) return full ? h("p", { class: "muted" }, "PMX hasn't worked out its checklist on this Mac yet. It does on the background job's next pass; in the Claude app, /pmx-setup does it now.") : null;
+    if (!s) return full ? h("p", { class: "muted" }, "PMX hasn't worked out its checklist on this Mac yet. It does on the background job's next run; in the Claude app, /pmx-setup does it now.") : null;
     const left = s.counts.todo + s.counts.warn;
     return h("section", { class: "sc", id: "setup-summary" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "Where you stand"), h("small", null, `${s.counts.done} steps done${left ? `, ${left} to look at` : ""} · checked ${low(when(s.at))}`)),
-      full ? null : btn("See every step", { cls: "sm ghost", on: () => { S.stab = "setup"; setRoute(true); render(); } })),
-      h("div", { class: "sc-b" }, h("div", { class: "sr" }, h("div", { class: "nm" }, s.where, s.next ? h("small", null, `Next: ${s.next.title}. ${s.next.page}`) : h("small", null, "Nothing left to do.")))));
+      full ? null : btn("See every step", { cls: "sm ghost", on: () => go("health", { tab: "setup" }) })),
+      h("div", { class: "sc-b" }, h("div", { class: "sr" }, h("div", { class: "nm" }, s.where, s.next ? h("small", null, `Next: ${s.next.title}. ${s.next.page}`) : h("small", null, "Nothing left to do."), s.next && s.next.id ? stepFix(s.next, { pri: full ? false : true }) : null))));
   }
   function setupSteps() {
     const s = D.setup;
     return [setupCard(true), ...(s ? s.sections.map((sec) => h("section", { class: "sc", id: `setup-${sec.id}` }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, sec.title))),
       h("div", { class: "sc-b" }, sec.steps.map((st) => h("div", { class: "sr", id: `setup-step-${st.id.replace(/[^a-z0-9-]/gi, "-")}` },
-        h("div", { class: "nm" }, st.title, h("small", null, st.detail), st.page ? h("small", null, h("b", null, "Next: "), st.page) : null),
-        pill(...SETUP_PILL[st.status])))))) : [])];
+        h("div", { class: "nm" }, st.title, h("small", null, st.detail), st.page ? h("small", null, h("b", null, "Next: "), st.page) : null, stepFix(st, { pri: false })),
+        pill(...SETUP_PILL[st.status])))))) : []), engineSetup()];
   }
   function overview() {
     const checks = [...(D.checks || [])].sort((a, b) => ({ violated: 0, unknown: 1, ok: 2 }[a.status] - { violated: 0, unknown: 1, ok: 2 }[b.status]));
@@ -1890,19 +2220,20 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         chans.length || n0("s-f") ? li(chans.length ? chans.map((c) => c.connector).join(", ") : "Channels", n0("s-f"), "threads") : null],
         "Claude's collection task reads each source through your own connector and copies new transcripts word for word into a private folder on this Mac.", null],
       ["mac", "Privacy filter", "On this Mac", [li("Kept private", n0("f-h"), "meetings"), ...(D.held || []).map((x) => li(`· ${x.label}`, x.n))],
-        "Code on this Mac, not Claude, decides what Claude may read. Meetings kept private are never sent to Claude or Linear.", { label: "Privacy settings", go: () => go("settings", { sub: "dnr" }) }],
+        "Code on this Mac, not Claude, decides what Claude may read. Meetings kept private are never sent to Claude or Linear.", { label: "Privacy settings", go: () => toSettings("dnr") }],
       ["claude", "Claude reads", "Private details removed", [li("Your meetings, for to-dos", n0("f-t"), tok(D.edges["f-t"] && D.edges["f-t"].tokens)), li("Customer calls and threads, for tasks", n0("f-d"), tok(D.edges["f-d"] && D.edges["f-d"].tokens))],
         "Sent to Claude with emails, phone numbers and names removed, and with no tools. 1:1s, hiring and anything on your do-not-read list never get here.", null],
-      ["mac", "You decide", "On this Mac", [li("To-dos found", n0("t-t")), li("Tasks proposed", n0("d-a")), li("Dropped", n0("a-x")), li("Waiting for you now", props().length)],
-        "Proposed tasks wait on this Mac exactly as Linear would get them. To-dos never leave this Mac.", { label: "Open Inbox", go: () => go("inbox") }],
-      ["linear", "Linear", "Your team's project", [li("Sent to Linear", n0("a-i"), "tasks"), li("In the pool now", n0("i-b"))],
-        "A title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes.", { label: "Open Plan", go: () => go("plan") }],
-      ["linear", "Team board", "A teammate picks", [li("Ready to build now", n0("i-r"))],
-        "On your team's PMX board in Claude, a teammate moves the pool's tasks worth an agent's time to Ready. Agents take only Ready tasks; moving an issue between Linear's own status columns changes nothing.", D.boardUrl ? { label: "Open the team board", href: D.boardUrl } : { label: "Open Plan", go: () => go("plan") }],
+      ["mac", "You decide", "On this Mac", [li("To-dos found", n0("t-t")), li("Tasks suggested", n0("d-a")), li("Dropped", n0("a-x")), li("Waiting for you now", props().length)],
+        "New tasks wait on this Mac exactly as Linear would get them. To-dos never leave this Mac.", { label: "Open Needs you", go: () => go("needs") }],
+      ["linear", "Linear", "Your team's project", [li("Sent to Linear", n0("a-i"), "tasks"), li("In the backlog now", n0("i-b"))],
+        "A title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes.", { label: "Open Work", go: () => go("work", { tab: "tasks" }) }],
+      ["linear", "Team board", startOn() ? "Ready for agents" : "A teammate picks", [li("Ready to build now", n0("i-r"))],
+        startOn() ? "Start now in Needs you makes a task Ready at once. Tasks approved for later wait in the backlog until you or a teammate move them to Ready on your team's PMX board in Claude. Agents take only Ready tasks; moving a task between Linear's own status columns changes nothing."
+          : "On your team's PMX board in Claude, a teammate moves the backlog's tasks worth an agent's time to Ready. Agents take only Ready tasks; moving a task between Linear's own status columns changes nothing.", D.boardUrl ? { label: "Open the team board", href: D.boardUrl } : { label: "Open Work", go: () => go("work", { tab: "tasks" }) }],
       ["claude", "Agents draft", "Your team's agents", [li("Agent runs", n0("r-g"), tok(D.edges["r-g"] && D.edges["r-g"].tokens)), li("Drafts made", n0("g-v"))],
-        "An agent takes one Ready task at a time, within your budget and review limit, and drafts it with the task text and team memory.", { label: "Open Agents", go: () => go("agents") }],
+        "An agent takes one Ready task at a time, within your budget and review limit, and drafts it with the task text and team memory.", { label: "Open Agents", go: () => go("work", { tab: "agents" }) }],
       ["", "Review", "For you", [li("Waiting for review", drafts().length), li("Accepted", n0("v-d"))],
-        "Accept keeps a draft for your team; a redo or reject needs a short note and lowers that kind of work's accept rate.", { label: "Open Today", go: () => go("today") }],
+        "Accept keeps a draft for your team; a redo or reject needs a short note and lowers that kind of work's accept rate.", { label: "Open Needs you", go: () => go("needs") }],
     ];
     const ids = [["c-f", "s-f"], ["f-h"], ["f-t", "f-d"], ["t-t", "d-a", "a-x"], ["a-i"], ["i-r"], ["r-g", "g-v"], ["v-d"]];
     return [
@@ -1913,32 +2244,78 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("ul", null, lines), lastLine(...ids[i]), h("p", null, text), link ? h("div", { class: "fixacts" }, link.href ? ext(link.href, link.label, "btn sm ghost") : btn(link.label, { cls: "sm ghost", on: link.go })) : null)))),
     ];
   }
-  const ACT_TAB = { today: ["today"], digest: ["digest"], work: ["agents"], flow: ["flow"], automations: ["status"], settings: ["settings"], sources: ["settings", "sources"], inbox: ["inbox"] };
+  // Where each activity's "Open" goes: PMX names the old places, so the page maps them to the new ones.
+  const ACT_TAB = { today: "needs", digest: "work/digest", work: "work/agents", flow: "health/flow", automations: "health", settings: "health/settings", sources: "health/settings/sources", inbox: "needs" };
   function activity() {
     const items = D.activity || [];
     if (!items.length) return empty("shield", `Nothing happened ${winText()} yet.`);
     return [h("p", { class: "small muted" }, `${cap(winText())}, newest first. Counts and task IDs only; no meeting content.`),
       list(items.map((a, i) => {
-        const to = a.tab && ACT_TAB[a.tab];
+        const to = a.kind === "todo" ? parseRoute("today") : a.tab && ACT_TAB[a.tab] ? parseRoute(ACT_TAB[a.tab]) : null;
         return row({ key: `ac:${i}`, ghost: true, title: a.text, ck: sysMark(a.bad ? "warn" : "check", a.bad ? "bad" : "ok"),
-          meta: [h("span", null, when(a.at)), to ? h("button", { type: "button", class: "link", onclick: () => go(to[0], to[0] === "settings" ? { sub: to[1] } : { stab: to[1] }) }, `Open ${to[0] === "settings" ? "Settings" : TITLES[to[0]]}`) : null] });
+          meta: [h("span", null, when(a.at)), to ? h("button", { type: "button", class: "link", onclick: () => go(to.view, { tab: to.tab, sub: to.sub }) }, `Open ${placeName(to)}`) : null] });
       }))];
   }
-  V.status = () => {
-    const tabs = h("div", { class: "tabs", role: "tablist", "aria-label": "Status" }, STABS.map((t) => h("button", { type: "button", role: "tab", id: `stab-${t}`, "aria-selected": S.stab === t ? "true" : "false", "aria-controls": "stab-panel", tabindex: S.stab === t ? "0" : "-1",
-      onclick: () => { S.stab = t; setRoute(true); render(); $(`stab-${t}`)?.focus(); },
-      onkeydown: (ev) => { if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return; ev.preventDefault(); const i = (STABS.indexOf(t) + (ev.key === "ArrowRight" ? 1 : STABS.length - 1)) % STABS.length; S.stab = STABS[i]; setRoute(false); render(); $(`stab-${STABS[i]}`)?.focus(); } }, cap(t))));
+  // ================= Health → Running (OBS-5) =================
+  // What PMX is doing on this Mac right now: the background job, the agent run in progress, PMX's own servers and the
+  // Claude app's last sync and collection, with each one's memory. PMX reads it (one ps call) when this tab opens or
+  // Refresh is clicked, never on the page's minute-by-minute refresh.
+  let RUN = { data: null, busy: false, err: null, seq: 0 };
+  async function fetchRunning() {
+    if (RUN.busy) return;
+    RUN.busy = true; const seq = ++RUN.seq;
+    try { const r = await act("running", {}); if (seq === RUN.seq) RUN = { data: r.running || null, busy: false, err: r.running ? null : "PMX didn't say.", seq }; }
+    catch (e) { if (seq === RUN.seq) RUN = { data: null, busy: false, err: e.status === 404 ? "This PMX is too old to show what it's running. It shows after its next update." : e.message, seq }; }
+    if (S.view === "health" && S.htab === "running") render();
+  }
+  const mbText = (n) => (n == null ? "" : n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${n} MB`);
+  function runningTab() {
+    const R = RUN.data;
+    if (!R) {
+      if (!RUN.busy && !RUN.err) setTimeout(fetchRunning, 0);
+      return RUN.err ? h("p", { class: "muted", role: "status" }, RUN.err) : h("p", { class: "loading", role: "status" }, "Asking PMX what it's running…");
+    }
+    const j = R.job, a = R.agent;
+    const procLine = (p) => `since ${when(p.since)}${p.memoryMb != null ? ` · ${mbText(p.memoryMb)}` : ""}`;
+    const job = h("section", { class: "sc", id: "run-job" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "Background job"), h("small", null, "Runs PMX every 30 minutes while this Mac is awake."))),
+      h("div", { class: "sc-b" }, h("div", { class: "sr" }, h("div", { class: "nm" }, !j.installed ? "Off: PMX runs only while you have it open" : j.running ? "Running now" : "Waiting for its next run",
+        h("small", null, [j.lastPass ? `Last run ${ago(j.lastPass)}` : "No run yet", j.installed && j.nextPass ? `next ${low(when(j.nextPass))}` : null, j.failed.length ? `last run had trouble with ${and(j.failed)}` : null].filter(Boolean).join(" · ")),
+        j.pass ? h("small", null, `This run: ${procLine(j.pass)}`) : null),
+        pill(!j.installed ? "Off" : j.running ? "Running" : "Waiting", !j.installed ? "off" : j.running ? "" : "off"),
+        !j.installed && stepOf("job.installed") && stepOf("job.installed").fix ? stepFix(stepOf("job.installed")) : null)));
+    const agent = h("section", { class: "sc", id: "run-agent" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "Agent run"), h("small", null, R.note))),
+      h("div", { class: "sc-b" }, h("div", { class: "sr" }, h("div", { class: "nm" }, a ? (a.task ? `Drafting ${a.task}${a.title ? `: ${a.title}` : ""}` : "A Claude Code run for PMX") : "No agent run right now",
+        a ? h("small", null, [`since ${when(a.since)}`, a.memoryMb != null ? `Claude Code is using ${mbText(a.memoryMb)}` : null].filter(Boolean).join(" · ")) : h("small", null, "When an agent takes a Ready task, it shows here while it drafts.")),
+        pill(a ? "Running" : "Idle", a ? "" : "off"))));
+    const servers = h("section", { class: "sc", id: "run-servers" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "PMX's servers"), h("small", null, "What answers this page and Claude on this Mac."))),
+      h("div", { class: "sc-b" }, R.servers.map((x) => h("div", { class: "sr", id: `run-${x.id}` }, h("div", { class: "nm" }, x.name, " ", x.here ? chip("Answering this page") : null, h("small", null, x.note),
+        x.processes.map((p) => h("small", null, `${x.processes.length > 1 ? `Process ${p.pid}, ` : ""}${procLine(p)}`))),
+        pill(x.running ? (x.processes.length > 1 ? `${x.processes.length} running` : "Running") : "Not running", x.running ? "" : "off")))));
+    const c = R.claude;
+    const tasks = h("section", { class: "sc", id: "run-claude" }, h("div", { class: "sc-h" }, h("div", { class: "tt" }, h("b", null, "The Claude app's tasks"), h("small", null, "They run in the Claude app while it's open and this Mac is awake."))),
+      h("div", { class: "sc-b" },
+        c.linear ? h("div", { class: "sr" }, h("div", { class: "nm" }, "Linear sync", h("small", null, [c.linear.syncedAt ? `Last synced ${ago(c.linear.syncedAt)}` : "Not synced yet", c.linear.lastRun ? `last run ${ago(c.linear.lastRun)}` : null].filter(Boolean).join(" · ")))) : null,
+        h("div", { class: "sr" }, h("div", { class: "nm" }, "Meeting collection", h("small", null, [c.collect.at ? `Last collection ${ago(c.collect.at)}${c.collect.saved != null ? `, ${plural(c.collect.saved, "meeting")} saved` : ""}` : "No collection yet", c.collect.lastRun ? `last run ${ago(c.collect.lastRun)}` : null].filter(Boolean).join(" · "))))));
     return [
-      head("shield", "", "Status", "Whether PMX is healthy and kept your data where it should.", [S.stab === "overview" ? null : winSelect()]),
-      tabs,
-      h("div", { id: "stab-panel", role: "tabpanel", "aria-labelledby": `stab-${S.stab}` }, S.stab === "flow" ? flowSteps() : S.stab === "activity" ? activity() : S.stab === "setup" ? setupSteps() : overview()),
+      R.memory ? h("p", { class: "small muted", id: "run-total" }, `PMX is using about ${mbText(R.memory.totalMb)} on this Mac right now, in ${plural(R.memory.processes, "process", "processes")}. Checked ${hm(R.at)}.`) : h("p", { class: "small muted" }, `Checked ${hm(R.at)}.`),
+      job, agent, servers, tasks,
     ];
+  }
+  const HEALTH = {
+    overview: () => ({ sub: "Whether PMX is healthy and kept your data where it should.", body: overview() }),
+    running: () => ({ sub: "What PMX is doing on this Mac right now, and the memory it uses.", acts: [btn(RUN.busy ? "Checking…" : "Refresh", { cls: "sm", fk: "run-refresh", disabled: RUN.busy, on: () => fetchRunning() })], body: runningTab() }),
+    setup: () => ({ sub: "Every install, setup and update step on this Mac, worked out from what's here.", body: setupSteps() }),
+    activity: () => ({ sub: "What PMX did, newest first.", acts: [winSelect()], body: activity() }),
+    steps: () => ({ sub: "PMX's steps in order, with what each carries and how much moved.", acts: [winSelect()], body: flowSteps() }),
+    flow: () => flowMap(),
   };
+  V.health = () => area("health", HEALTH[S.htab] ? HEALTH[S.htab]() : HEALTH.overview());
 
   // ================= Flow: the map (BOARD-3) =================
-  // The map from 0.16.0 to 0.22.0, back as its own place in the menu: every step from your sources to Linear and the
-  // agents, the arrows between them in the colour of what they carry, and a panel saying what each one does. Status
-  // keeps its own list of the steps. Built fresh on each render; the selection, the view and focus carry over.
+  // The map from 0.16.0 to 0.22.0, Health's Flow tab since 0.36.0: every step from your sources to Linear and the
+  // agents, the arrows between them in the colour of what they carry, and a panel saying what each one does. Health's
+  // Steps tab keeps the list of the steps. Built fresh on each render; the selection, the view and focus carry over.
+  let flowMap = null;
   {
     const COLX = [20, 210, 400, 590, 780, 970], NW = 150, NH = 58;
     // Tags say where the data is, not which product: that's what the colours mean too.
@@ -1947,12 +2324,13 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       filter:   { col: 2, y: 190, kind: "mac", tag: "ON YOUR MAC", title: "Privacy filter", sub: "decides what's private" },
       held:     { col: 2, y: 320, kind: "held", tag: "KEPT PRIVATE", title: "Kept private", sub: "stays on your Mac" },
       findtodo: { col: 3, y: 70, kind: "claude", tag: "SENT TO CLAUDE", title: "Finds to-dos", sub: "in your own meetings" },
-      draft:    { col: 3, y: 190, kind: "claude", tag: "SENT TO CLAUDE", title: "Proposes tasks", sub: "from customer calls" },
+      draft:    { col: 3, y: 190, kind: "claude", tag: "SENT TO CLAUDE", title: "Suggests tasks", sub: "from customer calls" },
       todos:    { col: 4, y: 70, kind: "mac", tag: "ON YOUR MAC", title: "Your to-dos", sub: "stay on your Mac", queue: true },
       approve:  { col: 4, y: 190, kind: "mac", tag: "ON YOUR MAC", title: "You approve", sub: "you say yes or no", queue: true },
       dropped:  { col: 4, y: 320, kind: "mac", tag: "ON YOUR MAC", title: "Dropped", sub: "you said no" },
-      inbox:    { col: 5, y: 100, kind: "linear", tag: "IN LINEAR", title: "Pool", sub: "approved, not picked yet", queue: true },
-      board:    { col: 5, y: 215, kind: "linear", tag: "TEAM BOARD", title: "Team board", sub: "a teammate picks" },
+      inbox:    { col: 5, y: 100, kind: "linear", tag: "IN LINEAR", title: "Backlog", sub: "approved, not picked yet", queue: true },
+      // APPROVE-3: read at each render, since whether Start now is on comes with the data.
+      board:    { col: 5, y: 215, kind: "linear", tag: "TEAM BOARD", title: "Team board", get sub() { return startOn() ? "you or a teammate picks" : "a teammate picks"; } },
       ready:    { col: 5, y: 330, kind: "linear", tag: "IN LINEAR", title: "Ready to build", sub: "agents take only these", queue: true },
       agent:    { col: 4, y: 470, kind: "claude", tag: "CLAUDE AGENT", title: "Agent drafts", sub: "using its instructions" },
       review:   { col: 3, y: 470, kind: "repo", tag: "FOR YOU", title: "Drafts to review", sub: "accept, redo or reject", queue: true },
@@ -1960,18 +2338,19 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     };
     // The order the arrow keys and the list view walk the steps in: the way work flows.
     const ORDER = ["collect", "filter", "held", "findtodo", "todos", "draft", "approve", "dropped", "inbox", "board", "ready", "agent", "review", "done"];
-    const FIXED_EDGES = [
+    // Functions, not constants: some words depend on the data (APPROVE-3), so they're built at each render.
+    const fixedEdges = () => [
       ["c-f", "collect", "filter", "full", "Transcript files on this Mac. Nothing has left it at this point."],
       ["s-f", "slack", "filter", "status", "Threads from the channels your team approved, copied by your Claude app through your own connector. Never DMs."],
       ["f-h", "filter", "held", "held", "Meetings kept private aren't sent to Claude or Linear. The transcript stays on this Mac; PMX's record keeps only which rule kept it private."],
       ["f-t", "filter", "findtodo", "model", "Your own meetings, 1:1s included, with emails, phone numbers and names on your CRM list removed, and pay, performance and health passages cut. Sent to Claude with no tools; the to-dos it finds stay on this Mac."],
       ["f-d", "filter", "draft", "model", "Customer calls and approved threads, with private details removed, sent to Claude with no tools. 1:1s, hiring, internal-only meetings and anything on your do-not-read list never get here."],
       ["t-t", "findtodo", "todos", "status", "To-dos saved on this Mac only."],
-      ["d-a", "draft", "approve", "status", "Proposed tasks wait on this Mac, exactly as Linear would get them. Linear has none of them yet."],
+      ["d-a", "draft", "approve", "status", "New tasks wait on this Mac, exactly as Linear would get them. Linear has none of them yet."],
       ["a-x", "approve", "dropped", "status", "Tasks you dropped. Nothing about them reaches Linear."],
       ["a-i", "approve", "inbox", "linear", "Title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes."],
-      ["i-b", "inbox", "board", "status", "Approved tasks waiting in the pool, counted now rather than over the window. Your team's board shows them to a teammate, who decides which are worth an agent's time."],
-      ["i-r", "board", "ready", "status", "Tasks a teammate moved to Ready on the team board, counted now rather than over the window. Only Ready tasks are picked up. Moving an issue between Linear's own status columns changes nothing: PMX goes by its pmx-status label."],
+      ["i-b", "inbox", "board", "status", startOn() ? "Tasks approved for later, waiting in the backlog, counted now rather than over the window. Your team's board shows them; moving one to Ready there starts it." : "Approved tasks waiting in the backlog, counted now rather than over the window. Your team's board shows them to a teammate, who decides which are worth an agent's time."],
+      ["i-r", "board", "ready", "status", `${startOn() ? "Tasks you started from Needs you, or moved to Ready on the team board" : "Tasks a teammate moved to Ready on the team board"}, counted now rather than over the window. Only Ready tasks are picked up. Moving a task between Linear's own status columns changes nothing: PMX goes by its pmx-status label.`],
       ["r-g", "ready", "agent", "model", "Your agent took a Ready task within your budget and review limit, and drafted it in PMX's own Claude setup with the task text and team memory.", "uturn"],
       ["g-v", "agent", "review", "status", "A draft in your team's repo, with a record of how it was made."],
       ["v-d", "review", "done", "status", "Someone accepted it. Rejected drafts lower that kind of work's accept rate."],
@@ -1979,29 +2358,29 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const KINDNAME = { full: "Full text, this Mac", model: "Private details removed, to Claude", linear: "Summaries to Linear", status: "Counts and status", held: "Private", off: "Not connected" };
     const KINDTEXT = { full: ["full", "Full transcript text, on this Mac only."], model: ["model", "Text with private details removed, sent to Claude."], linear: ["linear", "Sent to Linear: task summaries, never meeting text."], status: ["", "No meeting text: counts, status and IDs."], held: ["held", "Nothing is sent anywhere."], off: ["", "Nothing: not connected."] };
     // What each step does, the settings behind it, its automation, and where its waiting work is.
-    const NODE_INFO = {
+    const nodeInfo = () => ({
       collect: ["A scheduled task in your Claude app. Claude copies each new transcript word for word into a private folder on this Mac. It's told to skip your do-not-read list and sources you turned off, but that's an instruction to Claude, not a check: the privacy filter is the check.", ["dnr", "routes"], "collect"],
       filter: ["Code on this Mac, not Claude. Before anything is sent, it decides what Claude may read for your to-dos and for team tasks, and keeps the rest private.", ["fixed", "domains", "dnr"]],
       held: ["Meetings kept private are never sent to Claude or Linear. Their transcripts stay on this Mac; PMX's record keeps only which rule kept each one private.", ["fixed", "dnr"]],
       findtodo: ["Claude reads your own meetings with no tools and lists your action items.", ["routes"], "todo"],
-      draft: ["Claude reads customer calls and approved threads, with private details removed and no tools, and proposes sized tasks, with a reason each source supports it. PMX drops any task that quotes a meeting.", ["sizes", "gets"], "synthesize"],
+      draft: ["Claude reads customer calls and approved threads, with private details removed and no tools, and suggests sized tasks, with a reason each source supports it. PMX drops any task that quotes a meeting.", ["sizes", "gets"], "synthesize"],
       todos: ["Your to-dos from your own meetings. They never leave this Mac.", [], null, "anytime"],
-      approve: ["Every proposed task waits here until you approve or drop it. Approving sends it to Linear's inbox; dropping sends nothing.", ["gets"], "approve", "inbox"],
+      approve: [startOn() ? "Every new task waits here until you start it, approve it for later or drop it. Start now sends it to Linear as Ready for agents; Later sends it to the backlog; dropping sends nothing." : "Every new task waits here until you approve or drop it. Approving sends it to your team's backlog in Linear; dropping sends nothing.", ["gets"], "approve", "needs"],
       dropped: ["Tasks you dropped. Nothing about them reaches Linear.", []],
-      inbox: ["Approved tasks arrive in Linear's PMX project, in the pool. No agent takes them from here: they wait until a teammate picks them on the team board.", ["gets"], "linear", "plan"],
-      board: ["Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. A teammate looks at the pool and moves the tasks worth an agent's time to Ready. Approving decides what may leave your Mac; this step decides what agents spend budget on.", [], null, "plan"],
-      ready: ["Tasks a teammate moved to Ready. Agents pick up only these, one per pass, within each PM's budget and review limit.", ["agent"], null, "plan"],
-      agent: ["Your agent takes one Ready task per pass, if it fits your budget and fewer drafts than your review limit are waiting. Each kind of work has its own instructions under Agents.", ["agent", "budget"], "pull"],
-      review: ["Drafts made by agents, in your team's repo. Accept, ask for a redo, or reject.", ["agent"], "review", "today"],
+      inbox: [startOn() ? "Tasks you approved for later arrive in Linear's PMX project, in the backlog. No agent takes them from here: they wait until you or a teammate move them to Ready on the team board." : "Approved tasks arrive in Linear's PMX project, in the backlog. No agent takes them from here: they wait until a teammate picks them on the team board.", ["gets"], "linear", "work"],
+      board: [startOn() ? "Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. You or a teammate move tasks from the backlog to Ready there; tasks you start from Needs you skip this step. Approving decides what may leave your Mac; Ready decides what agents spend budget on." : "Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. A teammate looks at the backlog and moves the tasks worth an agent's time to Ready. Approving decides what may leave your Mac; this step decides what agents spend budget on.", [], null, "work"],
+      ready: [startOn() ? "Tasks you started from Needs you, or moved to Ready on the team board. Agents pick up only these, one per background run, within each PM's budget and review limit." : "Tasks a teammate moved to Ready. Agents pick up only these, one per background run, within each PM's budget and review limit.", ["agent"], null, "work"],
+      agent: ["Your agent takes one Ready task per background run, if it fits your budget and fewer drafts than your review limit are waiting. Each kind of work has its own instructions under Work, in Agents.", ["agent", "budget"], "pull"],
+      review: ["Drafts made by agents, in your team's repo. Accept, ask for a redo, or reject.", ["agent"], "review", "needs"],
       done: ["Accepted drafts. Each one's record shows how it was made and what it cost.", []],
       slack: ["Threads from the places your team approved (Slack, Teams…), never DMs. Your Claude app's collection task copies them on the team's synthesis Mac, through your own connector; PMX reads them through the privacy filter.", ["routes", "dnr"], "collect"],
       email: ["PMX doesn't read email.", []],
-    };
+    });
     const RULELABEL = { routes: "Sources", fixed: "Always private", domains: "Who counts as a customer", dnr: "Do-not-read list", sizes: "Sizes", gets: "What Linear gets", agent: "Kinds of work", budget: "Budget and limits" };
-    const QUEUE_WORD = { approve: "to approve", review: "to review", todos: "open", inbox: "in the pool", ready: "ready to build" };
+    const QUEUE_WORD = { approve: "to approve", review: "to review", todos: "open", inbox: "in the backlog", ready: "ready to build" };
     // Arrows that count what's there now, not what moved in the window.
-    const NOW_EDGE = { "i-b": "In the pool now", "i-r": "Ready now" };
-    const GO_WORD = { inbox: "Open Inbox", today: "Open Today", anytime: "Open Anytime", plan: "Open Plan" };
+    const NOW_EDGE = { "i-b": "In the backlog now", "i-r": "Ready now" };
+    const GO_WORD = { needs: "Open Needs you", anytime: "Open Anytime", work: "Open Work" };
     const SVGN = "http://www.w3.org/2000/svg";
     // SVG elements. Styles go through the CSSOM: the local page's policy refuses style attributes.
     const s = (tag, attrs, ...kids) => {
@@ -2037,7 +2416,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       edges = [];
       for (const x of D.sources) if (nodes[`src-${x.id}`]) edges.push({ id: `src-${x.id}`, from: `src-${x.id}`, to: "collect", kind: x.connected ? "full" : "off", n: x.n, unit: "meetings", last: x.last, carries: `Claude's collection task reads ${x.label} through your connector and saves each transcript word for word in a private folder on this Mac. It copies every meeting you attended, 1:1s included; the privacy filter decides what's used.` });
       if (nodes.email) edges.push({ id: "e-c", from: "email", to: "collect", kind: "off", n: 0, unit: "emails", last: null, carries: "PMX doesn't read email. Forward customer emails to an approved channel instead." });
-      for (const [id, from, to, kind, carries, route] of FIXED_EDGES) {
+      for (const [id, from, to, kind, carries, route] of fixedEdges()) {
         if (!nodes[from] || !nodes[to]) continue;
         const e = (D.edges && D.edges[id]) || { n: 0, unit: "", last: null };
         edges.push({ id, from, to, kind: id === "s-f" && nodes.slack.kind === "off" ? "off" : kind, n: e.n, unit: e.unit, tokens: e.tokens, last: e.last, carries, route });
@@ -2154,7 +2533,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     }
     // A dot runs along each arrow that carried something new since the last refresh.
     function pulses(grown) {
-      if (reduced() || fview !== "map" || S.view !== "flow" || !mapEl) return;
+      if (reduced() || fview !== "map" || !(S.view === "health" && S.htab === "flow") || !mapEl) return;
       for (const id of grown) {
         const p = mapEl.querySelector(`#path-${CSS.escape(id)}`); if (!p) continue;
         const dot = s("circle", { r: 4.5, class: "pulse" }); mapEl.append(dot);
@@ -2176,7 +2555,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       return h("table", { class: "flist" }, h("thead", null, h("tr", null, h("th", null, "Step → next step"), h("th", { class: "n" }, `Moved ${winText()}`), h("th", null, "Last"))), h("tbody", null, rows));
     }
     const ruleButtons = (ids) => (ids.length ? h("div", { class: "links" }, h("span", { class: "small muted" }, "Settings for this step:"),
-      ids.map((r) => btn(`${RULELABEL[r]} →`, { cls: "sm", fk: `fr-${r}`, on: () => go("settings", { sub: RULE[r] }) }))) : null);
+      ids.map((r) => btn(`${RULELABEL[r]} →`, { cls: "sm", fk: `fr-${r}`, on: () => toSettings(RULE[r]) }))) : null);
     const toMap = () => h("button", { type: "button", class: "link small backmap", onclick: () => { mapEl?.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "start" }); if (fsel && fsel.type === "node") $(`node-${fsel.id}`)?.focus({ preventScroll: true }); } }, "↑ Back to the map");
     function detail() {
       if (!fsel) return [h("div", { class: "eyebrow" }, "Pick a step"), h("h2", { id: "fdetail-h", tabindex: "-1" }, "What each step does"),
@@ -2197,14 +2576,14 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       }
       const n = nodes[fsel.id];
       if (!n) { fsel = null; return detail(); }
-      const [what, rules, autoId, where] = NODE_INFO[fsel.id] ?? [n.col === 0 ? "A meeting app. PMX never talks to it directly: the collection task in your Claude app reads it through your connector." : "", n.col === 0 ? ["routes"] : []];
+      const [what, rules, autoId, where] = nodeInfo()[fsel.id] ?? [n.col === 0 ? "A meeting app. PMX never talks to it directly: the collection task in your Claude app reads it through your connector." : "", n.col === 0 ? ["routes"] : []];
       const out = [toMap(), h("div", { class: "eyebrow" }, n.tag || "Source"), h("h2", { id: "fdetail-h", tabindex: "-1" }, n.title), h("p", { class: "muted small" }, what)];
       const q = queueCount(fsel.id);
       if (fsel.id === "board") {
-        out.push(h("dl", { class: "kv" }, h("dt", null, "In the pool now"), h("dd", null, String(queueCount("inbox") ?? 0)), h("dt", null, "Ready to build now"), h("dd", null, String(queueCount("ready") ?? 0))));
-        out.push(D.boardUrl ? h("div", { class: "links" }, ext(D.boardUrl, "Open the team board", "btn sm pri")) : h("div", null, h("p", { class: "small muted" }, "Your team's board isn't published in Claude yet."), terminal("/pmx-board")));
+        out.push(h("dl", { class: "kv" }, h("dt", null, "In the backlog now"), h("dd", null, String(queueCount("inbox") ?? 0)), h("dt", null, "Ready to build now"), h("dd", null, String(queueCount("ready") ?? 0))));
+        out.push(D.boardUrl ? h("div", { class: "links" }, ext(D.boardUrl, "Open the team board", "btn sm pri")) : h("div", null, h("p", { class: "small muted" }, "Your team's board isn't published in Claude yet."), slash("/pmx-board")));
       }
-      if (where) out.push(h("div", { class: "links" }, q !== null ? h("span", { class: "small" }, h("b", null, String(q ?? 0)), ` ${QUEUE_WORD[fsel.id]}`) : null, btn(`${GO_WORD[where]} →`, { cls: q ? "sm pri" : "sm", fk: "fd-go", on: () => go(where) })));
+      if (where) out.push(h("div", { class: "links" }, q !== null ? h("span", { class: "small" }, h("b", null, String(q ?? 0)), ` ${QUEUE_WORD[fsel.id]}`) : null, btn(`${GO_WORD[where]} →`, { cls: q ? "sm pri" : "sm", fk: "fd-go", on: () => go(where, where === "work" ? { tab: "tasks" } : {}) })));
       if (fsel.id === "filter" || fsel.id === "held") {
         out.push(h("h3", null, `Kept private ${winText()}, by reason`));
         out.push((D.held || []).length ? h("dl", { class: "kv" }, D.held.flatMap((x) => [h("dt", null, x.label), h("dd", null, String(x.n))])) : h("p", { class: "faint small" }, `Nothing kept private ${winText()}.`));
@@ -2215,9 +2594,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       const a = autoId && (D.automations || []).find((x) => x.id === autoId);
       if (a) out.push(h("div", { class: "carry" }, h("div", { class: "mini" }, pill(a.statusText, STATUSPILL[a.status] ?? "")),
         h("div", { class: "small muted" }, [a.last ? `Last ${when(a.last)}` : "", a.next ? `next ${low(when(a.next))}` : ""].filter(Boolean).join(" · ")),
-        h("button", { type: "button", class: "link small", "data-fk": "fd-auto", onclick: () => { go("status", { stab: "overview" }); requestAnimationFrame(() => $(`auto-${a.id}`)?.scrollIntoView({ block: "center" })); } }, "See in Status →")));
+        h("button", { type: "button", class: "link small", "data-fk": "fd-auto", onclick: () => { go("health", { tab: "overview" }); requestAnimationFrame(() => $(`auto-${a.id}`)?.scrollIntoView({ block: "center" })); } }, "See in Health →")));
       if (["ready", "agent", "review", "done"].includes(fsel.id) && (D.categories || []).length)
-        out.push(h("div", { class: "links" }, h("span", { class: "small muted" }, "What agents draft:"), btn(`${plural(D.categories.length, "kind of work", "kinds of work")} →`, { cls: "sm", fk: "fd-cats", on: () => go("agents") })));
+        out.push(h("div", { class: "links" }, h("span", { class: "small muted" }, "What agents draft:"), btn(`${plural(D.categories.length, "kind of work", "kinds of work")} →`, { cls: "sm", fk: "fd-cats", on: () => go("work", { tab: "agents" }) })));
       out.push(ruleButtons(rules));
       return out;
     }
@@ -2228,7 +2607,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         h("span", null, h("span", { class: "num" }, "2"), ` on an arrow: moved ${winText()}`),
         [["full", "Full transcript, stays on this Mac"], ["model", "Private details removed, sent to Claude"], ["linear", "Task summaries sent to Linear"], ["status", "No meeting text: counts and status"], ["held", "Private: never sent anywhere"], ["off", "Not connected"]]
           .map(([k, t]) => h("span", null, s("svg", { viewBox: "0 0 28 8", "aria-hidden": "true" }, s("line", { class: `kl-${k}`, x1: 0, y1: 4, x2: 28, y2: 4 })), t))));
-    V.flow = () => {
+    // Health → Flow.
+    flowMap = () => {
       shape();
       const grown = prevN ? edges.filter((e) => e.kind !== "off" && prevN[e.id] !== undefined && e.n > prevN[e.id]).map((e) => e.id) : [];
       const seg = h("div", { class: "seg", role: "group", "aria-label": "Show the flow as" }, [["map", "Map"], ["list", "List"]].map(([v, t]) =>
@@ -2236,11 +2616,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       mapEl = null;
       const box = fview === "map" ? h("div", { class: "mapbox" }, buildMap()) : h("div", { class: "mapbox" }, listView());
       detailEl = h("aside", { class: "fdetail", "aria-label": "Selected step" }, detail());
-      const out = [
-        head("flow", "", "Flow", "Where your meetings go, step by step. Click a step or an arrow to see what it carries.", [winSelect(), seg]),
-        fview === "map" ? legend() : null,
-        h("div", { class: "fconn" }, h("div", { class: "fmain" }, box), detailEl),
-      ];
+      const out = {
+        sub: "Where your meetings go, step by step. Click a step or an arrow to see what it carries.", acts: [winSelect(), seg],
+        body: [fview === "map" ? legend() : null, h("div", { class: "fconn" }, h("div", { class: "fmain" }, box), detailEl)],
+      };
       // Grown arrows show "+n" until the next refresh, and a dot runs along them once.
       prevN = Object.fromEntries(edges.map((e) => [e.id, e.n]));
       if (grown.length) requestAnimationFrame(() => pulses(grown));
@@ -2281,6 +2660,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       inputs: D.inputs ? D.inputs.rows.filter((x) => x.owner === "team").map((x) => ({ connector: x.connector, places: [...x.places], look: x.look || null })) : [],
       synth: D.inputs ? D.inputs.synthesizer : null,
       todosLinear: !!r.todosToLinear,
+      // APPROVE-3: null from a PMX too old to have the setting, and then the page doesn't offer it.
+      startNow: typeof r.startNow === "boolean" ? r.startNow : null,
+      // INSTALL-4: the team's product lead; undefined from a PMX too old to have the setting, and then the page doesn't offer it.
+      lead: "productLead" in r ? r.productLead : undefined,
     };
     if (!original || JSON.stringify(original) === JSON.stringify(state)) { original = base; state = clone(base); }
     else original = base; // keep the PM's unsaved edits across refreshes
@@ -2305,6 +2688,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     for (const c of Object.keys(state.accept)) if (state.accept[c] !== original.accept[c]) add({ kind: "category", name: c, accepted: state.accept[c] }, `${state.accept[c] ? "Take on" : "Stop taking"} ${catName(c)}`, "me");
     for (const c of Object.keys(state.required || {})) if (state.required[c] !== original.required[c]) add({ kind: "kind-required", name: c, value: state.required[c] }, `${state.required[c] ? "Require" : "Stop requiring"} ${catName(c)} for everyone on the team`, "team");
     if (state.reviewCap !== original.reviewCap) add({ kind: "review-cap", value: state.reviewCap }, `Agents wait at ${state.reviewCap} drafts`, "team");
+    if (state.startNow !== original.startNow && state.startNow !== null) add({ kind: "start-now", value: state.startNow }, state.startNow ? "Offer Start now: the PM's approval can make a task Ready for agents" : "No Start now: approved tasks wait in the backlog until a teammate moves them to Ready", "team");
     if (state.digestDay !== original.digestDay) add({ kind: "digest-day", value: state.digestDay }, `Build the digest on ${DAYS[state.digestDay]}s`, "me");
     const ck = (x) => cid(x.connector), pk = (x) => JSON.stringify(x.places.map((p) => p.toLowerCase()).sort());
     for (const c of state.calls) {
@@ -2318,7 +2702,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         add({ kind: "team-input", connector: c.connector, places: c.places, look: c.look || null }, `Read ${c.connector}: ${c.places.join(", ")}`, "team", c.places.some((p) => !(o ? o.places : []).some((q) => q.toLowerCase() === p.toLowerCase())) || (!!o && (o.look || null) !== (c.look || null)));
     }
     for (const o of original.inputs) if (!state.inputs.some((x) => ck(x) === ck(o))) add({ kind: "team-input", connector: o.connector, places: [], look: null }, `Stop reading ${o.connector}`, "team");
-    if (state.synth !== original.synth && state.synth) add({ kind: "synthesizer", value: state.synth }, `${state.synth === (D.inputs && D.inputs.me) ? "This Mac" : `${state.synth}'s Mac`} proposes team tasks and reads the team's channels`, "team");
+    if (state.lead !== undefined && state.lead !== original.lead) add({ kind: "product-lead", value: state.lead }, state.lead ? `${state.lead} is your team's product lead, so PMX offers them PMX Engine` : "Your team names no product lead", "team");
+    if (state.synth !== original.synth && state.synth) add({ kind: "synthesizer", value: state.synth }, `${state.synth === (D.inputs && D.inputs.me) ? "This Mac" : `${state.synth}'s Mac`} suggests team tasks and reads the team's channels`, "team");
     if (state.todosLinear !== original.todosLinear) add({ kind: "todos-linear", value: state.todosLinear }, state.todosLinear ? "Let me send my own to-dos to Linear, one at a time" : "Keep all my to-dos on this Mac", "me", state.todosLinear);
     if (state.digestDm !== original.digestDm) add({ kind: "digest-dm", value: state.digestDm }, state.digestDm ? `Send the approved digest to Slack (${state.digestDm})` : "Stop sending the digest to Slack", "me");
     return out;
@@ -2343,6 +2728,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       budget: () => { state.budget = original.budget; delete invalid.budget; }, category: () => (state.accept[c.name] = original.accept[c.name]),
       "kind-required": () => (state.required[c.name] = original.required[c.name]),
       "review-cap": () => { state.reviewCap = original.reviewCap; delete invalid.revcap; },
+      "start-now": () => (state.startNow = original.startNow),
+      "product-lead": () => (state.lead = original.lead),
       "digest-day": () => (state.digestDay = original.digestDay), "digest-dm": () => (state.digestDm = original.digestDm),
       "call-input": () => back("calls"), "team-input": () => back("inputs"), synthesizer: () => (state.synth = original.synth),
       "todos-linear": () => (state.todosLinear = original.todosLinear),
@@ -2350,6 +2737,31 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   }
   // An edit redraws the section; a number or text being typed only updates the save bar, so focus stays put.
   function changed(redraw = true) { if (redraw) render(); else drawSavebar(); }
+  // INSTALL-4: who the team's product lead is. PMX offers PMX Engine, their tool, only on their Mac. A team setting, so it
+  // goes to the team for approval like the others; naming someone is a convenience, never a permission.
+  function leadCard() {
+    if (!state || state.lead === undefined) return null;
+    const me = D.inputs && D.inputs.me;
+    const you = !!state.lead && (state.lead === original.lead ? !!D.rules.productLeadIsYou : state.lead === me);
+    return card("Product lead", "PMX Engine is your product lead's tool. PMX offers it only on their Mac; nobody else is asked about it.", h("div", { class: "sr", id: "s-lead" },
+      h("div", { class: "nm" }, "Your team's product lead", " ", state.lead !== original.lead ? chip("Not sent yet", "new") : null,
+        h("small", null, !state.lead ? "Nobody yet. Name them by their PMX handle." : you ? `${state.lead} (you): PMX offers you PMX Engine.` : `${state.lead}: PMX offers PMX Engine on their Mac only.`)),
+      state.lead ? h("div", { class: "chips" }, h("span", { class: `chip v${state.lead === original.lead ? "" : " pending"}` }, state.lead, h("button", { type: "button", "aria-label": "Name no product lead", onclick: () => { state.lead = null; changed(); } }, "×"))) : null,
+      state.lead ? null : addBox("add-lead", "Their PMX handle, like ana", (v) => {
+        const x = v.trim();
+        if (!/^[\w-]{1,32}(@[\w.-]{1,64})?$/.test(x)) return "A PMX handle has only letters, numbers, - and _.";
+        state.lead = x; return null;
+      }, { label: "Your product lead's PMX handle", btn: "Name" }),
+      !state.lead && me ? btn("It's me", { cls: "sm", fk: "lead-me", on: () => { state.lead = me; changed(); } }) : null), { badge: scopeChip("team") });
+  }
+  // APPROVE-3: whether approving can start a task at once. A team setting, so it goes to the team for approval.
+  function startNowCard() {
+    if (state.startNow === null) return null;
+    return card("Starting work", "Who decides which approved tasks agents take.", h("div", { class: "sr" },
+      h("div", { class: "nm" }, "Start now on new tasks", " ", state.startNow !== original.startNow ? chip("Not saved yet", "new") : null,
+        h("small", null, state.startNow ? "On: Start now in Needs you approves a task and makes it Ready for agents at once. Later still puts it in the backlog." : "Off: approved tasks wait in the backlog until a teammate moves them to Ready. Turn it off when someone on your team decides what agents take.")),
+      h("div", { class: "ctl" }, sw(state.startNow, "Start now on new tasks", () => { state.startNow = !state.startNow; changed(); }, { fk: "start-now" }))), { badge: scopeChip("team") });
+  }
 
   // ================= Settings: controls =================
   const sw = (on, label, onToggle, o = {}) => h("button", { type: "button", class: "sw", role: "switch", "aria-checked": on ? "true" : "false", "aria-label": label, disabled: o.disabled, "data-fk": o.fk, onclick: onToggle });
@@ -2500,7 +2912,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         const id = cid(c.connector), r = byId[id], o = original.inputs.find((x) => cid(x.connector) === id);
         const stop = () => { state.inputs = state.inputs.filter((x) => cid(x.connector) !== id); changed(); };
         return h("div", { class: "sr", id: `s-chan-${id}` }, ic("hash"),
-          h("div", { class: "nm" }, c.connector, " ", !o ? chip("Not proposed yet", "new") : null, h("small", null, c.look ? `Only ${c.look}.` : "Every thread in these places, never direct messages.")),
+          h("div", { class: "nm" }, c.connector, " ", !o ? chip("Not sent yet", "new") : null, h("small", null, c.look ? `Only ${c.look}.` : "Every thread in these places, never direct messages.")),
           h("div", { class: "ctl" }, r && o ? st(r) : null, r && o ? feeds(id) : null, o ? moreMenu(`More for ${c.connector}`, [{ label: "Stop reading it", danger: true, on: stop }]) : btn("Cancel", { cls: "sm ghost", on: stop })),
           h("div", { class: "wide" }, h("div", { class: "chips" }, c.places.map((p) => h("span", { class: `chip v${o && o.places.some((q) => q.toLowerCase() === p.toLowerCase()) ? "" : " pending"}` }, p,
             h("button", { type: "button", "aria-label": `Stop reading ${p}`, onclick: () => { c.places = c.places.filter((x) => x !== p); if (!c.places.length) state.inputs = state.inputs.filter((x) => x !== c); changed(); } }, "×"))))),
@@ -2541,10 +2953,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         ], { badge: scopeChip("me"), fold: true }),
         card("Channels and feeds", "Conversations in places your team approved, like Slack or Teams channels. Only the places listed, never direct messages.", [
           h("div", { class: "sr", id: "s-synth" }, ic("users"),
-            h("div", { class: "nm" }, "Who reads them", " ", state.synth !== original.synth ? chip("Not proposed yet", "new") : null,
-              h("small", null, state.synth && state.synth === I.me ? "This Mac. It also proposes your team's tasks, so every call and thread is read once for everyone."
-                : state.synth ? `The Claude app on ${state.synth}'s Mac, which also proposes your team's tasks.`
-                : "Nobody yet. One Mac on your team proposes tasks for everyone and reads these places."),
+            h("div", { class: "nm" }, "Who reads them", " ", state.synth !== original.synth ? chip("Not sent yet", "new") : null,
+              h("small", null, state.synth && state.synth === I.me ? "This Mac. It also suggests your team's tasks, so every call and thread is read once for everyone."
+                : state.synth ? `The Claude app on ${state.synth}'s Mac, which also suggests your team's tasks.`
+                : "Nobody yet. One Mac on your team suggests tasks for everyone and reads these places."),
               h("small", null, `Private channels: ${I.allowPrivate ? "allowed by your team" : "never read"}.`)),
             h("div", { class: "ctl" }, I.me && state.synth !== I.me ? btn("Use this Mac", { cls: `sm${state.synth ? "" : " pri"}`, on: () => { state.synth = I.me; changed(); } })
               : state.synth !== original.synth ? btn("Cancel", { cls: "sm ghost", on: () => { state.synth = original.synth; changed(); } }) : null)),
@@ -2617,7 +3029,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           const isRunning = running(x.run);
           return h("div", { class: "sr" }, h("div", { class: "nm" }, x.name, h("small", null, [x.cadence, x.where, x.next ? `next ${low(when(x.next))}` : null].filter(Boolean).join(" · "))),
             h("div", { class: "ctl" }, pill(x.statusText, STATUSPILL[x.status] ?? ""), x.run ? btn(isRunning ? "Running…" : "Run now", { cls: "sm", icon: isRunning ? null : "play", disabled: isRunning, on: (ev) => runNow(x.run, ev.currentTarget) }) : null));
-        }), { btn: btn("Full status", { cls: "sm ghost", on: () => go("status") }) }) : h("p", { class: "muted" }, "This PMX is too old to list its automations."),
+        }), { btn: btn("Full health", { cls: "sm ghost", on: () => go("health", { tab: "overview" }) }) }) : h("p", { class: "muted" }, "This PMX is too old to list its automations."),
+        hoursCard(),
       ];
     }],
     digestset: ["Digest", "A weekly summary of what customers said, with sources. You approve it before anyone sees it.", () => card("Delivery", null, [
@@ -2633,7 +3046,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     kinds: ["Kinds of work", "Which kinds of work your agent takes from Ready. Your team defines them, so every PM on the team has the same ones; each of you chooses which your agent takes, unless the team requires one.", () => {
       const cats = D.categories || [];
       const keys = Object.keys(state.accept);
-      const add = btn("New kind of work", { cls: "sm", icon: "plus", fk: "new-kind", on: () => go("settings", { sub: "newkind", focus: false }) });
+      const add = btn("New kind of work", { cls: "sm", icon: "plus", fk: "new-kind", on: () => toSettings("newkind", { focus: false }) });
       if (!keys.length) return [teamWaiting(), h("p", { class: "muted" }, "Your team hasn't set up any kinds of work yet."), add];
       const stageName = (st) => (LIFECYCLE.find((x) => x[0] === st) || [null, null])[1];
       return [teamWaiting(), card("Your agent takes on", null, keys.map((k) => {
@@ -2647,12 +3060,12 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           : sw(on, `Your agent takes ${catName(k)}`, () => { state.accept[k] = !state.accept[k]; changed(); }, { fk: `kind-${k}` });
         return h("div", { class: "sr" }, h("div", { class: "nm" }, catName(k), " ", c && c.custom ? chip("Your team's") : null, " ", pend,
             h("small", null, [c && c.produces ? c.produces : null].filter(Boolean).join("")),
-            h("small", null, [c && c.stage ? stageName(c.stage) : null, c && c.propose ? `Proposed when: ${c.propose.when}` : null, rate].filter(Boolean).join(" · ")),
+            h("small", null, [c && c.stage ? stageName(c.stage) : null, c && c.propose ? `Suggested when: ${c.propose.when}` : null, rate].filter(Boolean).join(" · ")),
             broken ? h("div", { class: "fix" }, `Agents won't run it until its skill is fixed: ${broken.join("; ")}.`) : null),
           h("div", { class: "ctl" }, status, ctlOn,
             moreMenu(`More for ${catName(k)}`, [
-              { label: "See it in Agents", on: () => go("agents") },
-              { label: "Edit its sizes", on: () => go("settings", { sub: "sizes" }) },
+              { label: "See it in Agents", on: () => go("work", { tab: "agents" }) },
+              { label: "Edit its sizes", on: () => toSettings("sizes") },
               { label: req ? "Stop requiring it for everyone" : "Require it for everyone on the team", on: () => { state.required[k] = !req; changed(); } },
               c && c.paused ? { label: "Resume it", on: () => resume(k, null) } : null])));
       }), { badge: scopeChip("me"), btn: add })];
@@ -2683,7 +3096,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("div", { class: "sr locked" }, h("div", { class: "nm" }, "Team daily cap", h("small", null, "Set by your team")), h("span", { class: "swl" }, `$${b.teamCap}`)),
         ], { badge: scopeChip("me") }),
         card("Review limit", "Agents stop taking new work while this many drafts wait for review, so work doesn't pile up unread.", h("div", { class: "sr" }, h("div", { class: "nm" }, "Agents wait at"),
-          numBox("revcap", state.reviewCap, 1, 10, (v) => (state.reviewCap = v), { label: "Review limit", unit: "drafts waiting" })), { badge: scopeChip("team") })];
+          numBox("revcap", state.reviewCap, 1, 10, (v) => (state.reviewCap = v), { label: "Review limit", unit: "drafts waiting" })), { badge: scopeChip("team") }),
+        startNowCard()];
     }],
     account: ["Account", "", () => {
       const ks = D.killSwitch || { on: false };
@@ -2701,11 +3115,29 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
             localOn() ? btn("Stop", { cls: "sm", fk: "local-stop", on: (ev) => stopLocal(ev.currentTarget) }) : null),
           h("div", { class: "sr" }, h("div", { class: "nm" }, "Appearance", h("small", null, "Follow your Mac, or always light or dark.")), themeButtons()),
         ]),
+        leadCard(),
         prs.length ? card("Team changes waiting", prs.some((p) => localBranch(p.url)) ? "Your team repo has no remote, so these wait on this Mac until you apply them." : "Nothing changes for anyone until a teammate approves.", prs.map((p) => h("div", { class: "sr" }, h("div", { class: "nm" }, p.changes.join("; "), h("small", null, `${localBranch(p.url) ? "Saved" : "Opened"} ${when(p.at)}`)),
           localBranch(p.url) ? btn("Apply now", { cls: "sm pri", on: (ev) => applyTeam(localBranch(p.url), ev.currentTarget) }) : p.url ? ext(p.url, "View PR") : null))) : null,
       ];
     }],
   };
+  // CLAUDE-6: when PMX's Claude tasks do their work. PMX's own setting: one click, and nothing changes in the Claude app.
+  const HOURS = [["always", "Sync whenever PMX runs"], ["weekdays", "Working hours only"]];
+  function hoursCard() {
+    const cur = D.rules && D.rules.taskHours;
+    if (!cur) return null;
+    return card("When PMX's Claude tasks work", "The Linear sync and meeting collection in the Claude app.", h("div", { class: "sr", id: "task-hours" },
+      h("div", { class: "nm" }, cur === "always" ? "Whenever PMX runs: the Linear sync every hour, every day, and meeting collection every day at 12:30 and 17:30." : "Working hours: the Linear sync every hour from 8:00 to 18:00 on weekdays, and meeting collection at 12:30 and 17:30 on weekdays.",
+        h("small", null, "Outside working hours each run starts briefly and stops. They run only while the Claude app is open and this Mac is awake. Changing this needs nothing in the Claude app.")),
+      h("div", { class: "theme", role: "group", "aria-label": "When PMX's Claude tasks work" }, HOURS.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": cur === v ? "true" : "false", "data-fk": `hours-${v}`, onclick: (ev) => setHours(v, ev.currentTarget) }, l)))), { badge: scopeChip("me") });
+  }
+  async function setHours(v, b) {
+    if (D.rules.taskHours === v) return;
+    busyBtn(b, "Saving…");
+    try { const r = await act("task-hours", { hours: v }); D.rules.taskHours = r.taskHours || v; render(); toast(r.message || "Saved."); }
+    catch (e) { render(); toast(`Couldn't change it: ${e.message}`, { error: true }); }
+    await load();
+  }
   // BOARD-8: this Mac's own page, from the page in Claude. PMX starts it if needed and opens it in the browser itself.
   const localOn = () => !!(D && D.localPage && D.localPage.running);
   async function openLocal(el) {
@@ -2747,9 +3179,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         h("div", { class: "fl" }, field("name", "Name", "Two to five words, like Stakeholder update or Prototype brief.", { max: 40, ph: "Stakeholder update" }), h("small", { id: "kf-slug" }, f.name.trim() ? `Its id: ${kindSlug(f.name) || "…"}` : "")),
         field("produces", "What it produces", "One or two sentences: what a finished draft is and who it's for.", { area: true, rows: 2, ph: "A one-page update for execs: what changed this week, what's at risk and what we need from them." }),
         h("label", null, "Stage", h("small", null, "Where the work sits in the product's life."), sel(LIFECYCLE.map(([k, n]) => [k, n]), f.stage, (v) => { f.stage = v; }, "Stage", "kf-stage"))), { badge: scopeChip("team") }),
-      card("When PMX proposes it", "Synthesis reads these when it turns meetings and channels into tasks.", h("div", { class: "kf" },
-        field("when", "Propose it when", "What in a meeting or channel should make PMX suggest this work.", { area: true, rows: 2, ph: "A meeting moves a date, changes scope, raises a risk or needs an exec decision." }),
-        field("not", "Don't propose it when (optional)", "What looks close but isn't.", { area: true, rows: 2, ph: "Routine status with nothing changed." }))),
+      card("When PMX suggests it", "Synthesis reads these when it turns meetings and channels into tasks.", h("div", { class: "kf" },
+        field("when", "Suggest it when", "What in a meeting or channel should make PMX suggest this work.", { area: true, rows: 2, ph: "A meeting moves a date, changes scope, raises a risk or needs an exec decision." }),
+        field("not", "Don't suggest it when (optional)", "What looks close but isn't.", { area: true, rows: 2, ph: "Routine status with nothing changed." }))),
       card("How an agent does it", null, h("div", { class: "kf" },
         field("sections", "Sections every draft has", "One per line, in order. A draft missing one fails its checklist.", { area: true, rows: 4, max: 400, ph: "Headline\nWhat changed\nRisks\nAsks" }),
         field("steps", "Steps the agent follows", "One per line, in order.", { area: true, rows: 5, max: 3600, ph: "Lead with the one change that matters most.\nGive every risk an owner placeholder and a source.\nWrite each ask as a decision, marked PM decides." }),
@@ -2772,7 +3204,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const f = kindForm, lines = (v) => String(v || "").split("\n").map((x) => x.trim()).filter(Boolean);
     const draft = { name: f.name.trim(), produces: f.produces.trim(), when: f.when.trim(), not: f.not.trim() || null, stage: f.stage, sections: lines(f.sections), steps: lines(f.steps), checks: lines(f.checks),
       minCitations: f.minCitations === "" ? 1 : Number(f.minCitations), externalFacing: !!f.externalFacing, required: !!f.required, sizes: Object.fromEntries(SZ.map((z) => [z, f[z].trim()])), example: f.example.trim() || null };
-    const missing = [["name", "a name"], ["produces", "what it produces"], ["when", "when to propose it"], ["steps", "at least one step"]].filter(([k]) => !String(f[k] || "").trim()).map(([, n]) => n);
+    const missing = [["name", "a name"], ["produces", "what it produces"], ["when", "when to suggest it"], ["steps", "at least one step"]].filter(([k]) => !String(f[k] || "").trim()).map(([, n]) => n);
     if (missing.length) { kindMsg = { ok: false, text: `Fill in ${missing.join(", ")} first.` }; render(); return; }
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     kindBusy = true; kindMsg = null; render();
@@ -2782,7 +3214,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       if (r.prError) { kindMsg = { ok: false, text: `It couldn't be sent: ${r.prError}` }; render(); toast("The new kind of work couldn't be sent.", { error: true }); return; }
       kindForm = BLANK_KIND();
       kindMsg = localBranch(r.pr && r.pr.url)
-        ? { ok: true, text: `Saved "${draft.name}" on this Mac. Your team repo has no remote, so no teammate reviews it: apply it in the Inbox (Team changes) to add it.` }
+        ? { ok: true, text: `Saved "${draft.name}" on this Mac. Your team repo has no remote, so no teammate reviews it: apply it in Needs you (Team changes) to add it.` }
         : { ok: true, text: `Sent "${draft.name}" to your team for approval. When it merges, every PM on the team has it${draft.required ? " and their agents take it" : ", and your agent takes it"}.`, url: r.pr && r.pr.url };
       // Other unsaved settings stay as they are: the reload keeps edits in progress.
       await load();
@@ -2800,13 +3232,11 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   function settingsScreen() {
     if (!PANES[S.pref]) S.pref = "sources";
     const [title, desc, body] = PANES[S.pref];
-    const pick = h("label", { class: "set-pick" }, "Section", h("select", { class: "in", "aria-label": "Settings section", value: S.pref, onchange: (ev) => go("settings", { sub: ev.target.value, focus: false }) },
+    const pick = h("label", { class: "set-pick" }, "Section", h("select", { class: "in", "aria-label": "Settings section", value: S.pref, onchange: (ev) => toSettings(ev.target.value, { focus: false }) },
       PREFS.map(([g, items]) => h("optgroup", { label: g }, items.map(([k, n]) => h("option", { value: k }, n))))));
     return h("div", { class: "set" },
-      h("div", { class: "set-side" },
-        h("button", { type: "button", class: "back", onclick: () => go(VIEWS.includes(S.back) && S.back !== "settings" ? S.back : "today") }, ic("back"), "Back"),
-        h("h1", { tabindex: "-1" }, "Settings"), h("p", null, "How PMX reads, routes and runs."), pick,
-        h("nav", { "aria-label": "Settings sections" }, PREFS.map(([g, items]) => [h("h6", null, g), items.map(([k, n]) => h("button", { type: "button", class: "ni", "data-fk": `pref-${k}`, "aria-current": k === S.pref ? "page" : null, onclick: () => go("settings", { sub: k, focus: false }) }, n))]))),
+      h("div", { class: "set-side" }, pick,
+        h("nav", { "aria-label": "Settings sections" }, PREFS.map(([g, items]) => [h("h6", null, g), items.map(([k, n]) => h("button", { type: "button", class: "ni", "data-fk": `pref-${k}`, "aria-current": k === S.pref ? "page" : null, onclick: () => toSettings(k, { focus: false }) }, n))]))),
       h("div", { class: "set-main" }, h("h2", null, title), desc ? h("p", { class: "d" }, desc) : h("p", { class: "d" }),
         body(),
         h("div", { class: "savebar", id: "savebar" }, savebarKids())));
@@ -2837,7 +3267,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const rowOf = (c) => h("div", { class: "chg" }, h("span", null, c.label),
       h("span", { class: "chips" }, c.scope === "team" ? chip("Team · pull request", "k") : chip("Just you"), c.loosens ? chip("Loosens privacy", "warn") : null),
       btn("Undo", { cls: "sm ghost", aria: `Undo: ${c.label}`, on: () => { revert(c.change); render(); drawReview(); } }));
-    const save = btn(applying ? (team.length ? "Saving and proposing…" : "Saving…") : team.length ? (me.length ? "Save mine and propose the team's" : "Propose to your team") : "Save", { cls: "pri", disabled: applying || !ch.length || (loose && !loosenOk), on: () => apply() });
+    const save = btn(applying ? (team.length ? "Saving and sending…" : "Saving…") : team.length ? (me.length ? "Save mine and send the team's" : "Send to your team") : "Save", { cls: "pri", disabled: applying || !ch.length || (loose && !loosenOk), on: () => apply() });
     put(m,
       h("h3", { id: "m-h", tabindex: "-1" }, result && result.ok ? "Saved" : "Review changes"),
       h("div", { class: "mb" },
@@ -2850,7 +3280,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       h("div", { class: "mf" }, btn(ch.length ? "Keep editing" : "Done", { cls: "ghost", on: () => closeModal() }), ch.length ? save : null));
   }
   const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept", "digestDay", "digestDm", "calls", "todosLinear"];
-  const TEAMKEYS = ["teamDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth", "required"];
+  const TEAMKEYS = ["teamDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth", "required", "startNow", "lead"];
   async function apply() {
     if (applying) return;
     const ch = diff(), loose = ch.some((c) => c.loosens), before = clone(original);
@@ -2866,8 +3296,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       if (keepTeam && state) { for (const k of TEAMKEYS) state[k] = keepTeam[k]; render(); }
       const saidMine = (r.applied || []).length ? `Saved for you: ${r.applied.join(" · ")}.` : mine ? "Saved your changes." : "";
       const solo = r.pr && localBranch(r.pr.url);
-      result = { ok: !r.prError, text: [saidMine, solo ? "Saved your team's changes on this Mac. Your team repo has no remote, so no teammate reviews them: apply them in the Inbox to use them." : r.pr ? "Sent your team's changes for approval." : "", r.prError ? `The team proposal couldn't be sent: ${r.prError}. Your team edits are still on the page; try again.` : ""].filter(Boolean).join(" "), link: r.pr && r.pr.url && !solo ? ext(r.pr.url, "View the pull request", "btn sm") : null };
-      toast(r.prError ? (mine ? "Saved your own changes. The team proposal failed." : "The team proposal failed.") : solo ? "Saved. Apply your team's changes in the Inbox." : r.pr ? (mine ? "Saved, and your team's changes are waiting for approval." : "Your team's changes are waiting for approval.") : teamN ? "Saved." : "Saved your changes. They apply from the next run.", { error: !!r.prError });
+      result = { ok: !r.prError, text: [saidMine, solo ? "Saved your team's changes on this Mac. Your team repo has no remote, so no teammate reviews them: apply them in Needs you to use them." : r.pr ? "Sent your team's changes for approval." : "", r.prError ? `Your team's changes couldn't be sent: ${r.prError}. Your team edits are still on the page; try again.` : ""].filter(Boolean).join(" "), link: r.pr && r.pr.url && !solo ? ext(r.pr.url, "View the pull request", "btn sm") : null };
+      toast(r.prError ? (mine ? "Saved your own changes. Your team's changes weren't sent." : "Your team's changes weren't sent.") : solo ? "Saved. Apply your team's changes in Needs you." : r.pr ? (mine ? "Saved, and your team's changes are waiting for approval." : "Your team's changes are waiting for approval.") : teamN ? "Saved." : "Saved your changes. They apply from the next run.", { error: !!r.prError });
     } catch (e) {
       applying = false;
       if (e.status === 409) { loosenOk = false; result = { ok: false, text: "Some of these let more of your meetings through. Tick the box to confirm, then save again." }; }
@@ -2934,32 +3364,33 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       h("h1", { tabindex: "-1" }, LOCAL ? "Can't reach PMX" : c === "no_app" || c === "server_not_connected" ? "Open this page in the Claude app" : "Can't reach PMX"),
       h("p", null, conn.msg || HELP.upstream_error),
       h("div", { class: "cta" }, c === "not_in_manifest" ? btn("Open permissions", { cls: "pri", on: managePermissions }) : null, btn("Try again", { cls: c === "not_in_manifest" ? "" : "pri", on: () => { conn = { state: "loading" }; render(); start(); } })),
-      conn.cmd ? terminal(conn.cmd, c === "server_not_connected" || c === "no_app" ? "Set it up from Terminal" : "Prefer Terminal?") : null,
-      !LOCAL && (c === "server_not_connected" || c === "no_app") ? h("p", { class: "small muted" }, "After registering PMX, quit and reopen the Claude app.") : null);
+      conn.cmd ? slash(conn.cmd) : null,
+      !LOCAL && (c === "server_not_connected" || c === "no_app") ? h("p", { class: "small muted" }, "Claude registers PMX with the Claude app on this Mac with you. Then quit and reopen the Claude app.") : null);
   }
 
   // ================= chrome: nav, badges, banner =================
   function drawChrome() {
     document.querySelectorAll(".nav [data-view]").forEach((b) => (b.dataset.view === S.view && !S.q ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
-    $("tb-title").textContent = S.q ? "Search" : TITLES[S.view];
+    $("tb-title").textContent = S.q ? "Search" : TITLES[S.view] || "PMX";
     $("ws-name").textContent = CFG.team || "PMX";
     $("ws-sub").textContent = LOCAL ? "On this Mac" : "Through the Claude app";
     const ok = !!D && conn.state === "ok";
-    const nIn = ok ? props().length + waiting().length + fixes().length : 0;
+    // Needs you's badge counts every card it shows (BOARD-10); Today's, the PM's own to-dos for today.
+    const nIn = ok ? needsCount() : 0;
     const t = ok ? todos().filter(onToday) : [];
-    const nT = ok ? t.length + drafts().length : 0;
+    const nT = t.length;
     const over = t.some((x) => x.due && diffDays(x.due) < 0);
-    $("b-inbox").textContent = nIn ? String(nIn) : "";
-    $("b-inbox").setAttribute("aria-label", nIn ? `${nIn} waiting` : "");
+    $("b-needs").textContent = nIn ? String(nIn) : "";
+    $("b-needs").classList.toggle("hot", ok && capReached());
+    $("b-needs").setAttribute("aria-label", nIn ? `${nIn} waiting for you${capReached() ? ", your agent is paused" : ""}` : "");
     $("b-today").textContent = nT ? String(nT) : "";
     $("b-today").classList.toggle("hot", over);
     $("b-today").setAttribute("aria-label", nT ? `${nT} for today${over ? ", some overdue" : ""}` : "");
-    const ready = ok ? sumTasks("ready") : 0;
-    $("b-plan").textContent = ready ? String(ready) : "";
-    $("b-digest").hidden = !(ok && waiting().length);
     const badStatus = ok && ((D.checks || []).some((c) => c.status === "violated") || (D.automations || []).some((a) => a.status === "failed") || (D.killSwitch && D.killSwitch.on));
-    $("b-status").hidden = !badStatus;
+    $("b-health").hidden = !badStatus;
     $("b-version").textContent = (D && D.version) || CFG.version || "";
+    // BOARD-11: the Strategy slot shows only when PMX on this Mac finds PMX Engine.
+    $("nav-strategy").hidden = !(ok && engine());
     // The product managers' page in PMX Engine, from team config (CLI-7): a link only, opened in its own tab.
     const rm = $("act-roadmap");
     const rmUrl = ok && typeof D.roadmapUrl === "string" && /^https:\/\/claude\.ai\//.test(D.roadmapUrl) ? D.roadmapUrl : "";
@@ -2976,11 +3407,11 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     lp.className = `conn${lpOn ? "" : " off"}`;
     $("local-t").textContent = lpOn ? "Running" : "Not running";
     lp.setAttribute("aria-label", `Open PMX's page on this Mac, outside Claude. ${lpOn ? `Running since ${hm(D.localPage.since)}` : "Not running: PMX starts it"}.`);
-    $("tb-b").textContent = nIn ? `Inbox ${nIn}` : "";
+    $("tb-b").textContent = nIn ? `Needs you ${nIn}` : "";
     $("fab").hidden = !(ok && LISTS.includes(S.view) && !S.q);
     const b = $("banner");
     if (conn.stale && conn.msg) {
-      put(b, h("span", null, `Couldn't refresh: ${conn.msg} Showing what PMX said at ${hm(D.at)}.`), btn("Try again", { cls: "sm", on: () => load() }), conn.cmd ? terminal(conn.cmd) : null);
+      put(b, h("span", null, `Couldn't refresh: ${conn.msg} Showing what PMX said at ${hm(D.at)}.`), btn("Try again", { cls: "sm", on: () => load() }), conn.cmd ? slash(conn.cmd) : null);
       b.classList.add("bad"); b.hidden = false;
     } else if (ok && D.killSwitch && D.killSwitch.on) {
       put(b, h("span", null, `Your team turned on the emergency stop${D.killSwitch.reason ? `: ${D.killSwitch.reason}` : ""}. Nothing runs until they turn it off.`)); b.classList.add("bad"); b.hidden = false;
@@ -2988,6 +3419,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   }
   function render() {
     renderLater = false;
+    // A link to Strategy on a Mac without PMX Engine (or after it's gone) lands on Needs you.
+    if (S.view === "strategy" && D && conn.state === "ok" && !engine()) { S.view = "needs"; setRoute(false); }
     const a = document.activeElement;
     const fkEl = a && a.closest ? a.closest("[data-fk]") : null;
     const fk = fkEl && $("view").contains(fkEl) ? fkEl.dataset.fk : null;
@@ -2997,8 +3430,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     let content;
     if (!LOCAL && ["connect", "pairing", "declined"].includes(conn.state)) content = connectScreen();
     else if (!D) content = conn.state === "error" ? errorScreen() : h("p", { class: "loading", role: "status" }, "Loading from PMX…");
-    else if (S.view === "settings" && !S.q) content = settingsScreen();
-    else content = h("div", { class: S.view === "flow" && !S.q ? "page wide" : "page" }, (S.q ? V.search : V[S.view])());
+    else if (inSettings() && !S.q) content = h("div", { class: "page wide" }, area("health", { sub: "How PMX reads, routes and runs.", body: settingsScreen() }));
+    else content = h("div", { class: S.view === "health" && S.htab === "flow" && !S.q ? "page wide" : "page" }, (S.q ? V.search : (V[S.view] || V.needs))());
     put($("view"), content);
     if (S.sheet) { if (findItem(S.sheet)) drawSheet(); else closeSheet(); }
     if (fk) {
@@ -3022,7 +3455,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     if (!$("modal").childElementCount) return;
     $("modal").replaceChildren();
     $("app").inert = false; $("fab").inert = false; $("sheet").inert = !S.sheet;
-    if (S.view !== "settings" || !restore) result = null;
+    if (!inSettings() || !restore) result = null;
     if (restore && modalReturn && modalReturn.isConnected) modalReturn.focus({ preventScroll: true });
     modalReturn = null;
   }
@@ -3044,8 +3477,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])";
   function trapIn() { if ($("modal").childElementCount) return $("modal"); if (S.sheet) return $("sheet"); if (navOpen && narrow()) return $("nav"); return null; }
   function keysModal() {
-    const K = [[["1", "2", "3", "4", "5"], "Inbox, Today, Upcoming, Anytime, Logbook"], [["j", "k"], "Move between rows (or the arrow keys)"], [["Enter"], "Open the selected row's details"], [["Esc"], "Close details, a dialog or the search"],
-      [["Space"], "Complete a to-do, or approve a task"], [["a", "d"], "Approve or drop a proposed task (a accepts a draft)"], [["n"], "New to-do"], [["/"], "Search"], [[","], "Settings"], [["?"], "This list"]];
+    const K = [[["1", "2", "3", "4", "5"], "Needs you, Today, Upcoming, Anytime, Logbook"], [["6", "7"], "Work, Health"], ...(engine() ? [[["8"], "Strategy (PMX Engine)"]] : []), [["j", "k"], "Move between rows (or the arrow keys)"], [["Enter"], "Open the selected row's details"], [["Esc"], "Close details, a dialog or the search"],
+      [["Space"], startOn() ? "Complete a to-do, or start a task now" : "Complete a to-do, or approve a task"], [["a", "d"], startOn() ? "Start now or drop a new task (a accepts a draft)" : "Approve or drop a new task (a accepts a draft)"], [["n"], "New to-do"], [["/"], "Search"], [[","], "Settings"], [["?"], "This list"]];
     openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, "Keyboard shortcuts"),
       h("table", { class: "keys" }, h("tbody", null, K.map(([ks, label]) => h("tr", null, h("td", null, ks.map((k, i) => [i ? " " : null, h("kbd", null, k)])), h("td", null, label))))),
       h("div", { class: "mf" }, btn("Done", { on: () => closeModal() }))));
@@ -3056,12 +3489,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const themeButtons = () => h("div", { class: "theme", role: "group", "aria-label": "Appearance" }, THEMES.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": themeNow() === v ? "true" : "false", onclick: (ev) => { applyTheme(v); ev.currentTarget.parentElement.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", THEMES[i][0] === v ? "true" : "false")); } }, l)));
   $("act-theme").addEventListener("click", () => openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, "Appearance"), h("div", { class: "mb" }, themeButtons()), h("div", { class: "mf" }, btn("Done", { on: () => closeModal() })))));
   $("act-keys").addEventListener("click", keysModal);
-  // PMX Engine's studio (phase 2 of joining PMX and PMX Engine): only on this Mac's page, and only where Engine is
-  // installed. It opens in its own tab. The page in Claude never asks: nothing about Engine goes through the Claude app.
-  if (LOCAL) api("/api/studio").then((st) => { if (st && st.available) { $("nav-engine").hidden = false; $("act-studio").hidden = false; } }).catch(() => {});
-  $("act-studio").addEventListener("click", () => api("/api/studio/open", {}).then(() => toast("Opening the studio in a new tab.")).catch((e) => toast(e.message, { error: true })));
   $("act-new").addEventListener("click", () => openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, "What's new"),
-    h("div", { class: "mb" }, h("p", null, `You're on PMX ${(D && D.version) || CFG.version || ""}. This workspace brings your Inbox, Today, Upcoming, Anytime and Logbook lists together with Plan, the digest, agents, status and settings, in one page here and in the Claude app.`), h("p", null, "Completing or approving waits a few seconds for Undo before anything is sent. Press ? for keyboard shortcuts.")),
+    h("div", { class: "mb" }, h("p", null, `You're on PMX ${(D && D.version) || CFG.version || ""}. This workspace puts every decision waiting for you first, in Needs you. Then your team's work, PMX's health and settings, and your own to-dos (Today, Upcoming, Anytime and Logbook), in one page here and in the Claude app.`), h("p", null, "Completing or approving waits a few seconds for Undo before anything is sent. Press ? for keyboard shortcuts.")),
     h("div", { class: "mf" }, btn("Done", { on: () => closeModal() })))));
   $("conn").addEventListener("click", () => openModal(h("div", { class: "modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "m-h" }, h("h3", { id: "m-h", tabindex: "-1" }, "How this page reaches PMX"),
     h("div", { class: "mb" }, LOCAL ? [h("p", null, "PMX serves this page on this Mac. Buttons run here, and nothing on it leaves the Mac."), conn.msg ? h("p", { class: "err" }, conn.msg) : null]
@@ -3071,6 +3500,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   $("local").addEventListener("click", () => openLocal(null));
   $("fab").addEventListener("click", quickEntry);
   document.querySelectorAll(".nav [data-view]").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
+  $("act-settings").addEventListener("click", () => toSettings());
   $("q").addEventListener("input", (ev) => { S.q = ev.target.value.trim().toLowerCase(); S.sel = null; render(); });
   $("q").addEventListener("keydown", (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); clearSearch(); ev.target.blur(); } if (ev.key === "Enter") { ev.preventDefault(); closeNav(false); $("view").querySelector(".row[data-key]")?.focus(); } });
 
@@ -3118,7 +3548,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     if (S.sheet && $("sheet").contains(t)) return;
     if ((e.key === "Enter" || e.key === " ") && isControl(t)) return;
     if (conn.state !== "ok" || !D) return;
-    const go2 = { 1: "inbox", 2: "today", 3: "upcoming", 4: "anytime", 5: "logbook", ",": "settings" }[e.key];
+    if (e.key === ",") { e.preventDefault(); toSettings(); return; }
+    const go2 = { 1: "needs", 2: "today", 3: "upcoming", 4: "anytime", 5: "logbook", 6: "work", 7: "health", 8: engine() ? "strategy" : null }[e.key];
     if (go2) { e.preventDefault(); go(go2); return; }
     if (e.key === "/") { e.preventDefault(); if (narrow()) openNav(); setTimeout(() => $("q").focus(), 40); return; }
     if (e.key === "n") { e.preventDefault(); quickEntry(); return; }
@@ -3139,8 +3570,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const k = cur.dataset.key, it = findItem(k);
     if (e.key === "Enter") { if (cur.dataset.open) { e.preventDefault(); openSheet(k); } return; }
     if (!it) return;
-    if (e.key === " ") { e.preventDefault(); if (it.type === "todo") complete(it.x); else if (it.type === "proposal") approve([it.x]); return; }
-    if (e.key === "a") { e.preventDefault(); if (it.type === "proposal") approve([it.x]); else if (it.type === "draft") decide(it.x, "accepted"); return; }
+    if (e.key === " ") { e.preventDefault(); if (it.type === "todo") complete(it.x); else if (it.type === "proposal") approve([it.x], startOn()); return; }
+    if (e.key === "a") { e.preventDefault(); if (it.type === "proposal") approve([it.x], startOn()); else if (it.type === "draft") decide(it.x, "accepted"); return; }
     if (e.key === "d" && it.type === "proposal") { e.preventDefault(); drop(it.x); }
   });
 
@@ -3149,20 +3580,20 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   $("sheet").inert = true;
   syncNavInert();
   {
-    const r = parseRoute(location.hash);
+    const r = parseRoute(location.hash) || parseRoute(`#${store.get("pmx-view") || ""}`);
     if (r) applyRoute(r);
-    else { const sv = store.get("pmx-view"); if (VIEWS.includes(sv)) S.view = sv; }
+    setRoute(false);
   }
   async function start() {
     if (LOCAL) return load();
     const m = await mcpNs();
-    if (!m) { conn = { state: "error", code: "no_app", msg: HELP.no_app, cmd: "pmx mcp --install" }; render(); return; }
+    if (!m) { conn = { state: "error", code: "no_app", msg: HELP.no_app, cmd: "/pmx-setup" }; render(); return; }
     if (getKey()) return load();
     conn = { state: "connect", msg: "", code: null }; render();
     try { preview = await host("pipeline", { hours: 168 }); render(); }
     catch (e) {
       if (["server_not_connected", "not_granted", "capability_disabled", "capability_removed", "blocked_by_policy", "not_in_manifest", "no_app"].includes(e.code)) {
-        conn = { state: "error", code: e.code, msg: e.message, cmd: e.code === "server_not_connected" ? "pmx mcp --install" : null }; render();
+        conn = { state: "error", code: e.code, msg: e.message, cmd: e.code === "server_not_connected" ? "/pmx-setup" : null }; render();
       }
     }
   }

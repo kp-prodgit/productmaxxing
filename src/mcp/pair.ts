@@ -15,15 +15,19 @@ export const pairingsFile = () => join(pmxHome(), "pairings.json");
 const hash = (k: string) => createHash("sha256").update(k).digest("hex");
 const MAX = 5;
 
-export type Confirm = () => Promise<boolean>;
+/** Asks the PM on this Mac. Pairing asks its own question; a step from the setup checklist (SETUP-2) passes its own. */
+export type Confirm = (prompt?: string) => Promise<boolean>;
 
 export const PAIR_PROMPT = "Your PMX page in the Claude app wants to show your meeting tasks, to-dos and digest, and act on them on this Mac.\n\nAllow it only if you just clicked Connect on your PMX page.";
 
-/** Asks on this Mac with a native dialog. False on Don't Allow, on timeout, or where there's no dialog to show. */
-export const macConfirm: Confirm = () => new Promise((resolve) => {
-  if (process.platform !== "darwin") return resolve(false);
+/**
+ * Asks on this Mac with a native dialog. False on Don't Allow, on timeout, or where there's no dialog to show, and
+ * always under PMX_NO_DIALOG (tests), so no test can show one.
+ */
+export const macConfirm: Confirm = (prompt = PAIR_PROMPT) => new Promise((resolve) => {
+  if (process.platform !== "darwin" || process.env.PMX_NO_DIALOG) return resolve(false);
   const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-  const script = `display dialog "${esc(PAIR_PROMPT)}" with title "ProductMaxxing" buttons {"Don't Allow", "Allow"} default button "Don't Allow" cancel button "Don't Allow" with icon caution giving up after 120`;
+  const script = `display dialog "${esc(prompt)}" with title "ProductMaxxing" buttons {"Don't Allow", "Allow"} default button "Don't Allow" cancel button "Don't Allow" with icon caution giving up after 120`;
   execFile("/usr/bin/osascript", ["-e", script], { timeout: 130000 }, (err, stdout) => resolve(!err && /button returned:Allow/.test(stdout) && !/gave up:true/.test(stdout)));
 });
 

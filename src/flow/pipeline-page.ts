@@ -7,7 +7,7 @@ export const pipelineTemplate = () => join(packageRoot(), "app-skills", "pmx-flo
 const CONFIG_BLOCK = /(<script type="application\/json" id="pmx-config">)[\s\S]*?(<\/script>)/;
 
 /** The page with its config filled in. `<` is escaped so no value can end the script tag. */
-export function fillPipeline(template: string, cfg: { mode: "local" | "artifact"; version: string; team: string }): string {
+export function fillPipeline(template: string, cfg: { mode: "local" | "artifact"; version: string; team: string; caps?: string }): string {
   if (!CONFIG_BLOCK.test(template)) throw new Error("The board page has no config block. Reinstall PMX.");
   const json = JSON.stringify(cfg).replace(/</g, "\\u003c");
   return template.replace(CONFIG_BLOCK, (_, open: string, close: string) => `${open}${json}${close}`);

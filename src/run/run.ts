@@ -15,7 +15,7 @@ import type { LeaseInfo } from "../lease/types.js";
 import type { Services } from "../core/services.js";
 import { profileSummary, type RunRecord } from "./record.js";
 import { evidenceBlock, taskEvidence, type Evidence } from "./evidence.js";
-import { failStreak } from "../pull/failures.js";
+import { failStreak, FAILS_TO_BLOCK } from "../pull/failures.js";
 
 export function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
@@ -43,8 +43,7 @@ export function taskSnapshot(t: Task, output: string, evidence: Evidence = { sou
   ].join("\n");
 }
 
-/** Failed runs in a row before a task moves to Blocked (PULL-11). */
-export const FAILS_TO_BLOCK = 2;
+export { FAILS_TO_BLOCK } from "../pull/failures.js";
 
 export interface RunOutcome {
   outcome: "ok" | "failed" | "capped";
@@ -58,6 +57,13 @@ export interface RunOutcome {
  * The agent gets file tools inside the worktree only: no tracker, source or network tools (P3).
  */
 export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo): Promise<RunOutcome> {
+  // OBS-5: Health → Running shows the run in progress, from this note, while this process is alive.
+  const { noteAgentRun } = await import("../flow/running.js");
+  const done = await noteAgentRun(task.identifier, task.title, ctx.now());
+  try { return await runLeased(ctx, svc, task, lease); } finally { await done(); }
+}
+
+async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo): Promise<RunOutcome> {
   const { team, tracker } = { team: ctx.team, tracker: svc.tracker };
   const log = new RunLogStore(ctx);
   const category = task.category!;
@@ -87,7 +93,7 @@ export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseI
       ? ` What the agent wrote is kept on ${ctx.agent}'s Mac, on the local branch ${failedBranch} of the team repo. It isn't pushed: it may quote meetings that stay on that Mac.`
       : "";
     await tracker.comment(task.id, `${head}${kept} ${blocked
-      ? `That's ${streak} runs in a row without a draft, so it's moved to Blocked and no agent picks it up. Fix the task or its skill, then move it back to Ready.`
+      ? `That's ${streak} runs in a row without a draft, so it's moved to Blocked and no agent picks it up. Fix the task or its skill, then choose Try again under Needs you on PMX's page (or drop it there).`
       : "Returned to ready. Other ready tasks run before it."}`);
     await tracker.setAgent(task.id, null);
     await tracker.setStatus(task.id, blocked ? "blocked" : "ready");

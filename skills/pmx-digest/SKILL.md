@@ -1,6 +1,6 @@
 ---
 name: pmx-digest
-description: Weekly signal digest for one PM. Groups a week of customer calls and channel messages into themes, every claim cited. Used by `pmx digest`; runs with no tools.
+description: Weekly digest for one PM. Groups a week of customer calls and channel messages into themes, every claim cited. Used by `pmx digest`; runs with no tools.
 pmx: {"kind": "core", "requiredHeadings": ["Top themes", "Notable quotes", "Suggested follow-ups"], "minCitations": 3}
 ---
 

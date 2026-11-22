@@ -153,7 +153,7 @@ export function linearTracker(o: LinearOpts): Tracker {
   /** SEC-4: refuse any write to an issue outside the PMX project. */
   async function inProject(id: string): Promise<any> {
     const d = await gql(`query($id: String!) { issue(id: $id) { ${ISSUE_FIELDS} comments(last: 50) { nodes { body } } } }`, { id });
-    if (!d.issue) throw new Error(`Linear issue ${id} not found.`);
+    if (!d.issue) throw new Error(`Task ${id} isn't in Linear.`);
     if (d.issue.project?.id !== o.projectId) throw new Error(`Refusing to write to ${d.issue.identifier}: it is not in the PMX project (SEC-4).`);
     return d.issue;
   }
@@ -177,7 +177,7 @@ export function linearTracker(o: LinearOpts): Tracker {
     },
     async createInbox(t: NewTask) {
       if (hasCanary(t.title + t.description)) throw new Error(CANARY_REFUSAL);
-      const labelIds = [await label("status", "inbox"), await label("category", t.category), await label("size", t.size), ...(t.theme ? [await label("theme", t.theme)] : [])];
+      const labelIds = [await label("status", t.ready ? "ready" : "inbox"), await label("category", t.category), await label("size", t.size), ...(t.theme ? [await label("theme", t.theme)] : [])];
       const d = await gql(`mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { ${ISSUE_FIELDS} } } }`, {
         i: { teamId: await team(), projectId: o.projectId, title: t.title, description: t.description, labelIds },
       });

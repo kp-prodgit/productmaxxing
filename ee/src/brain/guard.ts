@@ -20,7 +20,7 @@ export type Mode = "recommended" | "queued" | "executed" | "blocked";
  */
 export const RULES = {
   "unknown-task": "the task isn't on the PMX board",
-  "bad-value": "the proposed value isn't valid for this action",
+  "bad-value": "the suggested value isn't valid for this action",
   "wrong-status": "the task isn't in the status this action needs",
   "category-not-allowed": "the task's category isn't allowed by team config or admin policy",
   "hold-is-advice": "a hold is advice for a person, so it's only posted as a comment",
@@ -35,7 +35,7 @@ export const RULES = {
   "category-paused": "the category is paused, so no agent runs start",
   "review-queue-full": "the review queue is full; reviews come before new runs",
   "daily-run-limit": "the autopilot run limit for today is reached",
-  "one-run-per-pass": "the brain starts at most one run per pass",
+  "one-run-per-pass": "the brain starts at most one agent run each time it runs",
   "over-budget": "the task's size costs more than today's remaining budget",
 } as const;
 export type RuleId = keyof typeof RULES;

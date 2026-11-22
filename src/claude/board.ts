@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
@@ -74,9 +76,24 @@ export async function boardJson(team: TeamConfig | null, personal: PersonalConfi
   };
 }
 
+/**
+ * The board page's own code, by hash (0.36.0). The board reads only Linear, through each viewer's connector, so it has
+ * nothing to update after a PMX update unless its page changed: then /pmx-board publishes it again.
+ */
+export function boardTemplateHash(): string | null {
+  try { return createHash("sha256").update(readFileSync(boardTemplate())).digest("hex").slice(0, 16); } catch { return null; }
+}
+
+/** Whether the board this PM published runs an older board page. One from before 0.36.0 has no hash: its pmx decides. */
+export function boardStale(board: PersonalConfig["board"], version = currentVersion()): boolean {
+  if (!board?.url) return false;
+  if (board.template) { const h = boardTemplateHash(); return !!h && h !== board.template; }
+  return board.version !== version;
+}
+
 export async function setBoardUrl(personal: PersonalConfig, url: string, now: Date): Promise<void> {
   if (!ARTIFACT_URL.test(url)) throw new Error(`"${url}" isn't a Claude artifact link (https://claude.ai/artifact/…).`);
-  personal.board = { url: url.replace(/\/$/, ""), version: currentVersion(), publishedAt: now.toISOString() };
+  personal.board = { url: url.replace(/\/$/, ""), version: currentVersion(), publishedAt: now.toISOString(), template: boardTemplateHash() ?? undefined };
   await savePersonalConfig(personal);
 }
 
@@ -86,8 +103,9 @@ export function formatBoard(team: TeamConfig | null, personal: PersonalConfig | 
   const lines: string[] = [];
   if (existing) {
     lines.push(`Team board: ${existing.url}`, existing.source === "team" ? "(shared in pmx.config.json)" : "(published from this Mac)");
-    if (existing.source === "personal" && personal?.board?.version !== currentVersion())
-      lines.push("", `It was published with pmx ${personal?.board?.version ?? "an older version"}. Type /pmx-board in the Claude app to update it to ${currentVersion()}.`);
+    if (existing.source === "personal" && boardStale(personal?.board))
+      lines.push("", `It was published with pmx ${personal?.board?.version ?? "an older version"}, and the board's page has changed since. Type /pmx-board in the Claude app to update it; it keeps its link.`);
+    else if (existing.source === "personal") lines.push("", "It needs /pmx-board again only when a PMX update changes the board's page; PMX says so when one does.");
     if (existing.source === "personal")
       lines.push("", "To give teammates the same board, share it from the artifact's Share menu, then add it to pmx.config.json in a PR:", `  "board": { "url": "${existing.url}" }`);
     return lines.join("\n");

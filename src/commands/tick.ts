@@ -50,7 +50,7 @@ export async function recordTick(lines: string[], now = new Date()): Promise<voi
   }).catch(() => {});
 }
 
-/** What `pmx status` and `pmx doctor` say about the background job's recent passes. Null before its first pass. */
+/** What `pmx status` and `pmx doctor` say about the background job's recent runs. Null before its first run. */
 export function tickHealth(t: { at: string; failed: string[]; failStreak: number } | null, minStreak = 3, now?: Date): { ok: boolean; detail: string } | null {
   if (!t) return null;
   const when = t.at.slice(0, 16).replace("T", " ");
@@ -59,10 +59,10 @@ export function tickHealth(t: { at: string; failed: string[]; failStreak: number
     const h = (now.getTime() - Date.parse(t.at)) / 3600000;
     return { ok: false, detail: `background job hasn't run since ${when} UTC (${h < 48 ? `${h.toFixed(1)} h` : `${Math.round(h / 24)} days`} ago): this Mac was probably asleep or off, and PMX runs only while it's awake` };
   }
-  if (!t.failed.length) return { ok: true, detail: `background job's last pass ${when} UTC: no failures` };
+  if (!t.failed.length) return { ok: true, detail: `background job's last run ${when} UTC: no failures` };
   const first = (t.failed[0] ?? "").slice(0, 300);
   return {
     ok: t.failStreak < minStreak,
-    detail: `background job failed ${t.failStreak} pass${t.failStreak === 1 ? "" : "es"} in a row (last ${when} UTC): ${first}. Log: ~/.pmx/logs/tick.log`,
+    detail: `background job failed ${t.failStreak} run${t.failStreak === 1 ? "" : "s"} in a row (last ${when} UTC): ${first}. Log: ~/.pmx/logs/tick.log`,
   };
 }

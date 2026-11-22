@@ -20,8 +20,8 @@ describe("the Roadmap link (CLI-7)", () => {
       expect(link.getAttribute("href")).toBe(ROADMAP);
       expect(link.getAttribute("target")).toBe("_blank");
       expect(link.getAttribute("rel")).toContain("noopener");
-      // Engine's studio entry stays hidden: these servers know nothing about Engine.
-      expect(ui.$("#act-studio")!.hidden).toBe(true);
+      // The Strategy slot stays hidden: no PMX Engine on this Mac, so these servers know nothing about it.
+      expect(ui.$("#nav-strategy")!.hidden).toBe(true);
       await ui.close();
       ui = null;
     }

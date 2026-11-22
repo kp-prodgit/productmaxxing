@@ -20,6 +20,12 @@ export interface TeamConfig {
   tracker: { kind: "linear"; teamKey: string; projectId: string } | { kind: "none" };
   lease: "git" | "cloud";
   reviewQueueCap: number;
+  /**
+   * APPROVE-3: whether the PM's approval may make a task Ready at once ("Start now"). On by default, since a team of
+   * one needs no second gate. A team with a separate triage owner turns it off: then approval only sends a task to the
+   * pool, and a teammate moves it to Ready (APPROVE-1). Changed only by reviewed PR, like the rest of this file.
+   */
+  approve?: { startNow: boolean } | null;
   /** Domains a run may reach (SEC-3). */
   egress: string[];
   /** Source kinds the team allows at all (B2, default-deny). */
@@ -71,9 +77,28 @@ export interface TeamConfig {
    * head of product publishes it with /pmxe-hubs and adds its link here in a pull request. Only the link: no content.
    */
   roadmap?: { url: string } | null;
+  /**
+   * INSTALL-4: who the team's product lead is, by PMX handle (the person's `handle`, or their agent handle
+   * `handle@machine`, as `synthesizer` names a Mac). PMX uses it only to decide whether to offer PMX Engine, the product
+   * lead's tool: `pmx install` asks the lead, and the checklist's Engine step is the lead's to do. A convenience, never
+   * a permission: anyone can still install Engine on purpose (`pmx install --engine`). Changed only by reviewed PR.
+   */
+  productLead?: string | null;
 }
 
 export interface TeamCategory { skill: string; externalFacing?: boolean; required?: boolean }
+
+/** INSTALL-4: what `productLead` may be: a PMX handle, optionally with the Mac it runs on (an agent handle). */
+export const PRODUCT_LEAD = /^[\w-]{1,32}(@[\w.-]{1,64})?$/;
+
+/** INSTALL-4: whether this person is the team's product lead, by their handle or their agent handle. */
+export function isProductLead(team: Pick<TeamConfig, "productLead"> | null, personal: Pick<PersonalConfig, "handle" | "machineId"> | null): boolean {
+  const lead = team?.productLead;
+  return !!lead && !!personal && (lead === personal.handle || lead === agentHandle(personal));
+}
+
+/** APPROVE-3: whether this team offers Start now on proposed tasks. On unless the team turned it off. */
+export const startsNow = (team: Pick<TeamConfig, "approve">): boolean => team.approve?.startNow !== false;
 
 /**
  * Whether this PM's agent takes a kind of work (JOB-9): the team requires it, or the PM switched it on. One rule for
@@ -132,7 +157,7 @@ export interface PersonalConfig {
   /** Who "me" is in a transcript, for individual to-dos (TODO-1). Learned from `pmx collect` or `pmx todo --me`. */
   identity?: { names: string[]; emails: string[] } | null;
   /** The board this PM published from this Mac with /pmx-board, and with which pmx (BOARD-1). */
-  board?: { url: string; version: string; publishedAt: string } | null;
+  board?: { url: string; version: string; publishedAt: string; template?: string } | null;
   /** The flow view this PM published from this Mac with /pmx-flow (FLOW-5). It reads this Mac only, so it's never a team setting. */
   flow?: { url: string; version: string; publishedAt: string } | null;
   /**
@@ -146,8 +171,9 @@ export interface PersonalConfig {
    */
   taskHours?: "weekdays" | "always";
   /**
-   * Phase 2 of joining PMX and PMX Engine: "hidden" keeps the Studio entry out of this Mac's PMX page. It appears only
-   * where PMX Engine is installed, so a PM never sees it; `pmx open --hide-studio` / `--show-studio` set this.
+   * Joining PMX and PMX Engine: "hidden" keeps PMX Engine out of this PM's PMX page, on this Mac and in the Claude app:
+   * no Strategy area and no PMX Engine cards in Needs you (BOARD-11). They appear only where PMX Engine is installed, so
+   * a PM never sees them; `pmx open --hide-studio` / `--show-studio` set this.
    */
   studio?: "hidden";
 }
@@ -174,12 +200,14 @@ export const DEFAULT_TEAM: Omit<TeamConfig, "team"> = {
   tracker: { kind: "none" },
   lease: "git",
   reviewQueueCap: 3,
+  approve: { startNow: true },
   egress: ["api.anthropic.com", "api.linear.app", "github.com", "api.github.com"],
   allowedSources: ["transcripts"],
   slackChannels: [],
   allowPrivateChannels: false,
   internalDomains: [],
   synthesizer: null,
+  productLead: null,
   caps: { perRunUsd: 3, perDayUsd: 20 },
   autoPause: { minVerdicts: 5, threshold: 0.3, windowDays: 30 },
 };
@@ -215,6 +243,8 @@ export function validateTeamConfig(c: TeamConfig): TeamConfig {
     if (!/^[a-z][a-z0-9-]*$/.test(cat) || !v?.skill) problems.push(`category ${cat} needs a kebab-case name and a skill`);
     else if (v.required !== undefined && typeof v.required !== "boolean") problems.push(`categories.${cat}.required must be true or false`);
   if (c.reviewQueueCap < 1) problems.push("reviewQueueCap must be at least 1");
+  if (c.productLead != null && (typeof c.productLead !== "string" || !PRODUCT_LEAD.test(c.productLead))) problems.push(`productLead must be a PMX handle, like "ana", or null, not ${JSON.stringify(c.productLead)}`);
+  if (c.approve != null && (typeof c.approve !== "object" || typeof c.approve.startNow !== "boolean")) problems.push("approve.startNow must be true or false");
   for (const [n, h] of Object.entries(c.skills ?? {})) if (!/^[0-9a-f]{12}$/.test(h)) problems.push(`skills.${n} must be a 12-hex skill hash, not "${h}"`);
   if (problems.length) throw new Error(`pmx.config.json: ${problems.join("; ")}`);
   return c;

@@ -1,5 +1,4 @@
-import { formatTasks, LINEAR_SYNC_TASK, TASK_HOURS, tasksJson, type TaskHours } from "../claude/tasks.js";
-import { savePersonalConfig } from "../core/config.js";
+import { formatTasks, LINEAR_SYNC_TASK, outsideHours, setTaskHours, taskDue, TASK_HOURS, tasksJson, type TaskHours } from "../claude/tasks.js";
 import { boardJson, checkBoard, formatBoard, renderBoard, setBoardUrl, boardUrl } from "../claude/board.js";
 import { appSkillInstalled, appSkillTarget, BOARD_SKILL, installAppSkill } from "../claude/skill.js";
 import { addAllowRules, claudeSettingsFile } from "../claude/permissions.js";
@@ -65,6 +64,14 @@ export const linearCommands: Command[] = [
           return 0;
         }
         if (a.values.prompt) {
+          // CLAUDE-6: the app starts the sync every hour; outside the PM's hours its run stops here, and counts as run.
+          const due = taskDue(LINEAR_SYNC_TASK, ctx.personal.taskHours, ctx.now());
+          if (!due.due) {
+            console.log(outsideHours(due.why));
+            await markTaskRun(LINEAR_SYNC_TASK.id, "start", ctx.now());
+            await markTaskRun(LINEAR_SYNC_TASK.id, "finish", ctx.now());
+            return 0;
+          }
           console.log(await relayPrompt(ctx.team));
           await markTaskRun(LINEAR_SYNC_TASK.id, "start", ctx.now());
           return 0;
@@ -83,7 +90,7 @@ export const linearCommands: Command[] = [
         if (sub === "written") {
           if (a.values.json) console.log(JSON.stringify(all.map(({ fix: _f, ...w }) => w), null, 2));
           else {
-            console.log(all.length ? `PMX wrote ${all.length} issue(s) in the PMX project:` : "PMX hasn't written anything to the PMX project.");
+            console.log(all.length ? `PMX wrote ${all.length} item(s) in the PMX project:` : "PMX hasn't written anything to the PMX project.");
             for (const w of all) console.log(`${w.problems.length ? "!" : "·"} ${w.identifier} ${w.kind === "meeting" ? "(processed-meeting marker) " : ""}${w.title}${w.problems.length ? `: ${w.problems.join("; ")}` : ""}`);
             if (all.some((w) => w.problems.length)) console.log("\nRewrite the flagged ones to what PMX writes now: pmx linear tidy. Take a task back entirely: pmx linear withdraw <identifier>.");
           }
@@ -91,17 +98,17 @@ export const linearCommands: Command[] = [
         }
         if (sub === "tidy") {
           const todo = all.filter((w) => w.fix);
-          if (!todo.length) { console.log("Nothing to tidy: every issue PMX wrote is in today's form."); return 0; }
-          console.log(`PMX will rewrite ${todo.length} issue(s): task descriptions lose their meeting excerpts, and processed-meeting markers get an opaque title and no meeting details.`);
+          if (!todo.length) { console.log("Nothing to tidy: everything PMX wrote is in today's form."); return 0; }
+          console.log(`PMX will rewrite ${todo.length} item(s): task descriptions lose their meeting excerpts, and processed-meeting markers get an opaque title and no meeting details.`);
           for (const w of todo) console.log(`  ${w.identifier} ${w.title}${w.fix!.title ? ` → ${w.fix!.title}` : ""}`);
           if (!a.values.yes && !(await a.ask.confirm("Rewrite them?", false))) { console.log("Nothing changed."); return 0; }
           for (const w of todo) await svc.tracker.rewrite(w.id, w.fix!);
         } else {
           const refs = a.positionals.slice(1).map((r) => r.toUpperCase());
-          if (!refs.length) throw new Error("Say which issues: pmx linear withdraw PMX-12 PMX-13.");
+          if (!refs.length) throw new Error("Say which tasks: pmx linear withdraw PMX-12 PMX-13.");
           const hit = all.filter((w) => refs.includes(w.identifier.toUpperCase()));
           const missing = refs.filter((r) => !hit.some((w) => w.identifier.toUpperCase() === r));
-          if (missing.length) throw new Error(`Not an issue PMX wrote in the PMX project: ${missing.join(", ")}. See them with \`pmx linear written\`.`);
+          if (missing.length) throw new Error(`Not something PMX wrote in the PMX project: ${missing.join(", ")}. See them with \`pmx linear written\`.`);
           console.log(`PMX will move ${hit.map((w) => w.identifier).join(", ")} to canceled and replace each description with a short note. Nothing is deleted.`);
           if (!a.values.yes && !(await a.ask.confirm("Withdraw them?", false))) { console.log("Nothing changed."); return 0; }
           for (const w of hit) await svc.tracker.rewrite(w.id, { description: WITHDRAWN, cancel: true });
@@ -118,16 +125,13 @@ export const linearCommands: Command[] = [
     usage: "pmx schedule [--json] | pmx schedule --hours weekdays|always | pmx schedule --install-skill | pmx schedule --allow",
     options: { json: { type: "boolean" }, "install-skill": { type: "boolean" }, allow: { type: "boolean" }, hours: { type: "string" } },
     async run(a) {
-      // CLAUDE-5: when PMX's Claude tasks run on this Mac. The app holds the schedule, so /pmx-schedule applies it.
+      // CLAUDE-6: when PMX's Claude tasks do their work on this Mac. A PMX setting from 0.36.0: each run asks PMX first.
       if (a.values.hours !== undefined) {
         const hours = String(a.values.hours).toLowerCase() as TaskHours;
         if (!TASK_HOURS.includes(hours)) throw new Error(`--hours takes ${TASK_HOURS.join(" or ")}.`);
         const ctx = await a.ctx();
-        ctx.personal.taskHours = hours;
-        await savePersonalConfig(ctx.personal);
-        console.log(hours === "always"
-          ? "PMX's Claude tasks will run around the clock: the Linear sync every hour, every day, and meeting collection every day. They still run only while the Claude app is open and the Mac is awake. For agents that run unattended, `pmx linear key` lets PMX reach Linear directly, with no Claude task in between."
-          : "PMX's Claude tasks will run on weekdays: the Linear sync every hour from 8:00 to 18:00, and meeting collection at 12:30 and 17:30.");
+        console.log(await setTaskHours(ctx.personal, hours));
+        if (hours === "always") console.log("For agents that run unattended, `pmx linear key` lets PMX reach Linear directly, with no Claude task in between.");
         console.log("");
         console.log(await formatTasks(ctx.team, macKeychain(), hours));
         return 0;
@@ -149,7 +153,7 @@ export const linearCommands: Command[] = [
       }
       const ctx = await a.ctx().catch(() => null);
       const hours = ctx?.personal.taskHours ?? "weekdays";
-      console.log(a.values.json ? JSON.stringify(await tasksJson(ctx?.team ?? null, macKeychain(), hours), null, 2) : await formatTasks(ctx?.team ?? null, macKeychain(), hours));
+      console.log(a.values.json ? JSON.stringify(await tasksJson(ctx?.team ?? null, macKeychain()), null, 2) : await formatTasks(ctx?.team ?? null, macKeychain(), hours));
       return 0;
     },
   },

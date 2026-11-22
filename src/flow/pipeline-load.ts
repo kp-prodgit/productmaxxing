@@ -1,5 +1,5 @@
-import { appliedSchedule, LINEAR_SYNC_TASK, neededTasks, nextCronTime, taskRunHealth, taskState } from "../claude/tasks.js";
-import { checklistForPage, readHistory } from "../setup/checklist.js";
+import { appliedSchedule, neededTasks, nextCronTime, syncDueCron, taskRunHealth, taskState, workingTimes } from "../claude/tasks.js";
+import { checklistForPage, pageWords, readHistory } from "../setup/checklist.js";
 import { webServerStatus } from "./web-server.js";
 import { budget, budgetBlock } from "../budget/provider.js";
 import { tickHealth } from "../commands/tick.js";
@@ -12,6 +12,7 @@ import { parseRubric } from "../core/skillcheck.js";
 import { loadSkill, skillInventory } from "../core/skills.js";
 import { loadState } from "../core/state.js";
 import { SIZES, type Size } from "../core/types.js";
+import { isProductLead, startsNow } from "../core/config.js";
 import { privacyRules } from "../digest/gather.js";
 import { linearAccess } from "../linear/access.js";
 import { readProposals } from "../synth/proposals.js";
@@ -32,6 +33,7 @@ import { buildActivity, buildAutomations } from "./automations.js";
 import { loadDigestBoard } from "./digests.js";
 import { jobList } from "./jobs.js";
 import { buildInputsBoard } from "../inputs/board.js";
+import type { EngineSource } from "./strategy.js";
 
 // The run log lives on a git branch; the artifact polls every minute, so it's fetched at most once a minute.
 let runlogCache: { at: number; repo: string; entries: RunLogEntry[] | null } | null = null;
@@ -62,13 +64,18 @@ export function relayWords(detail: string, waiting: number): { text: string; cmd
   const h = detail.match(/last synced (\d+)h ago/);
   if (h) return { text: `Linear last synced ${h[1]} hours ago. A sync was missed, so agents may be working from an old copy of your tasks. The "Sync Linear" task in your Claude app runs only while the app is open and the Mac is awake; open Claude and check it ran.${queued}`, cmd: "/pmx-schedule" };
   if (/label\(s\) missing/.test(detail)) return { text: "Some of PMX's labels are missing in Linear, so cards can't move yet. The next Linear sync in your Claude app creates them." };
-  if (/not this team's/.test(detail)) return { text: "The last Linear sync read a different project than your team's. Check your team's Linear settings, then let the next sync run.", cmd: "pmx doctor" };
+  if (/not this team's/.test(detail)) return { text: "The last Linear sync read a different project than your team's. Check your team's Linear settings, then let the next sync run.", cmd: "/pmx-setup" };
   return { text: plain(detail.replace(/^Linear through Claude: /, "Linear sync: ")) };
 }
 
-/** Reads everything the pipeline board shows from this Mac and the PMX repo (BOARD-3). */
-export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" | "exec" | "agent" | "now" | "launchd" | "fetch" | "keychain">, o: { level: PipelineLevel; hours?: number; keychain: Keychain }): Promise<PipelineData> {
+/**
+ * Reads everything the pipeline board shows from this Mac and the PMX repo (BOARD-3). `engine` (BOARD-11): PMX Engine,
+ * as a command hands it over; read only for this Mac's own page, and not where the PM hid it (`pmx open --hide-studio`).
+ */
+export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" | "exec" | "agent" | "now" | "launchd" | "fetch" | "keychain">, o: { level: PipelineLevel; hours?: number; keychain: Keychain; engine?: EngineSource }): Promise<PipelineData> {
   const now = ctx.now();
+  // Started first, so Engine answers while PMX reads its own records.
+  const engine = o.level === "local" && o.engine && ctx.personal.studio !== "hidden" ? o.engine.view().catch(() => null) : Promise.resolve(null);
   const hours = Math.max(1, Math.min(336, o.hours ?? 168));
   const receipts: RunReceipt[] = [];
   for (const id of await listReceipts()) {
@@ -82,7 +89,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const state = await loadState();
   const issues = nodes.map((n) => {
     const t = toTask(n);
-    return { identifier: t.identifier, title: t.title, url: t.url || undefined, createdAt: n.createdAt, status: t.status, meeting: kindOf(n) === "meeting", category: t.category };
+    return { identifier: t.identifier, title: t.title, url: t.url || undefined, createdAt: n.createdAt, status: t.status, meeting: kindOf(n) === "meeting", category: t.category, agent: t.agent };
   });
 
   // The privacy checks the flow view already computes, from the same records.
@@ -98,8 +105,8 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const tick = tickHealth(state.lastTick, 3, ctx.now());
   if (tick && !tick.ok) problems.push({ text: plain(tick.detail), fix: "tab:automations" });
   const job = await ctx.launchd.installed().catch(() => null);
-  if (!job) problems.push({ text: "Automatic runs are off, so PMX only works while you have it open. Turn them on and it checks for new meetings every 30 minutes.", cmd: "pmx init", action: "install-job", fix: "tab:automations" });
-  const tasks = await neededTasks(ctx.team, o.keychain, ctx.personal.taskHours);
+  if (!job) problems.push({ text: "Automatic runs are off, so PMX only works while you have it open. Turn them on and it checks for new meetings every 30 minutes.", action: "install-job", step: "job.installed", label: "Turn on automatic runs" });
+  const tasks = await neededTasks(ctx.team, o.keychain);
   const schedules: PipelineData["schedules"] = [];
   for (const t of tasks) {
     const st = await taskState(t);
@@ -107,8 +114,10 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     if (st === "missing") problems.push({ text: `"${t.title.replace(/^PMX: /, "")}" isn't set up in your Claude app yet. Type /pmx-schedule there and Claude sets it up.`, cmd: "/pmx-schedule", fix: "tab:automations" });
     else if (ran && !ran.ok) problems.push({ text: plain(`"${t.title.replace(/^PMX: /, "")}" ${ran.detail}`), fix: "tab:automations" });
     const run = state.taskRuns[t.id];
-    // What the Claude app has, which differs from `t` until /pmx-schedule applies a changed setting (CLAUDE-5).
-    const { cron, schedule } = st === "missing" ? t : await appliedSchedule(t);
+    // When it does its work: what the Claude app has, less the hours PMX stops its runs in (CLAUDE-6). A task from
+    // before 0.36.0 runs on the schedule the app has until /pmx-schedule updates it.
+    const applied = st === "missing" ? t : await appliedSchedule(t);
+    const { cron, schedule } = applied.cron === t.cron ? workingTimes(t, ctx.personal.taskHours) : applied;
     const cronHours = cron.split(/\s+/)[1] ?? "*";
     const mins = Number(cron.split(/\s+/)[0]) || 0;
     const hrs = cronHours === "*" ? [...Array(24).keys()] : cronHours.split(",").flatMap((p) => { const [a, b = a] = p.split("-").map(Number); return Array.from({ length: b! - a! + 1 }, (_, k) => a! + k); });
@@ -126,7 +135,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const access = await linearAccess(ctx.team, o.keychain).catch(() => "none" as const);
   let relay: { ok: boolean; problem?: string } = { ok: true };
   if (access === "relay") {
-    const r = await relayHealth(ctx.team, now, { cron: (await appliedSchedule(LINEAR_SYNC_TASK)).cron });
+    const r = await relayHealth(ctx.team, now, { cron: await syncDueCron(ctx.personal.taskHours) });
     if (!r.ok) {
       const w = relayWords(r.detail, outbox.ops.length);
       problems.push({ ...w, fix: "tab:automations" });
@@ -137,7 +146,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const blocked = budgetBlock(b);
   if (blocked) problems.push({ text: plain(blocked), fix: "rule:budget" });
   const rules0 = privacyRules(ctx);
-  if (!rules0.internalDomains.length) problems.push({ text: "PMX doesn't know your company's email domain yet, so it keeps every meeting private and can't spot customer calls. Add your domain under Privacy.", cmd: "pmx domains add <your domain>", fix: "rule:domains" });
+  if (!rules0.internalDomains.length) problems.push({ text: "PMX doesn't know your company's email domain yet, so it keeps every meeting private and can't spot customer calls. Add your domain under Who counts as a customer.", fix: "rule:domains" });
   const collect = state.collectReports.at(-1)?.at ?? null;
   if (collect) facts.push(`collection ${hm(collect)}`);
   if (snap) facts.push(`Linear synced ${hm(snap.syncedAt)}`);
@@ -170,7 +179,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     autoUpdate: { on: !!ctx.team.cli?.autoUpdate, state: state.autoUpdate, version: currentVersion() },
     linear: { mode: access, syncedAt: snap?.syncedAt ?? null, waiting: outbox.ops.length, ...relay },
     proposals: proposals.length, drafts: tasksNow.filter((x) => x.status === "review").length, reviewCap: ctx.team.reviewQueueCap, todos: todos.filter((t) => t.status === "open").length,
-    paused: [...paused.keys()], digest, pendingTeam: 0, killSwitch: ks, jobs,
+    paused: [...paused.keys()], digest, pendingTeam: 0, killSwitch: ks, jobs, startNow: startsNow(ctx.team),
   });
   const pendingTeam = await pendingTeamPrs({ ...ctx, keychain: o.keychain }).catch(() => []);
   const tc = automations.find((a) => a.id === "team-changes");
@@ -192,10 +201,12 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     localPage: local ? await webServerStatus().catch(() => null) : null,
     setup: local ? checklistForPage((await readHistory())?.last ?? null) : null,
     themes: (await openThemes(ctx.personal.repoPath)).map((t) => t.name),
-    checks: graph.checks, health: { problems, facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
+    // The page names no pmx commands (SETUP-2): a fix is a button, a slash command or a place on the page.
+    checks: graph.checks, health: { problems: problems.map((x) => ({ ...x, text: pageWords(x.text) || "PMX needs a look on this Mac: see Health, then Setup.", ...(x.cmd && !x.cmd.startsWith("/") ? { cmd: undefined } : {}) })), facts }, lastTick: state.lastTick?.at ?? null, skills, schedules,
     teamCategories: ctx.team.categories, paused, autoPause: ctx.team.autoPause,
     automations, activity: buildActivity({ now, hours, agent: ctx.agent, receipts, runlog: log, collectReports: state.collectReports, lastTick: state.lastTick }),
     digest, jobs, killSwitch: ks, version: currentVersion(),
+    engine: await engine,
     inputs,
     synth,
     rules: {
@@ -204,6 +215,11 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
       neverIngest: { people: [...ni.people], titles: [...ni.meetingTitles], channels: [...ni.channels] },
       budget: { dailyUsd: ctx.personal.budget.dailyUsd, teamCap: ctx.team.caps.perDayUsd, spentUsd: b.spentUsd, tokens: b.tokens },
       todosToLinear: !!ctx.personal.todosToLinear,
+      // CLAUDE-6: when PMX's Claude tasks do their work; a PMX setting from 0.36.0.
+      taskHours: ctx.personal.taskHours ?? "weekdays",
+      startNow: startsNow(ctx.team),
+      productLead: ctx.team.productLead ?? null,
+      productLeadIsYou: isProductLead(ctx.team, ctx.personal),
       // `accepted` is the PM's own choice; a required kind is taken either way, and stays the PM's choice if the team stops requiring it.
       categories: cats.map((c) => ({ name: c, accepted: ctx.personal.categories.includes(c), required: !!ctx.team.categories[c]?.required })),
       reviewCap: ctx.team.reviewQueueCap,

@@ -8,6 +8,11 @@ export interface NewTask {
   sources: string[];
   /** A roadmap theme the PM approved, as a label in the pmx-theme group (EQ-38). */
   theme?: string;
+  /**
+   * APPROVE-3: created straight in Ready instead of the pool. Only the PM's own Start now on a proposal sets it, for
+   * exactly the text they approved; synthesis never does (SIG-4, SEC-1).
+   */
+  ready?: boolean;
 }
 
 /** A team meeting lodged in the tracker's meeting ledger (MEET-2). Not a task: pull, the brain and the board skip it. */
@@ -42,7 +47,10 @@ export interface Tracker {
   readonly kind: string;
   list(o?: { status?: Status[] }): Promise<Task[]>;
   get(id: string): Promise<Task>;
-  /** Synthesis can only create tasks in `inbox` (SIG-4, SEC-1). */
+  /**
+   * Synthesis can only create tasks in `inbox` (SIG-4, SEC-1). A task is created in `ready` only when the PM approved
+   * it with Start now (`ready`, APPROVE-3).
+   */
   createInbox(t: NewTask): Promise<Task>;
   setStatus(id: string, status: Status): Promise<void>;
   setAgent(id: string, agent: string | null): Promise<void>;
@@ -61,7 +69,8 @@ export interface Tracker {
   finishMeeting(id: string, o: { status: "done" | "blocked"; tasks: string[]; note: string }): Promise<void>;
   /**
    * Replaces an issue's title or description, and with `cancel` moves it to canceled (TIDY-1). Only `pmx linear tidy`,
-   * `pmx linear withdraw` and `pmx move` call it, to take back or reword what PMX wrote. Never deletes.
+   * `pmx linear withdraw`, `pmx move` and dropping a task that stopped after failed runs (PULL-12) call it, to take
+   * back or reword what PMX wrote. Never deletes.
    */
   rewrite(id: string, o: { title?: string; description?: string; cancel?: boolean }): Promise<void>;
 }
@@ -99,7 +108,7 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
       const id = `task-${++n}`;
       const task: Task = {
         id, identifier: `PMX-${n}`, title: t.title, description: t.description, url: `memory://${id}`,
-        category: t.category, size: t.size, status: "inbox", priority: 0, agent: null, sources: t.sources, prUrl: null,
+        category: t.category, size: t.size, status: t.ready ? "ready" : "inbox", priority: 0, agent: null, sources: t.sources, prUrl: null,
         createdAt: new Date().toISOString(), ...(t.theme ? { theme: t.theme } : {}),
       };
       tasks.set(id, task);
@@ -130,7 +139,7 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
     async rewrite(id, o) {
       const t = tasks.get(id);
       const m = meetings.get(id);
-      if (!t && !m) throw new Error(`No issue ${id} in the PMX project.`);
+      if (!t && !m) throw new Error(`No task ${id} in the PMX project.`);
       if (o.cancel) { tasks.delete(id); meetings.delete(id); return; }
       if (t) Object.assign(t, o.title ? { title: o.title } : {}, o.description !== undefined ? { description: o.description } : {});
       if (m && o.title) m.title = o.title;

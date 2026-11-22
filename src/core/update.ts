@@ -98,3 +98,32 @@ export async function installLatestRelease(exec: Exec, o: { force?: boolean; fet
   await writeFile(tgz, bytes);
   return npmInstall(tgz, version, exec);
 }
+
+/** COMPAT-7: how PMX Engine's own updater (`pmxe update`) ended, as src/engine/bridge.ts reads it. */
+export type EngineUpdate =
+  | { result: "updated"; from: string; to: string }
+  | { result: "current"; version: string }
+  /** Engine doesn't update while a release is being sent. */
+  | { result: "refused" }
+  | { result: "failed"; error: string };
+
+/** One sentence for each way Engine's update can end. PMX's own update counts as done whatever it says. */
+export function engineUpdateLine(r: EngineUpdate): string {
+  switch (r.result) {
+    case "updated": return `PMX Engine: updated from ${r.from} to ${r.to}, and its own update steps ran (pmxe checklist shows anything left for you).`;
+    case "current": return `PMX Engine ${r.version} is the latest too.`;
+    case "refused": return "PMX Engine wasn't updated: it doesn't update while a release is being sent, so finish sending it, then run pmx update again.";
+    case "failed": return `PMX Engine's update didn't finish (${r.error.replace(/\.$/, "")}); PMX's own update is done, and pmxe update tries Engine's again.`;
+  }
+}
+
+/**
+ * COMPAT-7: one update. After PMX's own, `pmx update` runs PMX Engine's updater where Engine is on this Mac. Only from a
+ * command a person runs (`interactive`): the background job installs the team's PMX only (src/commands/autoupdate.ts),
+ * never Engine, whose update can refuse or ask. `run` is the bridge's `runEngineUpdate`, null without Engine.
+ */
+export async function updateEngineToo(run: () => Promise<EngineUpdate | null>, o: { interactive: boolean }): Promise<string | null> {
+  if (!o.interactive) return null;
+  const r = await run().catch((e: unknown): EngineUpdate => ({ result: "failed", error: e instanceof Error ? e.message : String(e) }));
+  return r ? engineUpdateLine(r) : null;
+}

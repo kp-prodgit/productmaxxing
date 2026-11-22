@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { CANARY_REFUSAL, hasCanary } from "../core/canary.js";
+import { startsNow } from "../core/config.js";
 import type { Ctx } from "../core/context.js";
 import { privateDir, readJson, withLock, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
@@ -147,8 +148,16 @@ export async function setProposalTheme(repo: string, refs: string[], name: strin
   });
 }
 
-/** Writes the chosen proposals to the tracker's inbox, exactly as staged, and takes them off the list. */
-export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]): Promise<{ posted: { id: string; identifier: string; title: string; theme?: string }[]; duplicates: string[]; missing: string[]; unthemed: string[] }> {
+/** Start now is off for this team (APPROVE-3): a teammate decides what agents take. */
+export const START_OFF = "Your team has a teammate decide what agents take, so Start now is off: approve the task and it waits in the backlog until a teammate moves it to Ready.";
+
+/**
+ * Writes the chosen proposals to the tracker, exactly as staged, and takes them off the list. By default each goes to
+ * the pool (inbox). `start` is the PM's Start now (APPROVE-3): the same text, created straight in Ready, and only when
+ * the team allows it. This is the only way a Ready task is created; synthesis itself only ever stages proposals.
+ */
+export async function approveProposals(ctx: Ctx, svc: Services, refs: string[], o: { start?: boolean } = {}): Promise<{ posted: { id: string; identifier: string; title: string; theme?: string; ready: boolean }[]; duplicates: string[]; missing: string[]; unthemed: string[] }> {
+  if (o.start && !startsNow(ctx.team)) throw new Error(START_OFF);
   const all = await readProposals();
   const { hit, missing } = pick(all, refs);
   // EQ-38: a theme is checked again now, so one held, withdrawn or narrowed since it was suggested never becomes a label.
@@ -157,7 +166,7 @@ export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]):
   // Only the same title stops a proposal the PM approved: synthesis already folded repeats in (INPUT-2), and the PM's
   // own decision isn't second-guessed by a fuzzy match.
   const open = new Map((await svc.tracker.list()).filter((t) => t.status !== "done").map((t) => [norm(t.title), t.identifier]));
-  const posted: { id: string; identifier: string; title: string; theme?: string }[] = [];
+  const posted: { id: string; identifier: string; title: string; theme?: string; ready: boolean }[] = [];
   const duplicates: string[] = [];
   const done = new Set<string>();
   for (const p of hit) {
@@ -168,8 +177,8 @@ export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]):
     } else {
       const theme = p.theme ? themeNamed(p.theme, themes) : null;
       if (p.theme && !theme) unthemed.push(`${p.title}: "${p.theme}" is no longer an open roadmap theme, so it went without one`);
-      const t = await svc.tracker.createInbox({ title: p.title, description: p.description, category: p.category, size: p.size, sources: p.sources, ...(theme ? { theme } : {}) });
-      posted.push({ id: p.id, identifier: t.identifier, title: t.title, ...(theme ? { theme } : {}) });
+      const t = await svc.tracker.createInbox({ title: p.title, description: p.description, category: p.category, size: p.size, sources: p.sources, ...(theme ? { theme } : {}), ...(o.start ? { ready: true } : {}) });
+      posted.push({ id: p.id, identifier: t.identifier, title: t.title, ...(theme ? { theme } : {}), ready: !!o.start });
       open.set(norm(p.title), t.identifier);
       await markReceipt(p, { identifier: t.identifier }, ctx.now());
     }
@@ -178,6 +187,20 @@ export async function approveProposals(ctx: Ctx, svc: Services, refs: string[]):
     await withLock(proposalsFile(), async () => save((await readProposals()).filter((x) => !done.has(x.id))));
   }
   return { posted, duplicates, missing, unthemed };
+}
+
+/**
+ * What approving did, in a PM's words (APPROVE-1, APPROVE-3): where the tasks went and when an agent takes them. Through
+ * the Claude relay a task reaches Linear only at the next sync, and the words say so.
+ */
+export function approvedText(posted: { identifier: string }[], o: { start: boolean; startNow: boolean }): string {
+  if (!posted.length) return "";
+  const ids = posted.map((p) => p.identifier).join(", ");
+  const one = posted.length === 1;
+  const sync = posted.some((p) => p.identifier.startsWith("PENDING-"));
+  if (o.start) return `Started ${ids}: ${one ? "it becomes" : "they become"} Ready for agents ${sync ? "in Linear at the next Claude sync" : "now"}, and ${one ? "an agent takes it" : "agents take them"} from there.`;
+  if (o.startNow) return `Approved ${ids} for later: ${one ? "it waits" : "they wait"} in your team's backlog in Linear${sync ? " from the next Claude sync" : ""}. When you want an agent on ${one ? "it" : "one"}, move it to Ready on the team board.`;
+  return `Approved ${ids}: ${one ? "it goes" : "they go"} to your team's backlog in Linear${sync ? " at the next Claude sync" : ""}. An agent takes ${one ? "it" : "one"} only after a teammate moves it to Ready.`;
 }
 
 export async function dropProposals(refs: string[], now = new Date()): Promise<{ dropped: Proposal[]; missing: string[] }> {
@@ -213,27 +236,28 @@ export function markKept(p: Proposal, todo: string, now = new Date()): Promise<v
 }
 
 /** One proposal as the PM reviews it: what the tracker gets, then (marked) what only this Mac sees. */
-export function formatProposal(p: Proposal, n: number, full: boolean): string {
+export function formatProposal(p: Proposal, n: number, full: boolean, startNow = false): string {
   const head = `${n}. [${p.id}] ${p.title}  (${p.category}, size ${p.size}${p.theme ? `, theme ${p.theme}` : ""})`;
   if (!full) return head;
   const indent = (s: string) => s.split("\n").map((l) => `     ${l}`).join("\n");
   return [
     head,
-    `   Linear gets this title, labels pmx-status: inbox, pmx-category, pmx-size${p.theme ? `, pmx-theme: ${p.theme}` : ""}, and this description:`,
+    `   Linear gets this title, labels pmx-status: ${startNow ? "ready with start, inbox with approve" : "inbox"}, pmx-category, pmx-size${p.theme ? `, pmx-theme: ${p.theme}` : ""}, and this description:`,
     indent(p.description),
     "   Only you see this (it stays on this Mac):",
     ...p.from.map((f) => `     · ${f.id} ${f.title} (${f.at.slice(0, 10)}): ${f.why}`),
   ].join("\n");
 }
 
-export function formatProposals(list: Proposal[], full = true): string {
-  if (!list.length) return "No proposed tasks are waiting. `pmx synthesize` proposes some from your recent customer calls.";
+export function formatProposals(list: Proposal[], full = true, startNow = false): string {
+  if (!list.length) return "No new tasks are waiting. `pmx synthesize` suggests some from your recent customer calls.";
   return [
-    `${list.length} proposed task(s) waiting for you. Nothing is in Linear until you approve it.`,
+    `${list.length} new task(s) waiting for you. Nothing is in Linear until you approve it.`,
     "",
-    ...list.map((p, i) => formatProposal(p, i + 1, full)).join("\n\n").split("\n"),
+    ...list.map((p, i) => formatProposal(p, i + 1, full, startNow)).join("\n\n").split("\n"),
     "",
-    "Approve: pmx proposals approve <number or ID …> (or --all) · Drop: pmx proposals drop <number or ID …> (or --all)",
+    ...(startNow ? ["Start now (Ready for agents): pmx proposals start <number or ID …> (or --all)"] : []),
+    `${startNow ? "Later (to the backlog)" : "Approve"}: pmx proposals approve <number or ID …> (or --all) · Drop: pmx proposals drop <number or ID …> (or --all)`,
     ...(list.some((p) => p.theme) ? ["Theme: pmx proposals theme <number or ID> \"<theme>\" (or none)"] : []),
   ].join("\n");
 }

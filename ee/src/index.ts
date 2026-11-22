@@ -81,13 +81,13 @@ export async function brainStep(ctx: Ctx): Promise<import("../../src/setup/check
   if (!access) return { ...base, status: "warn", detail: "PMX couldn't read the brain's settings from your org's admin policy", do: "pmx brain --status", who: "you", how: "terminal" };
   const b = access.brain;
   if (b.level === "off") return { ...base, status: "skip", detail: access.source === "pmx.config.json"
-    ? "off: nothing triages the pool automatically, so tasks become Ready only when a teammate moves them. A \"brain\" block in pmx.config.json turns it on (see pmx brain)."
+    ? "off: nothing triages the backlog automatically, so a task in the backlog becomes Ready only when someone moves it. A \"brain\" block in pmx.config.json turns it on (see pmx brain)."
     : `off in your org's ${access.source}: an admin turns it on in the hosted app (Admin → Brain)` };
   const where = b.machine ?? ctx.team.synthesizer;
   if (!where) return { ...base, status: "warn", detail: `set to ${b.level}, but no Mac is chosen to run it, so it never runs`, do: "Choose the team's synthesis Mac in PMX's page (Settings → Team), or set brain.machine in pmx.config.json", who: "team-lead", how: "page" };
   if (!isBrainMachine(ctx, b)) return { ...base, status: "done", detail: `${b.level}, every ${b.everyHours} h on ${where}'s Mac` };
   const last = (await loadState()).lastBrainAt;
-  return { ...base, status: "done", detail: `${b.level}, every ${b.everyHours} h on this Mac; last pass ${last ? last.slice(0, 16).replace("T", " ") + " UTC" : "not yet"}` };
+  return { ...base, status: "done", detail: `${b.level}, every ${b.everyHours} h on this Mac; last run ${last ? last.slice(0, 16).replace("T", " ") + " UTC" : "not yet"}` };
 }
 
 const isBrainMachine = (ctx: Ctx, b: BrainPolicy) => {
@@ -175,7 +175,7 @@ const eeCommands: Command[] = [
       if (a.values.why) {
         const id = a.positionals[0] ?? (await listBrainReceipts())[0];
         const r = id ? await readBrainReceipt(id) : null;
-        console.log(r ? formatBrain(r) : "No brain passes on this machine yet. Run `pmx brain --dry-run`.");
+        console.log(r ? formatBrain(r) : "No brain runs on this machine yet. Run `pmx brain --dry-run`.");
         return r ? 0 : 1;
       }
       const access = await brainAccess(ctx);
@@ -187,7 +187,7 @@ const eeCommands: Command[] = [
           `Runs on: ${b.machine ?? ctx.team.synthesizer ?? "no machine set"}${isBrainMachine(ctx, b) ? " (this machine)" : ""}, every ${b.everyHours} h`,
           `Autopilot limits: ${b.autopilot.actions.join(", ") || "no actions"} · up to size ${b.autopilot.maxSize} · ${b.autopilot.categories.join(", ") || "every allowed category"} · ${b.autopilot.maxRunsPerDay} run(s) a day`,
           `Waiting for approval here: ${await queueSize(ctx.now())}`,
-          `Last pass: ${last ?? "none"}${last ? " (see `pmx brain --why`)" : ""}`,
+          `Last run: ${last ?? "none"}${last ? " (see `pmx brain --why`)" : ""}`,
         ].join("\n"));
         return 0;
       }

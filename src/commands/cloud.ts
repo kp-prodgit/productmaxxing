@@ -51,7 +51,7 @@ export const cloudCommands: Command[] = [
       if (arg === "on" || arg === "off") {
         ctx.personal.analytics = { enabled: arg === "on", decidedAt: ctx.now().toISOString() };
         await savePersonalConfig(ctx.personal);
-        console.log(arg === "on" ? "Analytics on. Events go out on the next background pass." : "Analytics off. Nothing more is sent.");
+        console.log(arg === "on" ? "Analytics on. Events go out on the next background run." : "Analytics off. Nothing more is sent.");
         return 0;
       }
       if (arg) throw new Error(`Unknown option "${arg}". Use on, off or --show.`);

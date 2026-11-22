@@ -323,7 +323,7 @@ async function loadSizing() {
         h("td", null, (s.rubric.general[z] || {}).rule || "", h("div", "muted small", (s.rubric.general[z] || {}).run || "")),
         h("td", null, s.sizes[z] ? "~" + s.sizes[z].minutes + " min · ~$" + s.sizes[z].costUsd.toFixed(2) : "")))));
     const cats = Object.keys(s.rubric.cells);
-    const grid = h("table", null, h("thead", null, h("tr", null, h("th", null, "Category"), sizes.map((z) => h("th", null, z)))),
+    const grid = h("table", null, h("thead", null, h("tr", null, h("th", null, "Kind of work"), sizes.map((z) => h("th", null, z)))),
       h("tbody", null, cats.map((c) => h("tr", null, h("td", null, h("strong", null, c)), sizes.map((z) => {
         const range = (s.rubric.ranges[c] || {})[z];
         return h("td", null, s.rubric.cells[c][z], range ? h("div", "muted small", "checked: " + range[0] + (range[1] === null ? "+" : "–" + range[1]) + " sources") : null);
@@ -335,7 +335,7 @@ async function loadSizing() {
       h("h2", null, "How task sizes are chosen"),
       h("p", "lede", "A size is the agent effort to produce a reviewable draft, not engineering effort. Claude picks it with the team rubric below and must quote the cell it matched. PMX then checks that cell against the rubric and, where the rubric counts sources, the number of sources the task cites. A disagreement is flagged for the person triaging; it never blocks the task, and anyone can change a size."),
       h("div", "card", h("h3", null, "General rule"), h("div", "tw", general)),
-      h("div", "card", h("h3", null, "Per category"), h("div", "tw", grid), h("p", "small muted", "From the pmx-size skill (" + (s.source === "team" ? "team copy" : s.source === "org" ? "org copy (synced)" : "built-in copy") + ", version " + s.version + "). When unsure between two sizes, Claude picks the larger one.")),
+      h("div", "card", h("h3", null, "Per kind of work"), h("div", "tw", grid), h("p", "small muted", "From the pmx-size skill (" + (s.source === "team" ? "team copy" : s.source === "org" ? "org copy (synced)" : "built-in copy") + ", version " + s.version + "). When unsure between two sizes, Claude picks the larger one.")),
       ...tasks.flat());
   } catch (e) { fail(el, e); }
 }

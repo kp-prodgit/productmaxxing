@@ -75,7 +75,7 @@ describe("pmx digest (DIG-1, DIG-2, PRIV-3)", () => {
     const res = await runDigest(ctx, scriptedAsker({}), { stage: true });
     expect(res).toMatch(/Staged at/);
     const staged = await readFile(stagingPath("2026-W45"), "utf8");
-    expect(staged).toContain("# Signal digest · 2026-W45");
+    expect(staged).toContain("# Weekly digest · 2026-W45");
     expect(await git(repo, "status", "--porcelain")).toBe("");
   });
 

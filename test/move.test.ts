@@ -250,6 +250,6 @@ describe("moving work from the board (TODO-5)", () => {
     expect((await readOutbox()).ops.some((o) => o.kind === "set-label" && o.target === "PMX-5" && o.value === COMMITMENT)).toBe(true);
     // The page reloads after the move: PMX-5 leaves the work nobody has started, where the new product task waits.
     await ui.until(() => !ui!.text().includes("Spec the CSV export"), "Plan to redraw without PMX-5");
-    expect(ui.all("main [role=listitem]").map((r) => r.textContent).filter((t) => /Take as my to-do/.test(t ?? ""))).toEqual([expect.stringMatching(/^Write up the export failuresPENDING-\w+Pool/)]);
+    expect(ui.all("main [role=listitem]").map((r) => r.textContent).filter((t) => /Take as my to-do/.test(t ?? ""))).toEqual([expect.stringMatching(/^Write up the export failuresPENDING-\w+Backlog/)]);
   });
 });

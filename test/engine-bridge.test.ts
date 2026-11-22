@@ -1,13 +1,15 @@
-// Phase 2 of joining PMX and PMX Engine (Q16): one doctor, one What's new, and a way into the studio from this Mac's
-// page. PMX reads only `pmxe`'s versioned JSON, never Engine's files, and nothing about Engine reaches a Claude chat.
-import { chmod, readFile, readdir, writeFile } from "node:fs/promises";
+// Phase 2 of joining PMX and PMX Engine (Q16): one doctor, one What's new, and a way into the studio from PMX's page.
+// PMX reads only `pmxe`'s versioned JSON, never Engine's files, and nothing about Engine reaches a Claude chat. The
+// Strategy area (BOARD-11) is tested in test/strategy.test.ts.
+import { chmod, mkdir, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runDoctor } from "../src/commands/doctor.js";
 import { exec, type Exec } from "../src/core/exec.js";
-import { engineChecks, engineNotes, findPmxe, formatEngineNotes, openStudio } from "../src/engine/bridge.js";
+import { engineChecklist, engineChecks, engineNotes, findPmxe, formatEngineNotes, locatePmxe, openStudio } from "../src/engine/bridge.js";
 import { startExplainServer } from "../src/explain/server.js";
+import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
 import { MCP_TOOLS } from "../src/mcp/server.js";
 import { memoryKeychain } from "../src/core/keychain.js";
 import { fakeLaunchd } from "../src/core/launchd.js";
@@ -27,7 +29,7 @@ case "$1" in
   --version) echo 0.3.4 ;;
   doctor) cat "${dir}/doctor.json" ;;
   whats-new) cat "${dir}/notes.json" ;;
-  studio) echo studio >> "${log}" ;;
+  studio) echo "$@" >> "${log}" ;;
 esac
 `);
   await chmod(cmd, 0o755);
@@ -92,29 +94,93 @@ describe("phase 2: PMX reads PMX Engine through one bridge", () => {
     expect(formatEngineNotes({ ...e!, notes: [] })).toBe("");
   });
 
-  it("opens the studio from this Mac's page only, behind the page's token", async () => {
+  it("opens the studio at a place from this Mac's page, behind the page's token (BOARD-11)", async () => {
     const fake = await fakePmxe({ doctor: DOCTOR, notes: NOTES });
+    process.env.PMX_PMXE = fake.cmd;
     const { repo } = await pmxRepo();
     const ctx = await testCtx({ repo });
-    let opened = 0;
-    const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, studio: { status: async () => ({ available: true, version: "0.3.4" }), open: async () => { opened++; openStudio({ cmd: fake.cmd, version: "0.3.4" }); } } });
-    const bare = await startExplainServer({ team: ctx.team, personal: ctx.personal });
+    const { engineSource } = await import("../src/engine/bridge.js");
+    const s = await startExplainServer({ team: ctx.team, personal: ctx.personal, pipeline: pipelineHandlers(ctx, { engine: engineSource(exec) }) });
+    const bare = await startExplainServer({ team: ctx.team, personal: ctx.personal, pipeline: pipelineHandlers(ctx) });
     try {
       const call = (srv: typeof s, path: string, body?: unknown, token = new URL(srv.url).hash.slice(3)) =>
         fetch(`http://127.0.0.1:${srv.port}${path}`, { method: body ? "POST" : "GET", headers: { authorization: `Bearer ${token}`, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
-      expect(await (await call(s, "/api/studio")).json()).toEqual({ available: true, version: "0.3.4" });
-      expect((await call(s, "/api/studio/open", {}, "wrong")).status).toBe(403);
-      expect((await call(s, "/api/studio/open", {})).status).toBe(200);
-      expect(opened).toBe(1);
+      expect((await call(s, "/api/pipeline/engine-open", { place: "release" }, "wrong")).status).toBe(403);
+      expect((await call(s, "/api/pipeline/engine-open", { place: "../../etc" })).status).toBe(400);
+      expect((await call(s, "/api/pipeline/engine-open", { place: "release/ready" })).status).toBe(200);
       for (let i = 0; i < 50 && !(await readFile(fake.log, "utf8").catch(() => "")); i++) await new Promise((r) => setTimeout(r, 20));
-      expect(await readFile(fake.log, "utf8")).toBe("studio\n");
-      // A server started without the studio, as `pmx explain --web` is, knows nothing about it.
-      expect(await (await call(bare, "/api/studio")).json()).toEqual({ available: false });
-      expect((await call(bare, "/api/studio/open", {})).status).not.toBe(200);
+      expect(await readFile(fake.log, "utf8")).toBe("studio --at release/ready\n");
+      // The old endpoints are gone: the page opens the studio through its own actions now.
+      expect((await call(s, "/api/studio")).status).toBe(404);
+      // A server started without Engine, as on every PM's Mac, knows nothing about it.
+      expect((await call(bare, "/api/pipeline/engine-open", { place: "release" })).status).toBe(404);
+      // `pmx open studio` still opens it as it is.
+      openStudio({ cmd: fake.cmd, version: "0.3.4" });
+      for (let i = 0; i < 50 && !/\nstudio\n/.test(await readFile(fake.log, "utf8")); i++) await new Promise((r) => setTimeout(r, 20));
+      expect(await readFile(fake.log, "utf8")).toBe("studio --at release/ready\nstudio\n");
+      expect(openStudio({ cmd: fake.cmd, version: "0.3.4" }, "nowhere" as any)).toBe(false);
     } finally {
       await s.close();
       await bare.close();
     }
+  });
+
+  it("runs an Engine installed as a link to its JavaScript with PMX's own Node, whatever its #! line says (CLI-6)", async () => {
+    // npm links the command to Engine's cli.js, whose `#!/usr/bin/env node` fails where node isn't on PATH (launchd).
+    const dir = await tmp("fake-pmxe-js-");
+    const cli = join(dir, "lib", "cli.js");
+    await mkdir(join(dir, "lib"), { recursive: true });
+    await writeFile(cli, `#!/nowhere/node\nconst a = process.argv.slice(2);\nif (a[0] === "--version") console.log("0.4.1");\nelse if (a[0] === "doctor") console.log(JSON.stringify(${JSON.stringify(DOCTOR)}));\n`);
+    await chmod(cli, 0o755);
+    await mkdir(join(dir, "bin"), { recursive: true });
+    await symlink(cli, join(dir, "bin", "pmxe"));
+    // The shebang alone can't start it.
+    expect((await exec(join(dir, "bin", "pmxe"), ["--version"])).code).not.toBe(0);
+
+    process.env.PMX_PMXE = join(dir, "bin", "pmxe");
+    const p = await findPmxe(exec);
+    expect(p).toEqual({ cmd: process.execPath, args: [await realpath(cli)], version: "0.4.1", path: join(dir, "bin", "pmxe") });
+    // Later calls run the same way: doctor answers through the same Node and entry point.
+    expect((await engineChecks(exec))[0]).toMatchObject({ ok: true, detail: expect.stringMatching(/^PMX Engine 0\.4\.1, workspace folder ~\/pmxe-workspace/) });
+
+    // Unpinned: found in the usual install folders, never through PATH's own lookup, with a long enough wait.
+    delete process.env.PMX_PMXE;
+    const path = process.env.PATH;
+    const calls: [string, string[], number | undefined][] = [];
+    const spy: Exec = async (cmd, args, o) => { calls.push([cmd, args, o?.timeoutMs]); return exec(cmd, args, o); };
+    try {
+      process.env.PATH = await tmp("empty-path-");
+      expect(await findPmxe(spy, { candidates: [join(dir, "missing", "pmxe"), join(dir, "bin", "pmxe")] })).toMatchObject({ cmd: process.execPath, version: "0.4.1" });
+    } finally { process.env.PATH = path; process.env.PMX_PMXE = "none"; }
+    expect(calls).toEqual([[process.execPath, [await realpath(cli), "--version"], 20000]]);
+
+    // Found but not answering is a problem with where it is and why, not "not installed".
+    const broken: Exec = async () => ({ code: 1, stdout: "", stderr: "Error: Cannot find module 'commander'\nRequire stack: …" });
+    try {
+      delete process.env.PMX_PMXE;
+      process.env.PATH = await tmp("empty-path-");
+      expect(await locatePmxe(broken, { candidates: [join(dir, "bin", "pmxe")] })).toEqual({ problem: { path: join(dir, "bin", "pmxe"), reason: "Cannot find module 'commander'" } });
+    } finally { process.env.PATH = path; process.env.PMX_PMXE = "none"; }
+  });
+
+  it("says Engine is installed but didn't start, instead of that it isn't on this Mac (CLI-6)", async () => {
+    const dir = await tmp("broken-pmxe-");
+    const cmd = join(dir, "pmxe");
+    await writeFile(cmd, "#!/bin/sh\necho 'env: node: No such file or directory' >&2\nexit 127\n");
+    await chmod(cmd, 0o755);
+    process.env.PMX_PMXE = cmd;
+    expect(await findPmxe(exec)).toBeNull();
+    expect(await locatePmxe(exec)).toEqual({ problem: { path: cmd, reason: "env: node: No such file or directory" } });
+    expect(await engineChecks(exec)).toEqual([{ id: "engine", ok: false, level: "warn", detail: `PMX Engine is installed at ${cmd} but didn't start: env: node: No such file or directory. In Terminal, pmxe --version shows why.` }]);
+    const summary = await engineChecklist(exec);
+    expect(summary).toEqual({ problem: { path: cmd, reason: "env: node: No such file or directory" } });
+    const { buildChecklist } = await import("../src/setup/checklist.js");
+    const { repo } = await pmxRepo();
+    const ctx = await testCtx({ repo });
+    const cl = buildChecklist({ now: new Date(), version: "0.35.0", personal: ctx.personal, team: ctx.team, checks: [], state: { collectReports: [] } as any, claude: true, hasRemote: true, memoryFilled: true, proposals: 0, tasks: null, practiceUntil: null, lastRun: null, setupSkill: "current", linearCron: null, engine: summary, extra: [] });
+    const step = cl.sections.flatMap((s) => s.steps).find((s) => s.id === "engine.installed")!;
+    expect(step).toMatchObject({ status: "warn", detail: `PMX Engine is installed at ${cmd} but didn't start: env: node: No such file or directory`, who: "you", how: "terminal" });
+    expect(step.detail).not.toMatch(/isn't on this Mac/);
   });
 
   it("keeps Engine out of everything that answers a Claude chat, and never reads Engine's files", async () => {
@@ -134,9 +200,11 @@ describe("phase 2: PMX reads PMX Engine through one bridge", () => {
     const bridge = await readFile(join(src, "engine", "bridge.ts"), "utf8");
     expect(bridge).not.toMatch(/node:fs|\.pmx-engine|readFile/);
 
-    // This Mac's page shows the Studio entry only after this Mac's server says so; the page in Claude never asks.
+    // The page shows the Strategy slot only when its data carries Engine, which only this Mac's own page and the paired
+    // page's board do (test/strategy.test.ts proves the rest).
     const page = await readFile(join(root, "app-skills", "pmx-flow", "pipeline.html"), "utf8");
-    expect(page).toContain('<button type="button" class="ni" id="act-studio" hidden>');
-    expect(page).toContain('if (LOCAL) api("/api/studio")');
+    expect(page).toContain('<button type="button" class="ni" data-view="strategy" id="nav-strategy" hidden>');
+    expect(page).toContain('$("nav-strategy").hidden = !(ok && engine());');
+    expect(page).not.toContain("/api/studio");
   });
 });

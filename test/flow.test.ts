@@ -274,7 +274,8 @@ describe("0.11.0: the pages (FLOW-2, FLOW-5)", () => {
   it("builds an artifact that asks only the local PMX server, with exactly its tools", async () => {
     process.env.PMX_CLAUDE_HOME = await tmp("claude-home-");
     process.env.PMX_CLAUDE_DESKTOP_CONFIG = join(await tmp("desktop-"), "none.json");
-    expect(flowCapabilities()).toEqual({ mcp: { servers: [{ server: "host:pmx", tools: ["pipeline", "flow_what_if", "never_ingest_add", "pair", "board", "board_act"] }] } });
+    // FLOW-8: `artifact` lets the page publish PMX's newer page over itself after an update.
+    expect(flowCapabilities()).toEqual({ mcp: { servers: [{ server: "host:pmx", tools: ["pipeline", "flow_what_if", "never_ingest_add", "pair", "board", "board_act"] }] }, artifact: {} });
     for (const t of flowCapabilities().mcp.servers[0]!.tools) expect(MCP_TOOLS.map((x) => x.name)).toContain(t);
     const html = fillPipeline(await readFile(pipelineTemplate(), "utf8"), { mode: "artifact", version: "0.16.0", team: "t</script><b>" });
     expect(html).toMatch(/^<title>PMX Workspace<\/title>/);

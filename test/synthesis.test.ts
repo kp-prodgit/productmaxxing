@@ -56,7 +56,7 @@ describe("0.25.0: tasks are proposed without anyone running pmx synthesize (SIG-
     expect(pending.reason).toMatch(/^1 customer meeting hasn't been read for tasks yet\. Automatic runs are off, so they wait until you run it\. Reading them costs (about \$[\d.]+|under \$0\.01)\./);
     expect(pending.meetings[0]).toMatchObject({ outcome: "pending", title: "Acme renewal" });
     const text = formatSynthStatus(pending, NOW);
-    expect(text).toMatch(/^No proposed tasks are waiting\./);
+    expect(text).toMatch(/^No new tasks are waiting\./);
     expect(text).toContain("Last synthesis: never.");
     expect(text).toMatch(/Read them now: pmx synthesize --since \d{4}-\d{2}-\d{2}/);
     expect(text).toMatch(/To-dos are different: .* never leave this Mac\. Tasks go to Linear only after you approve them\./);
@@ -64,7 +64,7 @@ describe("0.25.0: tasks are proposed without anyone running pmx synthesize (SIG-
     expect((await synthStatus(ctx, { local: false, receipts: [], automatic: true, lastSynthAt: null })).meetings).toEqual([]);
 
     const elsewhere = await testCtx({ repo, now: NOW, team: { tracker: LINEAR, synthesizer: "bo" }, personal: { sources: { transcriptDirs: [dir], slackChannel: null } } });
-    expect((await synthStatus(elsewhere, { local: true, receipts: [], automatic: true, lastSynthAt: null })).reason).toMatch(/proposed on bo, your team's synthesis Mac/);
+    expect((await synthStatus(elsewhere, { local: true, receipts: [], automatic: true, lastSynthAt: null })).reason).toMatch(/suggested on bo, your team's synthesis Mac/);
     const none = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [dir], slackChannel: null } } });
     expect((await synthStatus(none, { local: true, receipts: [], automatic: true, lastSynthAt: null })).where).toBe("off");
   });
@@ -81,7 +81,7 @@ describe("0.25.0: tasks are proposed without anyone running pmx synthesize (SIG-
     await writeTranscript(dir, "acme.md", meeting("Acme", "2026-11-12", "jane@acme.com", "ff-3"));
     const team = { synthesizer: null, tracker: LINEAR };
     const personal = { handle: "ana", sources: { transcriptDirs: [dir], slackChannel: null } };
-    expect(await neverSynthesized(team, personal, "ana@m1", null, false)).toMatch(/^Linear is connected and 1 meeting file\(s\) were collected in the last 14 days, but this Mac has never proposed a task from them \(automatic runs are off\)\. `pmx proposals` says why/);
+    expect(await neverSynthesized(team, personal, "ana@m1", null, false)).toMatch(/^Linear is connected and 1 meeting file\(s\) were collected in the last 14 days, but this Mac has never suggested a task from them \(automatic runs are off\)\. `pmx proposals` says why/);
     expect(await neverSynthesized(team, personal, "ana@m1", "2026-11-11T00:00:00Z", true)).toBeNull();
     expect(await neverSynthesized({ ...team, synthesizer: "bo" }, personal, "ana@m1", null, true)).toBeNull();
     expect(await neverSynthesized(team, { ...personal, sources: { transcriptDirs: [await tmp()], slackChannel: null } }, "ana@m1", null, true)).toBeNull();

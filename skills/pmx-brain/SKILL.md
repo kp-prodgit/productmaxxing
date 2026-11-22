@@ -1,6 +1,6 @@
 ---
 name: pmx-brain
-description: Assesses the PMX board (inbox, ready, in flight, review) with the team's accept rates and budget, and proposes the next actions with a reason for each. Used by `pmx brain` on the Team plan; runs with no tools. Fixed rules decide which proposals happen, wait for a person, or only become comments.
+description: Assesses the PMX board (backlog, ready, in flight, review) with the team's accept rates and budget, and suggests the next actions with a reason for each. Used by `pmx brain` on the Team plan; runs with no tools. Fixed rules decide which suggestions happen, wait for a person, or only become comments.
 pmx: {"kind": "core"}
 ---
 

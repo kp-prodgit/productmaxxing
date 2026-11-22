@@ -55,4 +55,4 @@ export async function writtenByPmx(tracker: Tracker): Promise<Written[]> {
   return out;
 }
 
-export const WITHDRAWN = "Withdrawn by the PM through PMX. Its text was removed; Linear may still keep earlier versions in the issue's history.";
+export const WITHDRAWN = "Withdrawn by the PM through PMX. Its text was removed; Linear may still keep earlier versions in the task's history.";

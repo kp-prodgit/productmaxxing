@@ -22,7 +22,7 @@ const HEALTHY = [
   ok("claude.task.linear-sync", "Claude scheduled task \"Sync Linear\""), ok("linear.relay", "Linear through Claude: last synced 20 min ago"),
   ok("flow.mcp", "the Claude app can start PMX's server"), ok("claude.board", "team board https://claude.ai/artifact/b"),
 ];
-const PERSONAL = { handle: "kp", repoPath: "/Users/kp/pmx", installedAt: "2026-11-08T07:25:00Z", flow: { url: "https://claude.ai/artifact/f", version: "0.34.0", publishedAt: "2026-11-19T01:49:00Z" } } as unknown as PersonalConfig;
+const PERSONAL = { handle: "kp", repoPath: "/Users/kp/pmx", installedAt: "2026-11-08T07:25:00Z", taskHours: "always", flow: { url: "https://claude.ai/artifact/f", version: "0.34.0", publishedAt: "2026-11-19T01:49:00Z" } } as unknown as PersonalConfig;
 const STATE = { lastTick: { at: "2026-11-20T17:40:00Z", failed: [], failStreak: 0 }, collectReports: [{ at: "2026-11-20T18:52:00Z", connector: "granola", saved: 7, skipped: {} }], tickGaps: [] } as unknown as State;
 
 function inputs(o: Partial<ChecklistInputs> = {}): ChecklistInputs {
@@ -47,20 +47,30 @@ describe("the install checklist (SETUP-1)", () => {
   });
 
   it("a healthy Mac: running, with what's waiting in the work and who does it (#11, #14)", () => {
-    const cl = buildChecklist(inputs({ proposals: 3, tasks: { pool: 4, ready: 0, blocked: 1 }, practiceUntil: "2026-11-22T07:25:00Z" }));
-    expect(cl.where).toMatch(/^PMX is installed and running on this Mac\. 3 proposed tasks wait for your approval; 4 tasks in the pool, none Ready for agents; agents are in practice mode until Nov 22\./);
+    // A team with a separate triage owner (APPROVE-3 off): a teammate makes tasks Ready.
+    const cl = buildChecklist(inputs({ team: { ...DEFAULT_TEAM, approve: { startNow: false }, tracker: { kind: "linear", teamKey: "PMX", projectId: "p" } } as any, proposals: 3, tasks: { pool: 4, ready: 0, blocked: 1 }, practiceUntil: "2026-11-22T07:25:00Z" }));
+    expect(cl.where).toMatch(/^PMX is installed and running on this Mac\. 3 new tasks wait for your approval; 4 tasks in the backlog, none Ready for agents; agents are in practice mode until Nov 22\./);
     expect(find(cl, "work.ready")).toMatchObject({ status: "todo", who: "teammate", how: "linear" });
-    expect(find(cl, "work.ready").detail).toMatch(/Approving sends a task to the pool; an agent takes it only after a teammate moves it to Ready\./);
+    expect(find(cl, "work.ready").detail).toMatch(/Approving sends a task to the backlog; an agent takes it only after a teammate moves it to Ready\./);
     expect(find(cl, "work.practice")).toMatchObject({ status: "warn", do: "Wait, or run one now with pmx pull --live" });
     expect(find(cl, "work.agents").detail).toMatch(/1 task Blocked after failing twice in a row/);
+    expect(find(cl, "work.agents")).toMatchObject({ who: "you", how: "page", page: "In Needs you, under Stopped after failed runs, try each one again, edit it or drop it." });
     expect(cl.next!.id).toBe("work.approve");
     expect(cl.counts.todo).toBeGreaterThanOrEqual(2);
+  });
+
+  it("with Start now on, Ready comes from the PM's own approval, so it isn't a step anyone waits on (APPROVE-3)", () => {
+    const cl = buildChecklist(inputs({ proposals: 3, tasks: { pool: 4, ready: 0, blocked: 0 } }));
+    expect(find(cl, "work.ready")).toMatchObject({ title: "Start now makes tasks Ready for agents", status: "done" });
+    expect(find(cl, "work.ready").detail).toMatch(/^0 Ready for agents, 4 in the backlog\. Start now on a new task makes it Ready at once; Later puts it in the backlog/);
+    expect(find(cl, "work.ready").who).toBeUndefined();
+    expect(find(cl, "work.approve")).toMatchObject({ status: "todo", page: "Start now, Later or Drop each one in Needs you." });
   });
 
   it("says when the Mac slept and nothing ran (#9)", () => {
     const asleep = buildChecklist(inputs({ state: { ...STATE, lastTick: { at: "2026-11-20T11:55:00Z", failed: [], failStreak: 0 } } }));
     expect(find(asleep, "job.passes")).toMatchObject({ status: "warn", who: "you", how: "app", required: true });
-    expect(find(asleep, "job.passes").detail).toMatch(/^no pass since \d\d:\d\d \(6\.1 h ago\)\. PMX, its Claude tasks and the Linear sync run only while this Mac is awake/);
+    expect(find(asleep, "job.passes").detail).toMatch(/^no run since \d\d:\d\d \(6\.1 h ago\)\. PMX, its Claude tasks and the Linear sync run only while this Mac is awake/);
     const slept = buildChecklist(inputs({ state: { ...STATE, tickGaps: [{ from: "2026-11-20T07:55:00Z", to: "2026-11-20T13:45:00Z" }] } }));
     expect(find(slept, "job.passes").detail).toMatch(/nothing ran from \d\d:\d\d to \d\d:\d\d \(5\.8 h\), while this Mac was asleep or off/);
     expect(tickHealth({ at: "2026-11-20T11:55:00Z", failed: [], failStreak: 0 }, 3, NOW)).toMatchObject({ ok: false, detail: expect.stringMatching(/hasn't run since 2026-11-20 11:55 UTC \(6\.1 h ago\): this Mac was probably asleep or off/) });
@@ -126,7 +136,11 @@ describe("the install checklist (SETUP-1)", () => {
     const page = checklistForPage(cl)!;
     const text = JSON.stringify(page);
     expect(text).not.toMatch(/\bpmx [a-z]/);
-    expect(page.next).toEqual({ title: "Node 22.12 or later", page: PAGE_HINT });
+    // BOARD-10: Needs you shows it as a card only when it is required, and says who does it.
+    // SETUP-2: with what the page offers for it: here Claude, with /pmx-setup.
+    expect(page.next).toEqual({ id: "mac.node", title: "Node 22.12 or later", page: "In the Claude app, type /pmx-setup: Claude installs a supported Node with you and sets PMX up again.", required: true, who: "you",
+      fix: { kind: "claude", command: "/pmx-setup", text: "In the Claude app, type /pmx-setup: Claude installs a supported Node with you and sets PMX up again." } });
+    expect(PAGE_HINT).toMatch(/\/pmx-setup/);
     expect(page.where).toBe(cl.where);
   });
 });
@@ -138,7 +152,7 @@ describe("the brain on the checklist (#13)", () => {
     const { repo } = await pmxRepo();
     const step: Step = await brainStep(await testCtx({ repo }));
     expect(step).toMatchObject({ id: "work.brain", status: "skip" });
-    expect(step.detail).toMatch(/^off: nothing triages the pool automatically, so tasks become Ready only when a teammate moves them/);
+    expect(step.detail).toMatch(/^off: nothing triages the backlog automatically, so a task in the backlog becomes Ready only when someone moves it/);
     const on: Step = await brainStep(await testCtx({ repo, team: { brain: { level: "recommend", everyHours: 4 } } as any }));
     expect(on).toMatchObject({ status: "warn", detail: "set to recommend, but no Mac is chosen to run it, so it never runs" });
     // "Your work now" shows it even when it's off: what runs is part of where you stand.

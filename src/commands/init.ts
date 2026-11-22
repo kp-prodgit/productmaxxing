@@ -313,7 +313,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     }
   }
   if ((await linearAccess(team, d.keychain)) === "relay") out.info("Linear: PMX reaches it through your Claude app's Linear connector. No key or sign-in needed.");
-  out.info("\nSetup done. The first week runs pulls as dry runs, so you can see what your agent would do.");
+  out.info("\nSetup done. For its first week your agent is in practice mode: it says which task it would take, without running it.");
   return personal;
 }
 
@@ -324,7 +324,7 @@ export async function nextSteps(team: TeamConfig, personal: PersonalConfig): Pro
     ? "  1. Open the Claude desktop app (Code tab), start a session with auto mode off, and type /pmx-schedule. Claude creates PMX's scheduled tasks; click \"Run now\" on each once."
     : "  1. Run `pmx schedule` and paste what it prints into the Claude desktop app (Code tab), in a session with auto mode off.");
   lines.push(`  2. Put call transcripts in ${personal.sources.transcriptDirs[0] ?? "a transcripts folder"} and run \`pmx digest\`.`);
-  lines.push("  3. Tasks PMX proposes from your calls wait for you: `pmx proposals` shows each exactly as Linear would get it. Nothing reaches Linear until you approve.");
+  lines.push("  3. Tasks PMX suggests from your calls wait for you: `pmx proposals` shows each exactly as Linear would get it. Nothing reaches Linear until you approve.");
   lines.push("  4. See where your data goes (meetings read and held, tasks, Linear, agent runs, spend) with `pmx flow --web`.");
   const shared = boardUrl(team, personal);
   if (shared) lines.push(`Your team's board: ${shared.url}`);

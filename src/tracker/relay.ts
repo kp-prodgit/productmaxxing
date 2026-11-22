@@ -32,7 +32,8 @@ export async function readResolved(): Promise<Record<string, { identifier: strin
 }
 
 export type RelayOp =
-  | { id: string; at: string; kind: "create-task"; title: string; description: string; category: string; size: Size }
+  /** `status` (from 0.36.0): "ready" when the PM approved it with Start now (APPROVE-3); absent means the pool. */
+  | { id: string; at: string; kind: "create-task"; title: string; description: string; category: string; size: Size; status?: "inbox" | "ready" }
   | { id: string; at: string; kind: "set-label"; target: string; group: string; value: string | null }
   | { id: string; at: string; kind: "set-priority"; target: string; priority: number }
   | { id: string; at: string; kind: "comment"; target: string; body: string }
@@ -119,7 +120,7 @@ export function overlay(snap: Snapshot, ops: RelayOp[]): any[] {
         url: "", priority: 0, createdAt: op.at, labels: { nodes: [] }, comments: { nodes: [] }, pending: true,
       };
       if (op.kind === "create-task") {
-        label(n, GROUPS.status, "inbox"); label(n, GROUPS.category, op.category); label(n, GROUPS.size, op.size);
+        label(n, GROUPS.status, op.status ?? "inbox"); label(n, GROUPS.category, op.category); label(n, GROUPS.size, op.size);
       } else {
         label(n, GROUPS.kind, "meeting"); label(n, GROUPS.status, "running"); label(n, GROUPS.agent, op.agent);
       }
@@ -193,7 +194,7 @@ export function relayTracker(team: TeamConfig, warn: (m: string) => void = () =>
       return toTask(await nodeFor(id));
     },
     async createInbox(t: NewTask) {
-      const op = await enqueue({ kind: "create-task", title: t.title, description: t.description, category: t.category, size: t.size });
+      const op = await enqueue({ kind: "create-task", title: t.title, description: t.description, category: t.category, size: t.size, ...(t.ready ? { status: "ready" as const } : {}) });
       // The theme rides on its own set-label, which every relay task already applies, so an older task never drops it.
       if (t.theme) await enqueue({ kind: "set-label", target: ref(op.id), group: GROUPS.theme, value: t.theme });
       return toTask((await state()).nodes.find((n) => n.id === ref(op.id)));
@@ -250,7 +251,7 @@ ${[...byGroup].map(([g, ns]) => `- ${g}: ${ns.join(", ")}`).join("\n")}
 
 ## 1. Apply PMX's changes
 ${outbox.ops.length ? `Read ${files.outbox()}. Apply each operation in \`ops\`, in order, exactly as written:` : "There are no changes to apply. Skip to step 2."}
-${outbox.ops.length ? `- \`create-task\`: create an issue in project ${projectId} with the title and description verbatim, and labels pmx-status: inbox, pmx-category: <category>, pmx-size: <size>.
+${outbox.ops.length ? `- \`create-task\`: create an issue in project ${projectId} with the title and description verbatim, and labels pmx-status: <status> (the op's \`status\`: ready or inbox; inbox when it has none), pmx-category: <category>, pmx-size: <size>.
 - \`set-label\`: on the target issue, remove any label inside the label group \`group\` and add \`value\` from that group (or just remove it when value is null).
 - \`set-priority\`: set the target issue's priority (1 urgent … 4 low).
 - \`comment\`: add the body as a comment, verbatim.
@@ -371,7 +372,7 @@ export async function checkRelay(team: TeamConfig, now = new Date()): Promise<st
       for (const r of results.filter((x) => x.ok && x.identifier)) {
         if (!snap.issues.some((n) => n.identifier === r.identifier)) out.push(`  ⚠ ${r.identifier} was reported done but isn't in the snapshot; PMX will check again next sync.`);
       }
-      out.push(`Snapshot: ${snap.issues.length} issue(s), synced ${snap.syncedAt}.`);
+      out.push(`Snapshot: ${snap.issues.length} item(s) from Linear, synced ${snap.syncedAt}.`);
     }
   }
   if (problems.length) {

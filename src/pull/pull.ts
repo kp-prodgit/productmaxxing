@@ -49,7 +49,7 @@ export async function citationGaps(ctx: Ctx, tasks: Task[]): Promise<Map<string,
     if (inlineSources(t).length || here.ids.length) continue;
     const need = `a ${t.category} draft must cite its sources ${min === 1 ? "once" : `${min} times`}`;
     out.set(t.id, !t.sources.length ? `it names no sources, and ${need}`
-      : !here.receipt ? `its sources are quoted only on the Mac that proposed it, and ${need}`
+      : !here.receipt ? `its sources are quoted only on the Mac that suggested it, and ${need}`
       : `none of its sources are in its synthesis run on this Mac, and ${need}`);
   }
   return out;

@@ -99,7 +99,9 @@ describe("0.20.0: every interaction point on the board, in a PM's words (BOARD-5
   it("each automated step has one status row; steps that wait on automatic runs say so once, with the fix on that row only", () => {
     const off = buildAutomations(autoInputs({ jobInstalled: false, lastTick: null }));
     const job = off.find((a) => a.id === "job")!;
-    expect(job).toMatchObject({ status: "setup", statusText: "Off", fix: { action: "install-job", cmd: "pmx init" }, run: "tick" });
+    // SETUP-2: the fix is the checklist's job.installed step, a button; no Terminal command.
+    expect(job).toMatchObject({ status: "setup", statusText: "Off", fix: { action: "install-job", step: "job.installed", label: "Turn on automatic runs" }, run: "tick" });
+    expect(job.fix).not.toHaveProperty("cmd");
     expect(off.find((a) => a.id === "todo")).toMatchObject({ status: "off", statusText: "Waits for automatic runs", fix: null });
     expect(off.filter((a) => a.fix?.action === "install-job")).toHaveLength(1);
 
@@ -132,7 +134,7 @@ describe("0.20.0: every interaction point on the board, in a PM's words (BOARD-5
       ] as RunLogEntry[],
     });
     expect(a.map((x) => x.text)).toEqual([
-      "1 step of the background pass failed", "Collected 2 meetings from granola; 1 skipped by your do-not-read list", "Your digest for the week of Nov 2 was built: 1 source cited",
+      "1 step of the background run failed", "Collected 2 meetings from granola; 1 skipped by your do-not-read list", "Your digest for the week of Nov 2 was built: 1 source cited",
       "PMX-3 sent back for a redo by a teammate", "Your agent drafted PMX-4 (spec)", "Found 1 to-do in your meetings",
     ]);
     expect(JSON.stringify(a)).not.toMatch(/Acme|pricing/i);
@@ -204,23 +206,25 @@ describe("0.20.0: every interaction point on the board, in a PM's words (BOARD-5
     expect(d.digest!.waiting[0]!.sources).toBe(1);
   });
 
-  it("the page: Today first, every tab routed, old links land on their new home, and Terminal is never the first fix", async () => {
+  it("the page: Needs you first, every area routed, old links land on their new home, and Terminal is never the first fix", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    // 0.23.0 (BOARD-6): a left nav of views instead of tabs, each with its own route, opening on Today.
+    // 0.23.0 (BOARD-6): a left nav of views instead of tabs, each with its own route. 0.36.0 (BOARD-10): opening on
+    // Needs you, with the Work and Health areas and the PM's own to-dos.
     expect(page.startsWith("<title>PMX Workspace</title>")).toBe(true);
     expect(page).toMatch(/<script type="application\/json" id="pmx-config">/);
-    expect(page).toMatch(/const VIEWS = \["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "flow", "status", "settings"\]/);
-    for (const v of ["inbox", "today", "upcoming", "anytime", "logbook", "plan", "digest", "agents", "status", "settings"]) expect(page).toContain(`data-view="${v}"`);
-    expect(page).toMatch(/const S = \{ view: "today"/);
-    // Links from before 0.23.0 land on their new home.
-    for (const old of ["flow", "automations", "sources", "privacy", "work"]) expect(page).toMatch(new RegExp(`[{ ]${old}: \\["`));
+    expect(page).toMatch(/const VIEWS = \["needs", "work", "strategy", "health", "today", "upcoming", "anytime", "logbook"\]/);
+    for (const v of ["needs", "work", "health", "today", "upcoming", "anytime", "logbook"]) expect(page).toContain(`data-view="${v}"`);
+    expect(page).toMatch(/const S = \{ view: "needs"/);
+    // Links from before 0.36.0 and 0.23.0 land on their new home (each is opened in needs-you.test.ts).
+    for (const old of ["inbox", "plan", "agents", "digest", "flow", "automations", "sources", "categories", "connections"]) expect(page).toMatch(new RegExp(`[{ ]${old}: \\["`));
     // Completing or approving waits for Undo before anything is sent.
     expect(page).toMatch(/const GRACE = 4000;/);
     // No markup PMX's local policy would block, and no sample data.
     expect(page).not.toMatch(/style="|\son[a-z]+="|<script src=|<link /);
     expect(page).not.toMatch(/example data/i);
-    // Commands sit behind a "Prefer Terminal?" disclosure; the visible control is a button.
-    expect(page).toMatch(/const terminal = \(cmd, label = "Prefer Terminal\?"\)/);
+    // SETUP-2: no Terminal fallback at all; a fix is a button, a slash command with Copy, or words.
+    expect(page).not.toMatch(/Prefer Terminal|const terminal =/);
+    expect(page).toMatch(/const slash = \(cmd, say = true\)/);
     expect(page).not.toMatch(/cmdChip\(/);
     // Digest text is rendered as text nodes, never parsed as HTML.
     expect(page).not.toMatch(/innerHTML|insertAdjacentHTML|outerHTML/);

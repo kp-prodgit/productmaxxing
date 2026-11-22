@@ -11,7 +11,8 @@ import { runTask } from "../run/run.js";
 import { verifyPr } from "../run/verify.js";
 import { synthesize } from "../synth/synthesize.js";
 import { evidenceOf } from "../synth/evidence.js";
-import { approveProposals, dropProposals, formatProposals, readProposals, setProposalTheme } from "../synth/proposals.js";
+import { approvedText, approveProposals, dropProposals, formatProposals, readProposals, setProposalTheme } from "../synth/proposals.js";
+import { startsNow } from "../core/config.js";
 import { startOfDay } from "../meetings/ledger.js";
 import { formatSynthStatus, recentReceipts, synthesizesHere, synthStatus, synthWindow } from "../synth/status.js";
 import type { Command } from "./index.js";
@@ -28,7 +29,7 @@ export const teamCommands: Command[] = [
   {
     // Bridge 2 of joining PMX and PMX Engine: counts only, to standard output. The head of product pipes them on.
     name: "evidence",
-    summary: "Counts of approved tasks per category and roadmap theme, for PMX Engine's studio: no titles, quotes or meetings",
+    summary: "Counts of approved tasks per kind of work and roadmap theme, for PMX Engine's studio: no titles, quotes or meetings",
     usage: "pmx evidence --json | pmxe propose -",
     options: { json: { type: "boolean" } },
     async run(a) {
@@ -43,7 +44,7 @@ export const teamCommands: Command[] = [
   },
   {
     name: "synthesize",
-    summary: "Turn customer calls into proposed tasks; you approve each one before it reaches Linear (`pmx proposals`)",
+    summary: "Turn customer calls into new tasks; you approve each one before it reaches Linear (`pmx proposals`)",
     usage: "pmx synthesize [--since today | YYYY-MM-DD] [--days 1] [--dry-run]",
     options: { days: { type: "string" }, since: { type: "string" }, "dry-run": { type: "boolean" } },
     async run(a) {
@@ -57,16 +58,16 @@ export const teamCommands: Command[] = [
       const m = r.meetings;
       console.log(`Meetings since ${since.toDateString()}: ${m.processed.length} processed now (recorded in your PMX repo, not Linear), ${m.already} already processed by the team, ${m.busy} being processed on another machine.`);
       console.log(a.values["dry-run"]
-        ? `Dry run: ${r.posted.length} task(s) would be proposed; nothing was. ${r.held} item(s) or passage(s) left out or cut.`
-        : `${r.staged.length} task(s) proposed and waiting for you; nothing was written to Linear. ${r.held} item(s) or passage(s) left out or cut.\nSee exactly what Linear would get, then approve or drop each: pmx proposals`);
+        ? `Dry run: ${r.posted.length} task(s) would be suggested; nothing was. ${r.held} item(s) or passage(s) left out or cut.`
+        : `${r.staged.length} new task(s) waiting for you; nothing was written to Linear. ${r.held} item(s) or passage(s) left out or cut.\nSee exactly what Linear would get, then approve or drop each: pmx proposals`);
       console.log("See why each was suggested and sized: pmx explain (or pmx explain --web)");
       return 0;
     },
   },
   {
     name: "proposals",
-    summary: "Tasks PMX proposed from your calls, exactly as Linear would get them: approve or drop each (nothing reaches Linear before you approve)",
-    usage: "pmx proposals [--brief] [--json] | pmx proposals approve <number or ID …> | --all | pmx proposals drop <number or ID …> | --all | pmx proposals theme <number or ID> \"<roadmap theme>\" | none",
+    summary: "Tasks PMX suggested from your calls, exactly as Linear would get them: start, approve or drop each (nothing reaches Linear before you do)",
+    usage: "pmx proposals [--brief] [--json] | pmx proposals start <number or ID …> | --all | pmx proposals approve <number or ID …> | --all | pmx proposals drop <number or ID …> | --all | pmx proposals theme <number or ID> \"<roadmap theme>\" | none",
     options: { all: { type: "boolean" }, brief: { type: "boolean" }, json: { type: "boolean" } },
     async run(a) {
       const sub = a.positionals[0] ?? "list";
@@ -80,36 +81,37 @@ export const teamCommands: Command[] = [
           console.log(formatSynthStatus(st, ctx.now()));
           return 0;
         }
-        console.log(a.values.json ? JSON.stringify(list, null, 2) : formatProposals(list, !a.values.brief));
+        console.log(a.values.json ? JSON.stringify(list, null, 2) : formatProposals(list, !a.values.brief, startsNow((await a.ctx()).team)));
         return 0;
       }
       if (sub === "theme") {
         // EQ-38: the PM sets, changes or clears the roadmap theme a task will carry as a pmx-theme label.
         const [ref, ...name] = a.positionals.slice(1);
-        if (!ref || !name.length) throw new Error('Say which proposal and which theme: pmx proposals theme 1 "Field capture", or none to clear it.');
+        if (!ref || !name.length) throw new Error('Say which task and which theme: pmx proposals theme 1 "Field capture", or none to clear it.');
         const ctx = await a.ctx();
         const wanted = name.join(" ");
         const r = await setProposalTheme(ctx.personal.repoPath, [ref], /^none$/i.test(wanted) ? null : wanted);
         for (const p of r.changed) console.log(r.theme ? `${p.title}: theme ${r.theme}` : `${p.title}: no theme`);
-        for (const m of r.missing) console.log(`· no proposal ${m}`);
+        for (const m of r.missing) console.log(`· no waiting task ${m}`);
         return r.missing.length ? 1 : 0;
       }
-      if (sub !== "approve" && sub !== "drop") throw new Error(`Unknown subcommand "${sub}". Use approve, drop or theme.`);
+      if (sub !== "approve" && sub !== "start" && sub !== "drop") throw new Error(`Unknown subcommand "${sub}". Use start, approve, drop or theme.`);
       if (!refs.length) throw new Error(`Say which: pmx proposals ${sub} 1 2, an ID like p1a2b3c, or --all.`);
       const ctx = await a.ctx();
       if (sub === "drop") {
         const r = await dropProposals(refs, ctx.now());
         for (const p of r.dropped) console.log(`- dropped ${p.title}`);
-        for (const m of r.missing) console.log(`· no proposal ${m}`);
+        for (const m of r.missing) console.log(`· no waiting task ${m}`);
         return r.missing.length ? 1 : 0;
       }
-      const r = await approveProposals(ctx, await services(ctx), refs);
+      const start = sub === "start";
+      const r = await approveProposals(ctx, await services(ctx), refs, { start });
       for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}${p.theme ? ` (theme ${p.theme})` : ""}`);
       for (const d of r.duplicates) console.log(`· not posted: ${d}`);
       for (const u of r.unthemed) console.log(`· ${u}`);
-      for (const m of r.missing) console.log(`· no proposal ${m}`);
-      // APPROVE-1 (#11): approving is one gate; a teammate making a task Ready is the other, and agents wait for it.
-      if (r.posted.length) console.log(`${r.posted.length} task(s) approved and sent to your team's pool in Linear${r.posted.some((p) => p.identifier.startsWith("PENDING-")) ? " (they reach Linear at the next Claude sync)" : ""}. No agent takes them until a teammate moves them to Ready on the team board.`);
+      for (const m of r.missing) console.log(`· no waiting task ${m}`);
+      // APPROVE-1, APPROVE-3: say when the task reaches agents: now (Start now), or once someone moves it to Ready.
+      if (r.posted.length) console.log(approvedText(r.posted, { start, startNow: startsNow(ctx.team) }));
       return r.missing.length ? 1 : 0;
     },
   },
@@ -228,7 +230,7 @@ export const synthStep: TickStep = async (ctx: Ctx) => {
   const w = synthWindow(s.lastSynthAt, ctx.now());
   const r = await synthesize(ctx, await services(ctx), { ...w, skipIfNothingNew: !slackDue });
   if (!r.meetings.processed.length && !r.staged.length) return null;
-  return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} task(s) proposed and waiting for your approval (pmx proposals)`;
+  return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} new task(s) waiting for your approval (pmx proposals)`;
 };
 
 export const pullStep: TickStep = async (ctx) => {

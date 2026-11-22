@@ -87,7 +87,7 @@ export async function synthStatus(ctx: Ctx, o: { local: boolean; receipts: RunRe
     counts: { meetings: 0, pending: 0, read: 0, held: 0 }, heldBy: [], estimateUsd: null, reason: "", meetings: [],
   };
   if (where === "off") return { ...base, reason: "No task tracker is set up, so PMX makes only your own to-dos, which stay on this Mac." };
-  if (where === "elsewhere") return { ...base, reason: `Tasks are proposed on ${ctx.team.synthesizer}, your team's synthesis Mac, so every call is read once for the whole team. This Mac makes your own to-dos.` };
+  if (where === "elsewhere") return { ...base, reason: `Tasks are suggested on ${ctx.team.synthesizer}, your team's synthesis Mac, so every call is read once for the whole team. This Mac makes your own to-dos.` };
 
   // The same reading a run does, without the model: which meetings the privacy filter keeps out, and which the team's
   // meeting record has already seen.
@@ -105,10 +105,10 @@ export async function synthStatus(ctx: Ctx, o: { local: boolean; receipts: RunRe
   const heldText = heldBy.map((h) => heldPhrase(h.rule, h.n)).join(", ");
 
   let reason: string;
-  if (!counts.meetings) reason = `No meetings were collected in the last ${DAYS} days, so there's nothing to propose tasks from yet. The collection task in your Claude app saves them; check it under Status.`;
-  else if (counts.pending) reason = `${plural(counts.pending, "customer meeting")} ${counts.pending === 1 ? "hasn't" : "haven't"} been read for tasks yet. ${o.automatic ? "PMX reads them on its next pass, within 30 minutes, or run it now." : "Automatic runs are off, so they wait until you run it."}${estimateUsd != null ? ` Reading them costs ${usd(estimateUsd)}.` : ""}`;
+  if (!counts.meetings) reason = `No meetings were collected in the last ${DAYS} days, so there's nothing to suggest tasks from yet. The collection task in your Claude app saves them; check it under Health.`;
+  else if (counts.pending) reason = `${plural(counts.pending, "customer meeting")} ${counts.pending === 1 ? "hasn't" : "haven't"} been read for tasks yet. ${o.automatic ? "PMX reads them on its next background run, within 30 minutes, or run it now." : "Automatic runs are off, so they wait until you run it."}${estimateUsd != null ? ` Reading them costs ${usd(estimateUsd)}.` : ""}`;
   else if (!counts.read) reason = `PMX checked ${plural(counts.meetings, "meeting")} from the last ${DAYS} days and kept all of them out of tasks: ${heldText}. Tasks come only from calls with someone outside your company; these still give you to-dos, which stay on this Mac.`;
-  else reason = `${lastRun ? "The last run" : "PMX"} read ${plural(counts.read, "customer meeting")} from the last ${DAYS} days and found nothing new to propose.${counts.held ? ` ${plural(counts.held, "other meeting")} ${counts.held === 1 ? "was" : "were"} kept out: ${heldText}.` : ""}`;
+  else reason = `${lastRun ? "The last run" : "PMX"} read ${plural(counts.read, "customer meeting")} from the last ${DAYS} days and found nothing new to suggest.${counts.held ? ` ${plural(counts.held, "other meeting")} ${counts.held === 1 ? "was" : "were"} kept out: ${heldText}.` : ""}`;
 
   const meetings: SynthMeeting[] = o.local ? [
     ...pending.map((i) => ({ at: i.at, outcome: "pending" as const, title: i.title, rule: null, label: null })),
@@ -121,11 +121,11 @@ export async function synthStatus(ctx: Ctx, o: { local: boolean; receipts: RunRe
 /** The status in Terminal, for `pmx proposals` with nothing waiting and for `pmx doctor`. */
 export function formatSynthStatus(st: SynthStatus, now: Date): string {
   const ago = (iso: string) => { const h = Math.round((now.getTime() - Date.parse(iso)) / 3600000); return h < 1 ? "less than an hour ago" : h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`; };
-  const lines = [`No proposed tasks are waiting. ${st.reason}`];
+  const lines = [`No new tasks are waiting. ${st.reason}`];
   if (st.where !== "here") return lines.join("\n");
   lines.push(`Last synthesis: ${st.lastRunAt ? ago(st.lastRunAt) : "never"}. Last ${st.days} days: ${st.counts.meetings} meeting(s) collected, ${st.counts.read} read for tasks, ${st.counts.pending} not read yet, ${st.counts.held} kept out.`);
   if (st.counts.pending) lines.push(`Read them now: pmx synthesize --since ${new Date(now.getTime() - st.days * 86400000).toISOString().slice(0, 10)}${st.estimateUsd != null ? ` (${usd(st.estimateUsd)})` : ""}`);
-  if (!st.automatic) lines.push("Automatic runs are off: `pmx init` turns them on, so PMX proposes tasks every 30 minutes.");
+  if (!st.automatic) lines.push("Automatic runs are off: `pmx init` turns them on, so PMX suggests tasks every 30 minutes.");
   lines.push("To-dos are different: they come from your own meetings, 1:1s included, and never leave this Mac. Tasks go to Linear only after you approve them.");
   return lines.join("\n");
 }
@@ -155,5 +155,5 @@ export async function neverSynthesized(team: Pick<TeamConfig, "synthesizer" | "t
     if (f.endsWith(".md") && ((await stat(join(dir, f)).catch(() => null))?.mtimeMs ?? 0) >= since) n++;
   }
   if (!n) return null;
-  return `${team.tracker.kind === "linear" ? "Linear is connected and " : ""}${n} meeting file(s) were collected in the last 14 days, but this Mac has never proposed a task from them${jobInstalled ? "" : " (automatic runs are off)"}. \`pmx proposals\` says why; \`pmx synthesize\` runs it now. Proposed tasks still wait for your approval.`;
+  return `${team.tracker.kind === "linear" ? "Linear is connected and " : ""}${n} meeting file(s) were collected in the last 14 days, but this Mac has never suggested a task from them${jobInstalled ? "" : " (automatic runs are off)"}. \`pmx proposals\` says why; \`pmx synthesize\` runs it now. New tasks still wait for your approval.`;
 }

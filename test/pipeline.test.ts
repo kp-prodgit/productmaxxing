@@ -335,10 +335,13 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
 
   it("the categories have their own view with its own route, and old links to them land there", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    // 0.23.0 (BOARD-6): categories and their skills live under Agents; old #work, #categories and #skills links land there.
-    expect(page).toMatch(/<button type="button" class="ni" data-view="agents">/);
-    expect(page).toMatch(/const ALIAS = \{ work: \["agents"\], categories: \["agents"\], skills: \["agents"\], connections: \["flow"\]/);
-    expect(page).toMatch(/V\.agents = \(\) =>/);
+    // 0.23.0 (BOARD-6): categories and their skills live under Agents; 0.36.0 (BOARD-10): Agents is a tab of Work.
+    // Old #agents, #categories and #skills links land there (#work is the Work area itself now).
+    expect(page).toMatch(/<button type="button" class="ni" data-view="work">/);
+    expect(page).toMatch(/const AREAS = \{ work: \["tasks", "agents", "digest"\]/);
+    expect(page).toMatch(/agents: \["work", "agents"\], digest: \["work", "digest"\]/);
+    expect(page).toMatch(/categories: \["work", "agents"\], skills: \["work", "agents"\], connections: \["health", "flow"\]/);
+    expect(page).toMatch(/function agentsTab\(\) \{/);
   });
 
   it("0.19.0: categories are grouped by lifecycle stage, in order, with unstaged ones last (CAT-2)", async () => {

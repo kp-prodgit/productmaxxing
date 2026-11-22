@@ -95,13 +95,14 @@ describe("0.24.1: PMX's server in the Claude app follows an update (FLOW-4)", ()
 });
 
 describe("0.24.1: Flow is back in the workspace's menu (BOARD-3)", () => {
-  it("the page has a Flow item and view, keeps Status's steps, and opens old #flow links on the map", async () => {
+  it("the page has a Flow map and the list of the steps, and opens old #flow links on the map", async () => {
     const page = await readFile(pipelineTemplate(), "utf8");
-    expect(page).toContain('data-view="flow"');
-    expect(page).toMatch(/const VIEWS = \[[^\]]*"agents", "flow", "status"/);
-    expect(page).toContain("V.flow = () =>");
-    expect(page).toContain('S.stab === "flow" ? flowSteps()'); // Status keeps its list of the steps
-    expect(page).not.toMatch(/ALIAS = \{[^}]*flow: \["status"/);
+    // 0.36.0 (BOARD-10): both are tabs of Health; old #flow lands on the map, old #status/flow on the steps.
+    expect(page).toMatch(/health: \["overview", "running", "setup", "activity", "steps", "flow", "settings"\]/);
+    expect(page).toContain("flowMap = () =>");
+    expect(page).toContain("steps: () => ({ sub:");
+    expect(page).toMatch(/const OLD = \{[^}]*flow: \["health", "flow"\]/);
+    expect(page).toMatch(/STATUS_TAB = \{[^}]*flow: "steps"/);
     // The local page's policy refuses style attributes: the map sets styles through the CSSOM only.
     expect(page).not.toMatch(/h\("[a-z]+", \{[^}]*style:/);
   });

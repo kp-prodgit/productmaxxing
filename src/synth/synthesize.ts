@@ -285,7 +285,7 @@ export async function synthesize(
     if (hit?.where === "tracker") { skipped.push(`${c.title}: already open as ${hit.id}; heard again in ${c.sources.length} more source(s)`); went.set(c, { duplicateOf: hit.id }); continue; }
     if (hit?.where === "waiting" && !o.dryRun) {
       const merged = await addEvidence(hit.id, { receipt: receipt.id, from: fromOf(c), days: c.sources.map((id) => byId.get(id)!.at.slice(0, 10)) });
-      if (merged) { skipped.push(`${c.title}: the same need as a proposal already waiting, so its sources were added to it`); went.set(c, { mergedInto: hit.id }); continue; }
+      if (merged) { skipped.push(`${c.title}: the same need as a task already waiting for you, so its sources were added to it`); went.set(c, { mergedInto: hit.id }); continue; }
     }
     if (o.dryRun) { posted.push({ identifier: "(dry run)", title: c.title }); went.set(c, { dryRun: true }); continue; }
     fresh.push(c);

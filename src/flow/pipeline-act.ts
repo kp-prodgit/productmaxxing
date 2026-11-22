@@ -6,7 +6,8 @@ import type { PipelineData } from "./pipeline.js";
  */
 export interface PipelineActions {
   data(hours: number): Promise<PipelineData>;
-  proposals(action: "approve" | "drop", ids: string[]): Promise<string>;
+  /** "start" is Start now (APPROVE-3): approve and make Ready. "approve" sends to the pool. */
+  proposals(action: "approve" | "start" | "drop", ids: string[]): Promise<string>;
   /** EQ-38: set or clear one proposal's roadmap theme. This Mac's page only, like the proposals themselves. */
   proposalTheme?(id: string, theme: string | null): Promise<{ status: number; body: unknown }>;
   changes(changes: unknown[], confirmLoosening: boolean): Promise<{ status: number; body: unknown }>;
@@ -27,21 +28,35 @@ export interface PipelineActions {
   /** BOARD-9: applies team settings that stayed a local branch because the team repo has no remote. */
   teamApply?(branch: string): Promise<{ status: number; body: unknown }>;
   resume?(category: string): Promise<{ status: number; body: unknown }>;
+  /** PULL-12: Try again or Drop a task PMX stopped after failed runs. */
+  stopped?(identifier: string, action: string): Promise<{ status: number; body: unknown }>;
+  /** SETUP-2: one setup step PMX can do itself, from its allowlist; answers with the checklist worked out again. */
+  checklistFix?(step: string): Promise<{ status: number; body: unknown }>;
+  /** CLAUDE-6: when PMX's Claude tasks do their work, "weekdays" or "always". */
+  taskHours?(hours: string): Promise<{ status: number; body: unknown }>;
+  /** FLOW-8: the page `/pmx-flow` would publish now, so the page in Claude can publish it over itself. */
+  pageHtml?(): Promise<{ status: number; body: unknown }>;
+  /** FLOW-8: the page in Claude published that newer page over itself. */
+  pagePublished?(version: string): Promise<{ status: number; body: unknown }>;
+  /** OBS-5: what PMX is doing on this Mac right now. Read only while Health → Running is open. */
+  running?(): Promise<{ status: number; body: unknown }>;
+  /** BOARD-11: PMX Engine's studio opened at one of its places, in this Mac's browser. */
+  engineOpen?(place: string): Promise<{ status: number; body: unknown }>;
 }
 
-export const ACT_PATHS = ["proposals", "proposal-theme", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "todo-linear", "move", "resume", "setup", "local-page", "team-apply", "what-if"] as const;
+export const ACT_PATHS = ["proposals", "proposal-theme", "changes", "review", "digest", "run", "todo", "todo-add", "todo-place", "todo-linear", "move", "resume", "setup", "local-page", "team-apply", "stopped", "what-if", "checklist-fix", "task-hours", "page-html", "page-published", "running", "engine-open"] as const;
 
 /** One action: its path without /api/pipeline/, and its JSON body. Returns an HTTP-style status and body. */
 export async function pipelineAct(o: PipelineActions, path: string, body: any): Promise<[number, unknown]> {
   if (!body || typeof body !== "object" || Array.isArray(body)) return [400, { error: "the body must be a JSON object" }];
   if (path === "what-if") return [200, { whatIf: await o.whatIf(String(body.kind ?? ""), String(body.value ?? "")) }];
   if (path === "proposals") {
-    if (body.action !== "approve" && body.action !== "drop") return [400, { error: "action must be approve or drop" }];
-    if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((x: unknown) => typeof x !== "string")) return [400, { error: "ids must be proposal IDs" }];
+    if (body.action !== "approve" && body.action !== "start" && body.action !== "drop") return [400, { error: "action must be start, approve or drop" }];
+    if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((x: unknown) => typeof x !== "string")) return [400, { error: "ids must be the IDs of tasks waiting for approval" }];
     return [200, { message: await o.proposals(body.action, body.ids) }];
   }
   if (path === "proposal-theme" && o.proposalTheme) {
-    if (typeof body.id !== "string" || (body.theme !== null && typeof body.theme !== "string")) return [400, { error: "id is a proposal ID, and theme a theme name or null" }];
+    if (typeof body.id !== "string" || (body.theme !== null && typeof body.theme !== "string")) return [400, { error: "id is the ID of a task waiting for approval, and theme a theme name or null" }];
     const r = await o.proposalTheme(body.id, body.theme === null ? null : body.theme.slice(0, 100));
     return [r.status, r.body];
   }
@@ -73,6 +88,25 @@ export async function pipelineAct(o: PipelineActions, path: string, body: any): 
     if (typeof body.ref !== "string" || typeof body.to !== "string") return [400, { error: "ref and to are required" }];
     const opt = (v: unknown) => (typeof v === "string" ? v.slice(0, 64) : undefined);
     const r = await o.move({ ref: body.ref.slice(0, 64), to: body.to, kind: opt(body.kind), size: opt(body.size) });
+    return [r.status, r.body];
+  }
+  if (path === "stopped" && o.stopped) {
+    if (typeof body.identifier !== "string" || !/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(body.identifier) || (body.action !== "retry" && body.action !== "drop")) return [400, { error: "identifier is a task like PMX-12, and action retry or drop" }];
+    const r = await o.stopped(body.identifier, body.action);
+    return [r.status, r.body];
+  }
+  if (path === "checklist-fix" && o.checklistFix) {
+    if (typeof body.step !== "string" || !/^[a-z][\w.-]{1,63}$/.test(body.step)) return [400, { error: "step is a checklist step ID" }];
+    const r = await o.checklistFix(body.step);
+    return [r.status, r.body];
+  }
+  if (path === "task-hours" && o.taskHours) { const r = await o.taskHours(String(body.hours ?? "")); return [r.status, r.body]; }
+  if (path === "page-html" && o.pageHtml) { const r = await o.pageHtml(); return [r.status, r.body]; }
+  if (path === "page-published" && o.pagePublished) { const r = await o.pagePublished(String(body.version ?? "")); return [r.status, r.body]; }
+  if (path === "running" && o.running) { const r = await o.running(); return [r.status, r.body]; }
+  if (path === "engine-open" && o.engineOpen) {
+    if (typeof body.place !== "string" || body.place.length > 40) return [400, { error: "place is a place in PMX Engine's studio" }];
+    const r = await o.engineOpen(body.place);
     return [r.status, r.body];
   }
   if (path === "resume" && o.resume) { const r = await o.resume(String(body.category ?? "")); return [r.status, r.body]; }

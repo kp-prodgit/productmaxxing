@@ -94,7 +94,7 @@ describe("0.10.1: runs that fail say why, and doctor catches it first", () => {
     await recordTick(["sync: 3 events", "digest: failed: Digest run failed: spawn claude ENOENT"], new Date("2026-11-05T11:00:00Z"));
     const bad = tickHealth((await loadState()).lastTick)!;
     expect(bad.ok).toBe(false);
-    expect(bad.detail).toMatch(/failed 3 passes in a row.*spawn claude ENOENT/);
+    expect(bad.detail).toMatch(/failed 3 runs in a row.*spawn claude ENOENT/);
     await recordTick(["sync: 1 event"]);
     expect((await loadState()).lastTick).toMatchObject({ failed: [], failStreak: 0 });
     expect(tickHealth(null)).toBeNull();

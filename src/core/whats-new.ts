@@ -19,6 +19,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.36.0", date: "2026-11-21", headline: "One place for every decision, and no Terminal after install",
+    items: [
+      { what: "Needs you: every decision waiting for you in one list, drafts to review first, each saying who acts and how long it has waited. Work, Health and My to-dos hold the rest.", try: "pmx status" },
+      { what: "Start now on a new task makes it Ready for agents at once; Later puts it in your team's backlog. A task that stopped after failed runs has Try again, Edit task and Drop." },
+      { what: "Every setup step has a button on the page, and Health → Running shows what PMX is doing and the memory it uses. Accepting a draft no longer depends on what you have open." },
+      { what: "After this update, type /pmx-flow, /pmx-schedule and /pmx-board once each in the Claude app. From then on the page updates itself, and changing your sync hours needs no Claude step.", try: "pmx checklist" },
+      { what: "PMX Engine shows inside your PMX page for your team's product lead, with one checklist for both tools, and pmx update updates both. One install command for everyone.", try: "npx --yes productmaxxing@latest install" },
+    ],
+  },
+  {
     version: "0.35.0", date: "2026-11-21", headline: "Know where you stand, and agent runs that get their quotes",
     items: [
       { what: "Every install, setup and update step, worked out from this Mac: what's done, what's missing, and who does the next step. In the Claude app, /pmx-setup has Claude walk you through it.", try: "pmx checklist" },
@@ -304,7 +314,7 @@ export async function pendingNotes(o: { installedAt?: string | null } = {}): Pro
 }
 
 /** Commands that never show the notes: machine protocols, the background job, and the ones that handle it themselves. */
-export const QUIET_COMMANDS = new Set(["tick", "mcp", "whats-new", "uninstall"]);
+export const QUIET_COMMANDS = new Set(["tick", "mcp", "whats-new", "uninstall", "install"]);
 
 /** Shows pending notes once, on stderr so JSON on stdout stays clean, then marks them seen. Never throws. */
 export async function announceOnce(write: (s: string) => void, o: { installedAt?: string | null; pages?: () => Promise<string | null> } = {}): Promise<void> {

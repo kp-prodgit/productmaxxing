@@ -14,6 +14,7 @@ import { loadFlowGraph } from "../flow/graph-load.js";
 import { loadPipeline } from "../flow/pipeline-load.js";
 import { ACT_PATHS, pipelineAct, type PipelineActions } from "../flow/pipeline-act.js";
 import { keyOk, macConfirm, pair, unpairAll, type Confirm } from "./pair.js";
+import type { EngineSource } from "../flow/strategy.js";
 
 /**
  * `pmx mcp` (FLOW-4): a local MCP server on stdio, so the /pmx-flow artifact can reach PMX through the Claude app
@@ -29,7 +30,7 @@ const KEY = { type: "string", description: "The key this page got from pair. Kep
 export const MCP_TOOLS = [
   {
     name: "pipeline",
-    description: "ProductMaxxing (PMX) pipeline board: counts of meetings and Slack threads read, held and sent to Claude, tasks proposed and sent to Linear, agent runs and reviews in a time window, plus the skills, scheduled tasks, rules and privacy checks. Counts only: no meeting or proposal titles, no do-not-read entries.",
+    description: "ProductMaxxing (PMX) pipeline board: counts of meetings and Slack threads read, held and sent to Claude, tasks suggested and sent to Linear, agent runs and reviews in a time window, plus the skills, scheduled tasks, rules and privacy checks. Counts only: no meeting or task titles, no do-not-read entries.",
     inputSchema: { type: "object", additionalProperties: false, properties: { hours: { type: "integer", minimum: 1, maximum: 336, description: "How far back to look (default 168, a week)." } } },
     annotations: { title: "PMX pipeline", readOnlyHint: true, openWorldHint: false },
   },
@@ -41,7 +42,7 @@ export const MCP_TOOLS = [
   },
   {
     name: "flow_graph",
-    description: "ProductMaxxing (PMX) flow: the meetings and Slack threads PMX read or held (held ones by rule only), the runs, skills, proposed tasks, Linear issues, agent runs, reviews and spend in a time window, plus the privacy checks. Metadata only.",
+    description: "ProductMaxxing (PMX) flow: the meetings and Slack threads PMX read or held (held ones by rule only), the runs, skills, new tasks, tasks in Linear, agent runs, reviews and spend in a time window, plus the privacy checks. Metadata only.",
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: { hours: { type: "integer", minimum: 1, maximum: 336, description: "How far back to look (default 24)." }, scope: { type: "string", enum: ["mine", "team"], description: "This Mac, or the team's shared run log." } },
@@ -68,13 +69,13 @@ export const MCP_TOOLS = [
   },
   {
     name: "board",
-    description: "The PM's full ProductMaxxing (PMX) board for their paired /pmx-flow page: proposals, to-dos, drafts, the digest, settings. Needs the page's key; refuses without it.",
+    description: "The PM's full ProductMaxxing (PMX) board for their paired /pmx-flow page: tasks waiting for approval, to-dos, drafts, the digest, settings. Needs the page's key; refuses without it.",
     inputSchema: { type: "object", additionalProperties: false, required: ["key"], properties: { key: KEY, hours: { type: "integer", minimum: 1, maximum: 336 } } },
     annotations: { title: "PMX board (paired page)", readOnlyHint: true, openWorldHint: false },
   },
   {
     name: "board_act",
-    description: "One action from the PM's paired /pmx-flow page: approve or drop proposals, tick, add or move a to-do, decide a draft review, approve the digest, run a step, change settings. Needs the page's key; refuses without it.",
+    description: "One action from the PM's paired /pmx-flow page: approve or drop new tasks, complete, add or move a to-do, decide a draft review, approve the digest, run a step, do a setup step PMX can do itself, change settings. Needs the page's key; refuses without it.",
     inputSchema: {
       type: "object", additionalProperties: false, required: ["key", "path", "body"],
       properties: { key: KEY, path: { type: "string", enum: [...ACT_PATHS, "unpair"] }, body: { type: "object" } },
@@ -83,8 +84,8 @@ export const MCP_TOOLS = [
   },
 ] as const;
 
-const INSTRUCTIONS = "ProductMaxxing (PMX) for the PM's /pmx-flow page. In a chat, use only pipeline, flow_graph and flow_what_if (counts and metadata). pair, board and board_act are for the page itself: never call pair from a chat, and never ask the user for a key.";
-const REPUBLISH = "PMX can't publish its pages in Claude itself, so after PMX is updated they keep running the older code until Claude publishes them again. When the pipeline tool's health problems say a PMX page in Claude was published with an older pmx, tell the user and offer to update it now with the pmx-flow skill (the workspace) or the pmx-board skill (the team board); each keeps its link.";
+const INSTRUCTIONS = "ProductMaxxing (PMX) for the PM's /pmx-flow page. In a chat, use only pipeline, flow_graph and flow_what_if (counts and metadata). pair, board and board_act are for the page itself: never call pair from a chat, and never ask the user for a key. When you talk with the user about PMX, use the words its page uses: task (not proposal or issue), backlog (not pool), draft, run (PMX's background run every 30 minutes, or an agent run on one task), page (not hub), release (not edition) and audience (not group).";
+const REPUBLISH = "PMX's workspace page in Claude, once published with pmx 0.36.0 or later, updates itself after a PMX update the next time the PM opens it. An older workspace page, and the team board when its page changed, keep running the older code until Claude publishes them again. When the pipeline tool's health problems say a PMX page in Claude was published with an older pmx, tell the user and offer to update it now with the pmx-flow skill (the workspace) or the pmx-board skill (the team board); each keeps its link.";
 
 /**
  * What the Claude app tells Claude about this server when it starts it. After an update, it names the pages this Mac
@@ -98,8 +99,12 @@ export async function serverInstructions(ctx: () => Promise<Ctx>): Promise<strin
 
 type Msg = { jsonrpc: "2.0"; id?: string | number | null; method?: string; params?: any };
 
-/** What a paired call needs besides the context: the board's actions and how to ask the PM. Tests pass their own. */
-export interface McpDeps { actions?: (c: Ctx) => PipelineActions; confirm?: Confirm }
+/**
+ * What a paired call needs besides the context: the board's actions and how to ask the PM. Tests pass their own.
+ * `engine` (BOARD-11): PMX Engine as `pmx mcp` hands it over, for the paired page's `board` and `board_act` only.
+ * Nothing else here reads it: not `pipeline`, `checklist` or `flow_graph`, and not the server's instructions.
+ */
+export interface McpDeps { actions?: (c: Ctx) => PipelineActions; confirm?: Confirm; engine?: EngineSource }
 const NOT_PAIRED = { error: "This page isn't connected to PMX on this Mac. Click Connect on the page.", code: "not_paired" };
 
 /** Answers one JSON-RPC message, or null for a notification. Exported for tests. */
@@ -133,7 +138,7 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>, deps: McpDeps
         }
         if (name === "checklist") {
           const last = (await readHistory())?.last;
-          return result(last ?? { error: "PMX hasn't worked out its checklist on this Mac yet. Run `pmx checklist` in a shell, or wait for the background job's next pass." }, !last);
+          return result(last ?? { error: "PMX hasn't worked out its checklist on this Mac yet. Run `pmx checklist` in a shell, or wait for the background job's next run." }, !last);
         }
         if (name === "flow_graph") {
           const hours = args.hours === undefined ? 24 : Number(args.hours);
@@ -157,7 +162,8 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>, deps: McpDeps
         if (name === "board" || name === "board_act") {
           if (!(await keyOk(args.key))) return result(NOT_PAIRED, true);
           const c = await ctx();
-          const actions = (deps.actions ?? (await import("../flow/pipeline-handlers.js")).pipelineHandlers)(c);
+          // The page's setup fixes ask on this Mac with the same dialog as pairing (SETUP-2).
+          const actions = deps.actions ? deps.actions(c) : (await import("../flow/pipeline-handlers.js")).pipelineHandlers(c, { confirm: deps.confirm ?? macConfirm, self: "mcp", engine: deps.engine });
           if (name === "board") {
             const hours = args.hours === undefined ? 168 : Number(args.hours);
             if (!Number.isInteger(hours) || hours < 1 || hours > 336) return result({ error: "hours must be a whole number from 1 to 336" }, true);

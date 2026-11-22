@@ -9,11 +9,13 @@ import type { SizeRubric } from "../core/skillcheck.js";
 import type { SkillInfo } from "../core/skills.js";
 import { SIZES, STAGES, type Size, type Stage } from "../core/types.js";
 import type { Proposal } from "../synth/proposals.js";
+import { stoppedTasks, type StoppedTask } from "../pull/failures.js";
 import type { FlowCheck } from "./graph.js";
 import type { ActivityItem, Automation } from "./automations.js";
 import type { DigestBoard } from "./digests.js";
 import type { InputsBoard } from "../inputs/board.js";
 import type { Job } from "./jobs.js";
+import { needsYou, type NeedsYou } from "./needs.js";
 
 const BUILT_IN_CATEGORIES = new Set(Object.keys(DEFAULT_TEAM.categories));
 
@@ -39,15 +41,20 @@ export interface PipelineEdge {
 }
 
 /**
- * Something the PM should fix, in words, with what fixes it: a Terminal command to copy, and/or the place on the board
- * that fixes it ("rule:<id>" for a Rules section, "tab:<id>" for a tab, "check:<id>" for a privacy check).
+ * Something the PM should fix, in words, with what fixes it: the setup step PMX does itself (`step`, SETUP-2), a slash
+ * command to type in the Claude app (`cmd`, always "/pmx-…" from 0.36.0: the page names no pmx commands), and/or the
+ * place on the board that fixes it ("rule:<id>" for a Rules section, "tab:<id>" for a tab, "check:<id>" for a check).
  */
 export interface HealthProblem {
   text: string;
   cmd?: string;
   fix?: string;
-  /** Something the local page can do about it with one click (BOARD-5), like "install-job". */
+  /** Something the local page can do about it with one click (BOARD-5), like "install-job". Pages before 0.36.0. */
   action?: string;
+  /** SETUP-2: the checklist step whose fix PMX runs from the page's button (`checklist-fix`). */
+  step?: string;
+  /** The button's words for `step`. */
+  label?: string;
 }
 
 /**
@@ -98,11 +105,21 @@ export interface PipelineData {
   sources: { id: string; label: string; connected: boolean; n: number; last: string | null }[];
   edges: Record<EdgeId, PipelineEdge>;
   needs: { proposals: number; drafts: number; todos: number };
-  /** Local level only. */
-  proposals: { id: string; title: string; category: string; size: Size; from: string; description: string; theme: string | null }[];
+  /** Local level only. `at`: when synthesis staged it, so the page can say how long it has waited (0.36.0). */
+  proposals: { id: string; title: string; category: string; size: Size; from: string; description: string; theme: string | null; at?: string }[];
   /** The team's open roadmap themes (EQ-38), for the proposals' theme picker. Local level only, like the proposals. */
   themes?: string[];
-  drafts: { identifier: string; title: string; url: string | null; since: string | null }[];
+  /**
+   * Tasks in review. `since` is when the task was created in Linear. From 0.36.0, `draftedAt` is when an agent's run
+   * last made its draft (from the run log; null when none is recorded) and `mine` whether this PM's agent made it,
+   * which is what the review cap counts (PULL-4).
+   */
+  drafts: { identifier: string; title: string; url: string | null; since: string | null; draftedAt?: string | null; mine?: boolean }[];
+  /**
+   * PULL-12: tasks PMX stopped after failed runs in a row, newest first, with why the last run failed in a PM's words.
+   * Titles are the team's, as in Linear, like drafts. Absent from boards before 0.36.0.
+   */
+  stopped?: StoppedTask[];
   /**
    * The team's tasks nobody has started (pool and Ready), newest first, so the PM can take one as their own to-do
    * (TODO-5). Local level only. Absent from boards before 0.35.0.
@@ -150,6 +167,13 @@ export interface PipelineData {
   inputs?: InputsBoard | null;
   /** SIG-6 (0.25.0): who proposes tasks, when it last ran, and why none are waiting, meeting by meeting on this Mac's page. */
   synth?: SynthStatus | null;
+  /** BOARD-10 (0.36.0): what waits for the PM, counted as the page's Needs you counts it, and as `pmx status` says it. */
+  needsYou?: NeedsYou;
+  /**
+   * BOARD-11: PMX Engine, read live as labels, on a Mac where it is. This Mac's own page only (`pmx open`, and the
+   * paired page through `board`): never at the shared level, and never stored.
+   */
+  engine?: import("./strategy.js").EngineView;
 }
 
 export interface PipelineRules {
@@ -167,6 +191,16 @@ export interface PipelineRules {
   allowedSources: string[];
   /** SIG-7 (0.25.0): whether this PM chose to send their own to-dos to Linear, one at a time. */
   todosToLinear?: boolean;
+  /** APPROVE-3 (0.36.0): whether the team offers Start now on proposed tasks. A board without it offers Approve only. */
+  startNow?: boolean;
+  /** CLAUDE-6 (0.36.0): when PMX's Claude tasks do their work, a PMX setting. A board without it can't change it. */
+  taskHours?: "weekdays" | "always";
+  /**
+   * INSTALL-4 (0.36.0): the team's product lead by PMX handle, or null, a team setting; `productLeadIsYou` when that's
+   * this PM. A board without them doesn't show the setting.
+   */
+  productLead?: string | null;
+  productLeadIsYou?: boolean;
 }
 
 export interface PipelineInputs {
@@ -179,7 +213,7 @@ export interface PipelineInputs {
   receipts: RunReceipt[];
   runlog: RunLogEntry[] | null;
   /** Linear as PMX sees it (relay snapshot with queued changes, or the API). */
-  issues: { identifier: string; title: string; url?: string; createdAt?: string; status: string | null; meeting: boolean; category?: string | null }[];
+  issues: { identifier: string; title: string; url?: string; createdAt?: string; status: string | null; meeting: boolean; category?: string | null; agent?: string | null }[];
   linearSyncedAt: string | null;
   collectReports: { at: string; connector: string | null; saved: number; inputs?: { id: string; shape: "calls" | "channels"; saved: number }[] }[];
   todosCreated: string[];
@@ -210,6 +244,8 @@ export interface PipelineInputs {
   jobs?: Job[];
   killSwitch?: { on: boolean; reason: string | null };
   version?: string;
+  /** BOARD-11: PMX Engine as the page shows it. Kept only at the local level. */
+  engine?: import("./strategy.js").EngineView | null;
 }
 
 const CONNECTOR_LABEL: Record<string, string> = { granola: "Granola", fireflies: "Fireflies", otter: "Otter", fathom: "Fathom", tldv: "tl;dv", zoom: "Zoom", "google-meet": "Google Meet", file: "Transcript folder" };
@@ -348,7 +384,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     "d-a": { n: proposed.length, unit: "tasks", last: latest(proposed.map((x) => x.at)) },
     "a-x": { n: dropped.length, unit: "tasks", last: latest(dropped.map((x) => x.at)) },
     "a-i": { n: posted.length, unit: "tasks", last: latest(posted.map((x) => x.at)) },
-    "i-b": { n: pool.length, unit: "tasks in the pool now", last: i.linearSyncedAt },
+    "i-b": { n: pool.length, unit: "tasks in the backlog now", last: i.linearSyncedAt },
     "i-r": { n: ready.length, unit: "tasks ready now", last: i.linearSyncedAt },
     "r-g": { n: runs.length, unit: "runs", tokens: runs.reduce((a, e) => a + (e.tokens ?? 0), 0), last: latest(runs.map((e) => e.ts)) },
     "g-v": { n: runs.filter((e) => e.outcome === "ok").length, unit: "drafts", last: latest(runs.filter((e) => e.outcome === "ok").map((e) => e.ts)) },
@@ -385,17 +421,22 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     },
   };
 
-  return {
+  // When an agent's run last made each draft (any agent's, from the team's run log), and whose agent it was.
+  const draftedAt = new Map<string, string>();
+  for (const e of i.runlog ?? []) if (e.type === "run" && e.outcome === "ok" && (draftedAt.get(e.taskId) ?? "") < e.ts) draftedAt.set(e.taskId, e.ts);
+
+  const data: PipelineData = {
     v: 1, level: i.level, at: until, hours,
     freshness: { linearSyncedAt: i.linearSyncedAt, lastTick: i.lastTick, lastCollect: latest(i.collectReports.map((c) => c.at)) },
     sources, edges,
     needs: { proposals: i.proposals.length, drafts: review.length, todos: (i.openTodos ?? []).length },
     // A proposal the PM hasn't approved stays theirs, so only this Mac's page shows it.
     proposals: local ? i.proposals.map((p) => ({
-      id: p.id, title: p.title, category: p.category, size: p.size, description: p.description, theme: p.theme ?? null,
+      id: p.id, title: p.title, category: p.category, size: p.size, description: p.description, theme: p.theme ?? null, at: p.at,
       from: p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
     })) : [],
-    drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null })),
+    drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null, draftedAt: draftedAt.get(x.identifier) ?? null, mine: x.agent === undefined || x.agent === i.agent })),
+    stopped: stoppedTasks(tasksNow, i.runlog ?? []),
     pool: local ? tasksNow.filter((x) => (x.status === "inbox" || x.status === "ready") && x.category !== COMMITMENT).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, 50)
       .map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, status: x.status!, category: x.category ?? null })) : [],
     // A to-do from no meeting (added by the PM, or taken from the team's list) says so as it is; the rest name their meeting.
@@ -423,7 +464,11 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     jobs: local ? i.jobs ?? [] : [],
     killSwitch: i.killSwitch ?? { on: false, reason: null },
     version: i.version,
+    // The never list: Engine's labels reach this Mac's own page only.
+    ...(local && i.engine ? { engine: i.engine } : {}),
   };
+  data.needsYou = needsYou(data);
+  return data;
 }
 
 /** The rubric as the board edits it: category → size → text, for every category the team has. */

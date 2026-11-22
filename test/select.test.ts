@@ -40,7 +40,7 @@ describe("pull policy and dry-run explanations (PULL-1..4, PULL-9)", () => {
     expect(why.T4).toMatch(/no size label/);
     expect(why.T6).toMatch(/already claimed/);
     expect(why.T5).toBeUndefined();
-    expect(explain(s, true)).toMatch(/Would pull: T2/);
+    expect(explain(s, true)).toMatch(/Would take: T2/);
   });
 
   it("works whenever the Mac is on, even with old saved hours; blocks at the review cap and with no budget", () => {

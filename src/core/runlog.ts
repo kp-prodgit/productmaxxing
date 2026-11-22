@@ -24,7 +24,10 @@ export type RunLogEntry =
   | ({ type: "synthesize"; posted: number; held: number; durationMs: number; tokens: number | null; costUsd: number | null; receipt?: string } & Base)
   | ({ type: "verdict"; taskId: string; category: string; size: string; verdict: "accepted" | "rejected" | "redo";
       reviewMinutes: number | null; editSize: number | null } & Base)
-  | ({ type: "release"; taskId: string; reason: "stale" | "manual" | "redo" | "failed" | "brain" } & Base)
+  /** `retry` (PULL-12): the PM tried a task that stopped after failed runs again. Its failed-run count starts over. */
+  | ({ type: "release"; taskId: string; reason: "stale" | "manual" | "redo" | "failed" | "brain" | "retry" } & Base)
+  /** PULL-12: the PM dropped a task that stopped after failed runs. It left the agents' queue for good. */
+  | ({ type: "drop"; taskId: string } & Base)
   | ({ type: "unpause"; category: string } & Base)
   /** The brain paused a category (BRAIN-2). `rule` is its fixed rule ID; `pmx review --unpause` lifts it. */
   | ({ type: "pause"; category: string; by: "brain"; rule: string } & Base);

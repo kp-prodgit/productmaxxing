@@ -41,6 +41,11 @@ export class Git {
   async defaultBranch(): Promise<string> {
     const r = await this.raw(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
     if (r.code === 0) return r.stdout.trim().replace(/^origin\//, "");
+    // No remote default: the repo's usual base when it has one, so whatever happens to be checked out isn't taken for
+    // it (REV-4). Only a repo with none of these falls back to the current branch, as before.
+    const configured = (await this.raw(["config", "--get", "init.defaultBranch"])).stdout.trim();
+    for (const b of [...new Set([configured, "main", "master"].filter(Boolean))])
+      if ((await this.raw(["rev-parse", "--verify", "--quiet", `refs/heads/${b}`])).code === 0) return b;
     const cur = await this.raw(["branch", "--show-current"]);
     return cur.stdout.trim() || "main";
   }

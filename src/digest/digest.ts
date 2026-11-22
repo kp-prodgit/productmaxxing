@@ -57,7 +57,7 @@ export async function buildDigest(ctx: Ctx, o: { days?: number } = {}): Promise<
   };
   if (g.items.length === 0) {
     await writeReceipt(receipt, ctx.now());
-    ctx.out.info(`No usable signal in the last ${o.days ?? 7} days (${g.read} found, ${totalHeld(g.held)} left out or cut). See why: pmx explain`);
+    ctx.out.info(`Nothing usable from customer calls in the last ${o.days ?? 7} days (${g.read} found, ${totalHeld(g.held)} left out or cut). See why: pmx explain`);
     return null;
   }
 
@@ -95,7 +95,7 @@ export async function buildDigest(ctx: Ctx, o: { days?: number } = {}): Promise<
 
   const checked = enforceCitations(result.text, new Set(g.items.map((i) => i.id)));
   const markdown = [
-    `# Signal digest · ${week}`,
+    `# Weekly digest · ${week}`,
     "",
     `_Drafted by ProductMaxxing for ${ctx.personal.handle}. ${g.items.length} sources; ${totalHeld(g.held)} personal items held back and discarded; ${checked.removed} uncited claims removed._`,
     "",

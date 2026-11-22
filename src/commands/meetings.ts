@@ -1,4 +1,4 @@
-import { COLLECT_TASK } from "../claude/tasks.js";
+import { COLLECT_TASK, outsideHours, taskDue } from "../claude/tasks.js";
 import { checkCollected, collectPrompt, ensureCollectFolder } from "../collect/collect.js";
 import { rollup } from "../company/rollup.js";
 import { savePersonalConfig } from "../core/config.js";
@@ -24,6 +24,14 @@ export const meetingCommands: Command[] = [
         return 0;
       }
       if (a.values.prompt) {
+        // CLAUDE-6: the app starts the task every day; outside the PM's hours its run stops here, and counts as run.
+        const due = taskDue(COLLECT_TASK, ctx.personal.taskHours, ctx.now());
+        if (!due.due) {
+          console.log(outsideHours(due.why));
+          await markTaskRun(COLLECT_TASK.id, "start", ctx.now());
+          await markTaskRun(COLLECT_TASK.id, "finish", ctx.now());
+          return 0;
+        }
         console.log(await collectPrompt(ctx, { scope: a.values.team ? "team" : "mine" }));
         await markTaskRun(COLLECT_TASK.id, "start", ctx.now());
         return 0;
@@ -32,7 +40,7 @@ export const meetingCommands: Command[] = [
       const s = await loadState();
       console.log([
         "PMX doesn't hold connector access. A scheduled task in your Claude app does the collecting, with the connectors you already have:",
-        '  "Every weekday at 12:30 and 17:30: run `pmx collect --prompt` and follow its instructions."',
+        '  "Every day at 12:30 and 17:30: run `pmx collect --prompt` and follow its instructions." (On weekdays only, unless you choose around the clock.)',
         "Add `--team` on the synthesizer's machine to collect meetings shared with your team, not just yours.",
         "",
         `Transcripts land in ${ctx.personal.sources.transcriptDirs.at(-1)}${added ? " (just added to your transcript folders)" : ""}.`,
@@ -104,11 +112,11 @@ export const meetingCommands: Command[] = [
   {
     name: "move",
     summary: "Move work between a private to-do, a to-do in Linear and a product task for the team, in any direction",
-    usage: "pmx move <to-do ID | proposal ID | PMX-12> private|todo|product [--kind <kind of work>] [--size S|M|L|XL]",
+    usage: "pmx move <to-do ID | new task ID | PMX-12> private|todo|product [--kind <kind of work>] [--size S|M|L|XL]",
     options: { kind: { type: "string" }, size: { type: "string" } },
     async run(a) {
       const [ref, to] = a.positionals;
-      if (!ref || !to) throw new Error("Usage: pmx move <to-do ID | proposal ID | PMX-12> private|todo|product [--kind <kind of work>]. `pmx todo` and `pmx proposals` list the IDs.");
+      if (!ref || !to) throw new Error("Usage: pmx move <to-do ID | new task ID | PMX-12> private|todo|product [--kind <kind of work>]. `pmx todo` and `pmx proposals` list the IDs.");
       const ctx = await a.ctx();
       const r = await moveWork(ctx, () => services(ctx), ref, to.toLowerCase() as Place, { kind: a.values.kind, size: a.values.size });
       console.log(r.message);

@@ -76,10 +76,10 @@ export function selectTasks(i: SelectInput): Selection {
 
 export function explain(s: Selection, dryRun: boolean): string {
   const lines: string[] = [];
-  if (s.blockers.length) lines.push(`Nothing will be pulled: ${s.blockers.join("; ")}.`);
+  if (s.blockers.length) lines.push(`No agent run now: ${s.blockers.join("; ")}.`);
   if (!s.decisions.length) lines.push("No ready tasks in the PMX project.");
   for (const d of s.decisions) lines.push(`${d.ok ? "✔" : "·"} ${d.task.identifier} ${d.task.title} — ${d.why}`);
   const next = s.candidates[0];
-  if (next) lines.push("", `${dryRun ? "Would pull" : "Pulling"}: ${next.identifier} ${next.title}`);
+  if (next) lines.push("", `${dryRun ? "Would take" : "Taking"}: ${next.identifier} ${next.title}`);
   return lines.join("\n");
 }

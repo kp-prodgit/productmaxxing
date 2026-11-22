@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DEFAULT_TEAM, savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { DEFAULT_TEAM, PRODUCT_LEAD, savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
 import { checkKindDraft, GENERIC_SIZES, renderKindFixture, renderKindSkill, upsertRubricRow, type KindDraft } from "../core/kinds.js";
 import type { Ctx } from "../core/context.js";
 import { cleanDomain } from "../core/filter.js";
@@ -27,6 +27,8 @@ export type Change =
   | { kind: "size"; size: Size; minutes?: number; usd?: number }
   | { kind: "rubric"; category: string; size: Size; text: string }
   | { kind: "review-cap"; value: number }
+  /** APPROVE-3: whether the PM's approval can make a task Ready at once (Start now). A team setting. */
+  | { kind: "start-now"; value: boolean }
   | { kind: "digest-day"; value: number }
   | { kind: "digest-dm"; value: string | null }
   /** A recorder of the PM's own, like Momentum (INPUT-1). Applies on this Mac. */
@@ -35,6 +37,8 @@ export type Change =
   | { kind: "team-input"; connector: string; places: string[]; look?: string | null }
   /** Whose Mac proposes team tasks and reads the team's channels (Q2), by PMX handle. */
   | { kind: "synthesizer"; value: string }
+  /** INSTALL-4: who the team's product lead is, by PMX handle, or nobody (null). PMX offers PMX Engine only to them. */
+  | { kind: "product-lead"; value: string | null }
   /** SIG-7 (0.25.0): the PM may send their own to-dos to Linear, one at a time. Off by default. */
   | { kind: "todos-linear"; value: boolean }
   /** A kind of work the team defines with the template (JOB-8): its skill, sample task, size row and config line. */
@@ -45,7 +49,7 @@ export type Change =
 const RANK = { off: 0, mine: 1, linear: 2 } as const;
 const own = (o: object, k: unknown) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 const FIELD = { title: "meetingTitles", person: "people", channel: "channels" } as const;
-export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "team-input" || c.kind === "synthesizer" || c.kind === "new-kind" || c.kind === "kind-required";
+export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "start-now" || c.kind === "team-input" || c.kind === "synthesizer" || c.kind === "product-lead" || c.kind === "new-kind" || c.kind === "kind-required";
 
 /** A change that lets more through: the board asks once more before it, and only the local page may send it. */
 export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolean {
@@ -104,6 +108,9 @@ export function checkChange(c: any, team: TeamConfig): Change {
     case "review-cap":
       if (!(Number.isInteger(c.value) && c.value >= 1 && c.value <= 10)) fail("The review cap is 1 to 10.");
       return { kind: "review-cap", value: c.value };
+    case "start-now":
+      if (typeof c.value !== "boolean") fail("Turn Start now on or off.");
+      return { kind: "start-now", value: c.value };
     case "digest-day":
       if (!(Number.isInteger(c.value) && c.value >= 0 && c.value <= 6)) fail("The digest day is a day of the week.");
       return { kind: "digest-day", value: c.value };
@@ -124,6 +131,11 @@ export function checkChange(c: any, team: TeamConfig): Change {
     case "synthesizer":
       if (typeof c.value !== "string" || !/^[\w.@-]{1,64}$/.test(c.value)) fail("Name the teammate by their PMX handle.");
       return { kind: "synthesizer", value: c.value };
+    case "product-lead": {
+      const v = c.value === null || c.value === "" ? null : typeof c.value === "string" ? c.value.trim() : c.value;
+      if (v !== null && (typeof v !== "string" || !PRODUCT_LEAD.test(v))) fail("Name your product lead by their PMX handle, like ana.");
+      return { kind: "product-lead", value: v };
+    }
     case "new-kind": {
       const { slug, draft } = checkKindDraft(c.draft, team);
       return { kind: "new-kind", slug, draft };
@@ -190,11 +202,13 @@ export function describe(c: Change): string {
     case "size": return `Size ${c.size}: ${[c.minutes !== undefined ? `${c.minutes} min` : "", c.usd !== undefined ? `~$${c.usd}` : ""].filter(Boolean).join(", ")}`;
     case "rubric": return `${c.category} ${c.size}: "${c.text}"`;
     case "review-cap": return `Stop pulling at ${c.value} drafts waiting for review`;
+    case "start-now": return c.value ? "Offer Start now: a PM's approval can make a task Ready for agents at once" : "No Start now: approved tasks wait in the backlog until a teammate moves them to Ready";
     case "digest-day": return `Build the digest on ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][c.value]}s`;
     case "digest-dm": return c.value ? `Send the approved digest to Slack member ${c.value}` : "Don't send the digest to Slack";
     case "call-input": return c.op === "add" ? `Collect calls from ${c.connector}${c.look ? ` (only ${c.look})` : ""}` : `Stop collecting calls from ${c.connector}`;
     case "todos-linear": return c.value ? "Let me send my own to-dos to Linear, one at a time" : "Keep all my to-dos on this Mac";
-    case "synthesizer": return `${c.value}'s Mac proposes team tasks and reads the team's channels`;
+    case "synthesizer": return `${c.value}'s Mac suggests team tasks and reads the team's channels`;
+    case "product-lead": return c.value ? `${c.value} is your team's product lead, so PMX offers them PMX Engine` : "Your team names no product lead";
     case "new-kind": return `Add the kind of work "${c.draft.name}" (${c.slug})${c.draft.required ? ", required for everyone on the team" : ""}`;
     case "kind-required": return `${c.value ? "Require" : "Stop requiring"} ${c.name} for everyone on the team`;
     case "team-input": return c.places.length ? `Read ${c.connector}: ${c.places.join(", ")}${c.look ? ` (only ${c.look})` : ""}` : `Stop reading ${c.connector}`;
@@ -223,7 +237,7 @@ export function setRubricCell(skill: string, category: string, size: Size, text:
  */
 export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{ id: string; url: string; branch: string }> {
   const team = changes.filter(isTeamChange);
-  if (!team.length) throw new Error("No team changes to propose.");
+  if (!team.length) throw new Error("No team changes to send.");
   const base = await ctx.repo.defaultBranch();
   const remote = await ctx.repo.hasRemote();
   if (remote) await ctx.repo.ok(["fetch", "--quiet", "origin", base]);
@@ -241,8 +255,10 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
         cfg.sizes = { ...ctx.team.sizes, ...(cfg.sizes ?? {}) };
         cfg.sizes[c.size] = { ...cfg.sizes[c.size], ...(c.minutes !== undefined ? { minutes: c.minutes } : {}), ...(c.usd !== undefined ? { costUsd: c.usd } : {}) };
       } else if (c.kind === "review-cap") cfg.reviewQueueCap = c.value;
+      else if (c.kind === "start-now") cfg.approve = { ...(cfg.approve ?? {}), startNow: c.value };
       else if (c.kind === "rubric") rubric = setRubricCell(rubric ?? (await loadSkill(wt.cwd, "pmx-size")).text, c.category, c.size, c.text);
       else if (c.kind === "synthesizer") cfg.synthesizer = c.value;
+      else if (c.kind === "product-lead") cfg.productLead = c.value;
       else if (c.kind === "new-kind") {
         // Checked again against the team's config as it is on the default branch now, not as this Mac last pulled it.
         cfg.categories = { ...(cfg.categories ?? DEFAULT_TEAM.categories) };
@@ -282,13 +298,13 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
     const host = await outputHost(ctx.repo, ctx.keychain, ctx.exec, ctx.fetch);
     // A reviewer sees what each new kind of work is for and when PMX will propose it, not only a file list.
     const about = kinds.map(({ slug, draft: d }) => [
-      `### ${d.name} (\`${slug}\`, ${d.stage})`, "", `- **Produces:** ${d.produces}`, `- **Propose it when:** ${d.when}`, d.not ? `- **Don't propose it when:** ${d.not}` : null,
+      `### ${d.name} (\`${slug}\`, ${d.stage})`, "", `- **Produces:** ${d.produces}`, `- **Suggest it when:** ${d.when}`, d.not ? `- **Don't suggest it when:** ${d.not}` : null,
       `- **Sections:** ${d.sections.join(", ")} · cites at least ${d.minCitations}`, d.externalFacing ? "- **Goes outside the team:** a person always sends it." : null,
       d.required ? "- **Required:** every PM's agent on the team takes it." : "- Each PM chooses whether their agent takes it.",
       "", `Files: \`.claude/skills/${slug}/SKILL.md\` (edit the steps there if they need work), its sample task, the size rubric row and \`pmx.config.json\`.`,
     ].filter((x) => x !== null).join("\n"));
     // Typed text never @-mentions anyone on GitHub.
-    const body = [`Proposed from PMX on ${ctx.agent}.`, "", lines.join("\n"), ...(about.length ? ["", ...about] : []), "", "Nothing changes for anyone until this merges."].join("\n").replace(/@(?=\w)/g, "@\u200b");
+    const body = [`Sent from PMX on ${ctx.agent}.`, "", lines.join("\n"), ...(about.length ? ["", ...about] : []), "", "Nothing changes for anyone until this merges."].join("\n").replace(/@(?=\w)/g, "@\u200b");
     const pr = await host.openPr({ branch, base, title, body });
     return { id: pr.id, url: pr.url, branch };
   } finally {

@@ -49,7 +49,8 @@ describe("the Claude board (BOARD-1)", () => {
 
     await expect(setBoardUrl(me, "https://evil.example/artifact/x", new Date())).rejects.toThrow(/isn't a Claude artifact link/);
     await setBoardUrl(me, `${URL1}/`, new Date("2026-11-05T10:00:00Z"));
-    expect((await loadPersonalConfig()).board).toEqual({ url: URL1, version: currentVersion(), publishedAt: "2026-11-05T10:00:00.000Z" });
+    // The board page's hash too (0.36.0): the board needs publishing again only when its page changes.
+    expect((await loadPersonalConfig()).board).toEqual({ url: URL1, version: currentVersion(), publishedAt: "2026-11-05T10:00:00.000Z", template: expect.stringMatching(/^[0-9a-f]{16}$/) });
     expect(await boardJson(team, me)).toMatchObject({ url: URL1, source: "personal", publishedVersion: currentVersion() });
 
     // A board shared in pmx.config.json wins, so a teammate never publishes a second one.

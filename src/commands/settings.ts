@@ -61,7 +61,7 @@ export const settingsCommands: Command[] = [
   },
   {
     name: "categories",
-    summary: "The task categories your agent takes on",
+    summary: "The kinds of work your agent takes on",
     usage: "pmx categories | pmx categories add <category> | pmx categories remove <category>",
     options: {},
     async run(a) {

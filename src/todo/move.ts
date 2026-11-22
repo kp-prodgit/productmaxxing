@@ -46,7 +46,7 @@ const isCommitmentText = (d: string) => /^A commitment .* made/.test(d) && d.inc
 export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: string, to: Place, o: { kind?: string; size?: string } = {}): Promise<Moved> {
   if (!(PLACES as readonly string[]).includes(to)) throw new Error(`Move it to private, todo or product, not "${to}".`);
   ref = ref.trim();
-  if (!ref) throw new Error("Say what to move: a to-do ID from `pmx todo`, a proposal ID from `pmx proposals`, or a Linear identifier like PMX-12.");
+  if (!ref) throw new Error("Say what to move: a to-do ID from `pmx todo`, a waiting task's ID from `pmx proposals`, or a Linear identifier like PMX-12.");
   const now = ctx.now();
   const handle = ctx.personal.handle;
   const tracker = async () => {
@@ -97,17 +97,17 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
 
   // A proposal: a product task waiting for the PM's approval. To-do IDs are hex, so never start with "p".
   if (PROPOSAL.test(ref)) {
-    if (!(await readProposals()).some((p) => p.id === ref.toLowerCase())) throw new Error(`Proposal ${ref} isn't waiting any more. \`pmx proposals\` lists the ones that are.`);
+    if (!(await readProposals()).some((p) => p.id === ref.toLowerCase())) throw new Error(`Task ${ref} isn't waiting any more. \`pmx proposals\` lists the ones that are.`);
     if (to === "product") {
       const r = await approveProposals(ctx, await svc(), [ref]);
       const p = r.posted[0];
-      if (!p) throw new Error(r.duplicates[0] ? `Not sent: ${r.duplicates[0]}.` : "That proposal is no longer waiting.");
+      if (!p) throw new Error(r.duplicates[0] ? `Not sent: ${r.duplicates[0]}.` : "That task is no longer waiting.");
       return moved("product", p.title, null, p.identifier, `Approved: "${p.title}" is ${p.identifier}, a product task for the team.`);
     }
     if (to === "todo" && !ctx.personal.todosToLinear) throw new Error(OFF);
     if (to === "todo") await tracker();
     const p = await takeProposal(ref);
-    if (!p) throw new Error("That proposal is no longer waiting.");
+    if (!p) throw new Error("That task is no longer waiting.");
     const f = p.from[0];
     const t = await keepTodo({ text: p.title, why: f?.why ?? "", source: f ? { title: f.title, at: f.at.slice(0, 10), keys: [] } : undefined, receiptId: p.receipt }, now);
     await markKept(p, t.id, now);

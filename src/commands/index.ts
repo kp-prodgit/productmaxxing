@@ -18,9 +18,12 @@ import { digestStep, recordTick, runTick, type TickStep } from "./tick.js";
 import { runUninstall } from "./uninstall.js";
 import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
 import { atLeast, compareVersions, currentVersion, isVersion, vendoredVersion } from "../core/version.js";
-import { formatNotes, markSeen, newVersionNotes, notesBetween, RELEASE_NOTES } from "../core/whats-new.js";
-import { engineChecklist, engineNotes, formatEngineNotes } from "../engine/bridge.js";
-import { installLatestRelease, installTeamVersion, type UpdateOutcome } from "../core/update.js";
+import { formatNotes, markSeen, markUpdatingFrom, newVersionNotes, notesBetween, RELEASE_NOTES } from "../core/whats-new.js";
+import { engineChecklist, engineNotes, engineSource, findPmxe, formatEngineNotes, pmxeCandidates, runEngineUpdate } from "../engine/bridge.js";
+import { formatEngineChecklist } from "../flow/strategy.js";
+import { installLatestRelease, installTeamVersion, updateEngineToo, type UpdateOutcome } from "../core/update.js";
+import { canWrite, runInstall } from "../setup/install.js";
+import { homedir } from "node:os";
 import { Git } from "../core/git.js";
 import { loadState } from "../core/state.js";
 import { writeJson } from "../core/fsutil.js";
@@ -28,7 +31,7 @@ import { TEAM_CONFIG_FILE } from "../core/paths.js";
 import { join } from "node:path";
 import { listReceipts, readReceipt } from "../core/receipt.js";
 import { packageRoot, skillInventory, teamSkillPath } from "../core/skills.js";
-import { installAppSkill, SETUP_SKILL } from "../claude/skill.js";
+import { claudePresent, installAppSkill, SETUP_SKILL } from "../claude/skill.js";
 import { AUTO_STEPS } from "../core/upgrade.js";
 import { formatChecklist, type Checklist, type Step } from "../setup/checklist.js";
 import { gatherChecklist } from "../setup/gather.js";
@@ -100,6 +103,15 @@ async function showNewNotes(version: string): Promise<void> {
 }
 
 /**
+ * COMPAT-7: one update. `pmx update` is a command a person runs, so it runs PMX Engine's own updater too, where Engine is
+ * installed; the background job never does (it installs the team's PMX only). One sentence says how it went.
+ */
+async function updateEngine(): Promise<void> {
+  const line = await updateEngineToo(() => runEngineUpdate(exec), { interactive: true });
+  if (line) console.log(`\n${line}`);
+}
+
+/**
  * UPGRADE-1: right after `pmx update` installs, the NEW pmx does what the update needs on this Mac and says what's
  * left, so whoever ran the update (or Claude Code) sees every remaining step for the version this Mac came from.
  */
@@ -110,8 +122,11 @@ async function showMigrate(): Promise<void> {
   console.log(r.code === 0 && r.stdout.trim() ? `\n${r.stdout.trim()}` : "\nRun `pmx checklist` to see what's left after this update.");
 }
 
-/** The checklist, worked out now and recorded (SETUP-1). */
-async function checklistNow(ctx: Ctx | null): Promise<Checklist> {
+/**
+ * The checklist, worked out now and recorded (SETUP-1). `engine`: PMX Engine's checklist when the caller read it
+ * already (SETUP-3: `pmx checklist` shows it after PMX's), so pmxe runs once.
+ */
+async function checklistNow(ctx: Ctx | null, engine: ReturnType<typeof engineChecklist> = engineChecklist(exec)): Promise<Checklist> {
   let personal: PersonalConfig | null = null;
   let team: TeamConfig | null = null;
   try {
@@ -119,7 +134,29 @@ async function checklistNow(ctx: Ctx | null): Promise<Checklist> {
     team = (await effectiveTeam(await loadTeamConfig(personal.repoPath), personal)).team;
   } catch {}
   return gatherChecklist({
-    personal, team, checks: await doctorChecks(), exec, keychain: macKeychain(), now: new Date(), ctx, engine: () => engineChecklist(exec),
+    personal, team, checks: await doctorChecks(), exec, keychain: macKeychain(), now: new Date(), ctx, engine: () => engine,
+    extra: checklistExtra ? () => checklistExtra!(ctx) : undefined,
+  });
+}
+
+/**
+ * SETUP-3: one checklist for both tools. PMX's own, then PMX Engine's sections where it's on this Mac, read live
+ * (never recorded with PMX's). The JSON keeps PMX's format 1 and gains `engine`: Engine's checklist, without commands.
+ */
+export function checklistOutput(cl: Checklist, engine: Awaited<ReturnType<typeof engineChecklist>>, o: { json?: boolean; all?: boolean }): string {
+  const e = engine && "checklist" in engine ? engine.checklist : null;
+  if (o.json) return JSON.stringify(e ? { ...cl, engine: e } : cl, null, 2);
+  return `${formatChecklist(cl, { all: o.all })}${e ? `\n\n${formatEngineChecklist(e, { all: o.all })}` : ""}`;
+}
+
+/**
+ * The same checklist for a context PMX already has (SETUP-2): a fix from PMX's page works it out again after it runs,
+ * with that context's launchd, keychain and commands, and records it like the background job's pass does.
+ */
+export async function checklistFor(ctx: Ctx, engine: ReturnType<typeof engineChecklist> = engineChecklist(ctx.exec)): Promise<Checklist> {
+  const checks = await runDoctor({ personal: ctx.personal, team: ctx.team, keychain: ctx.keychain, launchd: ctx.launchd, exec: ctx.exec, extra: doctorExtra });
+  return gatherChecklist({
+    personal: ctx.personal, team: ctx.team, checks, exec: ctx.exec, keychain: ctx.keychain, now: new Date(), ctx, engine: () => engine,
     extra: checklistExtra ? () => checklistExtra!(ctx) : undefined,
   });
 }
@@ -146,20 +183,33 @@ export const commands: Command[] = [
   {
     name: "checklist",
     summary: "Where this Mac stands with PMX: each install, setup and update step, what's done, what's running and what's next",
-    usage: "pmx checklist [--json] [--all] [--fix] [--install-skill]",
+    usage: "pmx checklist [--json] [--all] [--fix [<step>]] [--install-skill]",
     options: { json: { type: "boolean" }, all: { type: "boolean" }, fix: { type: "boolean" }, "install-skill": { type: "boolean" } },
     async run(a) {
       if (a.values["install-skill"]) {
         const r = await installAppSkill(SETUP_SKILL);
         console.error(r === "kept-yours" ? "Kept your own /pmx-setup." : `/pmx-setup ${r === "current" ? "is already" : "is now"} in the Claude app. Quit and reopen the app if it doesn't show up.`);
       }
+      // --fix <step>: one step PMX can do itself, from the same allowlist as the button on PMX's page (SETUP-2).
+      if (a.values.fix && a.positionals[0]) {
+        const ctx = await a.ctx();
+        const { runFix } = await import("../setup/fix.js");
+        const r = await runFix(a.positionals[0], await checklistFor(ctx), { ctx, cliPath: a.cliPath, confirm: (what) => a.ask.confirm(`PMX will ${what}. Go ahead?`, false) });
+        console.error(r.message);
+        const engine = engineChecklist(exec);
+        const cl = await checklistFor(ctx, engine);
+        console.log(checklistOutput(cl, await engine.catch(() => null), { json: a.values.json, all: a.values.all }));
+        return r.status < 400 ? 0 : 1;
+      }
+      if (a.positionals[0]) throw new Error(`pmx checklist takes a step only with --fix, like pmx checklist --fix job.installed.`);
       // --fix: the steps an update does by itself (UPGRADE-1), now, whatever was recorded.
       if (a.values.fix) for (const s of AUTO_STEPS) {
         const did = await s.run({ exec, launchd: macLaunchd(), cliPath: a.cliPath, interactive: true }).catch((e: any) => `couldn't: ${e?.message ?? e}`);
         console.error(`${s.title}: ${did ?? "nothing to do"}`);
       }
-      const cl = await checklistNow(await a.ctx().catch(() => null));
-      console.log(a.values.json ? JSON.stringify(cl, null, 2) : formatChecklist(cl, { all: a.values.all }));
+      const engine = engineChecklist(exec);
+      const cl = await checklistNow(await a.ctx().catch(() => null), engine);
+      console.log(checklistOutput(cl, await engine.catch(() => null), { json: a.values.json, all: a.values.all }));
       return 0;
     },
   },
@@ -249,7 +299,8 @@ export const commands: Command[] = [
     summary: "Show config, kill switch, spend and recent runs",
     options: {},
     async run(a) {
-      console.log(await runStatus(await a.ctx(), await statusExtra(await a.ctx())));
+      // BOARD-11: Engine's moves that are yours count in the "Needs you" line, as on the page. Its checklist isn't needed.
+      console.log(await runStatus(await a.ctx(), await statusExtra(await a.ctx()), { engine: engineSource(exec, { checklist: false }) }));
       return 0;
     },
   },
@@ -278,7 +329,7 @@ export const commands: Command[] = [
   },
   {
     name: "tick",
-    summary: "One scheduler pass (run by launchd every 30 minutes)",
+    summary: "One background run (launchd starts one every 30 minutes)",
     options: {},
     async run(a) {
       await capTickLogs();
@@ -325,7 +376,7 @@ export const commands: Command[] = [
   },
   {
     name: "skills",
-    summary: "List the Claude skills PMX can use; `sync` pulls your org's skills from Linear, `publish` shares one with the team",
+    summary: "List the Claude skills PMX can use; `sync` copies your org's skills from Linear, `publish` shares one with the team",
     usage: "pmx skills [--json] | pmx skills sync [--from <dir>] | pmx skills publish <name>",
     options: { json: { type: "boolean" }, from: { type: "string" } },
     async run(a) {
@@ -385,8 +436,40 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
     },
   },
   {
+    name: "install",
+    summary: "Install PMX so a new Terminal window finds it (before PMX is installed: npx --yes productmaxxing@latest install); --engine adds PMX Engine",
+    usage: "pmx install [--yes] [--engine]\n\nBefore PMX is installed: npx --yes productmaxxing@latest install\n  --yes     add PMX's folder to your PATH without asking (never installs PMX Engine)\n  --engine  install PMX Engine too: your team's product lead's tool. Your product lead is asked without it.",
+    options: { ...yes, engine: { type: "boolean" } },
+    async run(a) {
+      // INSTALL-3, INSTALL-4. It may run from npx's copy, so it changes nothing PMX's own commands set up from where they
+      // run (src/cli.ts skips the update steps for it): it installs PMX, then PATH, then Engine for the product lead.
+      const personal = await loadPersonalConfig().catch(() => null);
+      const team = personal ? await loadTeamConfig(personal.repoPath).catch(() => null) : null;
+      const at = (bin?: string) => (bin ? { candidates: [join(bin, "pmxe"), ...pmxeCandidates()] } : {});
+      return runInstall({
+        exec, ask: a.ask, yes: a.values.yes === true, tty: !!process.stdin.isTTY, engine: a.values.engine === true,
+        home: homedir(), shell: process.env.SHELL ?? "/bin/zsh", platform: process.platform, node: { version: process.versions.node, path: process.execPath },
+        version: currentVersion(), root: packageRoot(), personal, team, writable: canWrite, say: (l) => console.log(l),
+        pmxe: {
+          find: (bin) => findPmxe(exec, at(bin)),
+          async next(bin) {
+            const r = await engineChecklist(exec, at(bin));
+            return r && "checklist" in r ? r.checklist?.next?.title ?? null : null;
+          },
+        },
+        async setupSkill() {
+          if (!(await claudePresent())) return false;
+          // A /pmx-setup of the PM's own stays theirs; either way there's one to type.
+          await installAppSkill(SETUP_SKILL);
+          return true;
+        },
+        updatedFrom: (v) => markUpdatingFrom(v),
+      });
+    },
+  },
+  {
     name: "update",
-    summary: "Install your team's pmx version from the PMX repo (pulls the repo first); --check only compares versions; --latest installs the newest public release",
+    summary: "Install your team's pmx version from the PMX repo (pulls the repo first), and update PMX Engine where it's installed; --check only compares versions; --latest installs the newest public release",
     usage: "pmx update [--check] [--force] [--latest]",
     options: { check: { type: "boolean" }, force: { type: "boolean" }, latest: { type: "boolean" } },
     async run(a) {
@@ -404,6 +487,7 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
           failed: `Update failed: ${r.result === "failed" ? r.error : ""}`,
           "no-package": "",
         }[r.result]);
+        await updateEngine();
         return r.result === "current" || r.result === "updated" ? 0 : 1;
       }
       const personal = await loadPersonalConfig();
@@ -419,18 +503,21 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
       const vendored = await vendoredVersion(tgz, exec);
       const min = team?.cli?.min ?? null;
       const cloud = (await loadState()).cloudVersions;
+      const engine = await findPmxe(exec);
       console.log([
         `This machine:  pmx ${current}`,
         `Team package:  ${vendored ? `pmx ${vendored} (${VENDORED_CLI})` : "none in the PMX repo"}`,
         `Team minimum:  ${min ?? "none set"}${min && !atLeast(current, min) ? "  ← this machine is too old for shared work" : ""}`,
         ...(cloud?.latest ? [`Latest release: pmx ${cloud.latest}`] : []),
+        // COMPAT-7: where PMX Engine is on this Mac, `pmx update` updates it too. --check only says its version.
+        ...(engine ? [`PMX Engine:    ${engine.version} on this Mac${a.values.check ? "" : ", updated next"}`] : []),
       ].join("\n"));
       if (a.values.check) return min && !atLeast(current, min) ? 1 : 0;
       const r = await installTeamVersion(repo, exec, { force: a.values.force });
       const say: Record<UpdateOutcome["result"], string> = {
         "no-package": "\nAsk your team lead to run `pmx vendor --require` and commit it.",
         current: "\nUp to date.",
-        updated: `\nUpdated to pmx ${vendored}. The background job uses it from its next pass.`,
+        updated: `\nUpdated to pmx ${vendored}. The background job uses it from its next run.`,
         "dev-install": "\nThis pmx runs from a source checkout, so it isn't replaced. Pull and rebuild the checkout instead.",
         "needs-sudo": `\nnpm can't write to its global folder. Run:\n  ${r.result === "needs-sudo" ? r.command : ""}\nor install Node with Homebrew (brew install node), so updates (and auto-updates) don't need sudo.`,
         failed: `\nnpm install failed: ${r.result === "failed" ? r.error : ""}`,
@@ -440,6 +527,8 @@ Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates u
         await showNewNotes(r.version);
         await showMigrate();
       }
+      if (engine) await updateEngine();
+      // PMX's own update decides the exit code: Engine's refusing or failing is one sentence above, never a failure here.
       return r.result === "current" || r.result === "updated" ? 0 : 1;
     },
   },

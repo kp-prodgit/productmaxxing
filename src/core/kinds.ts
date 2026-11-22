@@ -70,9 +70,9 @@ export function checkKindDraft(raw: any, team: Pick<TeamConfig, "categories">): 
   // A skill another kind of work already runs with would be replaced for that kind too.
   if (Object.values(team.categories).some((c) => c.skill === slug)) fail(`Your team already has a skill called ${slug}. Pick another name.`);
   const produces = len(oneLine(raw?.produces), KIND_LIMITS.line, "What it produces");
-  const when = len(oneLine(raw?.when), KIND_LIMITS.line, "When to propose it");
+  const when = len(oneLine(raw?.when), KIND_LIMITS.line, "When to suggest it");
   const notRaw = oneLine(raw?.not);
-  const not = notRaw ? len(notRaw, [3, KIND_LIMITS.line[1]], "When not to propose it") : null;
+  const not = notRaw ? len(notRaw, [3, KIND_LIMITS.line[1]], "When not to suggest it") : null;
   const stage = (raw?.stage ?? "identify") as Stage;
   if (!STAGES.includes(stage)) fail(`The stage is one of ${STAGES.join(", ")}.`);
   const sections = [...new Set(list(raw?.sections).map((s) => s.replace(/^#+\s*/, "")))];

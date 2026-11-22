@@ -1,6 +1,6 @@
 ---
 name: pmx-hygiene
-description: Tracking hygiene. Reviews the tracker snapshot in a PMX task for stale, duplicate, unlabeled or mis-sized issues and proposes fixes. Proposes only; never edits the tracker.
+description: Tracking hygiene. Reviews the tracker snapshot in a PMX task for stale, duplicate, unlabeled or mis-sized tasks and suggests fixes. Suggests only; never edits the tracker.
 pmx: {"kind": "category", "category": "tracking-hygiene", "stage": "operate", "output": "outputs/tracking-hygiene/{id}.md", "requiredHeadings": ["Summary", "Findings", "Proposed fixes"], "minCitations": 2}
 ---
 

@@ -108,7 +108,7 @@ describe("version-aware update steps (UPGRADE-1)", () => {
     await job.install(plist({ node: "/gone/node", cli: "/gone/cli.js", pmxHome: pmxHome(), claude: null }));
     const step = AUTO_STEPS.find((s) => s.id === "background-job")!;
     job.busy = true;
-    await expect(step.run(deps({ launchd: job, cliPath: cli }))).rejects.toThrow(/running a pass/);
+    await expect(step.run(deps({ launchd: job, cliPath: cli }))).rejects.toThrow(/running right now/);
     job.busy = false;
     expect(await step.run(deps({ launchd: job, cliPath: cli }))).toBe("refreshed the background job with this pmx, Node and Claude Code");
     expect(job.plist).toContain(`<string>${cli}</string>`);

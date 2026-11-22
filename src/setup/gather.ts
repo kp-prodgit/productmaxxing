@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { appliedSchedule, LINEAR_SYNC_TASK } from "../claude/tasks.js";
-import { appSkillCurrent, appSkillInstalled, claudePresent, SETUP_SKILL, skillInstalledByPmx } from "../claude/skill.js";
+import { appSkillCurrent, appSkillInstalled, BOARD_SKILL, claudePresent, FLOW_SKILL, SETUP_SKILL, skillInstalledByPmx } from "../claude/skill.js";
+import { mcpInstalled } from "../mcp/server.js";
 import type { DoctorCheck } from "../commands/doctor.js";
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
 import type { Ctx } from "../core/context.js";
@@ -30,7 +31,7 @@ export interface GatherDeps {
   /** Team features' steps (ee/: the brain). */
   extra?: () => Promise<Step[]>;
   /** PMX Engine's checklist summary. Only commands may reach Engine (src/engine/bridge.ts), so they pass it in. */
-  engine?: () => Promise<{ version: string; where: string; next: string | null } | null>;
+  engine?: () => Promise<import("./checklist.js").EngineSummary | null>;
 }
 
 /** The first week after install is practice (PULL-9): until when, or null once runs are real. */
@@ -72,6 +73,8 @@ export async function gatherChecklist(d: GatherDeps): Promise<Checklist> {
     lastRun: last ? { taskId: last.taskId, outcome: last.outcome, ts: last.ts } : null,
     setupSkill, linearCron: relay ? (await appliedSchedule(LINEAR_SYNC_TASK).catch(() => null))?.cron ?? null : null,
     engine: d.engine ? await d.engine().catch(() => null) : null, extra,
+    appSkills: claude ? { flow: await appSkillInstalled(FLOW_SKILL), board: await appSkillInstalled(BOARD_SKILL) } : undefined,
+    mcpRegistered: await mcpInstalled().catch(() => false),
   });
   // A Mac's first checklist dates what was already done from what PMX recorded when it happened.
   const firstCollect = state.collectReports[0]?.at;

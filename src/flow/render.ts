@@ -133,8 +133,8 @@ export const FLOW_CSS = `
 export const FLOW_JS = String.raw`
 (function () {
   var STAGES = ["Arrivals", "Checkpoint", "Workshop", "Tasks", "Linear", "Departures"];
-  var KIND = { source: "Source", skipped: "Skipped upstream", vault: "The vault", run: "PMX run", skill: "Skill", task: "Proposed task", todo: "Private to-do",
-    issue: "Linear issue", meeting: "Meeting in Linear", execution: "Agent run", verdict: "Review verdict" };
+  var KIND = { source: "Source", skipped: "Skipped upstream", vault: "The vault", run: "PMX run", skill: "Skill", task: "New task", todo: "Private to-do",
+    issue: "Task in Linear", meeting: "Meeting in Linear", execution: "Agent run", verdict: "Review verdict" };
   var META = { origin: "From", channel: "Channel", passagesUsed: "Passages used", passagesCut: "Passages cut", cutRules: "Cut because", ledger: "Meeting ledger",
     detail: "Why", file: "File", rule: "Rule", ruleLabel: "Held because", type: "Run", outcome: "Outcome", dryRun: "Dry run", model: "Model", tokens: "Tokens",
     masked: "Values masked", scope: "Scope", canaries: "Canaries held", error: "Error", category: "Category", size: "Size", why: "Why this size", flags: "Check the size",
@@ -196,7 +196,7 @@ export const FLOW_JS = String.raw`
       var nums = el("div", { cls: "pf-nums" });
       var add = function (n, l, cls) { nums.append(el("div", { cls: "pf-num " + (cls || "") }, [el("b", { text: String(n) }), el("span", { text: l })])); };
       if (g.level !== "team") { add(s.read, "read"); add(s.held + s.skippedUpstream, "held", "held"); }
-      add(s.tasks, "tasks proposed"); add(s.registered, "in Linear"); add(s.executions, "agent runs");
+      add(s.tasks, "tasks suggested"); add(s.registered, "in Linear"); add(s.executions, "agent runs");
       if (s.capUsd != null) add(money(s.spentUsd), "of " + money(s.capUsd) + " a day");
       var claims = el("ul", { cls: "pf-claims" });
       var byRule = {};

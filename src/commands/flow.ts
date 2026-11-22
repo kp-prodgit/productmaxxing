@@ -9,10 +9,10 @@ import { flowJson, renderFlow, setFlowUrl } from "../claude/flow.js";
 import { appSkillTarget, FLOW_SKILL, installAppSkill } from "../claude/skill.js";
 import { installMcp, mcpInstalled, serveMcp } from "../mcp/server.js";
 import { startExplainServer } from "../explain/server.js";
-import { noteWebServer, runningWebServer } from "../flow/web-server.js";
+import { noteWebServer, PAGE_IDLE_MS, runningWebServer, serveUntilStopped } from "../flow/web-server.js";
 import type { Command } from "./index.js";
 import { savePersonalConfig } from "../core/config.js";
-import { findPmxe, openStudio } from "../engine/bridge.js";
+import { engineSource, findPmxe, openStudio } from "../engine/bridge.js";
 
 const hoursOf = (v: string | undefined) => {
   if (v === undefined) return 24;
@@ -25,7 +25,8 @@ const hoursOf = (v: string | undefined) => {
 
 /**
  * This Mac's PMX page, for `pmx flow --web` and `pmx open`. One per Mac: a second run opens the one already running,
- * so earlier links keep working. On a Mac with PMX Engine the page also offers the studio (phase 2 of the join).
+ * so earlier links keep working. On a Mac with PMX Engine the page also has its Strategy area (BOARD-11), read through
+ * the bridge and handed to the board here.
  */
 async function serveWorkspace(a: Parameters<Command["run"]>[0], noOpen: boolean): Promise<number> {
   const ctx = await a.ctx();
@@ -39,35 +40,20 @@ async function serveWorkspace(a: Parameters<Command["run"]>[0], noOpen: boolean)
   const s = await startExplainServer({
     team: ctx.team, personal: ctx.personal,
     flow: async (hours, scope) => loadFlowGraph(await a.ctx(), { level: scope === "team" ? "team" : "local", hours }),
-    pipeline: await liveHandlers(a.ctx),
-    studio: localStudio(a),
+    pipeline: await liveHandlers(a.ctx, { self: "page", cliPath: a.cliPath, engine: engineSource(exec) }),
   });
   const unnote = await noteWebServer(s.flowUrl);
   if (!noOpen) await exec("open", [s.flowUrl]);
-  console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve proposals and change your settings. Running \`pmx open\` or \`pmx flow --web\` again opens this same page. Press Ctrl+C to stop.`);
-  await new Promise<void>((resolve) => { const stop = () => s.close().then(unnote).then(resolve); process.on("SIGINT", stop); process.on("SIGTERM", stop); });
+  console.log(`PMX pipeline: ${s.flowUrl}\nOnly this Mac can open it. It can approve tasks and change your settings. Running \`pmx open\` or \`pmx flow --web\` again opens this same page. It stops by itself after ${Math.round(PAGE_IDLE_MS / 3600000) || 1} hours with nobody using it. Press Ctrl+C to stop.`);
+  // OBS-5: a page nobody uses stops after a while instead of running for days.
+  await serveUntilStopped(s, unnote, { log: (l) => console.log(l) });
   return 0;
-}
-
-/** The studio as this Mac's page sees it: there only where PMX Engine is installed, and not hidden in this PM's settings. */
-function localStudio(a: Parameters<Command["run"]>[0]) {
-  return {
-    async status() {
-      const personal = (await a.ctx()).personal;
-      const p = personal.studio === "hidden" ? null : await findPmxe(exec);
-      return p ? { available: true, version: p.version } : { available: false };
-    },
-    async open() {
-      const p = await findPmxe(exec);
-      if (p) openStudio(p);
-    },
-  };
 }
 
 export const flowCommands: Command[] = [
   {
     name: "open",
-    summary: "Open your PMX workspace on this Mac. With PMX Engine installed it also offers the studio; `pmx open studio` opens the studio itself",
+    summary: "Open your PMX workspace on this Mac. With PMX Engine installed it also has a Strategy area; `pmx open studio` opens the studio itself",
     usage: "pmx open [studio | roadmap] [--no-open] | pmx open --hide-studio | --show-studio",
     options: { "no-open": { type: "boolean" }, "hide-studio": { type: "boolean" }, "show-studio": { type: "boolean" } },
     async run(a) {
@@ -76,12 +62,12 @@ export const flowCommands: Command[] = [
         if (a.values["hide-studio"]) ctx.personal.studio = "hidden";
         else delete ctx.personal.studio;
         await savePersonalConfig(ctx.personal);
-        console.log(a.values["hide-studio"] ? "The Studio entry is hidden on this Mac's PMX page. `pmxe studio` still opens the studio." : "The Studio entry shows on this Mac's PMX page wherever PMX Engine is installed.");
+        console.log(a.values["hide-studio"] ? "PMX Engine's Strategy area is hidden on your PMX page, on this Mac and in the Claude app. `pmxe studio` still opens the studio." : "The Strategy area shows on your PMX page wherever PMX Engine is installed.");
         return 0;
       }
       if (a.positionals[0] === "studio") {
         const p = await findPmxe(exec);
-        if (!p) throw new Error("PMX Engine isn't installed on this Mac. The head of product installs it with `npm install -g pmx-engine`.");
+        if (!p) throw new Error("PMX Engine isn't installed on this Mac. It's your team's product lead's tool: they install it with `pmx install --engine`.");
         openStudio(p);
         console.log("Opening PMX Engine's studio in your browser. `pmxe studio` does the same in Terminal.");
         return 0;
@@ -177,7 +163,8 @@ export const flowCommands: Command[] = [
         console.log(r.changed ? "Registered. Restart the Claude app, then open your /pmx-flow page there." : "Already registered.");
         return 0;
       }
-      await serveMcp(() => a.ctx());
+      // BOARD-11: Engine reaches only the paired page's board and board_act, never the tools a chat may call.
+      await serveMcp(() => a.ctx(), { engine: engineSource(exec) });
       return 0;
     },
   },

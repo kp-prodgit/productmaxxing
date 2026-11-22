@@ -36,7 +36,8 @@ describe("/pmx-schedule skill (CLAUDE-2)", () => {
 
     const j = await tasksJson(team, memoryKeychain());
     expect(j.present).toEqual([]);
-    expect(j.missing.map((t) => [t.taskId, t.cronExpression])).toEqual([["pmx-collect-meetings", "30 12,17 * * 1-5"], ["pmx-sync-linear", "0 8-18 * * 1-5"]]);
+    // CLAUDE-6 (0.36.0): the app runs them every day; PMX's own hours decide which runs do anything.
+    expect(j.missing.map((t) => [t.taskId, t.cronExpression])).toEqual([["pmx-collect-meetings", "30 12,17 * * *"], ["pmx-sync-linear", "0 * * * *"]]);
     expect(j.missing[0]!.prompt).toContain("pmx collect --prompt");
 
     await mkdir(join(taskFile(COLLECT_TASK.id), ".."), { recursive: true });

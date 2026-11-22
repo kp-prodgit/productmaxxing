@@ -90,7 +90,7 @@ export const AUTO_STEPS: AutoStep[] = [
       const home = have.match(/<key>PMX_HOME<\/key>\s*<string>([^<]*)<\/string>/)?.[1] ?? null;
       if (home !== pmxHome()) return null;
       // Reloading stops a pass that's running, which could leave a task half done: wait for the next command.
-      if (await d.launchd.running?.()) throw new Error("the background job is running a pass right now");
+      if (await d.launchd.running?.()) throw new Error("the background job is running right now");
       const env = jobEnv(have);
       const claude = (await claudeAbsolutePath(d.exec)) ?? (env.PMX_CLAUDE && (await exists(env.PMX_CLAUDE)) ? env.PMX_CLAUDE : null);
       const want = plist({ node: await stableNode(process.execPath), cli: realCli(d.cliPath), pmxHome: pmxHome(), claude });

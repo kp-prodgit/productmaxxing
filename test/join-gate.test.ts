@@ -2,7 +2,10 @@
 // (pmx-engine/test/gate.test.ts) proves that a section written for one group never reaches the team repo: only what
 // the product managers' page shows goes into memory/engine/. This half proves that nothing there travels on: a model
 // that tries to copy it, or to label a task with a theme that isn't open, gets nothing into Linear, and PMX's pages
-// show none of it. It also proves PMX never reads Engine's files, and runs `pmxe` only where the join plan says.
+// show none of it. It also proves PMX never reads Engine's files, and runs `pmxe` only where the join plan says. Usability
+// slice 4 (BOARD-11) adds Engine's status to the head of product's own page: labels only, so it repeats none of it either.
+// Usability slice 6 (COMPAT-7) adds Engine's own updater, `pmxe update` with no other arguments, which `pmx update` runs
+// so there is one update: the one pmxe command that changes anything, and it still refuses while a release is being sent.
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { services } from "../src/core/services.js";
 import { memoryKeychain } from "../src/core/keychain.js";
 import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
+import { engineViewOf, type EngineSource } from "../src/flow/strategy.js";
 import { loadPipeline } from "../src/flow/pipeline-load.js";
 import { mockRuntime } from "../src/runtime/mock.js";
 import { approveProposals, readProposals } from "../src/synth/proposals.js";
@@ -83,10 +87,23 @@ describe("phase 3 gate (PMX's half)", () => {
       if (t.theme) expect(OPEN).toContain(t.theme);
     }
 
+    // BOARD-11: Engine's status on the head of product's own page. An Engine that wrongly sent a section's text along
+    // with its labels gets only the labels through: every other field is dropped.
+    const status = { format: 1, tool: "pmxe", version: "0.12.0", workspace: { name: "Acme Product" },
+      waiting: [{ id: "approve:vision@company.e1:eng", kind: "approve", label: "Approve Vision, edition 1 for Engineering.", who: "you", where: "studio", place: "release", since: "2026-11-20T09:00:00.000Z", text: MEMORY["vision.md"] }],
+      releases: [{ id: "vision@company.e1", kind: "release", label: "Vision, edition 1", reached: ["ELT"], waiting: ["Engineering"], next: { group: "Engineering", who: "you", step: "Approve Vision, edition 1 for Engineering." }, sections: [MEMORY["roadmap.md"]] }],
+      pages: { count: 13, ready: 13 }, body: MEMORY["vision.md"] };
+    const engine: EngineSource = { view: async () => engineViewOf("0.12.0", new Date().toISOString(), status, null), open: async () => ({ status: 200, body: {} }) };
+    const headOfProduct = JSON.stringify(await pipelineHandlers(ctx, { engine }).data(168));
+    expect(headOfProduct).toContain("Approve Vision, edition 1 for Engineering.");
+    expect(repeats(headOfProduct)).toEqual([]);
+    expect(headOfProduct).not.toContain("Gate marker");
+
     // The page in Claude (the shared level) and this Mac's page after approval: none of memory/engine/, and no themes
     // on the shared page at all.
-    const shared = await loadPipeline(ctx, { level: "shared", keychain: memoryKeychain() });
+    const shared = await loadPipeline(ctx, { level: "shared", keychain: memoryKeychain(), engine });
     expect(shared.themes).toEqual([]);
+    expect(shared.engine).toBeUndefined();
     for (const page of [JSON.stringify(shared), JSON.stringify(await pipelineHandlers(ctx).data(168))]) {
       expect(repeats(page)).toEqual([]);
       expect(page).not.toContain("Gate marker");
@@ -95,7 +112,7 @@ describe("phase 3 gate (PMX's half)", () => {
     expect(JSON.stringify(shared)).not.toContain("Field capture");
   });
 
-  it("PMX's code never reads PMX Engine's files, and runs pmxe only for doctor, whats-new and the studio", async () => {
+  it("PMX's code never reads PMX Engine's files, and runs pmxe only for its version, doctor, whats-new, checklist, status, its own update and the studio", async () => {
     const src = join(root, "src");
     const files: string[] = [];
     const walk = async (d: string): Promise<void> => {
@@ -117,10 +134,15 @@ describe("phase 3 gate (PMX's half)", () => {
         expect(text, rel).not.toMatch(/findPmxe\([^)]*\)[\s\S]{0,200}exec\(/);
       }
     }
-    // The bridge's only pmxe commands: its version, doctor, whats-new and its checklist (SETUP-1) as JSON, and the studio.
-    const runs = [...(await readFile(bridge, "utf8")).matchAll(/\[\s*("[^"]+"(?:\s*,\s*"[^"]+")*)\s*\]/g)].map((m) => m[1]!.replace(/\s+/g, ""));
-    expect(new Set(runs)).toEqual(new Set(['"--version"', '"doctor","--json"', '"whats-new","--json"', '"checklist","--json"', '"studio"']));
-    // Only doctor, whats-new and open reach the bridge.
+    // The bridge's only pmxe commands: its version, doctor, whats-new, its checklist (SETUP-1) and, for the Strategy
+    // area (BOARD-11), its status, each as JSON; Engine's own updater for `pmx update` (COMPAT-7), alone, never with
+    // `--now`; and the studio, opened as it is or at a place, which the bridge checks against the studio's own places
+    // first (STUDIO_PLACES, in src/flow/strategy.ts, and test/strategy.test.ts).
+    const runs = [...(await readFile(bridge, "utf8")).matchAll(/\[\s*("[^"]+"(?:\s*,\s*"[^"]+")*)(\s*,\s*place)?\s*\]/g)].map((m) => `${m[1]}${m[2] ?? ""}`.replace(/\s+/g, ""));
+    expect(new Set(runs)).toEqual(new Set(['"--version"', '"doctor","--json"', '"whats-new","--json"', '"checklist","--json"', '"status","--json"', '"update"', '"studio"', '"studio","--at",place']));
+    expect(await readFile(bridge, "utf8")).not.toMatch(/--now/);
+    expect(await readFile(bridge, "utf8")).toMatch(/if \(place !== undefined && !isStudioPlace\(place\)\) return false;\n\s*const child = spawn\(/);
+    // Only doctor, flow and index (the commands) reach the bridge; they hand Engine's labels to the board by injection.
     const users = [];
     for (const f of files) if (f !== bridge && /from "\.\.\/engine\/bridge\.js"/.test(await readFile(f, "utf8"))) users.push(f.slice(src.length + 1));
     expect(users.sort()).toEqual(["commands/doctor.ts", "commands/flow.ts", "commands/index.ts"]);

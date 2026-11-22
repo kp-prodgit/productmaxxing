@@ -1,7 +1,9 @@
 import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { decide, loadQueue, type Verdict } from "../review/queue.js";
-import { approveProposals, dropProposals, setProposalTheme } from "../synth/proposals.js";
+import { approvedText, approveProposals, dropProposals, setProposalTheme } from "../synth/proposals.js";
+import { startsNow } from "../core/config.js";
+import { dropStopped, retryStopped } from "../pull/stopped.js";
 import { applyPersonal, checkChange, describe, isTeamChange, loosens, proposeTeamChanges, saveTakes } from "./actions.js";
 import { checkNeverIngest, whatIf } from "./edit.js";
 import { loadPipeline } from "./pipeline-load.js";
@@ -13,11 +15,15 @@ import { addTodo, completeTodo, placeTodo, sendTodoToLinear } from "../todo/todo
 import { moveWork, PLACES, type Place } from "../todo/move.js";
 import { openWebServer, stopWebServer, webServerStatus } from "./web-server.js";
 import type { PipelineActions } from "./pipeline-act.js";
-import { mkdir } from "node:fs/promises";
-import { realpathSync } from "node:fs";
-import { plist, stableNode } from "../core/launchd.js";
-import { claudeAbsolutePath } from "../core/claude-bin.js";
-import { paths, pmxHome } from "../core/paths.js";
+import { macConfirm, type Confirm } from "../mcp/pair.js";
+import { checklistForPage, pageWords, readHistory } from "../setup/checklist.js";
+import { setTaskHours, TASK_HOURS, type TaskHours } from "../claude/tasks.js";
+import { flowCapabilities, flowPageHtml, markFlowPublished } from "../claude/flow.js";
+import { currentVersion } from "../core/version.js";
+import { linearAccess } from "../linear/access.js";
+import { mcpEntry } from "../mcp/server.js";
+import { runningNow } from "./running.js";
+import type { EngineSource } from "./strategy.js";
 
 /** What `pmx flow --web` serves for the pipeline board (BOARD-3): this Mac's data, and the writes only it may make. */
 /**
@@ -26,27 +32,59 @@ import { paths, pmxHome } from "../core/paths.js";
  * made elsewhere (the Claude app's page, `pmx todo --linear`, the collection task adding its folder) shows on the next
  * read, and the board's next save can't write an old copy back over it. The Claude app's server does the same.
  */
-export async function liveHandlers(ctx: () => Promise<Ctx>): Promise<ReturnType<typeof pipelineHandlers>> {
-  const first = pipelineHandlers(await ctx());
-  return Object.fromEntries(Object.keys(first).map((k) => [k, async (...a: unknown[]) => (pipelineHandlers(await ctx()) as any)[k](...a)])) as unknown as ReturnType<typeof pipelineHandlers>;
+export async function liveHandlers(ctx: () => Promise<Ctx>, deps: HandlerDeps = {}): Promise<ReturnType<typeof pipelineHandlers>> {
+  const first = pipelineHandlers(await ctx(), deps);
+  return Object.fromEntries(Object.keys(first).map((k) => [k, async (...a: unknown[]) => (pipelineHandlers(await ctx(), deps) as any)[k](...a)])) as unknown as ReturnType<typeof pipelineHandlers>;
 }
 
-export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<PipelineActions, "todoAdd" | "todoPlace">> {
+/**
+ * What the handlers need besides the context. `confirm` asks the PM on this Mac before a setup step that changes the
+ * background job or the Claude app's settings (SETUP-2); tests pass their own. `self` says which server answers.
+ */
+export interface HandlerDeps {
+  confirm?: Confirm; self?: "mcp" | "page"; cliPath?: string;
+  /**
+   * BOARD-11: PMX Engine, as `pmx open` and `pmx mcp` hand it over from the bridge. Only this Mac's page (`data`) and
+   * the paired page's `board` and `board_act` use it; without it, nothing about Engine shows.
+   */
+  engine?: EngineSource;
+}
+
+/** How old the recorded checklist may be for a fix to trust it; older, PMX works it out again first. */
+const FRESH_MS = 10 * 60000;
+
+export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActions & Required<Pick<PipelineActions, "todoAdd" | "todoPlace">> {
+  const confirm = deps.confirm ?? macConfirm;
+  /**
+   * SETUP-2: one checklist step PMX can do itself, by its ID, from the allowlist in src/setup/fix.ts. Answers with the
+   * checklist worked out again, the way the background job does, so the page shows where the Mac stands now.
+   */
+  const checklistFix = async (step: string): Promise<{ status: number; body: unknown }> => {
+    const [{ checklistFor }, { runFix, pagePrompt }] = await Promise.all([import("../commands/index.js"), import("../setup/fix.js")]);
+    const last = (await readHistory())?.last ?? null;
+    // The recorded checklist when it's recent and this pmx's own (an older one's has no fixes); else worked out now.
+    const current = last && last.version === currentVersion() && Math.abs(Date.now() - Date.parse(last.at)) < FRESH_MS ? last : await checklistFor(ctx).catch(() => last);
+    const r = await runFix(step, current, { ctx, confirm: (what) => confirm(pagePrompt(what)), cliPath: deps.cliPath });
+    const after = r.done ? await checklistFor(ctx).catch(() => current) : current;
+    const setup = checklistForPage(after);
+    return r.status < 400 ? { status: r.status, body: { message: pageWords(r.message) || "Done.", setup } } : { status: r.status, body: { error: pageWords(r.message) || "PMX couldn't do that.", setup } };
+  };
   return {
-    data: (hours: number) => loadPipeline(ctx, { level: "local", hours, keychain: ctx.keychain }),
-    async proposals(action: "approve" | "drop", ids: string[]) {
+    data: (hours: number) => loadPipeline(ctx, { level: "local", hours, keychain: ctx.keychain, engine: deps.engine }),
+    async proposals(action: "approve" | "start" | "drop", ids: string[]) {
       if (action === "drop") {
         const r = await dropProposals(ids, ctx.now());
         return r.dropped.length ? `Dropped ${r.dropped.map((p) => `"${p.title}"`).join(", ")}.` : "Nothing to drop.";
       }
-      const r = await approveProposals(ctx, await services(ctx), ids);
-      const pending = r.posted.some((p) => p.identifier.startsWith("PENDING-"));
-      return [r.posted.length ? `Approved ${r.posted.map((p) => p.identifier).join(", ")}: ${r.posted.length === 1 ? "it goes" : "they go"} to your team's pool in Linear${pending ? " at the next Claude sync" : ""}. An agent takes ${r.posted.length === 1 ? "it" : "one"} only after a teammate moves it to Ready.` : "", ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`)].filter(Boolean).join(" ") || "Nothing to approve.";
+      // APPROVE-3: Start now is the PM's approval plus Ready; Later (approve) sends the task to the pool, as before.
+      const start = action === "start";
+      const r = await approveProposals(ctx, await services(ctx), ids, { start });
+      return [approvedText(r.posted, { start, startNow: startsNow(ctx.team) }), ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`)].filter(Boolean).join(" ") || "Nothing to approve.";
     },
     async proposalTheme(id: string, theme: string | null) {
       try {
         const r = await setProposalTheme(ctx.personal.repoPath, [id], theme);
-        if (!r.changed.length) return { status: 404, body: { error: "That proposal is no longer waiting." } };
+        if (!r.changed.length) return { status: 404, body: { error: "That task is no longer waiting." } };
         return { status: 200, body: { message: r.theme ? `Theme: ${r.theme}.` : "No theme.", theme: r.theme } };
       } catch (e: any) {
         return { status: 400, body: { error: e.message } };
@@ -138,6 +176,14 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
         return { status: 200, body: { message: r.message + (r.identifier?.startsWith("PENDING-") ? " It reaches Linear at the next Claude sync." : ""), moved: r } };
       } catch (e: any) { return { status: 400, body: { error: e.message.replace(/ \(--kind\)/, "").replace(/`([^`]+)`/g, "$1") } }; }
     },
+    /** PULL-12: a task PMX stopped after failed runs, tried again or dropped, as `pmx review --retry` and `--drop` do. */
+    async stopped(identifier: string, action: string) {
+      if (action !== "retry" && action !== "drop") return { status: 400, body: { error: "Try again or drop the task." } };
+      try {
+        const svc = await services(ctx);
+        return { status: 200, body: { message: await (action === "retry" ? retryStopped : dropStopped)(ctx, svc, identifier) } };
+      } catch (e: any) { return { status: 400, body: { error: e.message } }; }
+    },
     /** A paused category resumed from the board, as `pmx review --unpause` does (Team plan). */
     async resume(category: string) {
       if (!(category in ctx.team.categories)) return { status: 400, body: { error: "Unknown category." } };
@@ -161,16 +207,47 @@ export function pipelineHandlers(ctx: Ctx): PipelineActions & Required<Pick<Pipe
         return { status: 200, body: { message: stopped ? "Stopped PMX's page on this Mac." : "PMX's page on this Mac wasn't running.", localPage: await webServerStatus() } };
       } catch (e: any) { return { status: 500, body: { error: e.message } }; }
     },
-    /** One-click setup from the board. "install-job" registers the background job, as `pmx init` does when you say yes. */
+    /**
+     * One-click setup from a board before 0.36.0: "install-job" registers the background job. It's the checklist's
+     * job.installed fix now, so it asks on the Mac first like every fix that changes the job.
+     */
     async setup(action: string) {
       if (action !== "install-job") return { status: 400, body: { error: `Unknown setup step "${action}".` } };
-      try {
-        await mkdir(paths.logs(), { recursive: true });
-        const claude = await claudeAbsolutePath(ctx.exec);
-        const cli = realpathSync(process.argv[1] ?? "");
-        await ctx.launchd.install(plist({ node: await stableNode(process.execPath), cli, pmxHome: pmxHome(), claude }));
-        return { status: 200, body: { message: "Automatic runs are on. PMX checks every 30 minutes while this Mac is awake." } };
-      } catch (e: any) { return { status: 500, body: { error: `Couldn't turn them on: ${e.message}. In Terminal, pmx init does the same.` } }; }
+      return checklistFix("job.installed");
+    },
+    /**
+     * SETUP-2: one checklist step PMX can do itself, by its ID, from the allowlist in src/setup/fix.ts. Answers with the
+     * checklist worked out again, the way the background job does, so the page shows where the Mac stands now.
+     */
+    checklistFix: (step: string) => checklistFix(step),
+    /** CLAUDE-6: the PM's working hours for PMX's Claude tasks. A PMX setting: nothing changes in the Claude app. */
+    async taskHours(hours: string) {
+      if (!(TASK_HOURS as readonly string[]).includes(hours)) return { status: 400, body: { error: "hours is weekdays or always" } };
+      return { status: 200, body: { message: await setTaskHours(ctx.personal, hours as TaskHours), taskHours: hours } };
+    },
+    /** FLOW-8: exactly the page `pmx flow --publish-json` would have Claude publish, for the page to publish itself. */
+    async pageHtml() {
+      return { status: 200, body: { html: await flowPageHtml(ctx.team), version: currentVersion(), capabilities: flowCapabilities() } };
+    },
+    /** FLOW-8: the page in Claude now runs `version`; recorded like `pmx flow --set-url`, keeping its link. */
+    async pagePublished(version: string) {
+      const r = await markFlowPublished(ctx.personal, version, ctx.now());
+      return r.recorded ? { status: 200, body: { message: `PMX's page in Claude is now pmx ${version}.` } } : { status: 409, body: { error: `Not recorded: ${r.why}.` } };
+    },
+    /** OBS-5: what PMX is doing on this Mac right now, for Health → Running. One `ps` call. */
+    async running() {
+      const access = await linearAccess(ctx.team, ctx.keychain).catch(() => "none" as const);
+      const entry = await mcpEntry().catch(() => null);
+      const view = await runningNow({ exec: ctx.exec, launchd: ctx.launchd, now: ctx.now(), mcpCli: entry?.args[0] ?? null, relay: access === "relay", self: { pid: process.pid, id: deps.self ?? "mcp" } });
+      return { status: 200, body: { running: view } };
+    },
+    /**
+     * BOARD-11: "Open in the studio": PMX Engine's studio at one of its places, in this Mac's browser, which the page in
+     * the Claude app can't open itself. Approving, signing off and holding stay in the studio, which asks on the Mac.
+     */
+    async engineOpen(place: string) {
+      if (!deps.engine || ctx.personal.studio === "hidden") return { status: 404, body: { error: "PMX Engine isn't on this Mac." } };
+      return deps.engine.open(place);
     },
     whatIf(kind: string, value: string) {
       const c = checkNeverIngest(kind, value);

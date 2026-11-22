@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { openSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import type { Server } from "node:http";
 import { join } from "node:path";
 import type { Exec } from "../core/exec.js";
 import { paths } from "../core/paths.js";
@@ -13,6 +14,44 @@ import { currentVersion } from "../core/version.js";
  */
 export interface WebServerNote { pid: number; url: string; version: string; startedAt: string }
 export const webServerFile = () => join(paths.home(), "flow-web.json");
+
+/**
+ * OBS-5: this Mac's page stops by itself after this long with no request, so a page started in the background and
+ * forgotten doesn't run for days. A page left open in the browser asks every minute while it's visible, which keeps it
+ * up. `PMX_PAGE_IDLE_MS` overrides it (tests). The Claude app's page then shows it as not running (BOARD-8).
+ */
+export const PAGE_IDLE_MS = Number(process.env.PMX_PAGE_IDLE_MS) > 0 ? Number(process.env.PMX_PAGE_IDLE_MS) : 4 * 3600000;
+
+/**
+ * Keeps this Mac's page up until Ctrl+C, a stop from the page in Claude (SIGTERM), or `idleMs` with no request; then
+ * closes it and removes its note. Resolves with why it stopped.
+ */
+export function serveUntilStopped(s: { server: Server; close(): Promise<void> }, unnote: () => Promise<void>, o: { idleMs?: number; log?: (line: string) => void; signals?: boolean } = {}): Promise<"idle" | "signal"> {
+  const idleMs = o.idleMs ?? PAGE_IDLE_MS;
+  return new Promise((resolve) => {
+    let done = false;
+    const stop = (why: "idle" | "signal") => {
+      if (done) return;
+      done = true; unwatch();
+      if (o.signals !== false) { process.off("SIGINT", onSig); process.off("SIGTERM", onSig); }
+      void s.close().then(unnote).then(() => resolve(why), () => resolve(why));
+    };
+    const onSig = () => stop("signal");
+    const unwatch = watchIdle(s.server, () => { o.log?.(`${new Date().toISOString()} No one used this page for ${Math.round(idleMs / 60000)} minutes, so it stopped.`); stop("idle"); }, idleMs);
+    if (o.signals !== false) { process.on("SIGINT", onSig); process.on("SIGTERM", onSig); }
+  });
+}
+
+/** Calls `onIdle` once `server` has had no request for `idleMs`. Returns how to stop watching. */
+export function watchIdle(server: Server, onIdle: () => void, idleMs = PAGE_IDLE_MS): () => void {
+  let last = Date.now();
+  const seen = () => { last = Date.now(); };
+  server.on("request", seen);
+  const t = setInterval(() => { if (Date.now() - last >= idleMs) { stop(); onIdle(); } }, Math.max(20, Math.min(60000, Math.floor(idleMs / 4))));
+  t.unref?.();
+  const stop = () => { clearInterval(t); server.off("request", seen); };
+  return stop;
+}
 
 export async function noteWebServer(url: string, now = new Date()): Promise<() => Promise<void>> {
   const note: WebServerNote = { pid: process.pid, url, version: currentVersion(), startedAt: now.toISOString() };

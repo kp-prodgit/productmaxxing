@@ -354,12 +354,12 @@ export async function queueSize(now: Date): Promise<number> {
 export function formatBrain(r: BrainReceipt): string {
   const when = new Date(r.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   const out = [`PMX brain · ${when} · level ${r.level}${r.dryRun ? " · dry run (nothing changed)" : ""}`, ""];
-  out.push(`Board: ${r.board.inbox} inbox · ${r.board.ready} ready · ${r.board.inFlight} in flight · ${r.board.review} in review · ${r.board.blocked} blocked`);
+  out.push(`Board: ${r.board.inbox} in the backlog · ${r.board.ready} ready · ${r.board.inFlight} in flight · ${r.board.review} in review · ${r.board.blocked} blocked`);
   out.push(`Limits: review queue ${r.limits.reviewQueue} · $${r.limits.budgetLeftUsd.toFixed(2)} budget left today · ${r.limits.runsToday} brain run(s) today · kill switch ${r.limits.killSwitch ? "on" : "off"}${r.limits.paused.length ? ` · paused: ${r.limits.paused.join(", ")}` : ""}`);
   if (r.summary) out.push("", r.summary);
-  if (r.error) out.push("", `The pass failed: ${r.error}`);
+  if (r.error) out.push("", `The run failed: ${r.error}`);
   out.push("");
-  if (!r.decisions.length && !r.error) out.push("No actions proposed: the board looks healthy.");
+  if (!r.decisions.length && !r.error) out.push("No actions suggested: the board looks healthy.");
   const MARK: Record<DecisionMode, string> = { executed: r.dryRun ? "→ would do" : "✔ did", approved: "✔ did (approved)", queued: "⏸ waiting for approval", recommended: "💬 suggested", blocked: "✘ not allowed", declined: "· declined" };
   for (const d of r.decisions) {
     const name = d.action === "pause-category" ? String(d.value) : d.task ?? "?";

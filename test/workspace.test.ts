@@ -124,8 +124,8 @@ describe("0.23.0: the paired workspace in Claude (FLOW-4, FLOW-5, PRIV-7)", () =
       proposals: async (a: string, ids: string[]) => (seen.push([a, ids]), "ok"),
       changes: async () => ({ status: 200, body: {} }), review: async () => ({ status: 200, body: {} }),
     } as PipelineActions;
-    expect(await pipelineAct(o, "proposals", { action: "ship", ids: ["p1"] })).toEqual([400, { error: "action must be approve or drop" }]);
-    expect(await pipelineAct(o, "proposals", { action: "approve", ids: [] })).toEqual([400, { error: "ids must be proposal IDs" }]);
+    expect(await pipelineAct(o, "proposals", { action: "ship", ids: ["p1"] })).toEqual([400, { error: "action must be start, approve or drop" }]);
+    expect(await pipelineAct(o, "proposals", { action: "approve", ids: [] })).toEqual([400, { error: "ids must be the IDs of tasks waiting for approval" }]);
     expect(await pipelineAct(o, "proposals", { action: "approve", ids: ["p1"] })).toEqual([200, { message: "ok" }]);
     expect(await pipelineAct(o, "what-if", { kind: "title", value: "Board prep" })).toEqual([200, { whatIf: { k: "title", v: "Board prep" } }]);
     expect(await pipelineAct(o, "todo-add", { text: "x" })).toEqual([404, { error: "not found" }]);

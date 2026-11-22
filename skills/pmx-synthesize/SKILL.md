@@ -1,6 +1,6 @@
 ---
 name: pmx-synthesize
-description: Turns a batch of redacted team signals into candidate PMX tasks with category, size, rationale and cited sources. Used by `pmx synthesize`; runs with no tools and posts only to the inbox.
+description: Turns a batch of redacted customer calls and threads into new PMX tasks with kind of work, size, rationale and cited sources. Used by `pmx synthesize`; runs with no tools, and each task waits for the PM's approval.
 pmx: {"kind": "core"}
 ---
 

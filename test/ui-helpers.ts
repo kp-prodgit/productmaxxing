@@ -8,6 +8,7 @@ import { liveHandlers, pipelineHandlers } from "../src/flow/pipeline-handlers.js
 import { pipelineTemplate } from "../src/flow/pipeline-page.js";
 import { handleMcp } from "../src/mcp/server.js";
 import { currentVersion } from "../src/core/version.js";
+import { flowCapabilities } from "../src/claude/flow.js";
 import { readFile } from "node:fs/promises";
 import { freshHome, pmxRepo, testCtx } from "./helpers.js";
 
@@ -38,11 +39,31 @@ export interface Ui {
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Every word the page shows or could show: the whole document's text, collapsed sections and dialogs included, but not
+ * its own script and styles (SETUP-2: no pmx command anywhere on the page).
+ */
+export function pageText(ui: Ui): string {
+  const body = ui.doc.body.cloneNode(true) as HTMLElement;
+  body.querySelectorAll("script, style").forEach((x) => x.remove());
+  const attrs = [...body.querySelectorAll("[title], [aria-label], [placeholder]")].map((x) => ["title", "aria-label", "placeholder"].map((a) => x.getAttribute(a) ?? "").join(" "));
+  return `${body.textContent ?? ""} ${attrs.join(" ")}`.replace(/\s+/g, " ");
+}
+
+/**
  * `app: true` opens the page as the Claude app shows it (/pmx-flow): it reaches PMX through `window.claude` and PMX's
  * real MCP handler, which builds a fresh context from disk for every call, as the server the Claude app starts does.
  * The page is connected first, as a PM clicking Connect and allowing it on the Mac would.
  */
-export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Partial<PersonalConfig>; hash?: string; now?: Date; app?: boolean; staleServer?: boolean; before?: (ctx: Ctx) => Promise<void> } = {}): Promise<Ui> {
+export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Partial<PersonalConfig>; hash?: string; now?: Date; app?: boolean; staleServer?: boolean; before?: (ctx: Ctx) => Promise<void>;
+  /** How the PM answers PMX's dialogs on the Mac (pairing, and setup fixes that ask first). Yes unless a test says. */
+  confirm?: (prompt?: string) => Promise<boolean>;
+  /** The page as /pmx-flow publishes it, with the capabilities it declares, inside this document head (FLOW-8). */
+  head?: string; caps?: boolean; pageVersion?: string;
+  /** The Claude app's other capabilities for this page, by name (FLOW-8: "artifact", "user"). */
+  uses?: Record<string, unknown>;
+  /** BOARD-11: PMX Engine as `pmx open` and `pmx mcp` hand it to the board (src/engine/bridge.ts's engineSource). */
+  engine?: import("../src/flow/strategy.js").EngineSource;
+} = {}): Promise<Ui> {
   await freshHome();
   const { repo } = await pmxRepo(o.team ?? {});
   const ctx = await testCtx({ repo, team: o.team, personal: o.personal, now: o.now ?? new Date() });
@@ -53,18 +74,19 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
   // Like realCtx(): the PM's settings as they are on disk now, for every call.
   const freshCtx = async () => testCtx({ repo, team: o.team, personal: await loadPersonalConfig(), now: o.now ?? new Date() });
   // Wired as `pmx flow --web` wires it; `staleServer` is the pre-0.25.1 wiring, kept to prove the regression test.
-  const server: ExplainServer = await startExplainServer({ team: ctx.team, personal: ctx.personal, pipeline: o.staleServer ? pipelineHandlers(ctx) : await liveHandlers(freshCtx) });
+  const confirm = o.confirm ?? (async () => true);
+  const server: ExplainServer = await startExplainServer({ team: ctx.team, personal: ctx.personal, pipeline: o.staleServer ? pipelineHandlers(ctx) : await liveHandlers(freshCtx, { confirm, self: "page", engine: o.engine }) });
   const base = new URL(server.flowUrl);
   const posts: [string, any][] = [];
   let dom!: JSDOM;
 
   let rpc = 0;
   const appPage = async () => (await readFile(pipelineTemplate(), "utf8"))
-    .replace('{"mode":"artifact","version":"0.0.0"}', JSON.stringify({ mode: "artifact", version: currentVersion(), team: ctx.team.team }));
+    .replace('{"mode":"artifact","version":"0.0.0"}', JSON.stringify({ mode: "artifact", version: o.pageVersion ?? currentVersion(), team: ctx.team.team, ...(o.caps ? { caps: JSON.stringify(flowCapabilities()) } : {}) }).replace(/</g, "\\u003c"));
 
   const loadApp = async (hash: string) => {
     if (dom) dom.window.close();
-    dom = new JSDOM(`<!doctype html><html lang=en><head><meta charset=utf-8></head><body>${await appPage()}</body></html>`, {
+    dom = new JSDOM(`<!doctype html><html lang=en><head><meta charset=utf-8>${o.head ?? ""}</head><body>${await appPage()}</body></html>`, {
       url: `http://artifact.test/#${hash.replace(/^#/, "")}`, runScripts: "dangerously", pretendToBeVisual: true,
       beforeParse(w: any) {
         w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
@@ -72,10 +94,10 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
         w.HTMLElement.prototype.scrollIntoView = function () {};
         w.CSS = { escape: (s: string) => String(s).replace(/[^a-zA-Z0-9_\u00A0-\uFFFF-]/g, (c) => `\\${c}`) };
         w.claude = {
-          use: async (name: string) => name !== "mcp" ? null : {
+          use: async (name: string) => name !== "mcp" ? (o.uses?.[name] ?? null) : {
             async callTool(_server: string, tool: string, args: any) {
               if (tool === "board_act") posts.push([args.path, args.body]);
-              const out: any = await handleMcp({ jsonrpc: "2.0", id: ++rpc, method: "tools/call", params: { name: tool, arguments: args } }, freshCtx, { confirm: async () => true });
+              const out: any = await handleMcp({ jsonrpc: "2.0", id: ++rpc, method: "tools/call", params: { name: tool, arguments: args } }, freshCtx, { confirm, engine: o.engine });
               if (out.error) throw Object.assign(new w.Error(out.error.message), { code: out.error.code === -32602 ? "unknown_tool" : "tool_error" });
               const r = out.result ?? {};
               const payload = r.structuredContent ?? (r.content?.[0] ? JSON.parse(r.content[0].text) : null);

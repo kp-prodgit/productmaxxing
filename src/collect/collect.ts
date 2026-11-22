@@ -283,7 +283,7 @@ export async function checkCollected(ctx: Ctx): Promise<string[]> {
     const n = Object.values(report.skipped).reduce((a, b) => a + b, 0);
     if (n) out.push(`Skipped ${n} meeting(s) before saving: ${Object.entries(report.skipped).filter(([, v]) => v).map(([k, v]) => `${v} ${k.replace(/-/g, " ")}`).join(", ")}.`);
   }
-  out.push("Next: `pmx todo --refresh` for your to-dos. Team meetings are picked up by the synthesizer's next background pass.");
+  out.push("Next: `pmx todo --refresh` for your to-dos. Team meetings are picked up by the synthesis Mac's next background run.");
   return out;
 }
 

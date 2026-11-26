@@ -21,7 +21,7 @@ import type { Keychain } from "../core/keychain.js";
 import { killSwitchOn } from "../core/killswitch.js";
 import { jobEnv, VERSIONED_NODE, type Launchd } from "../core/launchd.js";
 import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
-import { profileChecks, type Check } from "../core/profile.js";
+import { profileChecks, webKinds, type Check } from "../core/profile.js";
 import { RunLogStore } from "../core/runlog-store.js";
 import { teamSkillPath } from "../core/skills.js";
 import type { RunLogEntry } from "../core/runlog.js";
@@ -141,6 +141,11 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   add("skill.pmx-digest", digestSkill, "shared skill pmx-digest in .claude/skills", "warn");
 
   for (const c of await profileChecks(d.team)) add(c.id, c.ok, c.detail);
+  // RUN-6: a team that opened competitive analysis to the web has a second set of run settings; one check covers them.
+  if (webKinds(d.team).length) {
+    const bad = (await profileChecks(d.team, { web: true })).filter((c) => !c.ok);
+    add("profile.web-run", !bad.length, bad.length ? `the web run's settings fail: ${bad.map((c) => c.id).join(", ")}` : `web runs (${webKinds(d.team).join(", ")}) open only WebSearch and WebFetch`);
+  }
 
   // Versions (COMPAT-2, COMPAT-5): too old for the team fails; a newer team or release package warns.
   const current = currentVersion();

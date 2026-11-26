@@ -111,9 +111,9 @@ export async function runningNow(d: RunningDeps): Promise<RunningView> {
   // The agent run: the note its pmx left, while that pmx is alive, and the Claude Code process under it.
   const note = await readAgentRun();
   const runNote = note && alive(note.pid) ? note : null;
-  const settings = paths.runSettings();
-  // Every Claude Code process with PMX's run settings is one of PMX's runs; the one under the noted pmx comes first.
-  const claudeRuns = rows.filter((x) => x.command.includes(settings));
+  const settings = [paths.runSettings(), paths.webRunSettings()];
+  // Every Claude Code process with PMX's run settings (a web run's too, RUN-6) is one of PMX's runs; the one under the noted pmx comes first.
+  const claudeRuns = rows.filter((x) => settings.some((s) => x.command.includes(s)));
   const under = runNote ? kids(runNote.pid) : [];
   const runRows = [...claudeRuns.filter((x) => under.includes(x)), ...claudeRuns.filter((x) => !under.includes(x))];
   tally(runRows);

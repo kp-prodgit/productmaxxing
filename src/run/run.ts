@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { recordSpend } from "../budget/provider.js";
 import type { Ctx } from "../core/context.js";
@@ -12,10 +12,15 @@ import { checkRun, envTrustProblem, isSupportedEnv, runInstructions, scaffoldPro
 import { updateState } from "../core/state.js";
 import type { Task } from "../core/types.js";
 import type { LeaseInfo } from "../lease/types.js";
+import { markTask } from "../lease/marks.js";
 import type { Services } from "../core/services.js";
 import { profileSummary, type RunRecord } from "./record.js";
-import { evidenceBlock, taskEvidence, type Evidence } from "./evidence.js";
+import { evidenceBlock, runEvidence, type Evidence } from "./evidence.js";
+import { webOn } from "../core/config.js";
+import { WEB_TOOLS } from "../core/profile.js";
 import { failStreak, FAILS_TO_BLOCK } from "../pull/failures.js";
+import { draftComment, draftSummary, sourcePeople } from "./comment.js";
+import { buildGuard, clearGuard, guardBlocked, writeGuard } from "./web-guard.js";
 
 export function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
@@ -23,7 +28,8 @@ export function slug(s: string): string {
 
 /**
  * The task snapshot the agent sees: only human-approved task text, with source quotes as data (SEC-1). The quotes
- * come from this Mac (RUN-3): Linear has only the sources' IDs (PRIV-6).
+ * come from this Mac (RUN-3), or from the task's evidence pack in the team repo (RUN-5): Linear has only the sources'
+ * IDs (PRIV-6).
  */
 export function taskSnapshot(t: Task, output: string, evidence: Evidence = { sources: [], missing: [] }): string {
   const notes = [...t.description.matchAll(/^pmx:note (.+)$/gm)].map((m) => `- ${m[1]}`);
@@ -54,7 +60,8 @@ export interface RunOutcome {
 /**
  * Runs one leased task end to end: worktree on a fresh branch, clean headless run with the task's
  * skill (RUN-1), checklist, run record (B5), PR (OUT-2), tracker comment and status, run log (RUN-2).
- * The agent gets file tools inside the worktree only: no tracker, source or network tools (P3).
+ * The agent gets file tools inside the worktree only: no tracker, source or network tools (P3). The one exception is a
+ * kind of work the team opened to the web (RUN-6, competitive analysis only): its runs also get WebSearch and WebFetch.
  */
 export async function runTask(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo): Promise<RunOutcome> {
   // OBS-5: Health → Running shows the run in progress, from this note, while this process is alive.
@@ -134,22 +141,33 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
       const note = await noDraft(`ProductMaxxing run by ${ctx.agent} skipped ${task.identifier} before starting an agent: ${skip}.`);
       return { outcome: "failed", prUrl: null, message: `${task.identifier}: failed (${skip})${note}` };
     }
-    const evidence = await taskEvidence(ctx, task);
+    const evidence = await runEvidence(ctx, task);
     const snapshot = taskSnapshot(task, output, evidence);
     await writeFileIn(wt.cwd, ".pmx/tmp/task.md", snapshot);
 
-    const probe = await ctx.runtime.probe(team);
+    // RUN-6: the web only for a kind the team opened to it, and never for a skill synced from Linear that the team
+    // hasn't pinned: that skill isn't reviewed in the team's repo, so it doesn't get tools that reach outside.
+    const webSetting = webOn(team, category);
+    const web = webSetting && (skill.source !== "org" || verdict.allowlisted);
+    const tools = web ? [...env.tools, ...WEB_TOOLS.filter((t) => !env.tools.includes(t))] : env.tools;
+    const probe = await ctx.runtime.probe(team, { web });
     if (!probe.ok) throw new Error(`runtime refused to start (fail closed): ${probe.problems.join("; ")}`);
+    // RUN-6: what the web guard keeps out of every search and page: the task's quotes, its people and its customers.
+    if (web) await writeGuard(wt.cwd, buildGuard({ task, evidence, people: await privateNames(ctx), internalDomains: [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])] }));
 
     const result = await ctx.runtime.run({
       team,
       cwd: wt.cwd,
-      tools: env.tools,
+      tools,
+      web,
+      ...(web ? { guard: wt.cwd } : {}),
       maxTurns: env.maxTurns ?? 40,
-      prompt: [skillBody(skill.text), "", runInstructions(env, output, task.identifier)].join("\n"),
+      prompt: [skillBody(skill.text), "", runInstructions(env, output, task.identifier, web ? { web: { today: ctx.now().toISOString().slice(0, 10) } } : {})].join("\n"),
     });
 
-    const check = await checkRun(env, meta, wt.cwd, output, idsIn(snapshot));
+    const check = await checkRun(env, meta, wt.cwd, output, idsIn(snapshot), { web });
+    const blocked = web ? await guardBlocked(wt.cwd) : null;
+    if (web) await clearGuard(wt.cwd);
     const outcome: RunRecord["outcome"] = result.capped ? "capped" : result.ok && check.ok ? "ok" : "failed";
 
     const record: RunRecord = {
@@ -160,7 +178,7 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
       machine: ctx.personal.machineId,
       runtime: { name: ctx.runtime.name, version: probe.version },
       model: team.model,
-      profile: await profileSummary(wt.cwd, team),
+      profile: await profileSummary(wt.cwd, team, { web }),
       skill: { name: skillName, version: skill.version, commit: await wt.lastCommit(`.claude/skills/${skillName}`), source: skill.source, allowlisted: verdict.allowlisted },
       context: { claudeMdCommit: await wt.lastCommit("CLAUDE.md"), memoryCommit: await wt.lastCommit("memory"), baseCommit: await wt.head() },
       lease: { kind: svc.lease.kind, token: lease.token },
@@ -171,6 +189,7 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
       outcome,
       checklist: { ok: check.ok, problems: check.problems },
       artifact: { kind: env.output.kind, ref: check.ref },
+      ...(web ? { web: true, webBlocked: blocked?.count ?? 0 } : {}),
     };
 
     await updateState((s) => recordSpend(s, ctx.personal, ctx.now(), result.costUsd, result.tokens));
@@ -187,6 +206,11 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
       return { outcome, prUrl: null, message: `${task.identifier}: ${outcome} (${why})${keptDraft ? `; what it wrote is on ${failedBranch}` : ""}${note}` };
     }
 
+    // TASK-10: what PMX says about the draft comes from the draft itself, read before the worktree goes.
+    const draft = env.kind === "document" ? await readFile(join(wt.cwd, output), "utf8").catch(() => null) : null;
+    const names = await privateNames(ctx);
+    // N5: and everyone the task's sources name (their participants where this Mac has the files, and their speakers).
+    const people = sourcePeople(evidence, [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])]);
     await rm(join(wt.cwd, ".pmx", "tmp"), { recursive: true, force: true });
     await writeFileIn(wt.cwd, `.pmx/runs/${task.identifier}.json`, JSON.stringify(record, null, 2) + "\n");
     await wt.ok(["add", ...stagePaths(env)]);
@@ -196,7 +220,7 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     const noun = env.kind === "prototype" ? "Prototype" : "Draft";
     const checkLabel = env.kind === "prototype" ? "Build check" : "Checklist";
     const host = await outputHost(wt, ctx.keychain, ctx.exec, ctx.fetch);
-    const summary = result.text.trim().split("\n").filter(Boolean).at(-1)?.slice(0, 300) ?? "";
+    const summary = draft ? draftSummary(draft, names, undefined, { people }) : "";
     const pr = await host.openPr({
       branch,
       base,
@@ -212,7 +236,8 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
         `| Skill | ${skillName}@${skill.version} |`,
         `| Model | ${team.model} |`,
         `| Output | ${check.ref} (${env.output.kind}) |`,
-        `| Sources | ${evidence.sources.length ? `${evidence.sources.map((x) => x.id).join(", ")}, quoted from ${ctx.agent}'s Mac` : "none quoted"}${evidence.missing.length ? ` (not here: ${evidence.missing.map((x) => x.id).join(", ")})` : ""} |`,
+        `| Sources | ${evidence.sources.length ? `${evidence.sources.map((x) => x.id).join(", ")}, quoted ${evidence.from === "team" ? "from the team repo, where they were shared when the task was approved" : `from ${ctx.agent}'s Mac`}` : "none quoted"}${evidence.missing.length ? ` (not here: ${evidence.missing.map((x) => x.id).join(", ")})` : ""} |`,
+        ...(webSetting ? [`| Web | ${web ? `used: WebSearch and WebFetch, each claim from a page cited by its URL and the date read${blocked?.count ? `; PMX's web guard blocked ${blocked.count} ${blocked.count === 1 ? "call" : "calls"} that carried the task's evidence` : ""}` : "off for this run: its skill is synced from Linear and not pinned in your team's settings"} |`] : []),
         `| Clean profile | ${record.profile.checksFailed.length ? "❌ " + record.profile.checksFailed.join(", ") : "✅ all checks passed"} |`,
         `| ${checkLabel} | ${check.ok ? "✅" : "⚠️ " + check.problems.join("; ")} |`,
         `| Run record | \`.pmx/runs/${task.identifier}.json\` |`,
@@ -222,8 +247,11 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
       labels: ["pmx", `pmx-${category}`, ...(check.ok ? [] : ["pmx-checklist-failed"])],
     });
     keepBranch = true;
-    await tracker.comment(task.id, `pmx:pr ${pr.url}\n${summary}`);
+    const said = draftComment({ title: task.title, markdown: draft, prUrl: pr.url, path: check.ref, agent: ctx.agent, names, people, noun });
+    await tracker.comment(task.id, `pmx:pr ${pr.url}\n${said}`);
     await tracker.setStatus(task.id, "review");
+    // PULL-14: in the team repo before the lease goes, so a Mac whose copy of Linear still says Ready doesn't draft it again.
+    await markTask(ctx, tracker, task.identifier, "review");
     return { outcome, prUrl: pr.url, message: `${task.identifier}: ${env.kind === "prototype" ? "prototype" : "draft"} ready for review at ${pr.url}` };
   } catch (e: any) {
     await tracker.setAgent(task.id, null).catch(() => {});
@@ -235,6 +263,7 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     throw e;
   } finally {
     await svc.lease.release(task.id, ctx.agent).catch(() => {});
+    await clearGuard(dir).catch(() => {});
     await ctx.repo.removeWorktree(dir);
     // A kept draft moves off the task's branch, so the next run starts clean from the base again.
     const moved = keptDraft && (await ctx.repo.raw(["branch", "-M", branch, failedBranch])).code === 0;
@@ -242,6 +271,12 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     // A draft that reached review replaces what an earlier run left behind.
     if (keepBranch) await ctx.repo.raw(["branch", "-D", failedBranch]);
   }
+}
+
+/** Names a comment must never carry (TASK-10): the team's CRM list and the PM's do-not-read people. */
+export async function privateNames(ctx: Pick<Ctx, "personal">): Promise<string[]> {
+  const crm = ctx.personal.crmNamesFile ? (await readFile(ctx.personal.crmNamesFile, "utf8").catch(() => "")).split("\n") : [];
+  return [...crm, ...(ctx.personal.neverIngest?.people ?? [])].map((n) => n.trim()).filter((n) => n.length >= 3);
 }
 
 /**

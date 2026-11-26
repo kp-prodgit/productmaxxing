@@ -2,30 +2,39 @@ import type { Ctx } from "../core/context.js";
 import { totalHeld } from "../core/filter.js";
 import { DATA_RULES, dataBlock } from "../core/prompt.js";
 import { RunLogStore } from "../core/runlog-store.js";
+import { DEFAULT_TEAM, maxTasks, SYNTH_TASKS } from "../core/config.js";
 import type { Services } from "../core/services.js";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { newReceiptId, writeReceipt, type RunReceipt, type SizeFlag, type Sizing, type TaskReceipt } from "../core/receipt.js";
+import { newReceiptId, refHash, writeReceipt, type RunReceipt, type SizeFlag, type Sizing, type TaskReceipt } from "../core/receipt.js";
 import { parseRubric, type SizeRubric } from "../core/skillcheck.js";
 import { categoryMenu, loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
 import { updateState } from "../core/state.js";
-import { SIZES, type CandidateTask, type SignalItem, type Size } from "../core/types.js";
+import { COMPANY_ROLES, SIZES, type CandidateTask, type CompanyRole, type SignalItem, type Size } from "../core/types.js";
+import { domainLabel } from "../core/filter.js";
+import { cutText, isFundraising, meaningful, quoteGuard, sentencesIn, trackerGuard, type TrackerGuard, type TrackerRules } from "../core/tracker-text.js";
+import { meetingSeries } from "../inputs/inputs.js";
 import { checkBudget, recordSpend } from "../budget/provider.js";
 import { gather } from "../digest/gather.js";
 import { planMeetings, startOfDay } from "../meetings/ledger.js";
 import type { MeetingEntry } from "../tracker/types.js";
 import { addEvidence, readProposals, stageProposals } from "./proposals.js";
+import { heldOverBlock, heldSource, heldSourcesIn, isHeldSource, kindWords, nextHeld, nextWaiting, readHeldOver, saveHeldOver, WAIT_DAYS, type HeldNeed } from "./held-over.js";
 import { knownBlock, matchKnown, sameTitle, type Known } from "./dedup.js";
 import { openThemes, themeBlock, themeNamed, type RoadmapTheme } from "./themes.js";
 
 export interface SynthResult {
-  /** Dry run: what would be proposed. */
-  posted: { identifier: string; title: string }[];
+  /** Dry run: what would be proposed. `leftOut`: how many sentences of its description Linear wouldn't get (PRIV-6). */
+  posted: { identifier: string; title: string; leftOut?: number }[];
   /** Proposed tasks waiting for the PM's approval (APPROVE-1). Nothing reaches the tracker before that. */
-  staged: { id: string; title: string }[];
+  staged: { id: string; title: string; leftOut?: number }[];
   skipped: string[];
   held: number;
+  /** SIG-9: needs found beyond the team's task limit, kept on this Mac for the next run. */
+  heldOver: number;
+  /** N1: suggestions waiting for a kind of work the team hasn't turned on, by kind. */
+  waiting?: { kind: string; n: number }[];
   /** The meeting ledger (MEET-2): lodged and finished now, already done by someone, claimed elsewhere, before the window. */
   meetings: { processed: { entry: string; tasks: string[] }[]; already: number; busy: number; before: number };
 }
@@ -63,30 +72,61 @@ export function checkSizing(t: { category: string; size: Size; sources: string[]
  * all a teammate sees in the tracker, so it's a summary, never the transcript.
  */
 export const OUTPUT_RULES = `## Rules PMX enforces
-- \`rationale\` is the task's whole description in the tracker: two to four sentences, in your own words, on what the task needs and why. Never quote a source. No names, speaker labels (like "Microphone:"), transcript lines or anything said about a person.
+- \`rationale\` is the task's whole description in the tracker: two to four sentences, in your own words, on what the task needs and why. It may name the customer or partner company as the sources name it, the deal stage, and the dates and deadlines the sources state ("Acme's Dec 8 beta", "renewal due Jan 15"). Never quote a source. Never name a person (an attendee, a speaker or anyone mentioned), a meeting's title, speaker labels (like "Microphone:") or transcript lines, and never write about fundraising: investors, a round, Series A or B, valuation, a term sheet, dilution, the cap table, the option pool or a raise. PMX cuts any sentence that does.
+- Give \`companies\`: for each cited source that was with an outside company, \`{"name": "…", "as": "customer" | "prospect" | "partner"}\`, the company as that source names it (in its text, its title or its \`orgs\`). Leave a source out when you aren't sure, and always when the company is an investor or a fund: the tracker then says "an external call". Never invent or guess a company.
 - Cite only sources that directly support the task. One source is fine; never add an unrelated one.
 - Give \`support\`: an object with one sentence per cited source ID on how that source supports the task. PMX drops any source without one, and any task left with none.`;
 
-/** "Microphone:", "System audio:", "Speaker 2:", "[00:12:03]": transcript markup that must never reach the tracker. */
-const TRANSCRIPT_MARKS = /\b(microphone|system audio|speaker \d+)\s*:|\[\d{1,2}:\d{2}(:\d{2})?\]/i;
-const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+/**
+ * F3: what PMX adds to the prompt when the batch has meetings from the team's approved internal series, whatever the
+ * team's copy of the skill says. They're context, above all for decisions already made.
+ */
+export const SERIES_RULES = `## Internal meetings your team approved
+Items marked internal="team meeting series" are recurring internal meetings your team approved for this (a launch weekly, exec staff, a design review). Read them as context, above all for what the team already decided:
+- Never propose a task to decide again what one of them decided. Build on the decision instead, and say it in the rationale without naming the meeting or anyone in it: "An internal meeting settled the beta scope on Nov 25: …".
+- A task still needs a customer or partner source, or a clear internal decision to act on. A task whose only sources are these meetings is fine for carrying out a decision (a spec for a scope the team settled, a decision brief for a choice still open with a date) and for launch readiness ("Launch readiness: …"). PMX drops one that is a problem brief, research, a competitive analysis or a validation from internal meetings alone: those need customers.
+- Leave them out of \`companies\`: they have no outside company.`;
+
+/** F3: kinds of work that need customers or partners, so a task from internal meetings alone is never one of them. */
+export const CUSTOMER_KINDS = ["problem-brief", "research-synthesis", "competitive-analysis", "validation-plan", "validation-readout"];
 
 /**
- * Whether `text` repeats a source: eight or more words in a row from any source, or transcript markup (PRIV-6).
- * Model-written text can echo what it read, so this is checked in code, not left to the prompt.
+ * SIG-9: the team's task limit and what to do with the needs beyond it. PMX adds this to every synthesis prompt, so it
+ * holds whatever number a team's older copy of the skill still says.
  */
-export function quotesSource(text: string, sources: string[], run = 8): boolean {
-  if (TRANSCRIPT_MARKS.test(text)) return true;
-  const w = words(text);
-  if (w.length < run) return false;
-  const grams = new Set<string>();
-  for (let i = 0; i + run <= w.length; i++) grams.add(w.slice(i, i + run).join(" "));
-  return sources.some((src) => {
-    const s = words(src);
-    for (let i = 0; i + run <= s.length; i++) if (grams.has(s.slice(i, i + run).join(" "))) return true;
-    return false;
-  });
+export function limitRules(max: number): string {
+  return `## Task limit
+- Return at most ${max} ${max === 1 ? "task" : "tasks"} in \`tasks\`, the highest value first. This is your team's limit; it replaces any other number above.
+- When you find more distinct needs than that, list the rest in \`heldOver\`, the highest value first: \`{"title": "…", "category": "…", "sources": ["T3"], "why": "…"}\`, where \`why\` is one sentence in your own words on why it matters. PMX keeps them on this Mac and offers them to the next run first. A need goes in one list, never both.`;
 }
+
+/**
+ * N1 (CAT-8): the kinds of work PMX has that this team hasn't turned on. The menu above lists only the team's, and the
+ * team's copy of the skill may still describe another (decision briefs on a team set up before them). A need of one of
+ * those waits on the Mac until the team turns it on, instead of being lost or filed as a kind it isn't.
+ */
+export function kindRules(off: string[]): string {
+  if (!off.length) return "";
+  return `## Kinds of work your team hasn't turned on
+- Use only the category ids listed above for \`category\` in \`tasks\`. Your instructions may also describe ${off.join(", ")}: your team hasn't turned ${off.length === 1 ? "it" : "them"} on.
+- Never file a need as another kind to fit it in. When a need is clearly ${off.length === 1 ? `a ${off[0]}` : `one of ${off.join(", ")}`}, list it in \`heldOver\` with that id and its sources: PMX keeps it on this Mac and asks your team to turn the kind on.
+`;
+}
+
+/** A need found beyond the task limit, before PMX keeps it (SIG-9). `sources` are this run's IDs. */
+export interface HeldCandidate { title: string; category: string; why: string; sources: string[] }
+
+/**
+ * A waiting suggestion of one of PMX's own kinds of work the team hasn't turned on (CAT-8, N1). `sources` are this
+ * run's IDs. It waits on this Mac with the held-over needs until the team turns the kind on.
+ */
+export type WaitingCandidate = HeldCandidate;
+
+/**
+ * N4: a sentence PMX left out of a task (or the whole task, `skipped`) because it repeated a source word for word: the
+ * words it shared and which source, for the receipt and `pmx explain`. They're the PM's own sources' words, on this Mac.
+ */
+export interface QuotedCut { task: string; part: "title" | "description"; source: string; words: string; skipped: boolean }
 
 export const FLAG_TEXT: Record<SizeFlag, string> = {
   "no-reason": "the model gave no reason for this size",
@@ -101,65 +141,323 @@ export const FLAG_TEXT: Record<SizeFlag, string> = {
  * word for word. The README there says what the files are, so it isn't guarded.
  */
 export async function releasedStrategy(repo: string): Promise<string[]> {
+  return (await strategyFiles(repo)).map((f) => f.text);
+}
+
+/** The same files with their names, so a quote of one says which (N4). */
+export async function strategyFiles(repo: string): Promise<{ name: string; text: string }[]> {
   const dir = join(repo, "memory", "engine");
-  const names = await readdir(dir).catch(() => [] as string[]);
-  return Promise.all(names.filter((n) => n.endsWith(".md") && n !== "README.md").sort().map((n) => readFile(join(dir, n), "utf8")));
+  const names = (await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".md") && n !== "README.md").sort();
+  return Promise.all(names.map(async (name) => ({ name, text: await readFile(join(dir, name), "utf8") })));
+}
+
+/** How a quote of the released strategy names its source (N4). */
+export const STRATEGY_SOURCE = (name: string) => `your team's released strategy (${name})`;
+
+/** What the tracker guard needs to know about one run's sources (F14): who they name, their titles, the team's series. */
+export interface TrackerContext {
+  /** Names found in the sources and names listed on purpose (the CRM list, the do-not-read people). */
+  people?: { found: string[]; listed: string[] };
+  /** The batch's meetings' titles: never repeated in the tracker. */
+  titles?: string[];
+  /** The team's approved meeting series (F3): their names are titles too. */
+  series?: string[];
+  /** The batch itself, so a company can be checked against the source that names it, and an internal-only task found. */
+  items?: SignalItem[];
+}
+
+const words2 = (s: string) => ` ${s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim()} `;
+
+/**
+ * F14: the company the model says a source was with, kept only when that source names it: in its title or text, or as
+ * its outside email domain ("Acme" for acme.example). An investor (or any role but customer, prospect or partner), a
+ * call about fundraising, a person's name or anything the tracker may not say is never kept, and the tracker keeps the
+ * role ("an external call").
+ */
+export function checkCompany(raw: unknown, item: Pick<SignalItem, "title" | "text" | "orgs" | "series">, guard: TrackerGuard = trackerGuard()): { name: string; as: CompanyRole | null } | null {
+  const o = raw && typeof raw === "object" ? (raw as { name?: unknown; as?: unknown }) : typeof raw === "string" ? { name: raw } : null;
+  if (!o || item.series) return null;
+  const name = oneLine(String(o.name ?? "")).replace(/^the\s+/i, "").replace(/[.,]+$/, "");
+  if (name.length < 2 || name.length > 60 || !/^[\p{L}\p{N}][\p{L}\p{N} &.,'’+-]*$/u.test(name)) return null;
+  const as = (COMPANY_ROLES as readonly string[]).includes(String(o.as)) ? (o.as as CompanyRole) : null;
+  if (o.as != null && !as) return null;
+  if (guard.problem(name) || isFundraising(item.title)) return null;
+  const key = words2(name);
+  if (!key.trim()) return null;
+  const flat = key.replace(/\s+/g, "");
+  const inSource = words2(`${item.title} ${item.text}`).includes(key);
+  const inDomain = (item.orgs ?? []).some((d) => {
+    const l = domainLabel(d);
+    return l.length >= 3 && flat.length >= 3 && (l === flat || l.startsWith(flat) || flat.startsWith(l));
+  });
+  return inSource || inDomain ? { name, as } : null;
+}
+
+/** The tracker guard for one run (F14): the names its sources hold, its meetings' titles and the team's series. */
+export function runGuard(t: TrackerContext = {}): TrackerGuard {
+  const rules: TrackerRules = { names: t.people?.listed ?? [], people: t.people?.found ?? [], titles: t.titles ?? [], series: t.series ?? [] };
+  return trackerGuard(rules);
+}
+
+/** What `parseCandidates` knows about the team besides its kinds of work. */
+export interface ParseTeam {
+  /** The released strategy (EQ-37), as text or as files with their names (N4: a quote says which). */
+  guarded?: (string | { name: string; text: string })[];
+  themes?: RoadmapTheme[];
+  maxTasks?: number;
+  /** N1: PMX's own kinds of work the team hasn't turned on. A suggestion of one waits instead of being dropped. */
+  offKinds?: string[];
 }
 
 /**
- * Pulls the JSON object out of the model's reply and validates every task against team config. A task whose title or
- * rationale repeats a source, or the team's released strategy (`guarded`), eight words in a row is skipped. A `theme`
- * is kept only when it names one of the team's open roadmap themes (`themes`, EQ-38).
+ * Pulls the JSON object out of the model's reply and validates every task against team config. What the tracker may
+ * say (F14, PRIV-6): a title that names a person, a meeting or fundraising, quotes, or repeats a source or the team's
+ * released strategy (`guarded`) word for word (N4: the quote rule in src/core/tracker-text.ts) skips the task; a
+ * rationale loses each sentence that does, or that names a company its sources don't, and the task is skipped only when
+ * nothing meaningful is left. A `theme` is kept only when it names one of the team's open roadmap themes (`themes`,
+ * EQ-38). A task from the team's internal meeting series alone (F3) is kept only for carrying out a decision or launch
+ * readiness. A task or held need of one of PMX's kinds the team hasn't turned on (`offKinds`, N1) waits.
  */
-export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric, sourceText: Map<string, string> = new Map(), team: { guarded?: string[]; themes?: RoadmapTheme[] } = {}): { tasks: CandidateTask[]; skipped: string[] } {
-  const guarded = team.guarded ?? [];
+export function parseCandidates(text: string, categories: string[], validIds: Set<string>, rubric?: SizeRubric, sourceText: Map<string, string> = new Map(), team: ParseTeam & TrackerContext = {}): { tasks: CandidateTask[]; skipped: string[]; heldOver: HeldCandidate[]; waiting: WaitingCandidate[]; quoted: QuotedCut[] } {
+  const max = Math.min(team.maxTasks ?? SYNTH_TASKS.default, SYNTH_TASKS.max);
+  const guard = runGuard(team);
+  const byId = new Map((team.items ?? []).map((i) => [i.id, i]));
+  // N4: one quote rule, built once per run: the batch's sources, and the released strategy by file.
+  const meetings = quoteGuard([...sourceText].map(([id, t]) => ({ id, text: t })));
+  const released = quoteGuard((team.guarded ?? []).map((g) => (typeof g === "string" ? { id: "your team's released strategy", text: g } : { id: STRATEGY_SOURCE(g.name), text: g.text })));
+  const offKinds = new Set((team.offKinds ?? []).filter((k) => !categories.includes(k)));
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end < start) throw new Error("Synthesis returned no JSON.");
   const raw = JSON.parse(text.slice(start, end + 1));
   const tasks: CandidateTask[] = [];
   const skipped: string[] = [];
-  for (const t of (raw.tasks ?? []).slice(0, 10)) {
+  const quoted: QuotedCut[] = [];
+  const all = Array.isArray(raw.tasks) ? raw.tasks : [];
+  // SIG-9: tasks past the limit aren't lost: they're held over like the needs the model listed there itself.
+  const over = all.slice(max).map((t: any) => ({ title: t?.title, category: t?.category, sources: t?.sources, why: t?.rationale }));
+  const { held: heldOver, waiting: heldWaiting } = parseHeld([...over, ...(Array.isArray(raw.heldOver) ? raw.heldOver : [])], categories, validIds, offKinds);
+  // N1: suggested tasks first, as the model ranked them, then the needs it held over.
+  const waiting: WaitingCandidate[] = [];
+  for (const t of all.slice(0, max)) {
     const title = oneLine(String(t.title ?? "")).slice(0, 120);
     // A source counts only with a reason it supports this task (PRIV-6), so an unrelated meeting isn't cited to fill space.
     const support = t.support && typeof t.support === "object" ? (t.support as Record<string, unknown>) : {};
     const cited = [...new Set((Array.isArray(t.sources) ? t.sources : []).map(String).filter((id: string) => validIds.has(id)))] as string[];
     const sources = cited.filter((id) => oneLine(String(support[id] ?? "")).length >= 10);
-    const rationale = oneLine(String(t.rationale ?? "")).slice(0, 1000);
+    let rationale = oneLine(String(t.rationale ?? "")).slice(0, 1000);
     if (!title) { skipped.push("untitled task"); continue; }
-    if (!categories.includes(t.category)) { skipped.push(`${title}: unknown category ${t.category}`); continue; }
+    if (!categories.includes(t.category)) {
+      // N1: one of PMX's own kinds the team hasn't turned on waits on this Mac, and Needs you asks to turn it on.
+      if (offKinds.has(t.category) && cited.length) {
+        if (!waiting.some((w) => sameTitle(w.title, title) || w.title.toLowerCase() === title.toLowerCase())) waiting.push({ title, category: t.category, why: rationale.slice(0, 300), sources: cited });
+        skipped.push(`${title}: ${kindWords(t.category, 1)} isn't a kind of work your team has turned on, so it waits on this Mac until your team does (pmx jobs add ${t.category})`);
+      } else skipped.push(`${title}: unknown category ${t.category}`);
+      continue;
+    }
     if (!SIZES.includes(t.size)) { skipped.push(`${title}: bad size ${t.size}`); continue; }
     if (!sources.length) { skipped.push(`${title}: ${cited.length ? "no source has a reason it supports the task" : "no valid sources"}`); continue; }
-    const all = [...sourceText.values()];
-    if (quotesSource(`${title} ${rationale}`, all)) { skipped.push(`${title}: its text repeats a meeting word for word, and the tracker gets summaries only`); continue; }
-    if (guarded.length && quotesSource(`${title} ${rationale}`, guarded)) { skipped.push(`${title}: its text repeats your team's released strategy word for word, and the tracker gets summaries only`); continue; }
+    // N4: a title that repeats a source or the strategy skips the task; a description loses only the sentences that do.
+    const tm = meetings.match(title), ts = tm ? null : released.match(title);
+    if (tm || ts) {
+      const hit = (tm ?? ts)!;
+      quoted.push({ task: title, part: "title", source: hit.source, words: hit.words, skipped: true });
+      skipped.push(`${title}: its title repeats ${tm ? "a meeting" : "your team's released strategy"} word for word, and the tracker gets summaries only`);
+      continue;
+    }
+    const qm = meetings.clean(rationale), qs = released.clean(qm.text);
+    const qcut = [...qm.cut, ...qs.cut];
+    if (qcut.length) {
+      const gone = !meaningful(qs.text);
+      for (const c of qcut) quoted.push({ task: title, part: "description", source: c.source, words: c.words, skipped: gone });
+      if (gone) { skipped.push(`${title}: its text repeats ${qm.cut.length ? "a meeting" : "your team's released strategy"} word for word, and the tracker gets summaries only`); continue; }
+      rationale = qs.text;
+    }
+    // F14: what the tracker may say. A title is all or nothing; a description loses only the sentences that can't go.
+    const bad = guard.problem(title);
+    if (bad) { skipped.push(`${title}: its title ${PROBLEM_WORDS[bad]}, which Linear never gets`); continue; }
+    const companies: NonNullable<CandidateTask["companies"]> = {};
+    const unnamed: string[] = [];
+    const given = t.companies && typeof t.companies === "object" ? (t.companies as Record<string, unknown>) : {};
+    for (const id of sources) {
+      if (given[id] == null) continue;
+      const item = byId.get(id);
+      const ok = item ? checkCompany(given[id], item, guard) : null;
+      if (ok) companies[id] = ok;
+      else {
+        const n = typeof given[id] === "string" ? given[id] : (given[id] as { name?: unknown })?.name;
+        if (typeof n === "string" && oneLine(n).length >= 2) unnamed.push(oneLine(n));
+      }
+    }
+    const kept = new Set(Object.values(companies).map((c) => words2(c.name)));
+    const unverified = [...new Set(unnamed.map(words2))].filter((k) => k.trim() && !kept.has(k));
+    const clean = guard.clean(rationale);
+    let leftOut: CandidateTask["leftOut"];
+    let named = 0;
+    const left = sentencesIn(clean.text).filter((x) => {
+      const hit = unverified.some((k) => words2(x).includes(k));
+      if (hit) named++;
+      return !hit;
+    });
+    if (clean.cut.length || named || qcut.length) {
+      const sent = (n: number, what: string) => `${n} ${n === 1 ? "sentence that" : "sentences that"} ${what}`;
+      const why = [
+        qm.cut.length ? sent(qm.cut.length, "repeated a meeting word for word") : "",
+        qs.cut.length ? sent(qs.cut.length, "repeated your team's released strategy word for word") : "",
+        clean.cut.length ? cutText(clean.cut) : "",
+        named ? `${named} ${named === 1 ? "sentence that named a company" : "sentences that named a company"} its sources don't` : "",
+      ].filter(Boolean).join(", and ");
+      if (!meaningful(left.join(" "))) {
+        for (const q of quoted) if (q.task === title) q.skipped = true;
+        skipped.push(`${title}: nothing in its description can go to Linear (${why})`);
+        continue;
+      }
+      // Kept: the note goes with the task (the receipt, `pmx explain`, `pmx synthesize`), not among the skipped ones.
+      leftOut = { sentences: qm.cut.length + qs.cut.length + clean.cut.length + named, why };
+      rationale = left.join(" ");
+    }
+    // F3: internal meetings alone can carry a decision or launch readiness, not a customer need.
+    const srcItems = sources.map((id) => byId.get(id));
+    if (srcItems.length && srcItems.every((i) => i?.series) && CUSTOMER_KINDS.includes(t.category) && !/^launch readiness:/i.test(rationale)) {
+      skipped.push(`${title}: only your team's internal meetings support it, and ${t.category} needs a customer or partner source`);
+      continue;
+    }
     const dropped = cited.filter((id) => !sources.includes(id));
     if (dropped.length) skipped.push(`${title}: dropped source(s) ${dropped.join(", ")} with no reason they support it`);
     const sizing = checkSizing({ category: t.category, size: t.size, sources }, t.sizing, rubric);
     const sameAs = typeof t.sameAs === "string" && /^[\w-]{2,40}$/.test(t.sameAs) ? t.sameAs : null;
     const theme = themeNamed(t.theme, team.themes ?? []);
     if (t.theme !== undefined && t.theme !== null && !theme) skipped.push(`${title}: kept without a theme, because its theme isn't one of your team's open roadmap themes`);
-    tasks.push({ title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])), ...(sameAs ? { sameAs } : {}), ...(theme ? { theme } : {}) });
+    tasks.push({
+      title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])),
+      ...(sameAs ? { sameAs } : {}), ...(theme ? { theme } : {}), ...(Object.keys(companies).length ? { companies } : {}), ...(leftOut ? { leftOut } : {}),
+    });
   }
-  return { tasks, skipped };
+  // A need in both lists is a task.
+  const isTask = (h: { title: string }) => tasks.some((t) => sameTitle(t.title, h.title) || t.title.toLowerCase() === h.title.toLowerCase());
+  for (const h of heldWaiting) if (!waiting.some((w) => sameTitle(w.title, h.title) || w.title.toLowerCase() === h.title.toLowerCase())) waiting.push(h);
+  return { tasks, skipped, heldOver: heldOver.filter((h) => !isTask(h)), waiting: waiting.filter((h) => !isTask(h)), quoted };
+}
+
+/** Why a title can't go to the tracker, in a PM's words. */
+const PROBLEM_WORDS: Record<import("../core/tracker-text.js").TextProblem, string> = {
+  transcript: "carries transcript markup", quote: "quotes someone", placeholder: "has a redaction placeholder", fundraising: "is about fundraising",
+  name: "names a person", title: "names a meeting by its title", contact: "has contact details",
+};
+/**
+ * The held-over needs the model listed (SIG-9), checked like tasks: a known kind of work and at least one real source.
+ * One of PMX's kinds the team hasn't turned on (`offKinds`, N1) waits for it instead.
+ */
+function parseHeld(raw: any[], categories: string[], validIds: Set<string>, offKinds: Set<string> = new Set()): { held: HeldCandidate[]; waiting: WaitingCandidate[] } {
+  const held: HeldCandidate[] = [];
+  const waiting: WaitingCandidate[] = [];
+  for (const h of raw) {
+    const title = oneLine(String(h?.title ?? "")).slice(0, 120);
+    const sources = [...new Set((Array.isArray(h?.sources) ? h.sources : []).map(String).filter((id: string) => validIds.has(id)))] as string[];
+    const to = categories.includes(h?.category) ? held : offKinds.has(h?.category) ? waiting : null;
+    if (!title || !to || !sources.length) continue;
+    if (to.some((x) => x.title.toLowerCase() === title.toLowerCase())) continue;
+    to.push({ title, category: h.category, why: oneLine(String(h?.why ?? "")).slice(0, 300), sources });
+  }
+  return { held, waiting };
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "Nov 20", "Nov 18–21", "Nov 28–Dec 2", or with years when they differ. From the sources' own dates. */
+export function dateRange(dates: string[]): string {
+  const ds = [...new Set(dates.map((d) => d.slice(0, 10)).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
+  if (!ds.length) return "";
+  const part = (d: string) => { const [y, m, n] = d.split("-").map(Number); return { y: y!, m: m!, d: n! }; };
+  const a = part(ds[0]!), b = part(ds.at(-1)!);
+  const show = (x: { y: number; m: number; d: number }, year = false) => `${MONTHS[x.m - 1]} ${x.d}${year ? `, ${x.y}` : ""}`;
+  if (ds.length === 1) return show(a);
+  if (a.y !== b.y) return `${show(a, true)}–${show(b, true)}`;
+  return a.m === b.m ? `${MONTHS[a.m - 1]} ${a.d}–${b.d}` : `${show(a)}–${show(b)}`;
+}
+
+/** A thread's place, as the tracker may name it: a channel the team approved ("#launch"), never a bare channel ID. */
+const placeOf = (i: SignalItem) => {
+  const p = i.place ?? (i.title.startsWith("#") ? i.title : null);
+  return p && !/^[A-Z0-9]{8,12}$/.test(p) && p.length <= 60 ? p : null;
+};
+
+/**
+ * F14: the task's sources in words a teammate can read in the tracker: the kind of source, the company, the place and
+ * the dates. "a customer call with Acme (Nov 20); 3 threads in #launch (Nov 18–21); an internal team meeting (Nov 25)".
+ * Never a meeting's title, a person or a quote: a company only as `checkCompany` kept it, a channel only as the team
+ * approved it, and an internal series meeting only as "an internal team meeting".
+ */
+export function sourceLine(c: Pick<CandidateTask, "sources" | "companies">, items: SignalItem[]): string {
+  return groupsLine(sourceGroups(c, items));
 }
 
 /**
- * The task description (PRIV-6): the model's summary, why it's this size, and when the sources were, never what they
- * said or what they were called. Which meetings they were stays in the PM's receipt on their Mac.
+ * The sources line's parts (N2), kept with a proposal so a later run that adds sources to it can say them all: one per
+ * kind of source, company and place, with the words for one and for several (`{n}` for the count) and every date.
+ */
+export interface SourceGroup { key: string; one: string; many: string; dates: string[] }
+
+export function sourceGroups(c: Pick<CandidateTask, "sources" | "companies">, items: SignalItem[]): SourceGroup[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const groups = new Map<string, SourceGroup>();
+  for (const id of c.sources) {
+    const i = byId.get(id);
+    if (!i) continue;
+    let key: string, one: string, many: string;
+    if (i.kind === "transcript" && i.series) {
+      [key, one, many] = ["internal", "an internal team meeting", "{n} internal team meetings"];
+    } else if (i.kind === "transcript") {
+      const co = c.companies?.[id];
+      if (co?.as) [key, one, many] = [`call|${co.name}|${co.as}`, `a ${co.as} call with ${co.name}`, `{n} ${co.as} calls with ${co.name}`];
+      else if (co) [key, one, many] = [`call|${co.name}|`, `a call with ${co.name}`, `{n} calls with ${co.name}`];
+      else [key, one, many] = ["call", "an external call", "{n} external calls"];
+    } else {
+      const place = placeOf(i);
+      if (place) [key, one, many] = [`thread|${place}`, `a thread in ${place}`, `{n} threads in ${place}`];
+      else [key, one, many] = ["thread", "a thread in an approved channel", "{n} threads in approved channels"];
+    }
+    const g = groups.get(key) ?? { key, one, many, dates: [] };
+    g.dates.push(i.at);
+    groups.set(key, g);
+  }
+  return [...groups.values()];
+}
+
+/** Two lists of parts as one: a part of the same kind, company and place counts both's sources. */
+export function mergeGroups(a: SourceGroup[], b: SourceGroup[]): SourceGroup[] {
+  const out = a.map((g) => ({ ...g, dates: [...g.dates] }));
+  for (const g of b) {
+    const same = out.find((x) => x.key === g.key);
+    if (same) same.dates.push(...g.dates);
+    else out.push({ ...g, dates: [...g.dates] });
+  }
+  return out;
+}
+
+export function groupsLine(groups: SourceGroup[]): string {
+  return groups.map((g) => {
+    const when = dateRange(g.dates);
+    return `${g.dates.length === 1 ? g.one : g.many.replace("{n}", String(g.dates.length))}${when ? ` (${when})` : ""}`;
+  }).join("; ");
+}
+
+/** The readable source line in a description, from this version (`**Sources:**`) or before it (`**Based on**`). */
+export const SOURCES_LINE = /^\*\*(?:Sources:|Based on)\*\*.*$/m;
+
+/**
+ * The task description (PRIV-6, F14): the model's summary, why it's this size, and its sources in words a teammate can
+ * read (the kind of source, the company, the channel, the dates), never what they said or what they were called. Which
+ * meetings they were stays in the PM's receipt on their Mac. The `pmx:source` lines PMX reads back come last.
  */
 export function describe(c: CandidateTask, items: SignalItem[], receiptId?: string): string {
   const byId = new Map(items.map((i) => [i.id, i]));
-  const srcs = c.sources.map((id) => byId.get(id)!);
-  const meetings = srcs.filter((i) => i.kind === "transcript").length;
-  const threads = srcs.length - meetings;
-  const kinds = [meetings ? `${meetings === 1 ? "one meeting" : `${meetings} meetings`}` : "", threads ? `${threads === 1 ? "one channel thread" : `${threads} channel threads`}` : ""].filter(Boolean).join(" and ");
-  const days = [...new Set(srcs.map((i) => i.at.slice(0, 10)))].sort().join(", ");
   const sz = c.sizing;
   const why = sz
     ? [`**Why size ${c.size}:** ${sz.cell ?? "no rubric cell given"}${sz.why ? `. ${sz.why}` : ""}`, ...sz.flags.map((f) => `**Check the size:** ${FLAG_TEXT[f]}.`), ""]
     : [];
-  const based = `**Based on** ${kinds} (${days}). The sources stay on the PM's Mac${receiptId ? `: \`pmx explain ${receiptId}\` there shows them` : ""}.`;
+  const line = sourceLine(c, items);
+  const based = `**Sources:** ${line || `${c.sources.length} ${c.sources.length === 1 ? "source" : "sources"}`}. They stay on the PM's Mac${receiptId ? `: \`pmx explain ${receiptId}\` there shows them` : ""}.`;
   return [c.rationale, "", ...why, based, "", ...c.sources.map((id) => `pmx:source ${id} ${byId.get(id)!.kind === "slack" ? byId.get(id)!.ref : ""}`.trim())].join("\n");
 }
 
@@ -179,7 +477,7 @@ export async function synthesize(
     v: 1, id: newReceiptId("synthesize", ctx.now()), type: "synthesize", at: ctx.now().toISOString(), agent: ctx.agent, dryRun: !!o.dryRun,
     outcome: "no-signal", ...g.receipt, skills: [], model: null,
   };
-  const result0: SynthResult = { posted: [], staged: [], skipped: [], held: totalHeld(g.held), meetings: { processed: [], already: 0, busy: 0, before: 0 } };
+  const result0: SynthResult = { posted: [], staged: [], skipped: [], held: totalHeld(g.held), heldOver: 0, meetings: { processed: [], already: 0, busy: 0, before: 0 } };
 
   // The team's meeting ledger (MEET-2) lives in the PMX repo (PRIV-7). Markers older versions put in Linear still count.
   const legacy = await svc.tracker.listMeetings().catch(() => [] as MeetingEntry[]);
@@ -193,8 +491,16 @@ export async function synthesize(
   result0.meetings.already = plan.already.length;
   result0.meetings.before = plan.before.length;
 
+  // SIG-9: needs the last run held over come back first. Their sources join this batch, read again from the PM's
+  // folders through today's rules; they never start a run by themselves. N1: suggestions that waited for one of PMX's
+  // kinds of work come back once the team has turned it on, and that does start a run, once; the rest wait on.
+  const heldFile = await readHeldOver();
+  const offKinds = Object.keys(DEFAULT_TEAM.categories).filter((c) => !Object.prototype.hasOwnProperty.call(ctx.team.categories, c));
+  const kindOn = (heldFile?.waiting ?? []).filter((w) => Object.prototype.hasOwnProperty.call(ctx.team.categories, w.category)).map((w) => ({ ...w, kindOn: true }));
+  const stillWaiting = (heldFile?.waiting ?? []).filter((w) => !Object.prototype.hasOwnProperty.call(ctx.team.categories, w.category));
+
   // Before anything is claimed or lodged, so a paused budget leaves no meeting half-processed (BUDGET-2).
-  if (plan.fresh.length || (!o.skipIfNothingNew && plan.other.length)) await checkBudget(ctx);
+  if (plan.fresh.length || kindOn.length || (!o.skipIfNothingNew && plan.other.length)) await checkBudget(ctx);
   // Nothing about a meeting goes to Linear: it's claimed with the lease while it's processed, and recorded in the
   // PMX repo once done (PRIV-7).
   const lodged: { item: SignalItem; lease: string }[] = [];
@@ -217,8 +523,20 @@ export async function synthesize(
     for (const l of lodged) await svc.lease.release(l.lease, ctx.agent).catch(() => false);
   };
   // Polling (MEET-3): with nothing new, no model call and no receipt.
-  if (o.skipIfNothingNew && !lodged.length && !(o.dryRun && plan.fresh.length)) return result0;
+  if (o.skipIfNothingNew && !lodged.length && !(o.dryRun && plan.fresh.length) && !kindOn.length) return result0;
+  if (!work.length && !kindOn.length) {
+    await writeReceipt(receipt, ctx.now());
+    return result0;
+  }
+  // A meeting another Mac is processing right now stays out, as it does from the rest of this batch (MEET-2).
+  const busy = new Set(o.dryRun ? [] : plan.fresh.filter((f) => !lodged.some((l) => l.item === f.item)).map((f) => f.item.id));
+  const offeredFile = heldFile ? { ...heldFile, needs: [...heldFile.needs, ...kindOn] } : null;
+  const back = await heldSources(ctx, { ...g, items: g.items.filter((i) => !busy.has(i.id)), all: g.items }, offeredFile, o.days, receipt);
+  for (const i of back.items) if (!work.some((w) => w.id === i.id)) work.push(i);
   if (!work.length) {
+    // N1: the waiting suggestions' sources are no longer readable here, so they're let go; a new source brings them back.
+    await release();
+    if (!o.dryRun && heldFile) await saveHeldOver({ ...heldFile, waiting: stillWaiting });
     await writeReceipt(receipt, ctx.now());
     return result0;
   }
@@ -247,7 +565,11 @@ export async function synthesize(
     skillBody(rubric.text),
     "",
     await categoryMenu(ctx.personal.repoPath, ctx.team.categories),
+    ...(offKinds.length ? [kindRules(offKinds)] : []),
     OUTPUT_RULES,
+    ...(work.some((i) => i.series) ? [SERIES_RULES] : []),
+    limitRules(maxTasks(ctx.team)),
+    ...(back.offered.length ? [heldOverBlock(back.offered)] : []),
     ...(themes.length ? [themeBlock(themes)] : []),
     knownBlock(known),
     DATA_RULES(tag),
@@ -268,7 +590,11 @@ export async function synthesize(
     throw new Error(`Synthesis run failed: ${result.error ?? "unknown"}`);
   }
 
-  const { tasks, skipped } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), { guarded: await releasedStrategy(ctx.personal.repoPath), themes });
+  const { tasks, skipped, heldOver, waiting, quoted } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), {
+    guarded: await strategyFiles(ctx.personal.repoPath), themes, maxTasks: maxTasks(ctx.team), offKinds,
+    // F14: who the sources name, what the meetings are called and the team's series never reach the tracker.
+    people: { found: [...g.people.found, ...back.people.found], listed: g.people.listed }, titles: work.filter((i) => i.kind === "transcript").map((i) => i.title), series: meetingSeries(ctx.team), items: work,
+  });
   const posted: SynthResult["posted"] = [];
   const bySource = new Map<string, number>();
   // Where each task went, for the receipt and the flow view (FLOW-1).
@@ -284,16 +610,22 @@ export async function synthesize(
     const hit = matchKnown(c, known);
     if (hit?.where === "tracker") { skipped.push(`${c.title}: already open as ${hit.id}; heard again in ${c.sources.length} more source(s)`); went.set(c, { duplicateOf: hit.id }); continue; }
     if (hit?.where === "waiting" && !o.dryRun) {
-      const merged = await addEvidence(hit.id, { receipt: receipt.id, from: fromOf(c), days: c.sources.map((id) => byId.get(id)!.at.slice(0, 10)) });
+      // N2: the waiting task gains this run's facts (its summary, already through the tracker guard) and its sources.
+      const merged = await addEvidence(hit.id, {
+        receipt: receipt.id, from: fromOf(c), days: c.sources.map((id) => byId.get(id)!.at.slice(0, 10)), rationale: c.rationale,
+        sources: receipt.sources.filter((x) => x.decision === "used" && !!x.id && c.sources.includes(x.id)),
+        groups: Object.fromEntries(c.sources.flatMap((id) => sourceGroups({ sources: [id], companies: c.companies }, work).map((gr) => [id, gr] as const))),
+        refs: Object.fromEntries(c.sources.filter((id) => byId.get(id)!.kind === "slack").map((id) => [id, byId.get(id)!.ref])), at: ctx.now().toISOString(),
+      });
       if (merged) { skipped.push(`${c.title}: the same need as a task already waiting for you, so its sources were added to it`); went.set(c, { mergedInto: hit.id }); continue; }
     }
-    if (o.dryRun) { posted.push({ identifier: "(dry run)", title: c.title }); went.set(c, { dryRun: true }); continue; }
+    if (o.dryRun) { posted.push({ identifier: "(dry run)", title: c.title, ...(c.leftOut ? { leftOut: c.leftOut.sentences } : {}) }); went.set(c, { dryRun: true }); continue; }
     fresh.push(c);
   }
   // APPROVE-1: proposals wait on this Mac, exactly as they'd be written, until the PM approves them.
   const staged = await stageProposals(fresh.map((c) => ({
     at: ctx.now().toISOString(), receipt: receipt.id, title: c.title, description: describe(c, work, receipt.id), category: c.category, size: c.size, sources: c.sources,
-    from: fromOf(c), ...(c.theme ? { theme: c.theme } : {}),
+    from: fromOf(c), sourceGroups: sourceGroups(c, work), ...(c.theme ? { theme: c.theme } : {}),
   })));
   for (const c of fresh) {
     const s = staged.find((p) => p.title === c.title);
@@ -310,7 +642,20 @@ export async function synthesize(
   await release();
 
   receipt.outcome = o.dryRun ? "dry-run" : staged.length ? "staged" : "posted";
-  receipt.synth = { tasks: tasks.filter((c) => !folded.has(c)).map((c) => ({ title: c.title, category: c.category, size: c.size, sources: c.sources, sizing: c.sizing ?? null, ...(went.get(c) ? { posted: went.get(c) } : {}) })), skipped };
+  // SIG-9: what's kept for the next run. A need already on the list, or suggested now, isn't held.
+  const keep = heldOver.filter((h) => !matchKnown(h, known) && !fresh.some((f) => sameTitle(f.title, h.title)));
+  const next = nextHeld(keep.map((h) => ({ title: h.title, category: h.category, why: h.why, sources: h.sources.map((id) => heldSource(byId.get(id)!)) })), heldFile?.needs ?? [], ctx.now().toISOString());
+  for (const d of next.dropped) skipped.push(`${d.title}: held over ${d.rounds - 1} runs in a row, so it's let go; a new source raising it brings it back`);
+  // N1: what waits for a kind of work the team hasn't turned on, until it does.
+  const wait = nextWaiting(waiting.map((h) => ({ title: h.title, category: h.category, why: h.why, sources: h.sources.map((id) => heldSource(byId.get(id)!)) })), stillWaiting, ctx.now().toISOString());
+  for (const d of wait.dropped) skipped.push(`${d.title}: waited ${WAIT_DAYS} days for your team to turn on ${kindWords(d.category)}, so it's let go; a new source raising it brings it back`);
+  if (!o.dryRun) await saveHeldOver({ v: 1, at: ctx.now().toISOString(), receipt: receipt.id, readSince: back.readSince, needs: next.needs, waiting: wait.waiting });
+  receipt.synth = {
+    tasks: tasks.filter((c) => !folded.has(c)).map((c) => ({ title: c.title, category: c.category, size: c.size, sources: c.sources, sizing: c.sizing ?? null, ...(c.leftOut ? { leftOut: c.leftOut.why } : {}), ...(went.get(c) ? { posted: went.get(c) } : {}) })), skipped,
+    ...(next.needs.length ? { heldOver: next.needs.map((n) => ({ title: n.title, category: n.category, sources: keep.find((h) => h.title === n.title)?.sources ?? [], rounds: n.rounds })) } : {}),
+    ...(waiting.length ? { waiting: waiting.map((w) => ({ title: w.title, category: w.category, sources: w.sources })) } : {}),
+    ...(quoted.length ? { quoted } : {}),
+  };
   await writeReceipt(receipt, ctx.now());
   if (!o.dryRun) {
     await updateState((s) => (s.lastSynthAt = ctx.now().toISOString()));
@@ -319,5 +664,47 @@ export async function synthesize(
       durationMs: result.durationMs, tokens: result.tokens, costUsd: result.costUsd,
     });
   }
-  return { ...result0, posted, staged: staged.map((p) => ({ id: p.id, title: p.title })), skipped };
+  const kinds = new Map<string, number>();
+  for (const w of o.dryRun ? [...stillWaiting, ...waiting] : wait.waiting) kinds.set(w.category, (kinds.get(w.category) ?? 0) + 1);
+  const cutFrom = (title: string) => fresh.find((c) => c.title === title)?.leftOut?.sentences;
+  return { ...result0, posted, staged: staged.map((p) => ({ id: p.id, title: p.title, ...(cutFrom(p.title) ? { leftOut: cutFrom(p.title) } : {}) })), skipped, heldOver: next.needs.length, waiting: [...kinds].map(([kind, n]) => ({ kind, n })) };
+}
+
+/**
+ * SIG-9: the sources of the needs the last run held over, as items of this batch. Most are already in this run's
+ * reading window. When the last run read further back (a first run reads a week), those files are read again with the
+ * same privacy rules and redaction, and given IDs after this batch's own, with a line in the receipt like any source.
+ */
+async function heldSources(ctx: Ctx, g: Awaited<ReturnType<typeof gather>> & { all?: SignalItem[] }, file: Awaited<ReturnType<typeof readHeldOver>>, days: number, receipt: RunReceipt): Promise<{ items: SignalItem[]; offered: { need: HeldNeed; ids: string[] }[]; readSince: string; people: { found: string[] } }> {
+  const since = g.receipt.window.since;
+  if (!file?.needs.length) return { items: [], offered: [], readSince: since, people: { found: [] } };
+  const people: string[] = [];
+  const pool = [...g.items];
+  const found = heldSourcesIn(file.needs, pool);
+  const short = file.needs.some((n) => found.get(n)!.length < n.sources.length);
+  // N1: a suggestion that waited for its kind of work may be older than the last run's reach.
+  const back = Math.min(Date.parse(file.readSince), ...file.needs.flatMap((n) => n.sources.map((x) => Date.parse(x.at))).filter(Number.isFinite));
+  let readSince = since;
+  if (short && Number.isFinite(back) && back < Date.parse(since)) {
+    const wider = await gather(ctx, { days: Math.min(15, Math.max(days, Math.ceil((ctx.now().getTime() - back) / 86400000) + 1)), scope: "team" });
+    readSince = wider.receipt.window.since;
+    people.push(...wider.people.found);
+    const top: Record<string, number> = {};
+    // IDs after every ID this batch gave out, the busy meetings' too, so none is used twice.
+    const all = [...pool, ...(g.all ?? [])];
+    for (const i of all) { const m = i.id.match(/^([A-Z])(\d+)$/); if (m) top[m[1]!] = Math.max(top[m[1]!] ?? 0, Number(m[2])); }
+    const have = new Set(all.map((i) => refHash(i.ref)));
+    for (const i of wider.items) {
+      if (have.has(refHash(i.ref)) || !file.needs.some((n) => n.sources.some((s) => isHeldSource(i, s)))) continue;
+      const p = i.id.match(/^[A-Z]/)?.[0] ?? "T";
+      const id = `${p}${(top[p] = (top[p] ?? 0) + 1)}`;
+      const src = wider.receipt.sources.find((x) => x.decision === "used" && x.refHash === refHash(i.ref));
+      if (src) receipt.sources.push({ ...src, id });
+      pool.push({ ...i, id });
+      have.add(refHash(i.ref));
+    }
+  }
+  const matched = heldSourcesIn(file.needs, pool);
+  const items = [...new Set([...matched.values()].flat())];
+  return { items, offered: file.needs.map((need) => ({ need, ids: matched.get(need)!.map((i) => i.id) })), readSince, people: { found: people } };
 }

@@ -1,4 +1,5 @@
 import type { Ctx } from "../core/context.js";
+import { markTask } from "../lease/marks.js";
 import type { Services } from "../core/services.js";
 import { SIZES, type Size, type Task } from "../core/types.js";
 import { approveProposals, markKept, readProposals, takeProposal } from "../synth/proposals.js";
@@ -77,6 +78,8 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
     const tr = await tracker();
     await tr.comment(t.id, why);
     await tr.rewrite(t.id, { cancel: true });
+    // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it.
+    await markTask(ctx, tr, t.identifier, "dropped");
   };
   /** A Linear task becomes the PM's commitment: agents stop seeing it as theirs. */
   const toCommitment = async (t: Task) => {
@@ -102,7 +105,7 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
       const r = await approveProposals(ctx, await svc(), [ref]);
       const p = r.posted[0];
       if (!p) throw new Error(r.duplicates[0] ? `Not sent: ${r.duplicates[0]}.` : "That task is no longer waiting.");
-      return moved("product", p.title, null, p.identifier, `Approved: "${p.title}" is ${p.identifier}, a product task for the team.`);
+      return moved("product", p.title, null, p.identifier, [`Approved: "${p.title}" is ${p.identifier}, a product task for the team.`, ...r.notShared].join(" "));
     }
     if (to === "todo" && !ctx.personal.todosToLinear) throw new Error(OFF);
     if (to === "todo") await tracker();

@@ -13,7 +13,7 @@ import { packageRoot } from "./core/skills.js";
 import { claudeCode } from "./runtime/claude-code.js";
 import { refusingRuntime } from "./runtime/refusing.js";
 import { effectiveTeam } from "./core/services.js";
-import { writeProfile } from "./core/profile.js";
+import { localGuard, writeProfile } from "./core/profile.js";
 import { paths } from "./core/paths.js";
 import { announceOnce, markSeen, QUIET_COMMANDS } from "./core/whats-new.js";
 import { migrateFromProductGit } from "./core/rename.js";
@@ -37,7 +37,8 @@ export async function realCtx(): Promise<Ctx> {
   const eff = await effectiveTeam(await loadTeamConfig(personal.repoPath), personal);
   const team: TeamConfig = eff.team;
   // Keep the clean profile in step with team config and admin policy (model, egress).
-  await writeProfile(team);
+  // RUN-6: a web run's guard runs this very pmx, with the Node it pins.
+  await writeProfile(team, { guard: await localGuard(fileURLToPath(import.meta.url)) });
   return makeCtx({
     team, personal, runtime: eff.blockRuns ? refusingRuntime(eff.blockRuns) : claudeCode(), keychain: macKeychain(), launchd: macLaunchd(),
     fetch, exec, now: () => new Date(), out: consoleOut,
@@ -68,7 +69,7 @@ async function main(argv: string[]): Promise<number> {
   // RENAME-1: a Mac still on the ProductGit names moves over first. When the old package was swapped out, the new
   // pmx already ran this command, so its exit code is the answer. `install` (INSTALL-3) skips this and the update steps:
   // it may run from npx's copy of PMX, which must never become what the background job or the Claude app runs.
-  if (cmd.name !== "mcp" && cmd.name !== "uninstall" && cmd.name !== "install") {
+  if (cmd.name !== "mcp" && cmd.name !== "uninstall" && cmd.name !== "install" && cmd.name !== "hook") {
     const handed = await migrateFromProductGit({ exec, launchd: macLaunchd(), cli: fileURLToPath(import.meta.url), argv, say: (s) => process.stderr.write(`${s}\n`) });
     if (handed !== null) return handed;
     // UPGRADE-1: after an update, what this Mac needs from the new version, once (the background job reloads itself
@@ -90,6 +91,7 @@ async function main(argv: string[]): Promise<number> {
     ask: ttyAsker((values as Record<string, unknown>).yes === true ? true : undefined),
     ctx: realCtx,
     cliPath: fileURLToPath(import.meta.url),
+    tty: !!process.stdin.isTTY,
   });
   // A fresh install starts up to date.
   if (fresh && code === 0) {

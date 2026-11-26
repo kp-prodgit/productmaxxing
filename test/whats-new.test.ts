@@ -90,7 +90,7 @@ describe("0.12.0: telling each Mac once (NEW-1)", () => {
     delete process.env.PMX_INSTALL_ROOT_FOR_TESTS;
   });
 
-  it("never interrupts the background job, the MCP protocol, uninstall or install (which may run from npx's copy)", () => {
-    expect([...QUIET_COMMANDS].sort()).toEqual(["install", "mcp", "tick", "uninstall", "whats-new"]);
+  it("never interrupts the background job, the MCP protocol, a web run's hook, uninstall or install (which may run from npx's copy)", () => {
+    expect([...QUIET_COMMANDS].sort()).toEqual(["hook", "install", "mcp", "tick", "uninstall", "whats-new"]);
   });
 });

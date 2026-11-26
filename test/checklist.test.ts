@@ -51,7 +51,7 @@ describe("the install checklist (SETUP-1)", () => {
     const cl = buildChecklist(inputs({ team: { ...DEFAULT_TEAM, approve: { startNow: false }, tracker: { kind: "linear", teamKey: "PMX", projectId: "p" } } as any, proposals: 3, tasks: { pool: 4, ready: 0, blocked: 1 }, practiceUntil: "2026-11-22T07:25:00Z" }));
     expect(cl.where).toMatch(/^PMX is installed and running on this Mac\. 3 new tasks wait for your approval; 4 tasks in the backlog, none Ready for agents; agents are in practice mode until Nov 22\./);
     expect(find(cl, "work.ready")).toMatchObject({ status: "todo", who: "teammate", how: "linear" });
-    expect(find(cl, "work.ready").detail).toMatch(/Approving sends a task to the backlog; an agent takes it only after a teammate moves it to Ready\./);
+    expect(find(cl, "work.ready").detail).toMatch(/Approving sends a task to the backlog; an agent takes it only after a teammate moves it to Todo in Linear\./);
     expect(find(cl, "work.practice")).toMatchObject({ status: "warn", do: "Wait, or run one now with pmx pull --live" });
     expect(find(cl, "work.agents").detail).toMatch(/1 task Blocked after failing twice in a row/);
     expect(find(cl, "work.agents")).toMatchObject({ who: "you", how: "page", page: "In Needs you, under Stopped after failed runs, try each one again, edit it or drop it." });
@@ -62,7 +62,7 @@ describe("the install checklist (SETUP-1)", () => {
   it("with Start now on, Ready comes from the PM's own approval, so it isn't a step anyone waits on (APPROVE-3)", () => {
     const cl = buildChecklist(inputs({ proposals: 3, tasks: { pool: 4, ready: 0, blocked: 0 } }));
     expect(find(cl, "work.ready")).toMatchObject({ title: "Start now makes tasks Ready for agents", status: "done" });
-    expect(find(cl, "work.ready").detail).toMatch(/^0 Ready for agents, 4 in the backlog\. Start now on a new task makes it Ready at once; Later puts it in the backlog/);
+    expect(find(cl, "work.ready").detail).toMatch(/^0 Ready for agents, 4 in the backlog\. Start now on a new task makes it Ready at once \(Todo in Linear\); Later puts it in the backlog, where it waits until someone moves it to Todo in Linear/);
     expect(find(cl, "work.ready").who).toBeUndefined();
     expect(find(cl, "work.approve")).toMatchObject({ status: "todo", page: "Start now, Later or Drop each one in Needs you." });
   });
@@ -91,8 +91,10 @@ describe("the install checklist (SETUP-1)", () => {
       checks: [...HEALTHY.filter((c) => c.id !== "claude.task.collect"), warn("claude.task.collect", "Claude scheduled task \"Collect meetings\" has an older prompt: type /pmx-schedule in the Claude app"), warn("flow.page", "your /pmx-flow page is from pmx 0.34.0: type /pmx-flow in the Claude app to update it to 0.35.0")],
     }));
     expect(cl.upgrade).toMatchObject({ from: "0.34.0", to: "0.35.0", applied: [{ id: "app-skills", did: "updated /pmx-schedule" }, { id: "mcp-entry", did: "nothing to do" }] });
-    expect(cl.upgrade!.pending.map((s) => s.id)).toEqual(["claude.tasks", "claude.page", "linear.hours", "update.background-job"]);
+    expect(cl.upgrade!.pending.map((s) => s.id)).toEqual(["claude.tasks", "claude.page", "linear.hours", "update.background-job", "update.evidence-backfill"]);
     expect(find(cl, "update.background-job")).toMatchObject({ status: "warn", do: "pmx checklist --fix" });
+    // RUN-5: a one-off step for a Mac from before 0.37.0, which PMX does on its next run (or now, from the checklist).
+    expect(find(cl, "update.evidence-backfill")).toMatchObject({ status: "warn", title: "This Mac's open tasks share their quotes with your team", detail: "PMX will do it on its next run" });
     expect(find(cl, "update.version").detail).toMatch(/^pmx 0\.35\.0, updated from 0\.34\.0 on /);
     expect(find(cl, "claude.setup")).toMatchObject({ status: "warn", do: "pmx checklist --install-skill, then quit and reopen the Claude app" });
     const text = formatChecklist(cl);
@@ -171,7 +173,33 @@ describe("what ships for Claude (SETUP-1)", () => {
     expect(skill).toContain("pmx checklist --json");
     const guide = await readFile(join(root, "GUIDE.md"), "utf8");
     // Every step the checklist can name is explained in the guide's step reference.
-    for (const id of ["os.macos", "mac.node", "mac.pmx", "profile.signed-in", "setup.config", "setup.remote", "setup.package", "setup.privacy", "setup.memory", "job.installed", "job.paths", "job.passes", "claude.setup", "claude.allow", "claude.tasks", "claude.mcp", "claude.page", "claude.board", "linear.connected", "linear.hours", "work.meetings", "work.approve", "work.ready", "work.practice", "work.agents", "work.brain"])
+    for (const id of ["os.macos", "mac.node", "mac.pmx", "profile.signed-in", "setup.config", "setup.remote", "setup.package", "setup.privacy", "setup.memory", "job.installed", "job.paths", "job.passes", "claude.setup", "claude.allow", "claude.tasks", "claude.mcp", "claude.page", "claude.board", "linear.connected", "linear.hours", "work.meetings", "work.channels", "work.approve", "work.ready", "work.practice", "work.agents", "work.brain"])
       expect(guide, id).toContain(`\`${id}\``);
+  });
+});
+
+describe("a Mac whose first Linear sync hasn't run yet (F16)", () => {
+  beforeEach(freshHome);
+
+  it("shows the Linear step as waiting for the sync, with when it runs and where to see it, not as failing", async () => {
+    const { relayHealth } = await import("../src/tracker/relay.js");
+    const team = { ...DEFAULT_TEAM, tracker: { kind: "linear", teamKey: "PMX", projectId: "p" } } as any;
+    const h = await relayHealth(team, NOW);
+    expect(h.detail).toMatch(/not synced yet on this Mac\. PMX's Linear sync in the Claude app runs at the top of each hour, and this Mac's first one hasn't run yet/);
+    const cl = buildChecklist(inputs({ checks: [...HEALTHY.filter((c) => c.id !== "linear.relay"), warn("linear.relay", h.detail)] }));
+    const step = find(cl, "linear.connected");
+    expect(step).toMatchObject({ status: "todo", fix: { kind: "page", to: "tab:health/running" } });
+    expect(step.detail).toMatch(/^waiting for this Mac's first Linear sync\. PMX's Linear sync in the Claude app runs at the top of each hour; this Mac's first one hasn't run yet/);
+    expect(JSON.stringify({ detail: step.detail, page: step.page, fix: step.fix })).not.toMatch(/\bpmx [a-z]/);
+    // Once it syncs but falls behind, it's a warning again.
+    const late = buildChecklist(inputs({ checks: [...HEALTHY.filter((c) => c.id !== "linear.relay"), warn("linear.relay", "Linear through Claude: last synced 5h ago, and missed the sync due at 13:00")] }));
+    expect(find(late, "linear.connected").status).toBe("warn");
+  });
+
+  it("says the same on PMX's page, pointing at Health → Running", async () => {
+    const { relayWords } = await import("../src/flow/pipeline-load.js");
+    const w = relayWords("Linear through Claude: not synced yet on this Mac. …", 0);
+    expect(w.text).toMatch(/^This Mac hasn't synced Linear yet\. PMX's Linear sync in the Claude app runs at the top of each hour; this Mac's first one hasn't run yet\. Health → Running shows when it ran\./);
+    expect(w.text).not.toMatch(/\bpmx [a-z]/);
   });
 });

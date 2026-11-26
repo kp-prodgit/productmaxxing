@@ -92,14 +92,19 @@ describe("Claude relay (LINEAR-2)", () => {
     expect((await t.get("PMX-1")).status).toBe("claimed");
     expect((await t.list({ status: ["inbox"] })).map((x) => x.title)).toEqual(["Draft SCIM one-pager"]);
     const ops = (await readOutbox()).ops;
-    expect(ops.map((o) => o.kind)).toEqual(["set-label", "create-task"]);
-    expect(ops[0]).toMatchObject({ target: "PMX-1", group: "pmx-status", value: "claimed" });
+    expect(ops.map((o) => o.kind)).toEqual(["set-status", "create-task"]);
+    expect(ops[0]).toMatchObject({ target: "PMX-1", value: "claimed", state: "started" });
+    expect(ops[1]).toMatchObject({ state: "backlog" });
 
     await expect(t.setStatus("uuid-OTHER-9", "done")).rejects.toThrow(/isn't in the PMX project.*SEC-4/);
   });
 
-  it("says plainly when Claude hasn't synced yet", async () => {
-    await expect(relayTracker(team).list()).rejects.toThrow(/Claude hasn't synced Linear/);
+  it("says plainly when this Mac hasn't synced yet, and when it will (F16)", async () => {
+    const err = await relayTracker(team).list().catch((e) => e as Error);
+    expect(err.message).toMatch(/^This Mac hasn't synced Linear yet/);
+    expect(err.message).toMatch(/runs at the top of each hour; this Mac's first one hasn't run yet/);
+    expect(err.message).toMatch(/Health → Running/);
+    expect(err.message).not.toMatch(/`?pmx [a-z]/);
   });
 
   it("prints exact instructions for the Claude task", async () => {
@@ -120,7 +125,7 @@ describe("Claude relay (LINEAR-2)", () => {
     await t.setStatus(task.id, "ready");
     await t.finishMeeting("PMX-1", { status: "done", tasks: [task.identifier], note: `made ${task.identifier}` });
     const [create, setLabel, finish] = (await readOutbox()).ops;
-    expect(setLabel).toMatchObject({ target: task.id });
+    expect(setLabel).toMatchObject({ kind: "set-status", target: task.id });
     await writeFile(join(relayDir(), "results.json"), JSON.stringify([
       { id: create!.id, ok: true, identifier: "PMX-7", issueId: "uuid-PMX-7" },
       { id: setLabel!.id, ok: false, error: "label missing" },
@@ -130,7 +135,7 @@ describe("Claude relay (LINEAR-2)", () => {
     const out = (await checkRelay(team, NOW)).join("\n");
     expect(out).toMatch(/Applied 1 change\(s\) in Linear; 2 still waiting/);
     const left = (await readOutbox()).ops;
-    expect(left[0]).toMatchObject({ kind: "set-label", target: "PMX-7", failures: 1 });
+    expect(left[0]).toMatchObject({ kind: "set-status", target: "PMX-7", failures: 1 });
     expect(left[1]).toMatchObject({ kind: "finish-meeting", lines: ["pmx:task PMX-7"], comment: "made PMX-7" });
 
     for (let i = 0; i < 2; i++) {

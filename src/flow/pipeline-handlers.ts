@@ -79,7 +79,7 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
       // APPROVE-3: Start now is the PM's approval plus Ready; Later (approve) sends the task to the pool, as before.
       const start = action === "start";
       const r = await approveProposals(ctx, await services(ctx), ids, { start });
-      return [approvedText(r.posted, { start, startNow: startsNow(ctx.team) }), ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`)].filter(Boolean).join(" ") || "Nothing to approve.";
+      return [approvedText(r.posted, { start, startNow: startsNow(ctx.team) }), ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`), ...r.notShared].filter(Boolean).join(" ") || "Nothing to approve.";
     },
     async proposalTheme(id: string, theme: string | null) {
       try {
@@ -105,7 +105,8 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
           await rememberTeamPr({ id: r.id, url: r.url, at: ctx.now().toISOString(), changes: team.map(describe) });
           pr = { url: r.url };
           // Whoever proposes a kind of work wants their own agent to take it once it merges (JOB-8).
-          const made = team.flatMap((c) => (c.kind === "new-kind" ? [c.slug] : []));
+          // So does whoever turns on one of PMX's own (CAT-8, N1), as `pmx jobs add` does.
+          const made = team.flatMap((c) => (c.kind === "new-kind" ? [c.slug] : c.kind === "builtin-kind" ? [c.name] : []));
           if (made.length) await saveTakes(ctx.personal, made);
         } catch (e: any) { prError = e.message; }
       }

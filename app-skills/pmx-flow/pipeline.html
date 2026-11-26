@@ -1186,6 +1186,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   // ================= what the lists hold =================
   const shown = (k) => !held.has(k);
   const props = () => ((D && D.proposals) || []).filter((p) => shown(`p:${p.id}`));
+  // SIG-9: needs the last synthesis run found past the team's task limit wait on this Mac for the next run.
+  const heldNote = () => { const n = D && D.needs && D.needs.heldOver; return n ? h("p", { class: "gnote", id: "held-over" }, `${n === 1 ? "1 more need was" : `${n} more needs were`} found; ${n === 1 ? "it comes" : "they come"} back in the next run.`) : null; };
   const drafts = () => ((D && D.drafts) || []).filter((d) => shown(`r:${d.identifier}`));
   // APPROVE-3: Start now only when PMX on this Mac says the team offers it, so an older server is never sent "start".
   const startOn = () => !!(D && D.rules && D.rules.startNow === true);
@@ -1224,13 +1226,15 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     ? [{ text: `This page is from pmx ${CFG.version}, and PMX on this Mac is ${D.version}. Type /pmx-flow in the Claude app to update it; it keeps its link.`, cmd: "/pmx-flow" }] : []);
   const fixes = () => [...serverFix(), ...pageFix(), ...(D && D.health ? D.health.items || (D.health.problems || []).map((text) => ({ text })) : [])];
   const teamPrs = () => (D && D.pendingTeam) || [];
+  // N1: a kind of work synthesis suggestions wait for; once its team change is sent, Team changes shows it instead.
+  const kindsOff = () => ((D && D.kindsWaiting) || []).filter((k) => !k.pending && shown(`kd:${k.kind}`));
   // Needs you's card from the setup checklist: its next step, only when PMX can't do its job without it (SETUP-1).
   const setupNext = () => { const s = D && D.setup; return s && s.next && s.next.required !== false ? s.next : null; };
   // BOARD-11: PMX Engine, where PMX on this Mac finds it: read live as labels, at most once a minute, and kept nowhere.
   const engine = () => (D && D.engine) || null;
   const engineMine = () => ((engine() && engine().waiting) || []).filter((w) => w.who === "you");
   // Every card Needs you shows. The same rules as needsYou() in src/flow/needs.ts, so `pmx status` agrees with the badge.
-  const needsCount = () => (D ? drafts().length + stoppedList().length + props().length + waiting().length + fixes().length + (setupNext() ? 1 : 0) + teamPrs().length + engineMine().length : 0);
+  const needsCount = () => (D ? drafts().length + stoppedList().length + props().length + waiting().length + fixes().length + (setupNext() ? 1 : 0) + teamPrs().length + kindsOff().length + engineMine().length : 0);
   // The review cap (PULL-4) counts this PM's own drafts; a board from before 0.36.0 doesn't say whose, so every draft counts.
   const capReached = () => { const c = D && D.rules && D.rules.reviewCap; return !!c && drafts().filter((d) => d.mine !== false).length >= c; };
   const isDueToday = (t) => !!t.due && diffDays(t.due) <= 0;
@@ -1323,7 +1327,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return row({
       key: k, open: true, title: p.title,
       ck: ckBtn("prop", now ? `Start now: ${p.title}` : `Approve: ${p.title}`, () => approve([p], now)),
-      meta: [chip(`${catName(p.category)} · ${p.size}`, "k"), p.theme ? chip(`Theme: ${p.theme}`) : null, h("span", null, p.from),
+      meta: [chip(`${catName(p.category)} · ${p.size}`, "k"), p.follows ? chip(`Follows ${p.follows}`) : null, p.theme ? chip(`Theme: ${p.theme}`) : null, h("span", null, p.from),
         waitsFor("You", now ? "start it now, later or drop it" : "approve or drop it"), age(p.at),
         h("button", { type: "button", class: "link", "aria-expanded": open ? "true" : "false", onclick: () => { open ? S.why.delete(k) : S.why.add(k); render(); } }, open ? "Hide why" : "Why?")],
       extra: open ? h("div", { class: "why" }, h("b", null, "What Linear would get: "), p.description, themePick(p)) : null,
@@ -1348,6 +1352,14 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   function stoppedGroup() {
     const st = stoppedList();
     return group("Stopped after failed runs", st.map(stoppedRow), { note: "Agents stopped taking these after their runs failed in a row. Try again puts a task back in Ready with its count started over; Edit task opens it in Linear, so you can make it clearer first; Drop takes it out of the agents' queue for good." });
+  }
+  // FOLLOW-1: a follow-up's details say which draft left it, how many more of its questions stayed there, and link to it.
+  function followsPart(x) {
+    const f = x.followUp || { path: "", draft: null, task: null, more: 0 };
+    const more = f.more ? ` ${f.more} more ${f.more === 1 ? "question stays" : "questions stay"} in the draft.` : "";
+    return h("div", { id: "follows" }, h("div", { class: "lbl" }, "Follows"),
+      h("p", null, `${x.follows}: a question its accepted draft left open.${more}${f.path ? ` The draft is in your team repo at ${f.path}.` : ""} Approve it to give it to the team; drop it if it doesn't need doing.`),
+      f.draft || f.task ? h("div", { class: "links" }, f.draft ? ext(f.draft, "Open the draft") : null, f.task ? ext(f.task, `Open ${x.follows} in Linear`) : null) : null);
   }
   // EQ-38: the roadmap theme a task carries to Linear as a pmx-theme label. Only the team's open themes are offered.
   function themePick(p) {
@@ -1384,8 +1396,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const one = list.length === 1, what = one ? `"${list[0].title}"` : `${list.length} tasks`;
     const sync = relayOn() ? " at the next Linear sync" : "";
     if (start) return `Started ${what}. ${one ? "It becomes" : "They become"} Ready for agents in Linear${sync || " now"}, and ${one ? "an agent takes it" : "agents take them"} from there.`;
-    if (startOn()) return `Approved ${what} for later. ${one ? "It waits" : "They wait"} in your team's backlog in Linear${sync}; move ${one ? "it" : "one"} to Ready on the team board when you want an agent on it.`;
-    return `Approved ${what}. ${one ? "It goes" : "They go"} to your team's backlog in Linear${sync}; an agent takes ${one ? "it" : "one"} only after a teammate moves it to Ready.`;
+    if (startOn()) return `Approved ${what} for later. ${one ? "It waits" : "They wait"} in your team's backlog in Linear${sync}; move ${one ? "it" : "one"} to Todo in Linear when you want an agent on it.`;
+    return `Approved ${what}. ${one ? "It goes" : "They go"} to your team's backlog in Linear${sync}; an agent takes ${one ? "it" : "one"} only after a teammate moves it to Todo in Linear.`;
   }
   function approve(list, start = false) {
     if (!list.length) return;
@@ -1556,16 +1568,17 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return [
       head("inbox", "ic-inbox", "Needs you", now
         ? "Decisions waiting for you, the ones that free the most work first. Nothing reaches Linear until you say so: Start now makes a task Ready for agents, and Later puts it in your team's backlog."
-        : "Decisions waiting for you, the ones that free the most work first. Nothing reaches Linear until you approve it, and an approved task waits in the team's backlog until a teammate moves it to Ready."),
+        : "Decisions waiting for you, the ones that free the most work first. Nothing reaches Linear until you approve it, and an approved task waits in the team's backlog until a teammate moves it to Todo in Linear."),
+      ps.length ? null : heldNote(),
       needsCount() ? [
         group("Drafts to review", r.map(draftRow), {
           banner: paused ? h("div", { class: "banner", role: "note", id: "review-cap" }, h("span", null, h("b", null, "Your agent is paused. "), `It takes no new work while ${plural(capN, "of your drafts waits", "of your drafts wait")} for review. Review one and it starts again.`)) : null,
           note: "Agents drafted these for your team. Accept keeps a draft; a redo or a reject needs a short note.",
         }),
         stoppedGroup(),
-        group("Tasks to approve", ps.map(propRow), { right: [ps.length > 1 ? btn(now ? `Start all ${ps.length}` : `Approve all ${ps.length}`, { cls: "sm", on: () => approve(ps, now) }) : null, chip("Only you see these until you approve")], note: now
-          ? `From calls with customers. Nothing goes to Linear until you choose. Start now sends a task as Ready for agents${relayOn() ? " at the next Linear sync" : ""}; Later sends it to your team's backlog, where it waits until someone moves it to Ready. Your own to-dos never go.`
-          : "From calls with customers. Each goes to your team's backlog in Linear only when you approve it, and an agent takes it only after a teammate moves it to Ready. Your own to-dos never go." }),
+        group("Tasks to approve", ps.map(propRow), { banner: heldNote(), right: [ps.length > 1 ? btn(now ? `Start all ${ps.length}` : `Approve all ${ps.length}`, { cls: "sm", on: () => approve(ps, now) }) : null, chip("Only you see these until you approve")], note: now
+          ? `From calls with customers. Nothing goes to Linear until you choose. Start now sends a task as Ready for agents${relayOn() ? " at the next Linear sync" : ""}; Later sends it to your team's backlog, where it waits until someone moves it to Todo in Linear. Your own to-dos never go.`
+          : "From calls with customers. Each goes to your team's backlog in Linear only when you approve it, and an agent takes it only after a teammate moves it to Todo in Linear. Your own to-dos never go." }),
         group("Weekly digest", ws.map((w) => row({
           key: `dg:${w.week}`, title: `Your digest for the week of ${weekOf(w.week)} is ready`,
           ck: sysMark("paper"), meta: [h("span", null, `${plural(w.sources, "source")} cited${w.held ? ` · ${w.held} kept private` : ""}`), waitsFor("You", "read it and approve it; nothing is shared until you do"), age(w.at)],
@@ -1582,6 +1595,12 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
             extra: [h("p", { class: "small" }, su.page), stepFix(su), h("span", { class: "fixacts" }, btn("See every step", { cls: "sm", on: () => go("health", { tab: "setup" }) }))],
           }) : null,
         ].filter(Boolean)),
+        // N1: the same team change `pmx jobs add <kind>` sends: a pull request a teammate approves, never applied here.
+        group("Kinds of work to turn on", kindsOff().map((k) => row({
+          key: `kd:${k.kind}`, title: k.text, ck: sysMark("pr"),
+          meta: [waitsFor("You", "send it to your team; a teammate approves the change, and the suggestions come back in the next run")],
+          acts: [btn("Send to your team", { cls: "sm pri", on: (ev) => turnOnKind(k, ev.currentTarget) })],
+        })), { note: "Synthesis found work of a kind your team hasn't turned on yet. It waits on this Mac until your team does." }),
         group("Team changes", prs.map((p, i) => row({
           key: `tm:${i}`, title: p.changes.join("; ") || "Team settings change", ck: sysMark("pr"),
           meta: [localBranch(p.url) ? waitsFor("You", "apply it: your team repo has no remote, so no teammate reviews it") : waitsFor("A teammate", "approve it"), age(p.at)],
@@ -1777,15 +1796,18 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("div", null, h("div", { class: "lbl", id: "where-l" }, "Where"),
             h("div", { class: "when", role: "group", "aria-labelledby": "where-l" }, WHERE_OPTS.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": here === v ? "true" : "false",
               disabled: v !== "private" && !x.linear && !toLinear, onclick: () => { if (v === here) return; if (v === "product") askProduct(x.id, x.text); else { closeSheet(); moveTo(x.id, v); } } }, l)))),
-          h("div", null, h("div", { class: "lbl" }, "From"), h("p", null, x.from === "Added by you" ? "You added it." : /^Moved from /.test(x.from) ? `${x.from}.` : `${x.from}. The meeting stays on this Mac; only this to-do is shown here.`)),
+          h("div", null, h("div", { class: "lbl" }, "From"), h("p", null, x.from === "Added by you" ? "You added it." : /^(?:Moved from |From \S+'s accepted draft)/.test(x.from) ? `${x.from}.` : `${x.from}. The meeting stays on this Mac; only this to-do is shown here.`),
+            x.suggestedBy ? h("p", { class: "hint", id: "suggested-by" }, `Suggested by ${x.suggestedBy}; decisions went to you.`) : null),
           x.linear ? null : h("p", { class: "hint" }, toLinear ? "Linear gets only these words, never the meeting's title or transcript." : "To move it to Linear, turn that on in Settings, under What Linear gets.")),
         h("div", { class: "foot" }, btn("Mark done", { cls: "pri", icon: "check", on: () => { closeSheet(); complete(x); } }))];
     } else if (it.type === "proposal") {
       parts = [top("New task · not in Linear yet"),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.title),
-          h("div", { class: "chips" }, chip(catName(x.category), "k"), chip(`Size ${x.size}`)),
+          h("div", { class: "chips" }, chip(catName(x.category), "k"), chip(`Size ${x.size}`), x.follows ? chip(`Follows ${x.follows}`) : null),
           h("div", null, h("div", { class: "lbl" }, "What Linear would get"), h("p", { class: "desc" }, x.description)),
+          x.follows ? followsPart(x) : null,
           h("div", null, h("div", { class: "lbl" }, "Heard in"), h("p", null, x.from)),
+          x.changed ? h("div", null, h("div", { class: "lbl" }, "Changed since it was suggested"), h("p", null, x.changed)) : null,
           h("div", { class: "two" },
             h("div", null, h("div", { class: "lbl" }, "Linear gets"), h("ul", null, h("li", null, "This title and summary"), h("li", null, "Kind of work and size"), h("li", null, "How many sources, and their dates"))),
             h("div", null, h("div", { class: "lbl" }, "Never gets"), h("ul", null, h("li", null, "Transcripts or quotes"), h("li", null, "Meeting titles"), h("li", null, "Who was in the meeting"))))),
@@ -1881,13 +1903,13 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       sub: "Your team's tasks by where they are, from approval to done.",
       body: [
         h("div", { class: "cards" }, stat("Waiting for you", ps.length), stat("Backlog", sumTasks("inbox")), stat("Ready for agents", sumTasks("ready")), stat("Agents working", working), stat("In review", sumTasks("review")), stat("Done", done)),
-        h("div", { class: "callout" }, h("div", null, h("b", null, "Pick what agents take next on the team board"),
-          h("p", null, startOn() ? "Tasks you start from Needs you go straight to Ready. Tasks approved for later land in the backlog: move the ones worth doing to Ready on the team board. Agents take only Ready tasks." : "Approved tasks land in the backlog. A teammate moves the ones worth doing to Ready, and agents take only Ready tasks.")),
+        h("div", { class: "callout" }, h("div", null, h("b", null, "Pick what agents take next in Linear"),
+          h("p", null, startOn() ? "Tasks you start from Needs you go straight to Ready, which is Todo in Linear. Tasks approved for later land in the backlog: move the ones worth doing to Todo in Linear, or to Ready on the team board. Agents take only Ready tasks." : "Approved tasks land in the backlog. A teammate moves the ones worth doing to Todo in Linear, or to Ready on the team board, and agents take only Ready tasks.")),
           D.boardUrl ? ext(D.boardUrl, "Open the team board", "btn pri") : h("div", null, h("p", { class: "small muted" }, "Your team's board isn't published in Claude yet."), slash("/pmx-board"))),
         unknown.length ? h("div", { class: "banner", role: "note" }, h("span", null, h("b", null, "Linear has tasks of a kind PMX doesn't know: "), unknown.map((u) => `${u.id} (${plural(u.tasks, "task")})`).join(", "), ". Agents skip them until your team adds that kind of work.")) : null,
         ps.length ? group("To approve", [countRow("wk:approve", "inbox", `${plural(ps.length, "new task waits", "new tasks wait")} for you`, startOn() ? "Start now, Later or Drop each one." : "Approve or drop each one.", [toNeeds])], { plain: true, count: ps.length })
           : D.synth ? synthCard() : group("To approve", [countRow("wk:approve", "inbox", "Nothing waits for your approval", emptyApprove() || null)], { plain: true, count: 0 }),
-        group("In the backlog", pool.filter((t) => t.status !== "ready").map(poolRow), { plain: true, note: "Approved, and waiting until someone moves them to Ready on the team board. Agents don't take these." }),
+        group("In the backlog", pool.filter((t) => t.status !== "ready").map(poolRow), { plain: true, note: "Approved, and waiting until someone moves them to Todo in Linear (or to Ready on the team board). Agents don't take these." }),
         group("Ready and being drafted", [...pool.filter((t) => t.status === "ready").map(poolRow), working ? countRow("wk:working", "bot", `${plural(working, "task is", "tasks are")} being drafted by agents now`) : null].filter(Boolean),
           { plain: true, count: pool.filter((t) => t.status === "ready").length + working }),
         group("To review", drafts().map((d) => row({
@@ -2093,7 +2115,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("span", { class: "small muted" }, c.minCitations ? `At least ${plural(c.minCitations, "cited source")}. PMX checks before you see it.` : "No minimum number of sources."))),
       h("details", null, h("summary", null, "Sizes and details"),
         h("div", { class: "sizes4", role: "list", "aria-label": `${c.name}: what each size means` }, SZ.map((z) => h("div", { role: "listitem" },
-          h("div", null, h("b", null, z), h("span", { class: "faint" }, ` · about ${c.sizes[z].minutes} min`)),
+          h("div", null, h("b", null, z), h("span", { class: "faint" }, ` · about ${c.sizes[z].minutes} min${c.sizes[z].estimate ? ` · ${c.sizes[z].estimate.text}` : ""}`)),
           c.sizes[z].text ? h("div", null, c.sizes[z].text) : h("div", { class: "faint" }, "No wording yet")))),
         h("dl", { class: "kv" },
           h("dt", null, "Label in Linear"), h("dd", null, h("code", null, `pmx-category/${c.id}`)),
@@ -2162,6 +2184,15 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   }
   // BOARD-9: team changes in a repo with no remote are a local branch ("branch:<name>"), applied from here.
   const localBranch = (u) => (u && u.startsWith("branch:") ? u.slice(7) : null);
+  async function turnOnKind(k, el) {
+    if (el) busyBtn(el, "Sending…");
+    try {
+      const r = await act("changes", { changes: [{ kind: "builtin-kind", name: k.kind }], confirmLoosening: false });
+      if (r.prError) { render(); toast(`It couldn't be sent: ${r.prError}`, { error: true }); return; }
+      toast(localBranch(r.pr && r.pr.url) ? `Saved on this Mac: apply it in Team changes to turn on ${k.words}.` : `Sent to your team: once a teammate approves it, ${k.words} come back in the next run.`);
+      await load();
+    } catch (e) { render(); toast(`It couldn't be sent: ${e.message}`, { error: true }); }
+  }
   async function applyTeam(branch, el) {
     if (el) busyBtn(el, "Applying…");
     try { const r = await act("team-apply", { branch }); toast(r.message || "Applied."); await load(); }
@@ -2349,8 +2380,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       ["d-a", "draft", "approve", "status", "New tasks wait on this Mac, exactly as Linear would get them. Linear has none of them yet."],
       ["a-x", "approve", "dropped", "status", "Tasks you dropped. Nothing about them reaches Linear."],
       ["a-i", "approve", "inbox", "linear", "Title, labels and a short summary in Claude's words, with the number and dates of its sources. Never transcript text, meeting titles, attendees or quotes."],
-      ["i-b", "inbox", "board", "status", startOn() ? "Tasks approved for later, waiting in the backlog, counted now rather than over the window. Your team's board shows them; moving one to Ready there starts it." : "Approved tasks waiting in the backlog, counted now rather than over the window. Your team's board shows them to a teammate, who decides which are worth an agent's time."],
-      ["i-r", "board", "ready", "status", `${startOn() ? "Tasks you started from Needs you, or moved to Ready on the team board" : "Tasks a teammate moved to Ready on the team board"}, counted now rather than over the window. Only Ready tasks are picked up. Moving a task between Linear's own status columns changes nothing: PMX goes by its pmx-status label.`],
+      ["i-b", "inbox", "board", "status", startOn() ? "Tasks approved for later, waiting in the backlog, counted now rather than over the window. Linear's board and your team's board show them; moving one to Todo in Linear, or to Ready on the team board, starts it." : "Approved tasks waiting in the backlog, counted now rather than over the window. Linear and your team's board show them to a teammate, who decides which are worth an agent's time."],
+      ["i-r", "board", "ready", "status", `${startOn() ? "Tasks you started from Needs you, or moved to Todo in Linear" : "Tasks a teammate moved to Todo in Linear"} (or to Ready on the team board), counted now rather than over the window. Only Ready tasks are picked up. Linear's own status follows PMX's: Todo is Ready, In Progress is being drafted, a review status (In Progress when the team has none) waits for review, and Done is accepted. Moving a task from Backlog to Todo makes it Ready, and back to Backlog takes it out; closing it in Linear never counts as accepted.`],
       ["r-g", "ready", "agent", "model", "Your agent took a Ready task within your budget and review limit, and drafted it in PMX's own Claude setup with the task text and team memory.", "uturn"],
       ["g-v", "agent", "review", "status", "A draft in your team's repo, with a record of how it was made."],
       ["v-d", "review", "done", "status", "Someone accepted it. Rejected drafts lower that kind of work's accept rate."],
@@ -2367,9 +2398,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       todos: ["Your to-dos from your own meetings. They never leave this Mac.", [], null, "anytime"],
       approve: [startOn() ? "Every new task waits here until you start it, approve it for later or drop it. Start now sends it to Linear as Ready for agents; Later sends it to the backlog; dropping sends nothing." : "Every new task waits here until you approve or drop it. Approving sends it to your team's backlog in Linear; dropping sends nothing.", ["gets"], "approve", "needs"],
       dropped: ["Tasks you dropped. Nothing about them reaches Linear.", []],
-      inbox: [startOn() ? "Tasks you approved for later arrive in Linear's PMX project, in the backlog. No agent takes them from here: they wait until you or a teammate move them to Ready on the team board." : "Approved tasks arrive in Linear's PMX project, in the backlog. No agent takes them from here: they wait until a teammate picks them on the team board.", ["gets"], "linear", "work"],
-      board: [startOn() ? "Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. You or a teammate move tasks from the backlog to Ready there; tasks you start from Needs you skip this step. Approving decides what may leave your Mac; Ready decides what agents spend budget on." : "Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. A teammate looks at the backlog and moves the tasks worth an agent's time to Ready. Approving decides what may leave your Mac; this step decides what agents spend budget on.", [], null, "work"],
-      ready: [startOn() ? "Tasks you started from Needs you, or moved to Ready on the team board. Agents pick up only these, one per background run, within each PM's budget and review limit." : "Tasks a teammate moved to Ready. Agents pick up only these, one per background run, within each PM's budget and review limit.", ["agent"], null, "work"],
+      inbox: [startOn() ? "Tasks you approved for later arrive in Linear's PMX project, in the backlog. No agent takes them from here: they wait until you or a teammate move them to Todo in Linear, or to Ready on the team board." : "Approved tasks arrive in Linear's PMX project, in the backlog. No agent takes them from here: they wait until a teammate moves them to Todo in Linear, or picks them on the team board.", ["gets"], "linear", "work"],
+      board: [startOn() ? "Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. You or a teammate move tasks from the backlog to Ready there, or to Todo on Linear's own board; tasks you start from Needs you skip this step. Approving decides what may leave your Mac; Ready decides what agents spend budget on." : "Your team's PMX board: a page in Claude that reads Linear through each viewer's own Linear connector. A teammate looks at the backlog and moves the tasks worth an agent's time to Ready there, or to Todo on Linear's own board. Approving decides what may leave your Mac; this step decides what agents spend budget on.", [], null, "work"],
+      ready: [startOn() ? "Tasks you started from Needs you, or moved to Todo in Linear (or to Ready on the team board). Agents pick up only these, one per background run, within each PM's budget and review limit." : "Tasks a teammate moved to Todo in Linear (or to Ready on the team board). Agents pick up only these, one per background run, within each PM's budget and review limit.", ["agent"], null, "work"],
       agent: ["Your agent takes one Ready task per background run, if it fits your budget and fewer drafts than your review limit are waiting. Each kind of work has its own instructions under Work, in Agents.", ["agent", "budget"], "pull"],
       review: ["Drafts made by agents, in your team's repo. Accept, ask for a redo, or reject.", ["agent"], "review", "needs"],
       done: ["Accepted drafts. Each one's record shows how it was made and what it cost.", []],
@@ -2664,6 +2695,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       startNow: typeof r.startNow === "boolean" ? r.startNow : null,
       // INSTALL-4: the team's product lead; undefined from a PMX too old to have the setting, and then the page doesn't offer it.
       lead: "productLead" in r ? r.productLead : undefined,
+      // F3: the team's approved internal meeting series; null from a PMX too old to have the setting, and then the page doesn't offer it.
+      series: Array.isArray(r.meetingSeries) ? [...r.meetingSeries] : null,
     };
     if (!original || JSON.stringify(original) === JSON.stringify(state)) { original = base; state = clone(base); }
     else original = base; // keep the PM's unsaved edits across refreshes
@@ -2688,7 +2721,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     for (const c of Object.keys(state.accept)) if (state.accept[c] !== original.accept[c]) add({ kind: "category", name: c, accepted: state.accept[c] }, `${state.accept[c] ? "Take on" : "Stop taking"} ${catName(c)}`, "me");
     for (const c of Object.keys(state.required || {})) if (state.required[c] !== original.required[c]) add({ kind: "kind-required", name: c, value: state.required[c] }, `${state.required[c] ? "Require" : "Stop requiring"} ${catName(c)} for everyone on the team`, "team");
     if (state.reviewCap !== original.reviewCap) add({ kind: "review-cap", value: state.reviewCap }, `Agents wait at ${state.reviewCap} drafts`, "team");
-    if (state.startNow !== original.startNow && state.startNow !== null) add({ kind: "start-now", value: state.startNow }, state.startNow ? "Offer Start now: the PM's approval can make a task Ready for agents" : "No Start now: approved tasks wait in the backlog until a teammate moves them to Ready", "team");
+    if (state.startNow !== original.startNow && state.startNow !== null) add({ kind: "start-now", value: state.startNow }, state.startNow ? "Offer Start now: the PM's approval can make a task Ready for agents" : "No Start now: approved tasks wait in the backlog until a teammate moves them to Todo in Linear", "team");
     if (state.digestDay !== original.digestDay) add({ kind: "digest-day", value: state.digestDay }, `Build the digest on ${DAYS[state.digestDay]}s`, "me");
     const ck = (x) => cid(x.connector), pk = (x) => JSON.stringify(x.places.map((p) => p.toLowerCase()).sort());
     for (const c of state.calls) {
@@ -2702,6 +2735,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         add({ kind: "team-input", connector: c.connector, places: c.places, look: c.look || null }, `Read ${c.connector}: ${c.places.join(", ")}`, "team", c.places.some((p) => !(o ? o.places : []).some((q) => q.toLowerCase() === p.toLowerCase())) || (!!o && (o.look || null) !== (c.look || null)));
     }
     for (const o of original.inputs) if (!state.inputs.some((x) => ck(x) === ck(o))) add({ kind: "team-input", connector: o.connector, places: [], look: null }, `Stop reading ${o.connector}`, "team");
+    if (state.series && original.series && JSON.stringify(state.series.map((x) => x.toLowerCase())) !== JSON.stringify(original.series.map((x) => x.toLowerCase())))
+      add({ kind: "meeting-series", patterns: state.series }, state.series.length ? `Read the team's internal meeting series for team work: ${state.series.join(", ")}` : "Read no internal meeting series for team work", "team", state.series.some((p) => !original.series.some((q) => q.toLowerCase() === p.toLowerCase())));
     if (state.lead !== undefined && state.lead !== original.lead) add({ kind: "product-lead", value: state.lead }, state.lead ? `${state.lead} is your team's product lead, so PMX offers them PMX Engine` : "Your team names no product lead", "team");
     if (state.synth !== original.synth && state.synth) add({ kind: "synthesizer", value: state.synth }, `${state.synth === (D.inputs && D.inputs.me) ? "This Mac" : `${state.synth}'s Mac`} suggests team tasks and reads the team's channels`, "team");
     if (state.todosLinear !== original.todosLinear) add({ kind: "todos-linear", value: state.todosLinear }, state.todosLinear ? "Let me send my own to-dos to Linear, one at a time" : "Keep all my to-dos on this Mac", "me", state.todosLinear);
@@ -2732,6 +2767,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       "product-lead": () => (state.lead = original.lead),
       "digest-day": () => (state.digestDay = original.digestDay), "digest-dm": () => (state.digestDm = original.digestDm),
       "call-input": () => back("calls"), "team-input": () => back("inputs"), synthesizer: () => (state.synth = original.synth),
+      "meeting-series": () => (state.series = original.series ? [...original.series] : null),
       "todos-linear": () => (state.todosLinear = original.todosLinear),
     })[c.kind]();
   }
@@ -2759,7 +2795,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     if (state.startNow === null) return null;
     return card("Starting work", "Who decides which approved tasks agents take.", h("div", { class: "sr" },
       h("div", { class: "nm" }, "Start now on new tasks", " ", state.startNow !== original.startNow ? chip("Not saved yet", "new") : null,
-        h("small", null, state.startNow ? "On: Start now in Needs you approves a task and makes it Ready for agents at once. Later still puts it in the backlog." : "Off: approved tasks wait in the backlog until a teammate moves them to Ready. Turn it off when someone on your team decides what agents take.")),
+        h("small", null, state.startNow ? "On: Start now in Needs you approves a task and makes it Ready for agents at once. Later still puts it in the backlog." : "Off: approved tasks wait in the backlog until a teammate moves them to Todo in Linear. Turn it off when someone on your team decides what agents take.")),
       h("div", { class: "ctl" }, sw(state.startNow, "Start now on new tasks", () => { state.startNow = !state.startNow; changed(); }, { fk: "start-now" }))), { badge: scopeChip("team") });
   }
 
@@ -2831,7 +2867,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const err = h("span", { class: "err", role: "status" });
     const check = () => {
       const v = Number(inp.value);
-      const whole = !o.step || o.step >= 1 ? Number.isInteger(v) : Math.round(v / o.step) * o.step === v || Number.isInteger(v * 2);
+      const whole = !o.step || o.step >= 1 ? Number.isInteger(v) : Math.abs(Math.round(v / o.step) * o.step - v) < 1e-9;
       const bad = inp.value === "" || !Number.isFinite(v) || v < min || v > max || !whole;
       inp.classList.toggle("bad", bad);
       err.textContent = bad ? `${o.step && o.step < 1 ? "A number" : "A whole number"} from ${min} to ${max}` : "";
@@ -2876,6 +2912,37 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     if (state.routes[id] === undefined) return null;
     const loose = RANK[state.routes[id]] > RANK[original.routes[id]];
     return [sel(isChan(id) ? CHAN_OPTS : ROUTE_OPTS, state.routes[id], (v) => { state.routes[id] = v; changed(); }, `What ${sourceName(id)} may feed`, `route-${id}`), loose ? chip("Loosens privacy", "warn") : null];
+  }
+  // F3: the same checks the server makes on a meeting series, so a pattern it would refuse never reaches the save bar.
+  const SERIES_GENERIC = new Set(["meeting", "meetings", "sync", "syncs", "call", "calls", "chat", "catch", "up", "catchup", "check", "in", "checkin", "weekly", "daily", "monthly", "biweekly", "quarterly", "standup", "stand", "team", "teams", "the", "a", "an", "our", "my", "with", "and", "of", "for", "session", "time", "hour"]);
+  function seriesProblem(v) {
+    const words = v.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (v.length < 3 || v.length > 80 || /[|`<>"]/.test(v)) return "Give the words its title always has, like Launch weekly, up to 80 characters.";
+    if (words.length < 2) return "Give at least two words, so it can't match many meetings.";
+    if (words.every((w) => SERIES_GENERIC.has(w))) return "That could be any meeting. Name the series, like Launch weekly or Exec staff.";
+    if (/(^|[^\w])(1[:-]1s?|1 on 1|one[- ]on[- ]ones?|skip[- ]levels?|career (chat|conversation)s?|interviews?|hiring|recruit\w*|candidates?|headcount|hr|performance (reviews?|improvement plan|ratings?|issues?|conversations?)|perf|calibration|promo(tions?)?|salary|salaries|compensation|comp|bonus(es)?|payroll|medical|mental health|sick (leave|days?)|parental leave|therapy)(?![\w])/i.test(v)) return "PMX always keeps 1:1s, hiring, performance, pay and health meetings out of team work, so a series can't name one.";
+    return null;
+  }
+  function seriesCard() {
+    if (!state.series) return null;
+    const k = (x) => x.toLowerCase();
+    const edited = JSON.stringify(state.series.map(k)) !== JSON.stringify(original.series.map(k));
+    return card("Team meeting series", "Recurring internal meetings your team approves for team work, like the launch weekly or exec staff, so suggested tasks and agents build on what they decided. Each is filtered like any meeting.", [
+      h("div", { class: "sr", id: "s-series" }, ic("users"),
+        h("div", { class: "nm" }, "Approved series", " ", edited ? chip("Not sent yet", "new") : null,
+          h("small", null, "An internal meeting whose title contains one of these, with three or more people in it, feeds suggested tasks and agents. 1:1s, hiring, pay, performance and health stay out, and its title never reaches Linear.")),
+        h("div", { class: "wide" }, h("div", { class: "chips" }, state.series.map((p) => h("span", { class: `chip v${original.series.some((q) => k(q) === k(p)) ? "" : " pending"}` }, p,
+          h("button", { type: "button", "aria-label": `Stop reading ${p}`, onclick: () => { state.series = state.series.filter((x) => x !== p); changed(); } }, "×"))),
+          state.series.length ? null : h("span", { class: "faint small" }, "None yet"))),
+        addBox("add-series", "Add a series, like Launch weekly", (v0) => {
+          const v = v0.replace(/\s+/g, " ").trim();
+          const err = seriesProblem(v);
+          if (err) return err;
+          if (state.series.some((x) => k(x) === k(v))) return "Already listed.";
+          if (state.series.length >= 20) return "Up to 20 series.";
+          state.series.push(v); return null;
+        }, { label: "Add a team meeting series", btn: "Add series", hint: "The words the meeting's title always has." })),
+    ], { badge: scopeChip("team"), fold: true });
   }
   const PANES = {
     sources: ["Sources", "Where PMX reads conversations from. Claude reads them through your own connectors; PMX never connects to them itself.", () => {
@@ -2954,8 +3021,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         card("Channels and feeds", "Conversations in places your team approved, like Slack or Teams channels. Only the places listed, never direct messages.", [
           h("div", { class: "sr", id: "s-synth" }, ic("users"),
             h("div", { class: "nm" }, "Who reads them", " ", state.synth !== original.synth ? chip("Not sent yet", "new") : null,
-              h("small", null, state.synth && state.synth === I.me ? "This Mac. It also suggests your team's tasks, so every call and thread is read once for everyone."
-                : state.synth ? `The Claude app on ${state.synth}'s Mac, which also suggests your team's tasks.`
+              h("small", null, state.synth && state.synth === I.me ? "This Mac. It also collects the calls shared with your team and suggests tasks from them, so each call and thread is read once for everyone."
+                : state.synth ? `The Claude app on ${state.synth}'s Mac, which also collects the calls shared with your team and suggests tasks from them.`
                 : "Nobody yet. One Mac on your team suggests tasks for everyone and reads these places."),
               h("small", null, `Private channels: ${I.allowPrivate ? "allowed by your team" : "never read"}.`)),
             h("div", { class: "ctl" }, I.me && state.synth !== I.me ? btn("Use this Mac", { cls: `sm${state.synth ? "" : " pri"}`, on: () => { state.synth = I.me; changed(); } })
@@ -2964,6 +3031,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
           h("div", { class: "sr" }, h("datalist", { id: "dl-chans" }, I.suggested.filter((x) => x.shape === "channels").map((x) => h("option", { value: `${x.connector}: ` }, x.note))),
             addBox("add-chan", "Slack: #product-feedback, #sales-asks", addChan, { label: "Add a channel connector and its places", list: "dl-chans", btn: "Add channels", hint: "The connector, a colon, then its places as they appear in the app." })),
         ], { badge: scopeChip("team"), fold: true }),
+        seriesCard(),
         card("What each source may feed", "Off reads nothing from it. My to-dos only keeps it out of team tasks. Team tasks reach Linear only after you approve them.", [
           other.map((k) => h("div", { class: "sr" }, h("div", { class: "nm" }, sourceName(k)), h("div", { class: "ctl" }, feeds(k)))),
           h("div", { class: "sr locked" }, ic("lock"), h("div", { class: "nm" }, "Email", h("small", null, "PMX can't read email. Forward customer emails to an approved channel instead."))),
@@ -3005,7 +3073,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     private: ["Always private", "PMX's own code keeps these out of team tasks before Claude reads anything, no matter what.", () => {
       const heldBy = Object.fromEntries((D.held || []).map((x) => [x.rule, x.n]));
       const FIXED = [["one-on-one", "1:1s and career talks", "A 1:1 in the title, or a two-person meeting"], ["hiring", "Hiring and interviews", "An interview, debrief, recruiter or offer in the title, or mentioned twice"],
-        ["no-external-participant", "Internal-only meetings", "Nobody from outside your company's domains"], ["no-company-domain", "Company domain not set", "PMX can't tell colleagues from customers, so it keeps everything private"],
+        ["no-external-participant", "Internal-only meetings", "Nobody from outside your company's domains, unless your team approved the meeting's series under Sources"], ["no-company-domain", "Company domain not set", "PMX can't tell colleagues from customers, so it keeps everything private"],
         ["unknown-participants", "No participant list", "PMX can't tell who was there"], ["performance", "Performance and HR", "In the title or mentioned twice; a single mention is cut from the text"],
         ["compensation", "Pay and compensation", "In the title or mentioned twice; a single mention is cut from the text"], ["health", "Health and leave", "In the title or mentioned twice; a single mention is cut from the text"],
         ["never-ingest", "Your do-not-read list", "A person, title or channel you listed"], ["source-off", "Sources you turned off", "A source set to Off, or to My to-dos only for team tasks"]];
@@ -3014,8 +3082,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         h("div", { class: "nm" }, name, h("small", null, how)), heldBy[rule] ? chip(`${heldBy[rule]} kept`, "warn") : null, sw(true, name, null, { disabled: true }), h("span", { class: "swl" }, "Always private"))), { badge: scopeChip("fixed") });
     }],
     linear: ["What Linear gets", "The exact fields an approved task carries. Nothing goes to Linear before you approve it.", () => [card("A task in Linear", null, h("div", { class: "sr" }, h("div", { class: "gets wide" },
-      h("div", null, h("b", null, "Has"), h("ul", null, h("li", null, "A title and labels: inbox, kind of work, size"), h("li", null, "A 2–4 sentence summary in Claude's words"), h("li", null, "Why it got its size"), h("li", null, "How many sources, and their dates"))),
-      h("div", null, h("b", null, "Never has"), h("ul", null, h("li", null, "Transcript text or quotes (PMX drops a task that repeats 8 words of a meeting)"), h("li", null, "Meeting titles or attendees"), h("li", null, "Your to-dos, unless you send one yourself (below)"))),
+      h("div", null, h("b", null, "Has"), h("ul", null, h("li", null, "A title and labels: inbox, kind of work, size"), h("li", null, "Linear's own status, which follows PMX's: Backlog, Todo when it's Ready, In Progress, a review status and Done"), h("li", null, "Once an agent takes it, the PM whose Mac drafts it as assignee"), h("li", null, "A 2–4 sentence summary in Claude's words, which may name the customer or partner company, the deal stage and deadlines"), h("li", null, "Why it got its size"), h("li", null, "Its sources in words: the kind, the company, the channel and the dates, like a customer call with Acme (Nov 20)"))),
+      h("div", null, h("b", null, "Never has"), h("ul", null, h("li", null, "Transcript text or quotes (PMX drops a task that repeats 8 words of a meeting)"), h("li", null, "People's names, meeting titles or attendees"), h("li", null, "Anything about fundraising: investors, rounds, valuation"), h("li", null, "Your to-dos, unless you send one yourself (below)"))),
       h("div", null, h("b", null, "Not in Linear at all"), h("ul", null, h("li", null, "Which meetings were processed: that's recorded in your team's repo, under codes only your team can match"))))), { badge: scopeChip("fixed") }),
       card("Your own to-dos", "Off unless you turn it on. To-dos come from all your meetings, 1:1s included, so they stay on this Mac.", h("div", { class: "sr" },
         h("div", { class: "nm" }, "Let me send a to-do to Linear", h("small", null, "Lets a to-do move to Linear, as your own to-do or a product task. Only its words go; never the meeting's title, transcript or attendees. Nothing is sent until you move one.")),
@@ -3073,9 +3141,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     newkind: ["New kind of work", "Fill in what the work is and how an agent does it. PMX sends it to your team as one pull request; when a teammate approves it, every PM on the team has it.", () => newKindForm()],
     sizes: ["Sizes", "How long each size takes an agent, roughly what it costs, and the wording Claude matches when it sizes a task. Changes go to your team as one pull request.", () => [
       teamWaiting(),
-      card("Time and cost", null, h("div", { class: "sizegrid" }, SZ.map((z) => h("div", null, h("b", null, `Size ${z}`),
+      card("Time and cost", "PMX learns what runs cost: once a kind of work has 3 good runs at a size, its estimate is the median of the last 10. These costs are the starting point until then.", h("div", { class: "sizegrid" }, SZ.map((z) => h("div", null, h("b", null, `Size ${z}`),
         numBox(`min-${z}`, state.minutes[z], 5, 480, (v) => (state.minutes[z] = v), { label: `Size ${z} minutes`, unit: "min" }),
-        numBox(`usd-${z}`, state.usd[z], 0, 50, (v) => (state.usd[z] = v), { label: `Size ${z} cost in dollars`, pre: "$", step: 0.5 })))), { badge: scopeChip("team") }),
+        numBox(`usd-${z}`, state.usd[z], 0, 50, (v) => (state.usd[z] = v), { label: `Size ${z} cost in dollars`, pre: "$", step: 0.01 })))), { badge: scopeChip("team") }),
       Object.keys(state.rubric).map((c) => card(`${catName(c)}: what each size means`, null, SZ.map((z) => {
         const id = `rub-${c}-${z}`;
         const inp = h("input", { class: `in${invalid[id] ? " bad" : ""}`, id, "data-fk": id, maxlength: 120, value: state.rubric[c][z], "aria-label": `${catName(c)}, size ${z}`, oninput: (ev) => {

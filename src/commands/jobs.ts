@@ -1,4 +1,4 @@
-import { takesCategory } from "../core/config.js";
+import { DEFAULT_TEAM, takesCategory } from "../core/config.js";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { readJson, writeJson } from "../core/fsutil.js";
@@ -8,7 +8,7 @@ import { DEFAULT_TOOLS } from "../core/skillcheck.js";
 import { STAGES, type Stage } from "../core/types.js";
 import type { Command } from "./index.js";
 import { checkKindDraft, kindTemplate, parseKindForm } from "../core/kinds.js";
-import { describe, proposeTeamChanges, saveTakes } from "../flow/actions.js";
+import { checkChange, describe, proposeTeamChanges, saveTakes } from "../flow/actions.js";
 import { rememberTeamPr } from "../flow/team-prs.js";
 
 const present = (p: string) => stat(p).then(() => true, () => false);
@@ -53,7 +53,7 @@ export const jobsCommands: Command[] = [
   {
     name: "jobs",
     summary: "The jobs (kinds of work) your org has defined, and scaffold a new one with its environment",
-    usage: "pmx jobs [list] | pmx jobs template | pmx jobs new --from <filled-in template> | pmx jobs new <slug> [--stage identify|build|validate|productionize|operate]",
+    usage: "pmx jobs [list] | pmx jobs add <PMX kind of work, like decision-brief> | pmx jobs template | pmx jobs new --from <filled-in template> | pmx jobs new <slug> [--stage identify|build|validate|productionize|operate]",
     options: { stage: { type: "string" }, from: { type: "string" } },
     async run(a) {
       const [op, slug] = a.positionals;
@@ -64,6 +64,24 @@ export const jobsCommands: Command[] = [
         return 0;
       }
       const ctx = await a.ctx();
+
+      // CAT-8: one of PMX's own kinds of work that came after this team's repo was set up, sent to the team for review.
+      if (op === "add") {
+        if (!slug) throw new Error(`Say which: pmx jobs add ${Object.keys(DEFAULT_TEAM.categories).filter((c) => !ctx.team.categories[c])[0] ?? "decision-brief"}`);
+        const change = checkChange({ kind: "builtin-kind", name: slug }, ctx.team);
+        const pr = await proposeTeamChanges(ctx, [change]);
+        await rememberTeamPr({ id: pr.id, url: pr.url, at: ctx.now().toISOString(), changes: [describe(change)] });
+        await saveTakes(ctx.personal, [slug]);
+        // A team copy of pmx-synthesize from before this kind of work doesn't know when to suggest it.
+        const old = (await skillInventory(ctx.personal.repoPath, ctx.team.categories)).filter((s) => (s.name === "pmx-synthesize" || s.name === "pmx-size") && s.status === "differs from built-in").map((s) => s.name);
+        console.log([
+          `Sent ${slug} to your team for approval: ${pr.url}`,
+          "",
+          "When a code owner merges it, synthesis can suggest it and your agent takes it. Each teammate chooses in Settings → Kinds of work.",
+          old.length ? `Your team keeps its own copy of ${old.join(" and ")}, which differs from this PMX's; this PMX's says when to suggest each kind of work. To send it to your team: pmx skills update ${old.join(" ")}` : null,
+        ].filter((l) => l !== null).join("\n"));
+        return 0;
+      }
 
       if (op === "new" && a.values.from) {
         const from = String(a.values.from);
@@ -117,7 +135,7 @@ export const jobsCommands: Command[] = [
         return 0;
       }
 
-      if (op && op !== "list") throw new Error(`Unknown subcommand "${op}". Use list, template or new.`);
+      if (op && op !== "list") throw new Error(`Unknown subcommand "${op}". Use list, add, template or new.`);
 
       const inv = await skillInventory(ctx.personal.repoPath, ctx.team.categories);
       const jobs = Object.keys(ctx.team.categories).map((cat) => ({ cat, info: inv.find((s) => s.category === cat) }));
@@ -137,6 +155,9 @@ export const jobsCommands: Command[] = [
         console.log(`   env: ${env.kind} · tools ${env.tools.join(", ")} · output ${env.output.kind}`);
         if (info.envProblems.length) console.log(`   ⚠️ ${info.envProblems.join("; ")}`);
       }
+      // CAT-8: PMX's own kinds of work that came after this team's repo was set up are off until the team adds them.
+      const more = Object.keys(DEFAULT_TEAM.categories).filter((c) => !ctx.team.categories[c]);
+      if (more.length) console.log(`\nPMX also has ${more.join(", ")}, not on your team yet. Send one to your team: pmx jobs add ${more[0]}`);
       return 0;
     },
   },

@@ -2,7 +2,7 @@ import { SCHEMA } from "./version.js";
 import { createHash } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import type { ItemDecision, HoldReason } from "./filter.js";
+import type { ItemDecision, HoldReason, PassageCut } from "./filter.js";
 import { TOPICS } from "./filter.js";
 import { privateDir, readJson, writeJson } from "./fsutil.js";
 import { paths } from "./paths.js";
@@ -35,17 +35,40 @@ export interface RunReceipt {
     /** How many entries each do-not-read list has. Never the entries. */
     neverIngest: { people: number; channels: number; meetingTitles: number };
     folders: string[];
+    /** F3: the team's approved internal meeting series this run read (team runs only). Team-approved names, not titles. */
+    meetingSeries?: string[];
   };
   /** Sources that couldn't be read at all, e.g. "Slack: no token in the keychain". */
   skippedSources: string[];
   sources: SourceReceipt[];
   masked: Record<RedactionKind, number>;
   skills: { name: string; version: string; source: "team" | "org" | "bundled" }[];
-  model: { name: string; runtime: string; tools: string; costUsd: number | null; tokens: number | null; durationMs: number; promptSha256: string } | null;
+  /** `calls`: how many Claude calls the run made, where it can be more than one (to-dos, TODO-6); the rest are totals. */
+  model: { name: string; runtime: string; tools: string; costUsd: number | null; tokens: number | null; durationMs: number; promptSha256: string; calls?: number } | null;
   digest?: { cited: string[]; removedClaims: number; staged: string };
-  synth?: { tasks: TaskReceipt[]; skipped: string[] };
+  /**
+   * `heldOver` (SIG-9): needs found beyond the team's task limit, kept on this Mac for the next run. `waiting` (N1):
+   * suggestions of one of PMX's kinds of work the team hasn't turned on, kept until it does. `quoted` (N4): what was left
+   * out for repeating a source word for word, with the words it shared and which source (a source ID, or the released
+   * strategy's file): the PM's own sources' words, on this Mac only, so `pmx explain` can show why.
+   */
+  synth?: {
+    tasks: TaskReceipt[]; skipped: string[]; heldOver?: { title: string; category: string; sources: string[]; rounds: number }[];
+    waiting?: { title: string; category: string; sources: string[] }[];
+    quoted?: { task: string; part: "title" | "description"; source: string; words: string; skipped: boolean }[];
+  };
   /** Individual to-dos (TODO-1): what was added, and from which used source. Stays on this Mac. */
-  todo?: { added: { text: string; source: string; due: string | null }[]; duplicates: number; dropped: string[] };
+  todo?: {
+    /** `also`: the other meetings the same commitment was made in (TODO-6). */
+    added: { text: string; source: string; due: string | null; also?: string[] }[]; duplicates: number; dropped: string[];
+    /**
+     * TODO-6: how many batches of meetings it read, and what a later meeting (`by`) did to a to-do an earlier batch
+     * found: showed it done (and `why`, when Claude said), showed it overtaken (and `why`: its outcome happened
+     * anyway), changed it, or said it again; or PMX found it the same ask as another to-do, kept in the words of
+     * `into`. Only "done" and "overtaken" drop one.
+     */
+    batches?: number; reconciled?: { text: string; how: "done" | "overtaken" | "replaced" | "merged" | "same-ask"; by?: string; why?: string; into?: string }[];
+  };
   /** Fake confidential items run through this run's own rules in memory (FLOW-3). Each must be held. */
   canaries?: { total: number; held: number; failed: string[] };
   /** Copies of a meeting already in this run, from another recorder or folder, read once (INPUT-2). A count only. */
@@ -66,7 +89,8 @@ export interface SourceReceipt {
   at?: string;
   rule?: HoldReason | "all-passages-held";
   detail: string;
-  passagesCut: { rule: HoldReason; hash: string }[];
+  /** A cut may be only some sentences of a turn (`part`) or a direct reply to a cut (`followUp`); older receipts have neither. */
+  passagesCut: PassageCut[];
   passagesUsed: number;
   /** The connector a collected transcript came from (granola, fireflies…), or "file"; "slack" for Slack (FLOW-1). */
   origin?: string;
@@ -79,6 +103,11 @@ export interface SourceReceipt {
    * meeting ever reached the Linear meeting ledger (FLOW-3). Hashes only; never shown or shared.
    */
   keys?: string[];
+  /**
+   * N2: a source a later run (this receipt ID) added to a task from this run that was still waiting for approval, under
+   * an ID of this run's, so the task's `pmx:source` line, `pmx explain` and its evidence find it here.
+   */
+  addedFrom?: string;
   /** Team runs: where this meeting stood in the team's meeting ledger (MEET-2). */
   ledger?: { state: "processed-now" | "already-processed" | "in-progress-elsewhere" | "before-window" | "would-process"; entry: string | null };
 }
@@ -89,6 +118,8 @@ export interface TaskReceipt {
   size: Size;
   sources: string[];
   sizing: Sizing | null;
+  /** PRIV-6: what PMX left out of its description, which Linear never gets ("1 sentence that repeated a meeting word for word"). */
+  leftOut?: string;
   /**
    * Where it went (FLOW-1): the Linear identifier it was created as (PENDING-… through the Claude relay until
    * the next sync; the flow view resolves it), the existing task it duplicated, or nowhere on a dry run.
@@ -123,7 +154,10 @@ export function sourceReceipts(decisions: ItemDecision[], titleOf: (t: string) =
       kind: d.item.kind, refHash: refHash(d.item.ref), detail: d.detail, passagesCut: d.passages, passagesUsed: d.passagesKept,
       origin: d.item.kind === "slack" ? "slack" : d.item.origin?.source ?? "file", ...(channel ? { channel } : {}), ...(d.item.place ? { place: d.item.place } : {}),
     };
-    if (d.decision === "held") return { ...base, decision: "left-out", rule: d.rule, ...(d.item.keys?.length ? { keys: [...d.item.keys, ...(d.item.legacyKeys ?? [])] } : {}) };
+    // Keys let the flow view check that a private meeting never reached the meeting ledger (FLOW-3). A team meeting
+    // kept out of the PM's to-dos only because they weren't in it (COLLECT-4) isn't private, and synthesis may read it.
+    const keys = d.item.keys?.length && d.rule !== "not-attended" ? { keys: [...d.item.keys, ...(d.item.legacyKeys ?? [])] } : {};
+    if (d.decision === "held") return { ...base, decision: "left-out", rule: d.rule, ...keys };
     return { ...base, decision: "used", id: d.item.id, file: d.item.ref.startsWith("http") ? d.item.ref : basename(d.item.ref), title: titleOf(d.item.title), at: d.item.at };
   });
 }

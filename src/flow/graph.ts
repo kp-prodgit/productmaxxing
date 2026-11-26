@@ -272,7 +272,7 @@ export function buildFlowGraph(i: FlowInputs): FlowGraph {
         const id = `todo:${r.id}:${idx}`;
         add({ id, kind: "todo", stage: 3, run: r.id, label: t.text, at: r.at, status: "private", meta: { due: t.due } });
         link(runId, id, "synthesized");
-        for (const sid of t.source.split(/[,\s]+/)) if (usedIds.has(sid)) link(usedIds.get(sid)!, id, "cited");
+        for (const sid of [...t.source.split(/[,\s]+/), ...(t.also ?? [])]) if (usedIds.has(sid)) link(usedIds.get(sid)!, id, "cited");
       });
       else {
         const id = `todo:${r.id}`;

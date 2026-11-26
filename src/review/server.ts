@@ -42,6 +42,7 @@ function view(item: ReviewItem) {
       minutes: Math.round(item.record.durationMs / 6000) / 10, costUsd: item.record.costUsd,
       cleanProfile: item.record.profile.checksFailed.length === 0, failedChecks: item.record.profile.checksFailed,
       checklistOk: item.record.checklist.ok, checklistProblems: item.record.checklist.problems,
+      web: item.record.web === true, webBlocked: item.record.webBlocked ?? 0,
     },
     files: item.files.map((f) => ({ path: f.path, html: f.path.endsWith(".md") ? renderMarkdown(f.content, item.citations) : `<pre><code>${f.content.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</code></pre>` })),
   };

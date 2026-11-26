@@ -8,8 +8,9 @@ import { acceptStats } from "../review/queue.js";
 import type { SizeRubric } from "../core/skillcheck.js";
 import type { SkillInfo } from "../core/skills.js";
 import { SIZES, STAGES, type Size, type Stage } from "../core/types.js";
-import type { Proposal } from "../synth/proposals.js";
+import { changedText, type Proposal } from "../synth/proposals.js";
 import { stoppedTasks, type StoppedTask } from "../pull/failures.js";
+import { estimateCost, estimateText } from "../pull/estimate.js";
 import type { FlowCheck } from "./graph.js";
 import type { ActivityItem, Automation } from "./automations.js";
 import type { DigestBoard } from "./digests.js";
@@ -85,7 +86,8 @@ export interface PipelineCategory {
   custom: boolean;
   /** When synthesis should propose it, from the skill's `pmx.propose` (JOB-8). Null for a skill that doesn't say. */
   propose: { when: string; not: string | null } | null;
-  sizes: Record<Size, { minutes: number; usd: number; text: string }>;
+  /** `estimate` (PULL-13): what a run of this kind at this size is expected to cost, and from what: "about $0.10, from the last 8 runs". */
+  sizes: Record<Size, { minutes: number; usd: number; text: string; estimate?: { usd: number; basis: "runs" | "table"; runs: number; text: string } }>;
   takenOn: boolean;
   paused: string | null;
   /** Tasks with this category now. `proposed` waits for the PM's approval on this Mac. */
@@ -104,9 +106,20 @@ export interface PipelineData {
   freshness: { linearSyncedAt: string | null; lastTick: string | null; lastCollect: string | null };
   sources: { id: string; label: string; connected: boolean; n: number; last: string | null }[];
   edges: Record<EdgeId, PipelineEdge>;
-  needs: { proposals: number; drafts: number; todos: number };
-  /** Local level only. `at`: when synthesis staged it, so the page can say how long it has waited (0.36.0). */
-  proposals: { id: string; title: string; category: string; size: Size; from: string; description: string; theme: string | null; at?: string }[];
+  /** `heldOver` (SIG-9): needs the last synthesis run found past the team's task limit; they come back in the next run. */
+  needs: { proposals: number; drafts: number; todos: number; heldOver?: number };
+  /**
+   * Local level only. `at`: when synthesis staged it, so the page can say how long it has waited (0.36.0). `follows`: the
+   * task whose accepted draft left this follow-up (FOLLOW-1), shown as "Follows PMX-12"; absent for synthesis's own.
+   * `followUp`: where that draft is (its path in the team repo, its pull request and the task on the web, when they have
+   * links) and how many more of its questions stayed in it, for the task's details.
+   */
+  proposals: {
+    id: string; title: string; category: string; size: Size; from: string; description: string; theme: string | null; at?: string; follows?: string | null;
+    /** N2: what later runs added since it was suggested (sources, and sentences in the description). */
+    changed?: string;
+    followUp?: { path: string; draft: string | null; task: string | null; more: number };
+  }[];
   /** The team's open roadmap themes (EQ-38), for the proposals' theme picker. Local level only, like the proposals. */
   themes?: string[];
   /**
@@ -127,7 +140,8 @@ export interface PipelineData {
   pool?: { identifier: string; title: string; url: string | null; status: string; category: string | null }[];
   /** Open to-dos. Local level only: they never leave the Mac. */
   /** `at`: the meeting's day, or the day the PM added it; the board's period picker filters on it (TODO-4). */
-  todos: { id: string; text: string; due: string | null; from: string; at: string; when: "today" | "evening" | "someday" | null; linear?: string | null }[];
+  /** `suggestedBy`: a call from a draft another PM suggested, by that PM's handle (FOLLOW-1): "Suggested by sam; decisions went to you". */
+  todos: { id: string; text: string; due: string | null; from: string; at: string; when: "today" | "evening" | "someday" | null; linear?: string | null; suggestedBy?: string }[];
   /** What the PM finished in the last 14 days, newest first (BOARD-6). This Mac's page only. */
   logbook?: LogbookEntry[];
   /** The team's Plan board artifact, when one is published (BOARD-1). */
@@ -140,6 +154,12 @@ export interface PipelineData {
   setup?: import("../setup/checklist.js").SetupView | null;
   /** Team settings pull requests opened from the board that are still open. */
   pendingTeam: { url: string; at: string; changes: string[] }[];
+  /**
+   * N1 (CAT-8): suggestions synthesis found of one of PMX's kinds of work the team hasn't turned on, waiting on this Mac,
+   * by kind. Each is a Needs you card that sends the same team change as `pmx jobs add <kind>` (a reviewed pull request);
+   * `pending` when that change already waits for a teammate, and then Team changes shows it instead. Local level only.
+   */
+  kindsWaiting?: { kind: string; words: string; n: number; text: string; pending: boolean }[];
   /** `problems` stays plain text for boards published before 0.17.0; `items` carries each one's fix. */
   health: { ok: boolean; problems: string[]; items: HealthProblem[]; facts: string[] };
   checks: FlowCheck[];
@@ -201,6 +221,11 @@ export interface PipelineRules {
    */
   productLead?: string | null;
   productLeadIsYou?: boolean;
+  /**
+   * F3 (INPUT-4): the team's approved internal meeting series, a team setting in pmx.config.json. A board without it
+   * (an older PMX) doesn't offer the setting.
+   */
+  meetingSeries?: string[];
 }
 
 export interface PipelineInputs {
@@ -218,7 +243,7 @@ export interface PipelineInputs {
   collectReports: { at: string; connector: string | null; saved: number; inputs?: { id: string; shape: "calls" | "channels"; saved: number }[] }[];
   todosCreated: string[];
   /** Open to-dos on this Mac. */
-  openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string }; linear?: string | null; receiptId?: string }[];
+  openTodos?: { id: string; text: string; due: string | null; when?: "today" | "evening" | "someday" | null; source: { title: string; at: string; suggestedBy?: string }; also?: { title: string; at: string }[]; linear?: string | null; receiptId?: string }[];
   logbook?: LogbookEntry[];
   boardUrl?: string | null;
   roadmapUrl?: string | null;
@@ -226,7 +251,10 @@ export interface PipelineInputs {
   setup?: import("../setup/checklist.js").SetupView | null;
   themes?: string[];
   pendingTeam?: PipelineData["pendingTeam"];
+  kindsWaiting?: PipelineData["kindsWaiting"];
   proposals: Proposal[];
+  /** SIG-9: how many needs wait on this Mac for the next synthesis run. */
+  heldOver?: number;
   checks: FlowCheck[];
   health: { problems: HealthProblem[]; facts: string[] };
   lastTick: string | null;
@@ -268,7 +296,7 @@ function skillNode(s: SkillInfo): { node: string | null; where: string } {
  */
 const DEFAULT_STAGE: Record<string, Stage> = {
   "research-synthesis": "identify", "competitive-analysis": "identify", "problem-brief": "identify",
-  spec: "build", "build-brief": "build", "validation-plan": "validate", "validation-readout": "validate", "tracking-hygiene": "operate",
+  spec: "build", "build-brief": "build", "validation-plan": "validate", "validation-readout": "validate", "decision-brief": "validate", "tracking-hygiene": "operate",
 };
 
 /** "Research synthesis. Turns …" → ["Research synthesis", "Turns …"]. */
@@ -285,6 +313,7 @@ function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "
   const days = ap.windowDays;
   const stats = acceptStats(i.runlog ?? [], i.now, days);
   const tasks = i.issues.filter((x) => !x.meeting);
+  const table = { sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: i.rules.sizes[z].minutes, costUsd: i.rules.sizes[z].usd }])) as Record<Size, { minutes: number; costUsd: number }> };
   const count = (id: string, st: string[]) => tasks.filter((x) => x.category === id && st.includes(x.status ?? "")).length;
   const categories = Object.entries(cfg).map(([id, c]): PipelineCategory => {
     const sk = i.skills.find((s) => s.name === c.skill);
@@ -302,7 +331,10 @@ function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "
       required: !!c.required,
       custom: !BUILT_IN_CATEGORIES.has(id),
       propose: sk?.propose ? { when: sk.propose.when, not: sk.propose.not ?? null } : null,
-      sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: i.rules.sizes[z].minutes, usd: i.rules.sizes[z].usd, text: i.rules.rubric[id]?.[z] ?? "" }])) as PipelineCategory["sizes"],
+      sizes: Object.fromEntries(SIZES.map((z) => {
+        const e = estimateCost(i.runlog, table, id, z);
+        return [z, { minutes: i.rules.sizes[z].minutes, usd: i.rules.sizes[z].usd, text: i.rules.rubric[id]?.[z] ?? "", estimate: { usd: e.usd, basis: e.basis, runs: e.runs, text: estimateText(e) } }];
+      })) as PipelineCategory["sizes"],
       takenOn: !!(i.rules.categories.find((x) => x.name === id)?.accepted || c.required),
       paused: i.paused?.get(id) ?? null,
       tasks: {
@@ -319,6 +351,9 @@ function buildCategories(i: PipelineInputs, runs: Extract<RunLogEntry, { type: "
   for (const t of tasks) if (t.category && t.category !== COMMITMENT && !cfg[t.category] && t.status !== "done") byUnknown.set(t.category, (byUnknown.get(t.category) ?? 0) + 1);
   return { categories, unknown: [...byUnknown].map(([id, n]) => ({ id, tasks: n })).sort((a, b) => a.id.localeCompare(b.id)) };
 }
+
+/** A link the page may open: http or https only. */
+const web = (u: string | null | undefined): string | null => (u && /^https?:\/\//.test(u) ? u : null);
 
 export function buildPipeline(i: PipelineInputs): PipelineData {
   const hours = Math.max(1, Math.min(336, Math.round(i.hours)));
@@ -429,18 +464,20 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     v: 1, level: i.level, at: until, hours,
     freshness: { linearSyncedAt: i.linearSyncedAt, lastTick: i.lastTick, lastCollect: latest(i.collectReports.map((c) => c.at)) },
     sources, edges,
-    needs: { proposals: i.proposals.length, drafts: review.length, todos: (i.openTodos ?? []).length },
+    needs: { proposals: i.proposals.length, drafts: review.length, todos: (i.openTodos ?? []).length, ...(i.heldOver ? { heldOver: i.heldOver } : {}) },
     // A proposal the PM hasn't approved stays theirs, so only this Mac's page shows it.
     proposals: local ? i.proposals.map((p) => ({
       id: p.id, title: p.title, category: p.category, size: p.size, description: p.description, theme: p.theme ?? null, at: p.at,
-      from: p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
+      ...(changedText(p) ? { changed: changedText(p)! } : {}),
+      from: !p.from.length ? (p.follows ? `The sources of ${p.follows.identifier}` : "No sources") : p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
+      ...(p.follows ? { follows: p.follows.identifier, followUp: { path: p.follows.path, draft: web(p.follows.draft), task: web(p.follows.url), more: p.follows.more ?? 0 } } : {}),
     })) : [],
     drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null, draftedAt: draftedAt.get(x.identifier) ?? null, mine: x.agent === undefined || x.agent === i.agent })),
     stopped: stoppedTasks(tasksNow, i.runlog ?? []),
     pool: local ? tasksNow.filter((x) => (x.status === "inbox" || x.status === "ready") && x.category !== COMMITMENT).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).slice(0, 50)
       .map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, status: x.status!, category: x.category ?? null })) : [],
     // A to-do from no meeting (added by the PM, or taken from the team's list) says so as it is; the rest name their meeting.
-    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, at: t.source.at.slice(0, 10), ...(t.linear ? { linear: t.linear } : {}), from: t.source.title === "Added by you" || t.receiptId === "" ? t.source.title : `${t.source.title} (${t.source.at.slice(0, 10)})` })) : [],
+    todos: local ? (i.openTodos ?? []).map((t) => ({ id: t.id, text: t.text, due: t.due, when: t.when ?? null, at: t.source.at.slice(0, 10), ...(t.linear ? { linear: t.linear } : {}), ...(t.source.suggestedBy ? { suggestedBy: t.source.suggestedBy } : {}), from: t.source.title === "Added by you" || t.receiptId === "" ? t.source.title : [t.source, ...(t.also ?? [])].map((m) => `${m.title} (${m.at.slice(0, 10)})`).join(", also ") })) : [],
     logbook: local ? i.logbook ?? [] : [],
     boardUrl: i.boardUrl ?? null,
     roadmapUrl: i.roadmapUrl ?? null,
@@ -448,6 +485,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     setup: local ? i.setup ?? null : null,
     themes: local ? i.themes ?? [] : [],
     pendingTeam: i.pendingTeam ?? [],
+    ...(local && i.kindsWaiting?.length ? { kindsWaiting: i.kindsWaiting } : {}),
     health: { ok: !problems.length, problems: problems.map((p) => p.text), items: problems, facts: i.health.facts },
     checks: i.checks,
     held,

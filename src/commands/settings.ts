@@ -2,7 +2,7 @@ import { takesCategory } from "../core/config.js";
 import { companyDomains } from "../core/filter.js";
 import { applyPersonal, checkChange, type Change } from "../flow/actions.js";
 import type { Command } from "./index.js";
-import { callInputs, channelInputs, collectsChannels, connectorId, MEETING_CONNECTORS, READ_VIA } from "../inputs/inputs.js";
+import { callInputs, channelInputs, collectsChannels, connectorId, MEETING_CONNECTORS, meetingSeries, READ_VIA } from "../inputs/inputs.js";
 
 /** Personal settings the pipeline board also changes (BOARD-3), for Terminal and scripts. */
 export const settingsCommands: Command[] = [
@@ -35,6 +35,8 @@ export const settingsCommands: Command[] = [
       console.log(calls.length ? `Your recorders: ${calls.map((c) => `${c.connector}${READ_VIA[connectorId(c.connector)] ? ` (through ${READ_VIA[connectorId(c.connector)]!.via})` : ""}${c.look ? ` (only ${c.look})` : ""}: ${feeds(connectorId(c.connector))}`).join("; ")}` : "Your recorders: none. Add one: pmx sources add Momentum, or pmx sources add \"Google Meet\"");
       const ch = channelInputs(ctx.team);
       console.log(ch.length ? `Your team's channels: ${ch.map((c) => `${c.connector}: ${c.places.join(", ")}`).join("; ")}${collectsChannels(ctx.team, ctx.personal, ctx.agent) ? " (collected on this Mac)" : ` (collected on ${ctx.team.synthesizer ?? "the synthesis Mac"}'s Mac)`}` : "Your team's channels: none. Propose some on the board's Sources tab.");
+      const series = meetingSeries(ctx.team);
+      console.log(series.length ? `Your team's internal meeting series (read for team tasks, filtered like every meeting): ${series.join(", ")}` : "Your team's internal meeting series: none. Propose some on the page's Settings → Sources.");
       if (Object.keys(routes).length) console.log(`What each feeds: ${Object.keys(routes).map((k) => `${k}: ${feeds(k)}`).join(", ")}`);
       console.log("Change what one feeds: pmx sources set granola mine");
       return 0;

@@ -218,6 +218,8 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     `  Agent work     ${categories.join(", ")}`,
     `  Spend          ${dailyUsd === null ? `no cap of your own (team cap $${cap} a day, estimated at list prices)` : `up to $${dailyUsd} a day${dailyUsd === 0 ? " (paused)" : ""}`}; PMX works whenever this Mac is on and awake`,
     `  Company        ${domains.join(", ") || "no domain set: every meeting is held from team tasks"}`,
+    // INPUT-3: a new team's first Mac is its synthesis Mac, so its approved channels are read from day one.
+    ...(newRepo ? [`  Synthesis Mac  this one (${handle}), as your team's first: it suggests team tasks and reads the channels your team approves`] : []),
     `  Transcripts    ${transcriptDirs.join(", ") || "none"}`,
     ...(slackTeam ? [`  Slack DM       ${dm || "none"} (channels come through your Slack connector in Claude)`] : []),
     `  Never ingest   ${count(people.length, "person", "people")}, ${count(meetingTitles.length, "meeting title")}, ${count(channels.length, "channel")}`,
@@ -231,7 +233,9 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
       await d.exec("git", ["init", "-q", "-b", "main", repoPath]);
     }
     const git = new Git(repoPath, d.exec);
-    const created = await scaffoldRepo(repoPath, { ...newRepo, internalDomains: domains });
+    // The new team's settings, as the summary showed them. PMX can't tell who else will join, so a new team repo's
+    // first Mac is its synthesis Mac (INPUT-3); a teammate who joins later can pick another on Sources, for review.
+    const created = await scaffoldRepo(repoPath, { ...newRepo, internalDomains: domains, synthesizer: handle });
     // Teammates and CI install the CLI from the repo, so they don't need npm access to it.
     await vendorCli(repoPath, d.exec).then(
       () => created.push(VENDORED_CLI),

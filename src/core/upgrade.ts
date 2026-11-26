@@ -99,6 +99,18 @@ export const AUTO_STEPS: AutoStep[] = [
       return "refreshed the background job with this pmx, Node and Claude Code";
     },
   },
+  {
+    // RUN-5: tasks approved before evidence packs have none, so other Macs' agents skip them. The background run writes
+    // them (src/run/share.ts, backfillEvidence), at most 20 a run; this makes its first look due at once, not in a day.
+    id: "evidence-backfill",
+    since: "0.37.0",
+    title: "This Mac's open tasks share their quotes with your team",
+    async run() {
+      if ((await loadState()).evidenceBackfill?.due) return null;
+      await updateState((st) => { st.evidenceBackfill = { at: st.evidenceBackfill?.at ?? null, due: true }; });
+      return "the next background run shares the quotes of this Mac's open tasks that have none yet with your team";
+    },
+  },
 ];
 
 const keyOf = (s: AutoStep, version: string) => (s.since === null ? `${s.id}@${version}` : s.id);

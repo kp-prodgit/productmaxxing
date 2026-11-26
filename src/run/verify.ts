@@ -47,7 +47,7 @@ export async function verifyPr(git: Git, base: string): Promise<PrCheck> {
     }
     const runBase = rec.context?.baseCommit;
     const isAncestor = runBase ? (await git.raw(["merge-base", "--is-ancestor", runBase, "HEAD"])).code === 0 : false;
-    const expected = isAncestor ? await envFingerprint((rel) => show(runBase!, rel), team) : "";
+    const expected = isAncestor ? await envFingerprint((rel) => show(runBase!, rel), team, { web: rec.web === true }) : "";
     const v = verifyRecord(rec, team, expected);
     if (!isAncestor) v.problems.push("run base commit is not in this branch's history");
     if (v.problems.length) {

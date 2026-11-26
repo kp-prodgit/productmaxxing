@@ -83,7 +83,8 @@ const TOKEN = "__TOKEN__";
 let items = [], current = null;
 const $ = (id) => document.getElementById(id);
 const escText = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2500); }
+let toastT = 0;
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), Math.min(10000, Math.max(2500, String(msg).length * 70))); }
 async function api(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers: { "x-pmx-token": TOKEN, ...(opts.body ? { "content-type": "application/json" } : {}) } });
   const data = await res.json();
@@ -103,7 +104,9 @@ function select(id) {
   const chips = r
     ? ['<span class="chip">' + escText(r.skill) + '</span>', '<span class="chip">' + escText(r.model) + '</span>', '<span class="chip">' + escText(r.agent) + '</span>', '<span class="chip">' + r.minutes + ' min' + (r.costUsd != null ? ' · $' + r.costUsd.toFixed(2) : '') + '</span>',
        '<span class="chip ' + (r.cleanProfile ? 'ok">✓ clean profile' : 'bad">✗ ' + escText(r.failedChecks.join(", "))) + '</span>',
-       '<span class="chip ' + (r.checklistOk ? 'ok">✓ checklist' : 'warn">⚠ ' + escText(r.checklistProblems.join("; "))) + '</span>']
+       '<span class="chip ' + (r.checklistOk ? 'ok">✓ checklist' : 'warn">⚠ ' + escText(r.checklistProblems.join("; "))) + '</span>',
+       ...(r.web ? ['<span class="chip" title="This run could search and read the web. Each claim from a page cites its URL and the date it was read.">Used the web</span>'] : []),
+       ...(r.webBlocked ? ['<span class="chip warn" title="PMX blocked searches or pages that carried quotes, people or customers from this task.">' + r.webBlocked + ' web ' + (r.webBlocked === 1 ? 'call' : 'calls') + ' blocked</span>'] : [])]
     : ['<span class="chip bad">No run record</span>'];
   $("draft").innerHTML = '<h2 class="title">' + escText(current.title) + '</h2><div class="meta"><a class="chip" href="' + escText(current.url) + '" target="_blank" rel="noopener">' + escText(current.identifier) + '</a>' + (current.prUrl.startsWith("http") ? '<a class="chip" href="' + escText(current.prUrl) + '" target="_blank" rel="noopener">Pull request</a>' : '<span class="chip">' + escText(current.prUrl) + '</span>') + chips.join("") + '</div>' +
     current.files.map((f) => '<div class="file"><div class="path">' + escText(f.path) + '</div>' + f.html + '</div>').join("");

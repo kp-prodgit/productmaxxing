@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { isProductLead, startsNow, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { agentHandle, isProductLead, startsNow, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { channelInputs, collectsChannels, NO_SYNTH_MAC } from "../inputs/inputs.js";
 import { readJson, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
 import { TICK_GAP_MS, type State } from "../core/state.js";
@@ -306,6 +307,12 @@ export function buildChecklist(i: ChecklistInputs): Checklist {
   const relay = bad("linear.relay") ?? c("linear.relay");
   const linear: Step[] = !linearOn ? [step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: "skip", detail: "your team doesn't use Linear", required: false })] : [
     c("secrets.linear")?.ok ? step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: "done", detail: clean(c("secrets.linear")!.detail), required: true })
+      // F16: before this Mac's first sync, the step waits for it; it isn't failing.
+      : relay && /not synced yet/.test(relay.detail) ? step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: "todo", required: true,
+        detail: "waiting for this Mac's first Linear sync. PMX's Linear sync in the Claude app runs at the top of each hour; this Mac's first one hasn't run yet, so PMX can't see your team's tasks here until it does",
+        do: "Wait for the next hour; Health → Running on PMX's page shows when the Linear sync ran. If the Claude app has no Linear sync task, type /pmx-schedule there", who: "claude" as const, how: "app" as const,
+        page: "Waiting for this Mac's first Linear sync, at the top of the hour. Health → Running shows when it ran.",
+        fix: placeFix("Open Running", "tab:health/running", "Waiting for this Mac's first Linear sync: it runs at the top of each hour in the Claude app. Running shows when it ran.") })
       : relay ? step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: relay.ok ? "done" : "warn", detail: clean(relay.detail), required: true, ...(relay.ok ? {} : { do: "Check the Linear sync task: in the Claude app, Code → Scheduled. If it's missing, type /pmx-schedule.", who: "you" as const, how: "app" as const,
         fix: claudeFix("/pmx-schedule", "Check the Linear sync task in the Claude app, under Code → Scheduled. If it's missing, type /pmx-schedule there.") }) })
         : step({ id: "linear.connected", title: "PMX reaches your team's Linear", status: "todo", detail: "no Linear sync has run yet", required: true, do: "Type /pmx-schedule in the Claude app; it creates the Linear sync task", who: "claude", how: "claude",
@@ -332,6 +339,7 @@ export function buildChecklist(i: ChecklistInputs): Checklist {
       detail: lastCollect ? `last collection ${day(lastCollect.at)} ${hm(lastCollect.at)}: ${lastCollect.saved} saved${never ? `; ${clean(never.detail)}` : ""}` : "no meeting collected yet",
       ...(lastCollect ? {} : { do: "Type /pmx-schedule in the Claude app; its collection task saves new meetings at 12:30 and 17:30 on weekdays", who: "claude" as const, how: "claude" as const,
         fix: claudeFix("/pmx-schedule", "In the Claude app, type /pmx-schedule: Claude creates the task that collects your meetings at 12:30 and 17:30.") }) }),
+    channelStep(team, p, step),
     i.proposals === null ? step({ id: "work.approve", title: "New tasks wait for your approval", status: "skip", detail: "PMX can't read the tasks waiting for you here", required: false })
       : step({ id: "work.approve", title: "New tasks wait for your approval", status: i.proposals ? "todo" : "done", required: false,
         detail: i.proposals ? `${plural(i.proposals, "new task")} wait${i.proposals === 1 ? "s" : ""} for you. Nothing reaches Linear until you approve it.` : "nothing waits for your approval",
@@ -341,12 +349,12 @@ export function buildChecklist(i: ChecklistInputs): Checklist {
     // APPROVE-3: with Start now on, the PM's own approval makes a task Ready, so there's no second gate to wait for.
     !i.tasks ? step({ id: "work.ready", title: startNow ? "Start now makes tasks Ready for agents" : "A teammate makes tasks Ready for agents", status: "skip", detail: linearOn ? "PMX counts these only from its own copy of Linear" : "no tracker", required: false })
       : startNow ? step({ id: "work.ready", title: "Start now makes tasks Ready for agents", required: false, status: "done",
-        detail: `${i.tasks.ready} Ready for agents, ${i.tasks.pool} in the backlog${i.tasks.blocked ? `, ${i.tasks.blocked} Blocked` : ""}. Start now on a new task makes it Ready at once; Later puts it in the backlog, where it waits until someone moves it to Ready.` })
+        detail: `${i.tasks.ready} Ready for agents, ${i.tasks.pool} in the backlog${i.tasks.blocked ? `, ${i.tasks.blocked} Blocked` : ""}. Start now on a new task makes it Ready at once (Todo in Linear); Later puts it in the backlog, where it waits until someone moves it to Todo in Linear.` })
       : step({ id: "work.ready", title: "A teammate makes tasks Ready for agents", required: false,
         status: i.tasks.ready ? "done" : i.tasks.pool ? "todo" : "done",
-        detail: `${i.tasks.ready} Ready for agents, ${i.tasks.pool} in the backlog${i.tasks.blocked ? `, ${i.tasks.blocked} Blocked` : ""}. Approving sends a task to the backlog; an agent takes it only after a teammate moves it to Ready.`,
-        ...(!i.tasks.ready && i.tasks.pool ? { do: "On the team board (/pmx-board, or Linear), move the tasks worth an agent's time to Ready", who: "teammate" as const, how: "linear" as const,
-          fix: personFix("A teammate moves the backlog's tasks worth an agent's time to Ready, on your team's board or in Linear.", team?.board?.url ?? p.board?.url ?? undefined) } : {}) }),
+        detail: `${i.tasks.ready} Ready for agents, ${i.tasks.pool} in the backlog${i.tasks.blocked ? `, ${i.tasks.blocked} Blocked` : ""}. Approving sends a task to the backlog; an agent takes it only after a teammate moves it to Todo in Linear.`,
+        ...(!i.tasks.ready && i.tasks.pool ? { do: "In Linear, move the backlog's tasks worth an agent's time to Todo (or to Ready on the team board, /pmx-board)", who: "teammate" as const, how: "linear" as const,
+          fix: personFix("A teammate moves the backlog's tasks worth an agent's time to Todo in Linear, or to Ready on your team's board.", team?.board?.url ?? p.board?.url ?? undefined) } : {}) }),
     step({ id: "work.practice", title: "Agents run tasks for real", status: i.practiceUntil ? "warn" : "done", required: false,
       detail: i.practiceUntil ? `practice mode until ${day(i.practiceUntil)}: for its first week your agent says which task it would take, without running it` : "your agent runs Ready tasks that fit the budget",
       ...(i.practiceUntil ? { do: "Wait, or run one now with pmx pull --live", who: "you" as const, how: "terminal" as const, page: `Real runs start ${day(i.practiceUntil)}.`,
@@ -428,6 +436,26 @@ export function buildChecklist(i: ChecklistInputs): Checklist {
       pending: all.filter((s) => s.afterUpdate && open(s)),
     } : null,
   };
+}
+
+/**
+ * INPUT-3: the team's approved channels are read only on its synthesis Mac (INPUT-1), so with none chosen no channel is
+ * ever read, and nothing said so. Choosing it is a team setting: the page's Sources sends it to the team for review.
+ */
+function channelStep(team: TeamConfig | null, p: PersonalConfig, step: (s: Step) => Step): Step {
+  const channels = team ? channelInputs(team) : [];
+  const places = channels.reduce((n, c) => n + c.places.length, 0);
+  const title = "A Mac reads your team's channels";
+  if (!team || !places) return step({ id: "work.channels", title, status: "skip", detail: "your team hasn't approved any channels", required: false });
+  const where = channels.map((c) => c.connector).join(", ");
+  if (!team.synthesizer) return step({ id: "work.channels", title, status: "todo", required: false,
+    detail: `${NO_SYNTH_MAC}. Your team approved ${plural(places, "place")} in ${where}, but only its synthesis Mac reads them, and it hasn't chosen one, so none is read`,
+    do: "Choose a synthesis Mac in PMX's page: Settings → Sources → Who reads them. It goes to your team for review, like any team setting", who: "you", how: "page",
+    page: "Choose a synthesis Mac in Settings, under Sources. It goes to your team for review.",
+    fix: placeFix("Open Sources", "tab:health/settings/sources", "Choose a synthesis Mac in Settings, under Sources: that Mac reads your team's channels and suggests tasks for everyone. It goes to your team for review.") });
+  const here = collectsChannels(team, p, agentHandle(p));
+  return step({ id: "work.channels", title, status: "done", required: false,
+    detail: `your team's ${plural(places, "approved place")} in ${where} ${places === 1 ? "is" : "are"} read on ${here ? "this Mac" : `${team.synthesizer}'s Mac`}, your team's synthesis Mac` });
 }
 
 function whereYouStand(i: ChecklistInputs, all: Step[]): string {

@@ -1,6 +1,8 @@
 // ProductMaxxing Commercial License. See ee/LICENSE.
 import type { TeamConfig } from "../../../src/core/config.js";
 import { SIZES, type Size, type Task } from "../../../src/core/types.js";
+import type { RunLogEntry } from "../../../src/core/runlog.js";
+import { estimateCost } from "../../../src/pull/estimate.js";
 import { BRAIN_ACTIONS, type BrainAction, type BrainPolicy } from "../policy.js";
 
 /** One action the model proposed. Untrusted until `guard` has checked it. */
@@ -50,6 +52,8 @@ export interface GuardState {
   runsToday: number;
   startedThisPass: number;
   budgetLeftUsd: number;
+  /** The team's run log, so a run's cost is estimated from what runs really cost (PULL-13). */
+  runs?: readonly RunLogEntry[];
 }
 
 const NEEDS: Partial<Record<BrainAction, Task["status"][]>> = {
@@ -93,7 +97,7 @@ export function guard(p: Proposal, s: GuardState): { mode: Mode; rule: RuleId | 
   if (s.policy.level === "recommend") return { mode: "recommended", rule: "level-recommend" };
 
   const task = p.task ? s.tasks.get(p.task)! : null;
-  const cost = task?.size ? s.team.sizes[task.size].costUsd : 0;
+  const cost = task?.size ? (task.category ? estimateCost(s.runs, s.team, task.category, task.size).usd : s.team.sizes[task.size].costUsd) : 0;
   if (p.action === "start-run") {
     if (s.killSwitch) return { mode: "blocked", rule: "kill-switch" };
     if (s.paused.has(task!.category!)) return { mode: "blocked", rule: "category-paused" };

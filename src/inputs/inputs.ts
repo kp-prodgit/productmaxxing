@@ -1,4 +1,5 @@
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
+import { HOLD_LABELS, NAME_PAIR, TOPICS } from "../core/filter.js";
 
 /**
  * Connector inputs (INPUT-1): any connector the PM already has in their Claude app can feed PMX. PMX never connects
@@ -154,6 +155,49 @@ export function channelInputs(team: Pick<TeamConfig, "inputs" | "slackChannels" 
  */
 export const collectsChannels = (team: Pick<TeamConfig, "synthesizer">, personal: Pick<PersonalConfig, "handle">, agent: string) =>
   !!team.synthesizer && (team.synthesizer === personal.handle || team.synthesizer === agent);
+
+/** INPUT-3: what the checklist and `pmx status` say when the team approved channels but chose no synthesis Mac to read them. */
+export const NO_SYNTH_MAC = "No Mac reads your team's channels: choose a synthesis Mac";
+
+/** At most this many approved meeting series per team (F3). */
+export const MAX_SERIES = 20;
+/** Words that say nothing about which meeting it is: a series made only of these would match far too much. */
+const SERIES_GENERIC = new Set(["meeting", "meetings", "sync", "syncs", "call", "calls", "chat", "catch", "up", "catchup", "check", "in", "checkin", "weekly", "daily", "monthly", "biweekly", "quarterly", "standup", "stand", "team", "teams", "the", "a", "an", "our", "my", "with", "and", "of", "for", "session", "time", "hour"]);
+
+/**
+ * Words that put a meeting about people's jobs, pay or health in the title, even where no fixed rule holds it by title
+ * ("Hiring sync", "Comp review"): a series can't name one.
+ */
+const SERIES_REFUSED = new Set(["hiring", "recruiting", "recruitment", "recruiter", "recruiters", "candidate", "candidates", "interview", "interviews", "headcount", "hr", "comp", "compensation", "salary", "salaries", "payroll", "bonus", "bonuses", "perf", "calibration", "career", "careers", "promo", "promotion", "promotions"]);
+
+/**
+ * One approved meeting series (F3, INPUT-4): a title pattern for a recurring internal meeting, like "Launch weekly" or
+ * "Exec staff". A meeting whose title contains it, word for word, is read for team work. At least two words, and not
+ * only words every meeting has ("Team sync"), so it can't open up every internal meeting. A pattern about a 1:1,
+ * hiring, performance, pay or health is refused: PMX always holds those, whatever the team approves.
+ */
+export function checkSeries(p: unknown): string {
+  if (/[\r\n\t]/.test(String(p ?? ""))) throw new Error("A meeting series is one line.");
+  const v = String(p ?? "").replace(/\s+/g, " ").trim().replace(/^["']|["']$/g, "").trim();
+  if (v.length < 3 || v.length > 80 || /[|`<>"]/.test(v)) throw new Error(`"${v}" isn't a meeting series PMX can use. Give the words its title always has, like Launch weekly, up to 80 characters.`);
+  const words = v.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  if (words.length < 2) throw new Error(`"${v}" is one word, so it could match many meetings. Give at least two words its title always has, like Launch weekly.`);
+  if (words.every((w) => SERIES_GENERIC.has(w))) throw new Error(`"${v}" could be any meeting. Name the series, like Launch weekly or Exec staff.`);
+  const held = Object.entries(TOPICS).find(([, m]) => m.test(v))?.[0]
+    ?? (/\binterview/i.test(v) || words.some((w) => SERIES_REFUSED.has(w)) ? (words.some((w) => ["comp", "compensation", "salary", "salaries", "payroll", "bonus", "bonuses"].includes(w)) ? "compensation" : words.some((w) => ["perf", "calibration", "promo", "promotion", "promotions"].includes(w)) ? "performance" : "hiring") : NAME_PAIR.test(v) ? "one-on-one" : null);
+  if (held) throw new Error(`"${v}" reads as ${HOLD_LABELS[held as keyof typeof HOLD_LABELS].toLowerCase()}, which PMX always keeps out of team work. A series can't change that.`);
+  return v;
+}
+
+/** The team's approved meeting series, each usable as written (a hand-edited pmx.config.json is checked the same way). */
+export function meetingSeries(team: Pick<TeamConfig, "meetingSeries">): string[] {
+  const seen = new Set<string>();
+  return (Array.isArray(team.meetingSeries) ? team.meetingSeries : []).filter((p) => {
+    if (!valid(() => checkSeries(p))) return false;
+    const k = String(p).trim().toLowerCase();
+    return !seen.has(k) && !!seen.add(k);
+  }).map((p) => checkSeries(p)).slice(0, MAX_SERIES);
+}
 
 /** Whether `place` (as a saved thread names it) is one of the approved places for `source`. */
 export function placeApproved(inputs: ChannelInput[], source: string, place: string): boolean {

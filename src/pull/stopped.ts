@@ -2,6 +2,7 @@ import type { Ctx } from "../core/context.js";
 import { RunLogStore } from "../core/runlog-store.js";
 import type { Services } from "../core/services.js";
 import type { Task } from "../core/types.js";
+import { markTask } from "../lease/marks.js";
 import { stoppedTasks, type StoppedTask } from "./failures.js";
 
 /**
@@ -34,6 +35,7 @@ export async function retryStopped(ctx: Ctx, svc: Services, ref: string): Promis
   await log.record({ type: "release", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier, reason: "retry" });
   await svc.tracker.comment(task.id, `Try again: ${ctx.agent} moved ${task.identifier} back to Ready after ${s.runs} runs in a row without a draft. Its count starts over, so it stops again only if its next two runs fail too.`);
   await svc.tracker.setStatus(task.id, "ready");
+  await markTask(ctx, svc.tracker, task.identifier, "ready");
   return `${task.identifier} is back in Ready${relayed(svc) ? " from the next Claude sync" : ""}. An agent tries it again on PMX's next background run, and it stops again only if the next two runs fail too.`;
 }
 
@@ -43,5 +45,6 @@ export async function dropStopped(ctx: Ctx, svc: Services, ref: string): Promise
   await log.record({ type: "drop", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier });
   await svc.tracker.comment(task.id, `Dropped by ${ctx.agent} after ${s.runs} runs in a row without a draft. No agent will take it again.`);
   await svc.tracker.rewrite(task.id, { cancel: true });
+  await markTask(ctx, svc.tracker, task.identifier, "dropped");
   return `Dropped ${task.identifier}: no agent will take it again. It moves to canceled in Linear${relayed(svc) ? " at the next Claude sync" : ""}.`;
 }

@@ -1,6 +1,8 @@
 import { budgetBlock, type Budget } from "../budget/provider.js";
 import { takesCategory, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import type { RunLogEntry } from "../core/runlog.js";
 import type { Task } from "../core/types.js";
+import { estimateCost, estimateText } from "./estimate.js";
 
 export interface Decision {
   task: Task;
@@ -33,6 +35,10 @@ export interface SelectInput {
   failStreaks?: Map<string, number>;
   /** Tasks this Mac can't run, by task ID, and why: their evidence is elsewhere (RUN-3). */
   unrunnable?: Map<string, string>;
+  /** The team's run log, so a cost estimate learns from what runs really cost (PULL-13). */
+  runs?: readonly RunLogEntry[];
+  /** Tasks another Mac drafted, finished or dropped that this Mac's copy of Linear doesn't show yet, by task ID, and why (PULL-14). */
+  taken?: Map<string, string>;
 }
 
 /** Linear priority: 1 urgent … 4 low, 0 none (sorted last). */
@@ -55,20 +61,27 @@ export function selectTasks(i: SelectInput): Selection {
 
   const decisions: Decision[] = ready.map((t) => {
     const no = (why: string): Decision => ({ task: t, ok: false, why });
+    // PULL-14: Ready only in this Mac's copy of Linear; another Mac has drafted, finished or dropped it.
+    const taken = i.taken?.get(t.id);
+    if (taken) return no(taken);
     if (!t.category || !i.team.categories[t.category]) return no(`category "${t.category ?? "none"}" has no skill in team config`);
     if (!takesCategory(i.personal, i.team, t.category)) return no(`you don't accept ${t.category}`);
     const paused = i.pausedCategories.get(t.category);
     if (paused) return no(`${t.category} is paused: ${paused}`);
     if (!t.size) return no("no size label");
+    // TASK-8: a person moved it in Linear somewhere PMX doesn't follow (closed it, started it by hand).
+    if (t.workflow?.held) return no(t.workflow.held);
     const elsewhere = i.unrunnable?.get(t.id);
     if (elsewhere) return no(elsewhere);
     if (i.leasedTaskIds.has(t.id)) return no("already claimed by another agent");
     const est = i.team.sizes[t.size];
-    if (est.costUsd > i.budget.remainingUsd) return no(`size ${t.size} needs ~$${est.costUsd.toFixed(2)}, $${i.budget.remainingUsd.toFixed(2)} left`);
+    // PULL-13: what this kind of work at this size has really cost lately, not a fixed table.
+    const cost = estimateCost(i.runs, i.team, t.category, t.size);
+    if (cost.usd > i.budget.remainingUsd) return no(`size ${t.size} needs ${estimateText(cost)}; $${i.budget.remainingUsd.toFixed(2)} left today`);
     if ((t.size === "L" || t.size === "XL") && i.budget.minutesToReset < est.minutes)
       return no(`size ${t.size} takes ~${est.minutes} min, only ${i.budget.minutesToReset} min until the budget resets`);
     const f = failed(t);
-    return { task: t, ok: true, why: `fits: ${t.size} ~$${est.costUsd.toFixed(2)}, priority ${t.priority || "none"}${f ? `; its last ${f === 1 ? "run" : `${f} runs`} failed, so it goes after the others` : ""}` };
+    return { task: t, ok: true, why: `fits: ${t.size}, ${estimateText(cost)}; priority ${t.priority || "none"}${f ? `; its last ${f === 1 ? "run" : `${f} runs`} failed, so it goes after the others` : ""}` };
   });
 
   return { blockers, decisions, candidates: blockers.length ? [] : decisions.filter((d) => d.ok).map((d) => d.task) };

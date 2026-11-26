@@ -12,10 +12,12 @@ import { parseRubric } from "../core/skillcheck.js";
 import { loadSkill, skillInventory } from "../core/skills.js";
 import { loadState } from "../core/state.js";
 import { SIZES, type Size } from "../core/types.js";
-import { isProductLead, startsNow } from "../core/config.js";
+import { followUpsOn, isProductLead, startsNow } from "../core/config.js";
 import { privacyRules } from "../digest/gather.js";
+import { meetingSeries } from "../inputs/inputs.js";
 import { linearAccess } from "../linear/access.js";
 import { readProposals } from "../synth/proposals.js";
+import { heldOverCount, kindLine, kindsWaiting, kindWords } from "../synth/held-over.js";
 import { openThemes } from "../synth/themes.js";
 import { loadTodos } from "../todo/todo.js";
 import { kindOf, toTask } from "../tracker/linear.js";
@@ -60,7 +62,8 @@ export function cronDays(f: string): number[] {
 /** The Linear sync's health, in a PM's words (BOARD-5): what's wrong and where to look, without PMX's command names. */
 export function relayWords(detail: string, waiting: number): { text: string; cmd?: string } {
   const queued = waiting ? ` ${waiting} change${waiting === 1 ? " is" : "s are"} waiting to go to Linear.` : "";
-  if (/not synced yet/.test(detail)) return { text: `Linear hasn't synced yet. PMX reaches Linear through a task in your Claude app; type /pmx-schedule there to set it up.${queued}`, cmd: "/pmx-schedule" };
+  // F16: before this Mac's first sync, say when it runs and where to see it.
+  if (/not synced yet/.test(detail)) return { text: `This Mac hasn't synced Linear yet. PMX's Linear sync in the Claude app runs at the top of each hour; this Mac's first one hasn't run yet. Health → Running shows when it ran. If the Claude app has no Linear sync task, type /pmx-schedule there.${queued}`, cmd: "/pmx-schedule" };
   const h = detail.match(/last synced (\d+)h ago/);
   if (h) return { text: `Linear last synced ${h[1]} hours ago. A sync was missed, so agents may be working from an old copy of your tasks. The "Sync Linear" task in your Claude app runs only while the app is open and the Mac is awake; open Claude and check it ran.${queued}`, cmd: "/pmx-schedule" };
   if (/label\(s\) missing/.test(detail)) return { text: "Some of PMX's labels are missing in Linear, so cards can't move yet. The next Linear sync in your Claude app creates them." };
@@ -87,7 +90,8 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const outbox = await readOutbox();
   const nodes = snap ? overlay(snap, outbox.ops) : [];
   const state = await loadState();
-  const issues = nodes.map((n) => {
+  // A task canceled in Linear is out of PMX's work (TASK-8); a task's status follows a person's move there.
+  const issues = nodes.filter((n) => n.state?.type !== "canceled").map((n) => {
     const t = toTask(n);
     return { identifier: t.identifier, title: t.title, url: t.url || undefined, createdAt: n.createdAt, status: t.status, meeting: kindOf(n) === "meeting", category: t.category, agent: t.agent };
   });
@@ -138,7 +142,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     const r = await relayHealth(ctx.team, now, { cron: await syncDueCron(ctx.personal.taskHours) });
     if (!r.ok) {
       const w = relayWords(r.detail, outbox.ops.length);
-      problems.push({ ...w, fix: "tab:automations" });
+      problems.push({ ...w, fix: /not synced yet/.test(r.detail) ? "tab:health/running" : "tab:automations" });
       relay = { ok: false, problem: w.text };
     }
   }
@@ -179,7 +183,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     autoUpdate: { on: !!ctx.team.cli?.autoUpdate, state: state.autoUpdate, version: currentVersion() },
     linear: { mode: access, syncedAt: snap?.syncedAt ?? null, waiting: outbox.ops.length, ...relay },
     proposals: proposals.length, drafts: tasksNow.filter((x) => x.status === "review").length, reviewCap: ctx.team.reviewQueueCap, todos: todos.filter((t) => t.status === "open").length,
-    paused: [...paused.keys()], digest, pendingTeam: 0, killSwitch: ks, jobs, startNow: startsNow(ctx.team),
+    paused: [...paused.keys()], digest, pendingTeam: 0, killSwitch: ks, jobs, startNow: startsNow(ctx.team), followUps: followUpsOn(ctx.team),
   });
   const pendingTeam = await pendingTeamPrs({ ...ctx, keychain: o.keychain }).catch(() => []);
   const tc = automations.find((a) => a.id === "team-changes");
@@ -193,8 +197,12 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   if (unplugged.length) problems.push({ text: `${unplugged.map((r) => r.connector).join(" and ")} ${unplugged.length === 1 ? "isn't" : "aren't"} connected in your Claude app, so PMX can't read ${unplugged.length === 1 ? "it" : "them"}. Add ${unplugged.length === 1 ? "it" : "them"} under Settings → Connectors in the Claude app.`, fix: "tab:sources" });
   return buildPipeline({
     level: o.level, now, hours, agent: ctx.agent, receipts, runlog: log, issues, linearSyncedAt: snap?.syncedAt ?? null,
-    collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals,
+    collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals, heldOver: await heldOverCount().catch(() => 0),
     openTodos: todos.filter((t) => t.status === "open"), pendingTeam,
+    // N1: a kind of work synthesis suggestions wait for; its card is replaced by the team change once that's sent.
+    kindsWaiting: local ? (await kindsWaiting(ctx.team).catch(() => [])).map((k) => ({
+      ...k, words: kindWords(k.kind), text: kindLine(k), pending: pendingTeam.some((p) => p.changes.some((c) => c.startsWith(`Add PMX's kind of work ${k.kind};`))),
+    })) : [],
     logbook: local ? buildLogbook({ now, agent: ctx.agent, todos, receipts, runlog: log }) : [],
     boardUrl: ctx.team.board?.url ?? ctx.personal.board?.url ?? null,
     roadmapUrl: ctx.team.roadmap?.url ?? null,
@@ -226,6 +234,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
       sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: ctx.team.sizes[z].minutes, usd: ctx.team.sizes[z].costUsd }])) as Record<Size, { minutes: number; usd: number }>,
       rubric: rubricFor(rubric, cats),
       slackChannels: ctx.team.slackChannels, allowedSources: ctx.team.allowedSources,
+      meetingSeries: meetingSeries(ctx.team),
     },
   });
 }

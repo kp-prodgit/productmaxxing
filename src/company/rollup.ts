@@ -5,6 +5,7 @@ import { projectTracker, type Services } from "../core/services.js";
 import { categoryMenu, loadSkill, skillBody } from "../core/skills.js";
 import { updateState } from "../core/state.js";
 import { SIZES, type Size, type Task } from "../core/types.js";
+import { trackerGuard } from "../core/tracker-text.js";
 
 export interface Theme {
   title: string;
@@ -34,6 +35,7 @@ export function parseThemes(text: string, refs: Set<string>, categories: string[
   } catch {}
   const themes: Theme[] = [];
   const skipped: string[] = [];
+  const guard = trackerGuard();
   for (const t of Array.isArray(raw?.themes) ? raw.themes : []) {
     const title = one(t?.title, 90);
     if (!title) continue;
@@ -41,7 +43,11 @@ export function parseThemes(text: string, refs: Set<string>, categories: string[
     if (new Set(tasks.map(teamOf)).size < 2) { skipped.push(`${title}: doesn't span two teams' real tasks`); continue; }
     if (!categories.includes(t?.category)) { skipped.push(`${title}: category "${t?.category}" isn't in team config`); continue; }
     if (!SIZES.includes(t?.size)) { skipped.push(`${title}: size "${t?.size}" isn't S, M, L or XL`); continue; }
-    themes.push({ title, category: t.category, size: t.size, rationale: one(t?.rationale, 400), tasks });
+    // F14: the company task's words follow the same rules as a team task's: a title about a person, a meeting or
+    // fundraising is skipped, and a sentence like that leaves its rationale.
+    if (guard.problem(title)) { skipped.push(`${title}: its title can't go to Linear as written`); continue; }
+    const rationale = guard.clean(one(t?.rationale, 400)).text;
+    themes.push({ title, category: t.category, size: t.size, rationale, tasks });
   }
   return { themes, skipped };
 }

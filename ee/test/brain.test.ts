@@ -69,7 +69,7 @@ describe("brain fixed rules (BRAIN-3)", () => {
     expect(guard(run, state({ killSwitch: true }, ready))).toEqual({ mode: "blocked", rule: "kill-switch" });
     expect(guard(run, state({ paused: new Map([["spec", "x"]]) }, ready))).toEqual({ mode: "blocked", rule: "category-paused" });
     expect(guard(run, state({ reviewCount: 3 }, ready)).rule).toBe("review-queue-full");
-    expect(guard(run, state({ budgetLeftUsd: 0.1 }, ready)).rule).toBe("over-budget");
+    expect(guard(run, state({ budgetLeftUsd: 0.01 }, ready)).rule).toBe("over-budget");
     expect(guard(run, state({ runsToday: 3 }, ready)).rule).toBe("daily-run-limit");
     expect(guard(run, state({ startedThisPass: 1 }, ready)).rule).toBe("one-run-per-pass");
   });

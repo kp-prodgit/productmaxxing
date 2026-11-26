@@ -53,6 +53,8 @@ export interface AutomationInputs {
   lastTick: { at: string; failed: string[]; failStreak: number } | null;
   /** APPROVE-3: the team offers Start now, so the PM's approval can make a task Ready. */
   startNow?: boolean;
+  /** FOLLOW-1: accepting a draft makes its follow-ups. On unless the team turned it off; absent counts as on. */
+  followUps?: boolean;
   tickOk: boolean;
   schedules: { id?: string; name: string; last: string | null; next: string | null; ok: boolean; detail: string; when: string; node: string | null }[];
   collectReports: { at: string; connector: string | null; saved: number; skipped?: Record<string, number> }[];
@@ -148,7 +150,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
     cadence: "every 30 minutes for new calls; Slack every 6 hours", last: synthHere ? latest([i.lastSynthAt, synthR?.at]) : synthR?.at ?? null, next: synthHere ? nextPass : null, tab: "today",
     ...(!i.tracker ? { status: "off" as const, statusText: "No task tracker set up", fix: null } : synthHere ? (viaJob("synthesize") ?? ok()) : ok("Runs on another Mac")),
     result: synthR?.synth ? `${plural(synthR.synth.tasks.length, "task")} suggested from ${plural(synthR.sources.filter((s) => s.decision === "used").length, "source")}` : null,
-    run: synthHere && i.tracker && !i.killSwitch.on ? "synthesize" : null, runNote: synthHere ? null : `Runs on ${i.synthesizer ?? "the team's synthesis Mac"}, so every call is read once for the whole team.`,
+    run: synthHere && i.tracker && !i.killSwitch.on ? "synthesize" : null, runNote: synthHere ? null : `Runs on ${i.synthesizer ? `${i.synthesizer}'s Mac` : "the team's synthesis Mac"}, from the calls shared with your team, so each is read once for everyone.`,
   });
   out.push({
     id: "approve", group: "work", name: "You approve new tasks", by: "you", where: "You, on this page", tab: "today",
@@ -186,7 +188,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   const pull = viaJob("pull");
   out.push({
     id: "pull", group: "agents", name: "Your agent picks up Ready work", by: "both", where: "This Mac and Claude", tab: "work",
-    what: `When a task is Ready (${i.startNow ? "you started it, or someone moved it to Ready on the team board" : "a teammate moved it there in Linear"}), your agent takes one per background run, drafts it with that kind of work's instructions, and opens it for your review. It stays within your budget and review limit.`,
+    what: `When a task is Ready (${i.startNow ? "you started it, or someone moved it to Todo in Linear" : "a teammate moved it to Todo in Linear"}), your agent takes one per background run, drafts it with that kind of work's instructions, and opens it for your review. It stays within your budget and review limit.`,
     cadence: "every 30 minutes, one task at a time", last: lastRun?.ts ?? null, next: nextPass,
     ...(!i.tracker ? { status: "off" as const, statusText: "No task tracker set up", fix: null }
       : pull ?? (dry ? { status: "attention" as const, statusText: "Practice mode", fix: { text: `For your first week your agent only says what it would pick, without running. Real runs start ${new Date(dryUntil).toDateString()}.` } }
@@ -196,7 +198,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   });
   out.push({
     id: "review", group: "agents", name: "You review agent drafts", by: "you", where: "You, on this page", tab: "today",
-    what: "Accept a draft to keep it for the team, ask for a redo with a note, or reject it. Your verdicts set each kind of work's accept rate.",
+    what: `Accept a draft to keep it for the team${i.followUps === false ? "" : ": its PM decides calls become your to-dos, and its open questions new tasks waiting for you"}. Or ask for a redo with a note, or reject it. Your verdicts set each kind of work's accept rate.`,
     cadence: "whenever a draft is ready", last: null, next: null,
     status: i.drafts ? "waiting" : "ok", statusText: i.drafts ? `${i.drafts} waiting for you` : "Nothing waiting", fix: null, result: null, run: null, runNote: null,
   });

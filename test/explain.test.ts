@@ -121,8 +121,9 @@ describe("explainable sizing", () => {
     const desc = describeTask(out.tasks[0] as CandidateTask, [item({ id: "T1", title: "Acme renewal", text: "Jane: slow" })], "synthesize-x");
     expect(desc).toContain("**Why size L:** no rubric cell given");
     expect(desc).toContain("**Check the size:** it cites fewer sources than this size expects.");
-    // PRIV-6: the tracker gets a summary and a date, never the meeting's words or title.
-    expect(desc).toContain("**Based on** one meeting (2026-11-03)");
+    // PRIV-6, F14: the tracker gets a summary and the source in words, never the meeting's words or title. With no
+    // company the model named and PMX could check, it keeps the role.
+    expect(desc).toContain("**Sources:** an external call (Nov 3). They stay on the PM's Mac: `pmx explain synthesize-x` there shows them.");
     expect(desc).not.toMatch(/Jane|slow|Acme/);
   });
 });
@@ -136,7 +137,7 @@ describe("skills inventory", () => {
     const spec = await readFile(join(bundledSkillsDir(), "pmx-spec", "SKILL.md"), "utf8");
     await writeFile(join(repo, ".claude", "skills", "pmx-spec", "SKILL.md"), spec + "\nAlways add a risks section.\n");
     const skills = await skillInventory(repo, DEFAULT_TEAM.categories);
-    expect(skills.map((s) => s.name)).toEqual(["pmx-brain", "pmx-build-brief", "pmx-competitive", "pmx-digest", "pmx-hygiene", "pmx-problem-brief", "pmx-pull", "pmx-research", "pmx-rollup", "pmx-size", "pmx-spec", "pmx-synthesize", "pmx-todo", "pmx-validation-plan", "pmx-validation-readout"]);
+    expect(skills.map((s) => s.name)).toEqual(["pmx-brain", "pmx-build-brief", "pmx-competitive", "pmx-decision-brief", "pmx-digest", "pmx-hygiene", "pmx-problem-brief", "pmx-pull", "pmx-research", "pmx-rollup", "pmx-size", "pmx-spec", "pmx-synthesize", "pmx-todo", "pmx-validation-plan", "pmx-validation-readout"]);
     const by = Object.fromEntries(skills.map((s) => [s.name, s]));
     expect(by["pmx-spec"]).toMatchObject({ status: "differs from built-in", runs: "team", category: "spec", usedBy: "`pmx pull`: drafts spec tasks" });
     expect(by["pmx-digest"]!.usedBy).toMatch(/pmx digest/);
@@ -178,7 +179,7 @@ describe("pmx explain --web (PRIV-4, SEC)", () => {
       expect((await get(s.port, "/api/runs", auth, "POST")).status).toBe(405);
       expect((await get(s.port, "/api/runs/..%2f..%2fconfig", auth)).status).toBe(404);
       expect(JSON.parse((await get(s.port, "/api/runs", auth)).body)).toEqual({ runs: [] });
-      expect(JSON.parse((await get(s.port, "/api/skills", auth)).body).skills).toHaveLength(15);
+      expect(JSON.parse((await get(s.port, "/api/skills", auth)).body).skills).toHaveLength(16);
       const sizing = JSON.parse((await get(s.port, "/api/sizing", auth)).body);
       expect(sizing.rubric.cells.spec.M).toBe("One-pager");
       expect(JSON.parse((await get(s.port, "/api/rules", auth)).body).topics.health.examples).toContain("medical");

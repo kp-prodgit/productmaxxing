@@ -102,7 +102,10 @@ describe("connector inputs (INPUT-1)", () => {
     const { repo } = await pmxRepo();
     const base = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [], slackChannel: null } } });
     const p = await collectPrompt(base, { scope: "mine" });
-    expect(p).toMatch(/If you use Fireflies, use these two tools and no others\. List meetings with fireflies_get_transcripts, with fromDate "2026-11-05", mine true and limit 50/);
+    // This Mac's first collection reaches back 14 days (F6).
+    const first = startOfDay(NOW, 14).toISOString().slice(0, 10);
+    expect(p).toContain(`List meetings with fireflies_get_transcripts, with fromDate "${first}", mine true and limit 50`);
+    expect(p).toMatch(/If you use Fireflies, use these two tools and no others\. List meetings with fireflies_get_transcripts/);
     expect(p).toMatch(/fireflies_get_transcript and its transcriptId/);
     expect(p).toMatch(/drop the timestamp, keep "Speaker: what they said", and join back-to-back lines from the same speaker/);
     expect(p).toMatch(/Never use fireflies_get_summary, fireflies_fetch or fireflies_search/);
@@ -111,7 +114,7 @@ describe("connector inputs (INPUT-1)", () => {
     expect(p.indexOf("If you use Fireflies")).toBeLessThan(p.indexOf("Google Meet has no connector"));
     expect(p.match(/If you use Fireflies/g)).toHaveLength(1);
     const team = await collectPrompt(base, { scope: "team" });
-    expect(team).toMatch(/fromDate "2026-11-05" and limit 50/);
+    expect(team).toContain(`fromDate "${first}" and limit 50`);
     // Added as a recorder it's read every run, with the same recipe; turned off, it isn't mentioned at all.
     const added = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [], slackChannel: null, calls: [{ connector: "Fireflies" }] } } });
     const q = await collectPrompt(added, { scope: "mine" });

@@ -70,6 +70,14 @@ export function startOfDay(now: Date, daysBack = 0): Date {
 
 export const localDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+/**
+ * How far back PMX reaches, in days, in one place so collection and synthesis agree (SIG-6, COLLECT-2). A Mac's first
+ * collection copies meetings from the last `most` days and channel threads from the last `threads`; its first
+ * synthesis reads the last `most` days, so everything that collection brought in is read; no run reads more. Later
+ * collections overlap the one before, and later syntheses start a day before the last one.
+ */
+export const REACH = { threads: 7, most: 14 } as const;
+
 export interface MeetingPlan {
   /** Not processed yet, with the open ledger entry to reuse when an earlier attempt failed. */
   fresh: { item: SignalItem; entry: MeetingEntry | null }[];

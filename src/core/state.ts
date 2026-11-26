@@ -55,6 +55,13 @@ export interface State {
   whatsNew: { seen: string | null; since: string | null } | null;
   /** UPGRADE-1: the pmx that last ran here, the version it came from, and each update step done (src/core/upgrade.ts). */
   upgrade?: import("./upgrade.js").UpgradeRecord | null;
+  /** RUN-5: when this Mac last removed the evidence packs of finished or dropped tasks from the team repo. */
+  evidenceTidyAt?: string | null;
+  /**
+   * RUN-5: when this Mac last finished looking for its open tasks without an evidence pack, and whether its next
+   * background run looks again (an update asks for it, and so does a look that stopped at its limit or had a failure).
+   */
+  evidenceBackfill?: { at: string | null; due: boolean } | null;
   /** When this Mac's pmx started tracking task runs. Older runs left no record, so "never ran" counts from here. */
   taskRunsSince: string | null;
 }

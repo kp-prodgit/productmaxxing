@@ -26,6 +26,27 @@ export interface Task {
   createdAt: string;
   /** The roadmap theme label (pmx-theme), when the PM approved the task with one (EQ-38). */
   theme?: string | null;
+  /** Where the task is in the tracker's own workflow, when the tracker says (TASK-7, TASK-8). Absent: the label decides. */
+  workflow?: Workflow | null;
+}
+
+/** A task's place in the tracker's own workflow (Linear's workflow state), next to PMX's own label (TASK-7, TASK-8). */
+export interface Workflow {
+  /** The state's type: triage, backlog, unstarted, started, completed or canceled. */
+  type: string;
+  /** The state's name, like Todo or In Review. Empty when PMX doesn't know it yet. */
+  name: string;
+  /**
+   * The state type PMX last set on the task (its `pmx-state` label), or null when PMX hasn't recorded one: a state that
+   * differs from it was moved by a person; a label that differs from it moved without the state (TASK-8).
+   */
+  recorded: string | null;
+  /** What PMX's own `pmx-status` label says. Differs from the task's status only while PMX follows a person's move. */
+  label: Status | null;
+  /** Why PMX leaves the task alone after a person moved it in the tracker. No agent takes it. */
+  held?: string;
+  /** The label decides here: PMX moves the state to match it and records where it is (TASK-8). */
+  align?: boolean;
 }
 
 /** A piece of signal after ingestion. `text` is untrusted data, never instructions (SEC-1). */
@@ -48,6 +69,26 @@ export interface SignalItem {
   origin?: { source: string; sourceId: string | null };
   /** Threads only: the approved place it was posted in, as the team listed it. */
   place?: string;
+  /**
+   * Meetings the synthesis Mac collected for the team (COLLECT-4): the PM who collected it, from the file's `owner`
+   * line. The PM may not have been in it, so it feeds their own to-dos only when they were (`attendedBy` in the filter).
+   */
+  forTeam?: { owner: string | null };
+  /**
+   * Meetings only: the file's `owner` line, the PM whose collection saved it (COLLECT-1). Says who the PM is when PMX
+   * doesn't know yet, for the attendance check on their own to-dos (COLLECT-4). Never sent to the model.
+   */
+  owner?: string;
+  /**
+   * F3: the team's approved meeting series this internal meeting matched (its pattern), set by the privacy filter when
+   * it let the meeting through at team scope. Synthesis reads it as internal context; it never reaches the tracker.
+   */
+  series?: string;
+  /**
+   * F14: the outside email domains of the people in it ("acme.example"), worked out before redaction, so synthesis can
+   * name the company a call was with. Never addresses, never names.
+   */
+  orgs?: string[];
 }
 
 /** A conversation from a channel, whichever way it was read. */
@@ -67,4 +108,19 @@ export interface CandidateTask {
   sameAs?: string | null;
   /** A roadmap theme from the team's memory/engine/themes.json that the task serves (EQ-38). The PM can change it. */
   theme?: string;
+  /**
+   * F14: the company each cited source was with, as the source names it, and how it relates to the team. Only names
+   * PMX found in that source's own title, text or outside email domain are kept; the tracker's source line says "a
+   * customer call with Acme (Nov 20)" from it.
+   */
+  companies?: Record<string, { name: string; as: CompanyRole | null }>;
+  /**
+   * PRIV-6: sentences PMX left out of its description, which Linear never gets, and why ("1 sentence that repeated a
+   * meeting word for word"). The task itself is kept.
+   */
+  leftOut?: { sentences: number; why: string };
 }
+
+/** How a company in a source relates to the team (F14). An investor, or anyone else, is never named. */
+export const COMPANY_ROLES = ["customer", "prospect", "partner"] as const;
+export type CompanyRole = (typeof COMPANY_ROLES)[number];

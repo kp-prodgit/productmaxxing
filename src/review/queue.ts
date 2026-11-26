@@ -4,7 +4,9 @@ import { RunLogStore } from "../core/runlog-store.js";
 import type { RunLogEntry } from "../core/runlog.js";
 import type { Services } from "../core/services.js";
 import type { Task } from "../core/types.js";
+import { markTask } from "../lease/marks.js";
 import type { RunRecord } from "../run/record.js";
+import { followUpsOnAccept, followUpText, type FollowUpResult } from "./followups.js";
 
 export interface ReviewItem {
   task: Task;
@@ -53,21 +55,41 @@ export async function loadQueue(ctx: Ctx, svc: Services, o: { all?: boolean } = 
   return { items, host };
 }
 
+/** What a decision did: the sentence every surface shows, and for an accept, the follow-ups it made (FOLLOW-1). */
+export interface Decided {
+  message: string;
+  followUps: FollowUpResult | null;
+}
+
 /**
  * Records a human decision (REV-1, REV-2). Accept merges the PR and marks the task done. Reject closes
  * the PR and blocks the task with the reason. Redo closes the PR, adds the note to the task and puts
- * it back to ready, so the next pull drafts it again with the note.
+ * it back to ready, so the next pull drafts it again with the note. Every surface decides through here:
+ * `pmx review` (in a terminal or with --accept, --redo, --reject), the review page, and PMX's page.
  */
 export async function decide(
   ctx: Ctx, svc: Services, host: OutputHost, item: ReviewItem, verdict: Verdict, o: { note?: string; reviewMinutes?: number | null } = {},
 ): Promise<string> {
+  return (await recordDecision(ctx, svc, host, item, verdict, o)).message;
+}
+
+/** `decide`, with what an accept made (FOLLOW-1) for a surface that says more than the sentence. */
+export async function recordDecision(
+  ctx: Ctx, svc: Services, host: OutputHost, item: ReviewItem, verdict: Verdict, o: { note?: string; reviewMinutes?: number | null } = {},
+): Promise<Decided> {
   const { task } = item;
   const who = ctx.personal.handle;
+  let followUps: FollowUpResult | null = null;
+  let followError: string | null = null;
   if ((verdict === "rejected" || verdict === "redo") && !o.note?.trim()) throw new Error(`A ${verdict === "redo" ? "redo" : "reject"} needs a note.`);
   if (verdict === "accepted") {
     await host.accept(item.prId);
     await svc.tracker.comment(task.id, `Accepted by ${who}.`);
     await svc.tracker.setStatus(task.id, "done");
+    // FOLLOW-1: the draft's calls and open work, made after the accept, which nothing here undoes.
+    try { followUps = await followUpsOnAccept(ctx, svc, item); }
+    // Its first sentence, without a command in backticks: every surface shows this, the pages included.
+    catch (e: any) { followError = String(e?.message ?? e).split(/(?<=[.!?])\s/)[0]!.replace(/\s*`[^`]*`/g, "").replace(/[.\s]+$/, "") || "it failed"; }
   } else if (verdict === "rejected") {
     await host.reject(item.prId, `Rejected by ${who}: ${o.note}`);
     await svc.tracker.comment(task.id, `Rejected by ${who}: ${o.note}`);
@@ -80,11 +102,15 @@ export async function decide(
     await svc.tracker.setAgent(task.id, null);
     await svc.tracker.setStatus(task.id, "ready");
   }
+  // PULL-14: every Mac knows at once, whatever its copy of Linear says: done or rejected isn't drafted again, and a redo
+  // lets any Mac's agent take it again.
+  await markTask(ctx, svc.tracker, task.identifier, verdict === "accepted" ? "done" : verdict === "rejected" ? "blocked" : "ready");
   await new RunLogStore(ctx).record({
     type: "verdict", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier,
     category: task.category ?? "unknown", size: task.size ?? "?", verdict, reviewMinutes: o.reviewMinutes ?? null, editSize: null,
   });
-  return `${task.identifier} ${verdict}.`;
+  const more = followError ? `PMX couldn't make its follow-ups: ${followError}.` : followUpText(followUps);
+  return { message: [`${task.identifier} ${verdict}.`, more].filter(Boolean).join(" "), followUps };
 }
 
 export interface CategoryStats {

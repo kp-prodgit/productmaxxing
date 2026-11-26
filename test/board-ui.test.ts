@@ -478,7 +478,7 @@ describe("Needs you: new tasks to approve (old #inbox links land there)", () => 
   it("a team that has a teammate decide what agents take sees Approve and Drop only, and PMX refuses a start", async () => {
     ui = await openBoard({ hash: "inbox", team: { approve: { startNow: false } }, before: seed });
     expect(ui.text()).not.toMatch(/Start now|Start all/);
-    expect(ui.text()).toMatch(/an approved task waits in the team's backlog until a teammate moves it to Ready/);
+    expect(ui.text()).toMatch(/an approved task waits in the team's backlog until a teammate moves it to Todo in Linear/);
     expect([...row(ui, "Export approval history to CSV")!.querySelectorAll(".acts button")].map((b) => b.textContent)).toEqual(["Approve", "Drop"]);
     expect(ui.button("Approve all 2")).toBeTruthy();
     await ui.click(ui.button("Approve", "main [role=list]"));

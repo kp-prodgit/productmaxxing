@@ -247,5 +247,8 @@ Shared by the CLI adapter and the canvas proxy. Each is a Linear **label group**
 | `pmx-size` | `S`, `M`, `L`, `XL` |
 | `pmx-agent` | the agent handle that claimed it (created on demand) |
 | `pmx-kind` | `meeting`: a lodged team meeting in the meeting ledger (MEET-2), not a task. Its description has one `pmx:meeting <hash>` line per meeting identity and one `pmx:task <ID>` line per task it produced; when processed it gets `pmx-status: done` and the team's completed workflow state. The canvas proxy, pull and the brain skip it. |
+| `pmx-state` | `triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled`: the type of the workflow state PMX last set on the task (TASK-8), written in the same save as the state |
+
+PMX keeps each task's Linear workflow state in step with its `pmx-status` label (TASK-7): backlog for `inbox`, the first unstarted state for `ready`, the first started for `claimed` and `running`, a started state named for review (else the first started) for `review`, the first completed for `done`, canceled for a dropped task; `blocked` leaves the state. Reading a task (TASK-8): a state that differs from `pmx-state` was moved by a person, and unstarted makes an `inbox` task `ready`, backlog makes a `ready` task `inbox`, canceled drops it, and completed without a review is left alone. A state equal to `pmx-state` with a label that disagrees means only the label moved (an older Mac or board): the label wins and PMX moves the state. A task without `pmx-state` gets its state from its label once. The assignee is the Linear user whose Mac's agent took the task (TASK-9).
 
 The PR link is the last `pmx:pr <url>` line in the issue's comments. Sources are `pmx:source <id>` lines in the description.

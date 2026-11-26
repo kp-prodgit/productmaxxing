@@ -178,7 +178,7 @@ async function act(ctx: Ctx, svc: Services, p: Proposal, task: Task | null): Pro
       return;
     case "start-run": {
       const got = await claim(ctx, svc, task!);
-      if (!got.ok) throw new Error(`claimed by ${got.holder} first`);
+      if (!got.ok) throw new Error("reason" in got && got.reason ? got.reason : `claimed by ${got.holder} first`);
       await runTask(ctx, svc, { ...task!, agent: ctx.agent, status: "claimed" }, got.lease);
       return;
     }
@@ -279,7 +279,7 @@ export async function brainPass(ctx: Ctx, svc: Services, o: { policy: BrainPolic
 
   const { summary, proposals } = parseProposals(result.text);
   receipt.summary = summary;
-  const g: GuardState = { policy: o.policy, team: ctx.team, tasks: byId, paused, killSwitch: ks.on, reviewCount, runsToday, startedThisPass: 0, budgetLeftUsd };
+  const g: GuardState = { policy: o.policy, team: ctx.team, tasks: byId, paused, killSwitch: ks.on, reviewCount, runsToday, startedThisPass: 0, budgetLeftUsd, runs: entries };
   // Decide every proposal first, in order, so the rules see one consistent board; start runs last.
   for (const p of proposals) {
     const { mode, rule } = guard(p, g);

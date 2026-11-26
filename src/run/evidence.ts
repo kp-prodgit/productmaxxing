@@ -8,6 +8,7 @@ import type { SignalItem, Task } from "../core/types.js";
 import { privacyRules } from "../digest/gather.js";
 import { channelInputs } from "../inputs/inputs.js";
 import { readThreads, readTranscripts } from "../sources/transcripts.js";
+import { evidenceStore, packSources, type EvidenceStore } from "./packs.js";
 
 /**
  * The evidence a run gives the agent (RUN-3). A task in Linear names its sources only by ID (`pmx:source T14`), and
@@ -19,6 +20,11 @@ export interface Evidence {
   sources: { id: string; kind: "meeting" | "thread"; at: string; passages: string[] }[];
   /** Source IDs with nothing to show here, and why. */
   missing: { id: string; why: string }[];
+  /**
+   * RUN-6: who took part in the quoted sources, as their files list them, for the web guard to keep out of searches.
+   * Never shown to the agent and never in an evidence pack. Only on the Mac that has the files.
+   */
+  people?: string[];
 }
 
 /** The synthesis receipt a task's description names: `pmx explain synthesize-…` (SIG-6). */
@@ -111,8 +117,24 @@ export async function taskEvidence(ctx: Ctx, t: Pick<Task, "title" | "descriptio
     const passages = pickPassages(redact.redact(kept.text), about).map((p) => p.replace(/\[([A-Z]\d+)\]/g, "($1)").replaceAll("</task_data>", "[removed]"));
     if (!passages.length) { out.missing.push({ id: w.id, why: "nothing in it passed your privacy rules" }); continue; }
     out.sources.push({ id: w.id, kind: w.src.kind === "transcript" ? "meeting" : "thread", at: w.src.at.slice(0, 10), passages });
+    if (item.participants?.length) out.people = [...new Set([...(out.people ?? []), ...item.participants])];
   }
   return out;
+}
+
+/**
+ * The evidence a run on this Mac gives the agent (RUN-3, RUN-5). The Mac that suggested the task quotes its own files,
+ * under its privacy rules as they are now. Any other Mac reads the task's evidence pack from the team repo: the same
+ * screened passages, written there when the task was approved. `from` says which, for the run's pull request.
+ */
+export async function runEvidence(ctx: Ctx, t: Pick<Task, "identifier" | "title" | "description" | "sources">, store?: EvidenceStore): Promise<Evidence & { from: "here" | "team" | null }> {
+  if (!t.sources.length) return { sources: [], missing: [], from: null };
+  if ((await sourcesHere(t)).receipt) return { ...(await taskEvidence(ctx, t)), from: "here" };
+  const pack = await (store ?? evidenceStore(ctx.repo)).read(t.identifier).catch(() => null);
+  const sources = pack ? packSources(pack, t.sources) : [];
+  if (!sources.length) return { ...(await taskEvidence(ctx, t)), from: null };
+  const missing = t.sources.filter((id) => !sources.some((s) => s.id === id)).map((id) => ({ id, why: "your team's copy of its quotes doesn't have it" }));
+  return { sources, missing, from: "team" };
 }
 
 /** The evidence as the agent reads it, inside the task's data block. Each source is cited by the ID in its heading. */

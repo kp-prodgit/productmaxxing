@@ -4,7 +4,8 @@ import { HOLD_LABELS, type HoldReason } from "../core/filter.js";
 import { listReceipts, readReceipt, type RunReceipt } from "../core/receipt.js";
 import { gather } from "../digest/gather.js";
 import { gitMeetingLedger } from "../meetings/git-ledger.js";
-import { planMeetings, startOfDay } from "../meetings/ledger.js";
+import { planMeetings, REACH, startOfDay } from "../meetings/ledger.js";
+import { channelInputs, meetingSeries, NO_SYNTH_MAC } from "../inputs/inputs.js";
 
 /**
  * Where proposed tasks come from, and why there are none (SIG-6). Before 0.25.0 a team with no synthesis Mac chosen
@@ -14,19 +15,22 @@ import { planMeetings, startOfDay } from "../meetings/ledger.js";
  */
 
 /**
- * Whether this Mac proposes tasks. With a synthesis Mac chosen, only that one does, so every call is read once for the
- * whole team. With none chosen, each Mac does from the calls it collected; a meeting two PMs both saved is read once,
- * through the team's meeting record in the PMX repo.
+ * Whether this Mac proposes tasks. With a synthesis Mac chosen, only that one does, from the calls shared with the team
+ * that it collects (COLLECT-4), so each is read once for the whole team. With none chosen, each Mac does from the calls
+ * it collected; a meeting two PMs both saved is read once, through the team's meeting record in the PMX repo.
  */
 export function synthesizesHere(team: Pick<TeamConfig, "synthesizer" | "tracker">, personal: Pick<PersonalConfig, "handle">, agent: string): boolean {
   if (team.tracker.kind === "none") return false;
   return !team.synthesizer || team.synthesizer === agent || team.synthesizer === personal.handle;
 }
 
-/** How far back a run reads: from a day before the last run (the meeting record skips what's done), 7 days before the first, never more than 14. */
+/**
+ * How far back a run reads: from a day before the last run (the meeting record skips what's done), never more than
+ * `REACH.most` (14) days. The first run reads all 14, as far back as this Mac's first collection reached.
+ */
 export function synthWindow(lastSynthAt: string | null, now: Date): { since: Date; days: number } {
-  const floor = startOfDay(now, 14), today = startOfDay(now);
-  let since = lastSynthAt && !Number.isNaN(Date.parse(lastSynthAt)) ? startOfDay(new Date(lastSynthAt), 1) : startOfDay(now, 7);
+  const floor = startOfDay(now, REACH.most), today = startOfDay(now);
+  let since = lastSynthAt && !Number.isNaN(Date.parse(lastSynthAt)) ? startOfDay(new Date(lastSynthAt), 1) : floor;
   if (since < floor) since = floor;
   if (since > today) since = today;
   return { since, days: Math.ceil((now.getTime() - since.getTime()) / 86400000) + 1 };
@@ -53,7 +57,7 @@ export interface SynthStatus {
   meetings: SynthMeeting[];
 }
 
-const DAYS = 14;
+const DAYS = REACH.most;
 const labelOf = (rule: string) => HOLD_LABELS[rule as HoldReason | "all-passages-held"] ?? rule;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** "5 internal-only (no one from outside the company)": how many meetings one rule kept out, in words. */
@@ -87,7 +91,7 @@ export async function synthStatus(ctx: Ctx, o: { local: boolean; receipts: RunRe
     counts: { meetings: 0, pending: 0, read: 0, held: 0 }, heldBy: [], estimateUsd: null, reason: "", meetings: [],
   };
   if (where === "off") return { ...base, reason: "No task tracker is set up, so PMX makes only your own to-dos, which stay on this Mac." };
-  if (where === "elsewhere") return { ...base, reason: `Tasks are suggested on ${ctx.team.synthesizer}, your team's synthesis Mac, so every call is read once for the whole team. This Mac makes your own to-dos.` };
+  if (where === "elsewhere") return { ...base, reason: `Tasks are suggested on ${ctx.team.synthesizer}'s Mac, your team's synthesis Mac. It collects the calls shared with your team in your meeting app and reads each once for everyone; a call you don't share there gives you only to-dos. This Mac makes your own to-dos.` };
 
   // The same reading a run does, without the model: which meetings the privacy filter keeps out, and which the team's
   // meeting record has already seen.
@@ -107,7 +111,7 @@ export async function synthStatus(ctx: Ctx, o: { local: boolean; receipts: RunRe
   let reason: string;
   if (!counts.meetings) reason = `No meetings were collected in the last ${DAYS} days, so there's nothing to suggest tasks from yet. The collection task in your Claude app saves them; check it under Health.`;
   else if (counts.pending) reason = `${plural(counts.pending, "customer meeting")} ${counts.pending === 1 ? "hasn't" : "haven't"} been read for tasks yet. ${o.automatic ? "PMX reads them on its next background run, within 30 minutes, or run it now." : "Automatic runs are off, so they wait until you run it."}${estimateUsd != null ? ` Reading them costs ${usd(estimateUsd)}.` : ""}`;
-  else if (!counts.read) reason = `PMX checked ${plural(counts.meetings, "meeting")} from the last ${DAYS} days and kept all of them out of tasks: ${heldText}. Tasks come only from calls with someone outside your company; these still give you to-dos, which stay on this Mac.`;
+  else if (!counts.read) reason = `PMX checked ${plural(counts.meetings, "meeting")} from the last ${DAYS} days and kept all of them out of tasks: ${heldText}. Tasks come only from calls with someone outside your company${meetingSeries(ctx.team).length ? " and your team's approved meeting series" : ""}; these still give you to-dos, which stay on this Mac.`;
   else reason = `${lastRun ? "The last run" : "PMX"} read ${plural(counts.read, "customer meeting")} from the last ${DAYS} days and found nothing new to suggest.${counts.held ? ` ${plural(counts.held, "other meeting")} ${counts.held === 1 ? "was" : "were"} kept out: ${heldText}.` : ""}`;
 
   const meetings: SynthMeeting[] = o.local ? [
@@ -128,6 +132,24 @@ export function formatSynthStatus(st: SynthStatus, now: Date): string {
   if (!st.automatic) lines.push("Automatic runs are off: `pmx init` turns them on, so PMX suggests tasks every 30 minutes.");
   lines.push("To-dos are different: they come from your own meetings, 1:1s included, and never leave this Mac. Tasks go to Linear only after you approve them.");
   return lines.join("\n");
+}
+
+/**
+ * `pmx status`'s one line on where team tasks and channels are read (INPUT-3, COLLECT-4). Null when there's nothing
+ * to say: no tracker and no approved channels.
+ */
+export function synthesisLine(team: Pick<TeamConfig, "synthesizer" | "tracker" | "inputs" | "slackChannels" | "allowedSources">, personal: Pick<PersonalConfig, "handle">, agent: string): string | null {
+  const channels = channelInputs(team).length > 0;
+  const tasks = team.tracker.kind !== "none";
+  if (!team.synthesizer) {
+    if (channels) return `Synthesis: ✘ ${NO_SYNTH_MAC} (PMX's page: Settings → Sources).${tasks ? " Until then each Mac suggests tasks from its own calls." : ""}`;
+    return tasks ? "Synthesis: each Mac suggests tasks from its own calls; no synthesis Mac chosen (PMX's page: Settings → Sources)" : null;
+  }
+  const here = team.synthesizer === personal.handle || team.synthesizer === agent;
+  // Without a tracker there are no team tasks, and the synthesis Mac collects only its PM's own calls.
+  if (!tasks) return channels ? `Synthesis: your team's channels are read on ${here ? "this Mac" : `${team.synthesizer}'s Mac`}` : null;
+  if (here) return `Synthesis: this Mac, for the whole team: it collects your calls and the ones shared with your team${channels ? ", reads your team's channels" : ""} and suggests tasks from them`;
+  return `Synthesis: on ${team.synthesizer}'s Mac, from the calls shared with your team in your meeting app${channels ? " and your team's channels" : ""}. This Mac makes your own to-dos.`;
 }
 
 /** This Mac's synthesis receipts from the last two weeks, for the cost estimate and the last run. */

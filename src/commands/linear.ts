@@ -7,7 +7,9 @@ import { macKeychain } from "../core/keychain.js";
 import { markTaskRun } from "../core/state.js";
 import { linearAccess } from "../linear/access.js";
 import { linearLogin, linearLogout, readGrant } from "../linear/oauth.js";
-import { checkRelay, readOutbox, readSnapshot, relayPrompt } from "../tracker/relay.js";
+import { shareEvidence } from "../run/share.js";
+import { checkRelay, readOutbox, readSnapshot, relayPrompt, relayTracker } from "../tracker/relay.js";
+import { markTask, tendMarks } from "../lease/marks.js";
 import type { Command } from "./index.js";
 import { services } from "../core/services.js";
 import { WITHDRAWN, writtenByPmx } from "../tracker/tidy.js";
@@ -60,6 +62,12 @@ export const linearCommands: Command[] = [
       if (sub === "relay") {
         if (a.values.check) {
           console.log((await checkRelay(ctx.team, ctx.now())).join("\n"));
+          // PULL-14: this Mac's steps the sync just applied in Linear have landed, so other Macs' copies can show them.
+          if (ctx.team.tracker.kind === "linear") await tendMarks(ctx, relayTracker(ctx.team, () => {}, ctx.now)).catch(() => 0);
+          // RUN-5: a task approved since the last sync now has its identifier, so its quotes can reach the team repo.
+          // Nothing to say when they did; a failure is said once (and notified once).
+          const shared = await shareEvidence(ctx, { say: "notify" }).catch(() => null);
+          for (const n of shared?.notices ?? []) console.log(n);
           await markTaskRun(LINEAR_SYNC_TASK.id, "finish", ctx.now());
           return 0;
         }
@@ -111,7 +119,11 @@ export const linearCommands: Command[] = [
           if (missing.length) throw new Error(`Not something PMX wrote in the PMX project: ${missing.join(", ")}. See them with \`pmx linear written\`.`);
           console.log(`PMX will move ${hit.map((w) => w.identifier).join(", ")} to canceled and replace each description with a short note. Nothing is deleted.`);
           if (!a.values.yes && !(await a.ask.confirm("Withdraw them?", false))) { console.log("Nothing changed."); return 0; }
-          for (const w of hit) await svc.tracker.rewrite(w.id, { description: WITHDRAWN, cancel: true });
+          for (const w of hit) {
+            await svc.tracker.rewrite(w.id, { description: WITHDRAWN, cancel: true });
+            // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it.
+            if (w.kind !== "meeting") await markTask(ctx, svc.tracker, w.identifier, "dropped");
+          }
         }
         console.log(svc.tracker.kind === "claude-relay" ? "Queued. The next \"PMX: sync Linear through Claude\" run applies it in Linear." : "Done in Linear.");
         return 0;

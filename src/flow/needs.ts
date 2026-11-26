@@ -11,6 +11,7 @@ import { engineMine } from "./strategy.js";
  * - the weekly digest, when one waits;
  * - fixes: health problems, plus the setup checklist's next required step when it isn't done (one card);
  * - team settings changes still open;
+ * - N1: kinds of work to turn on, where synthesis suggestions wait for one the team hasn't (unless its change is open);
  * - BOARD-11: on a Mac with PMX Engine, Engine's moves that are the head of product's own, last. Only this Mac's
  *   pages carry Engine (`engine`), so the count Claude reads at the shared level never includes it.
  */
@@ -26,12 +27,14 @@ export interface NeedsYou {
   /** 1 when the checklist's next required step isn't done. */
   setup: number;
   team: number;
+  /** N1: kinds of work synthesis suggestions wait for, whose team change isn't sent yet. */
+  kinds: number;
   /** BOARD-11: PMX Engine's moves that are yours, where Engine is on this Mac. 0 everywhere else. */
   engine: number;
   total: number;
 }
 
-type NeedsData = Pick<PipelineData, "drafts" | "needs" | "health" | "pendingTeam" | "rules"> & Partial<Pick<PipelineData, "stopped" | "digest" | "setup" | "engine">>;
+type NeedsData = Pick<PipelineData, "drafts" | "needs" | "health" | "pendingTeam" | "rules"> & Partial<Pick<PipelineData, "stopped" | "digest" | "setup" | "engine" | "kindsWaiting">>;
 
 export function needsYou(d: NeedsData): NeedsYou {
   const drafts = d.drafts.length;
@@ -45,8 +48,9 @@ export function needsYou(d: NeedsData): NeedsYou {
   const fixes = (d.health.items ?? d.health.problems ?? []).length;
   const setup = d.setup?.next && d.setup.next.required !== false ? 1 : 0;
   const team = d.pendingTeam.length;
+  const kinds = (d.kindsWaiting ?? []).filter((k) => !k.pending).length;
   const engine = engineMine(d.engine).length;
-  return { drafts, paused: reviewCap > 0 && mine >= reviewCap, reviewCap, stopped, proposals, digest, fixes, setup, team, engine, total: drafts + stopped + proposals + digest + fixes + setup + team + engine };
+  return { drafts, paused: reviewCap > 0 && mine >= reviewCap, reviewCap, stopped, proposals, digest, fixes, setup, team, kinds, engine, total: drafts + stopped + proposals + digest + fixes + setup + team + kinds + engine };
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -61,6 +65,7 @@ export function needsLine(n: NeedsYou): string {
     n.fixes ? `${plural(n.fixes, "thing")} to fix` : "",
     n.setup ? "the next setup step" : "",
     n.team ? `${plural(n.team, "team settings change")} waiting` : "",
+    n.kinds ? `${plural(n.kinds, "kind of work", "kinds of work")} to turn on` : "",
     n.engine ? `${plural(n.engine, "step")} in PMX Engine` : "",
   ].filter(Boolean);
   return `Needs you: ${parts.length ? parts.join(", ") : "nothing"}`;

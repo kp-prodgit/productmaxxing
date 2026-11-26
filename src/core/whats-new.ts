@@ -19,6 +19,17 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.37.0", date: "2026-11-26", headline: "Linear that tells the truth, work that follows a draft, and any Mac can draft",
+    items: [
+      { what: "Linear's own state follows PMX: Todo means Ready for agents, a task an agent takes is assigned, and accepted work is Done. Tasks name the customer, deal and deadline, never people, quotes or meeting titles." },
+      { what: "Accepting a draft turns its decisions into your to-dos and its open questions into suggested tasks for your approval. Review without a terminal with --accept, --redo or --reject.", try: "pmx review --accept <task>" },
+      { what: "Any PM's agent can draft a team task: the quotes it cites are shared with your team until it's done. A task one Mac drafted is never drafted again by another." },
+      { what: "Synthesis suggests specs and decision briefs when the team is ready for them, up to 15 tasks a run, with the rest held for the next. Cost estimates come from your own runs." },
+      { what: "Collection reaches back two weeks the first time, the synthesis Mac reads the team's meetings, and to-dos catch more promises while dropping ones a later meeting overtook.", try: "pmx todo --refresh" },
+      { what: "Teams with their own copies of PMX's skills get the new guidance with one reviewed change.", try: "pmx skills update pmx-synthesize pmx-size pmx-todo pmx-competitive" },
+    ],
+  },
+  {
     version: "0.36.0", date: "2026-11-21", headline: "One place for every decision, and no Terminal after install",
     items: [
       { what: "Needs you: every decision waiting for you in one list, drafts to review first, each saying who acts and how long it has waited. Work, Health and My to-dos hold the rest.", try: "pmx status" },
@@ -314,7 +325,7 @@ export async function pendingNotes(o: { installedAt?: string | null } = {}): Pro
 }
 
 /** Commands that never show the notes: machine protocols, the background job, and the ones that handle it themselves. */
-export const QUIET_COMMANDS = new Set(["tick", "mcp", "whats-new", "uninstall", "install"]);
+export const QUIET_COMMANDS = new Set(["tick", "mcp", "whats-new", "uninstall", "install", "hook"]);
 
 /** Shows pending notes once, on stderr so JSON on stdout stays clean, then marks them seen. Never throws. */
 export async function announceOnce(write: (s: string) => void, o: { installedAt?: string | null; pages?: () => Promise<string | null> } = {}): Promise<void> {

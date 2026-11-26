@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { readJson, writeJson } from "./fsutil.js";
 import { paths, TEAM_CONFIG_FILE } from "./paths.js";
 import { SIZES, type Size } from "./types.js";
+import { checkSeries, MAX_SERIES } from "../inputs/inputs.js";
 
 /** Team config, committed to the PMX repo as `pmx.config.json`. Changed only by reviewed PR (NEUT-2). */
 export interface TeamConfig {
@@ -26,6 +27,11 @@ export interface TeamConfig {
    * pool, and a teammate moves it to Ready (APPROVE-1). Changed only by reviewed PR, like the rest of this file.
    */
   approve?: { startNow: boolean } | null;
+  /**
+   * SIG-9: how many tasks one synthesis run may suggest (default 15, at most 30). Needs found beyond it are held over on
+   * the synthesis Mac and offered to the next run first, so a big first run or a busy week doesn't lose them.
+   */
+  synthesis?: { maxTasks?: number } | null;
   /** Domains a run may reach (SEC-3). */
   egress: string[];
   /** Source kinds the team allows at all (B2, default-deny). */
@@ -37,6 +43,13 @@ export interface TeamConfig {
    * collection task through the PM's own connector, never by PMX directly. Changed only by reviewed PR (NEUT-2).
    */
   inputs?: { connector: string; places: string[]; look?: string | null }[] | null;
+  /**
+   * F3 (INPUT-4): recurring internal meetings the team approved for team work, by title pattern ("Launch weekly",
+   * "Exec staff"). A meeting with no one from outside the company whose title contains one feeds synthesis and agents,
+   * through every other privacy rule; held titles, 1:1s and the do-not-read list still win, and the digest never reads
+   * it. Changed only by reviewed PR (NEUT-2), from Settings → Sources like the channels.
+   */
+  meetingSeries?: string[] | null;
   allowPrivateChannels: boolean;
   /** Calls are ingested only when someone outside these domains took part (B2). */
   internalDomains: string[];
@@ -84,9 +97,27 @@ export interface TeamConfig {
    * a permission: anyone can still install Engine on purpose (`pmx install --engine`). Changed only by reviewed PR.
    */
   productLead?: string | null;
+  /**
+   * FOLLOW-1: what accepting a draft leaves for later. On by default: each "PM decides" call in the accepted draft becomes
+   * the accepting PM's private to-do, and each open or blocking question that needs work a suggested task waiting for
+   * their approval. `false` turns it off for the team. Changed only by reviewed PR, like the rest of this file.
+   */
+  followUps?: boolean | null;
 }
 
-export interface TeamCategory { skill: string; externalFacing?: boolean; required?: boolean }
+/**
+ * `web` (RUN-6): the team lets this kind's runs search and read the web. Only the competitive-analysis kind may have it,
+ * and it's off unless set, like every team setting changed only by a code owner's review.
+ */
+export interface TeamCategory { skill: string; externalFacing?: boolean; required?: boolean; web?: boolean }
+
+/** RUN-6: the one kind of work a team may open to the web. */
+export const WEB_KIND = "competitive-analysis";
+
+/** RUN-6: whether a run of this kind of work gets web search, by the team's own setting. */
+export function webOn(team: Pick<TeamConfig, "categories">, category: string | null | undefined): boolean {
+  return category === WEB_KIND && team.categories[category]?.web === true;
+}
 
 /** INSTALL-4: what `productLead` may be: a PMX handle, optionally with the Mac it runs on (an agent handle). */
 export const PRODUCT_LEAD = /^[\w-]{1,32}(@[\w.-]{1,64})?$/;
@@ -96,6 +127,14 @@ export function isProductLead(team: Pick<TeamConfig, "productLead"> | null, pers
   const lead = team?.productLead;
   return !!lead && !!personal && (lead === personal.handle || lead === agentHandle(personal));
 }
+
+/** SIG-9: the default and the ceiling for `synthesis.maxTasks`. */
+export const SYNTH_TASKS = { default: 15, max: 30 } as const;
+
+/** SIG-9: how many tasks one synthesis run may suggest for this team. */
+export const maxTasks = (team: Pick<TeamConfig, "synthesis">): number => team.synthesis?.maxTasks ?? SYNTH_TASKS.default;
+/** FOLLOW-1: whether accepting a draft makes its follow-ups. On unless the team turned it off. */
+export const followUpsOn = (team: Pick<TeamConfig, "followUps">): boolean => team.followUps !== false;
 
 /** APPROVE-3: whether this team offers Start now on proposed tasks. On unless the team turned it off. */
 export const startsNow = (team: Pick<TeamConfig, "approve">): boolean => team.approve?.startNow !== false;
@@ -189,18 +228,22 @@ export const DEFAULT_TEAM: Omit<TeamConfig, "team"> = {
     "validation-plan": { skill: "pmx-validation-plan" },
     "validation-readout": { skill: "pmx-validation-readout" },
     spec: { skill: "pmx-spec" },
+    "decision-brief": { skill: "pmx-decision-brief" },
     "tracking-hygiene": { skill: "pmx-hygiene" },
   },
+  // PULL-13: the starting point until a kind of work has 3 runs at a size to learn from. Today's models drafted M briefs
+  // for $0.08 to $0.10 (and an L analysis for $0.10), so M is $0.10, S half of it, L two and a half times M, XL twice L.
   sizes: {
-    S: { minutes: 15, costUsd: 0.5 },
-    M: { minutes: 30, costUsd: 1.5 },
-    L: { minutes: 60, costUsd: 4 },
-    XL: { minutes: 120, costUsd: 8 },
+    S: { minutes: 15, costUsd: 0.05 },
+    M: { minutes: 30, costUsd: 0.1 },
+    L: { minutes: 60, costUsd: 0.25 },
+    XL: { minutes: 120, costUsd: 0.5 },
   },
   tracker: { kind: "none" },
   lease: "git",
   reviewQueueCap: 3,
   approve: { startNow: true },
+  synthesis: { maxTasks: SYNTH_TASKS.default },
   egress: ["api.anthropic.com", "api.linear.app", "github.com", "api.github.com"],
   allowedSources: ["transcripts"],
   slackChannels: [],
@@ -242,9 +285,24 @@ export function validateTeamConfig(c: TeamConfig): TeamConfig {
   for (const [cat, v] of Object.entries(c.categories ?? {}))
     if (!/^[a-z][a-z0-9-]*$/.test(cat) || !v?.skill) problems.push(`category ${cat} needs a kebab-case name and a skill`);
     else if (v.required !== undefined && typeof v.required !== "boolean") problems.push(`categories.${cat}.required must be true or false`);
+    else if (v.web !== undefined && typeof v.web !== "boolean") problems.push(`categories.${cat}.web must be true or false`);
+    else if (v.web === true && cat !== WEB_KIND) problems.push(`categories.${cat}.web: only the ${WEB_KIND} kind of work may search the web, so take "web" off ${cat}`);
   if (c.reviewQueueCap < 1) problems.push("reviewQueueCap must be at least 1");
   if (c.productLead != null && (typeof c.productLead !== "string" || !PRODUCT_LEAD.test(c.productLead))) problems.push(`productLead must be a PMX handle, like "ana", or null, not ${JSON.stringify(c.productLead)}`);
   if (c.approve != null && (typeof c.approve !== "object" || typeof c.approve.startNow !== "boolean")) problems.push("approve.startNow must be true or false");
+  if (c.synthesis != null) {
+    const n = typeof c.synthesis === "object" ? c.synthesis.maxTasks : undefined;
+    if (typeof c.synthesis !== "object" || (n !== undefined && !(Number.isInteger(n) && n >= 1 && n <= SYNTH_TASKS.max)))
+      problems.push(`synthesis.maxTasks must be a whole number from 1 to ${SYNTH_TASKS.max}, not ${JSON.stringify(n ?? c.synthesis)}`);
+  }
+  if (c.meetingSeries != null) {
+    if (!Array.isArray(c.meetingSeries)) problems.push("meetingSeries must be a list of meeting title patterns, like [\"Launch weekly\"]");
+    else {
+      for (const p of c.meetingSeries) try { checkSeries(p); } catch (e: any) { problems.push(`meetingSeries: ${e.message}`); }
+      if (c.meetingSeries.length > MAX_SERIES) problems.push(`meetingSeries: up to ${MAX_SERIES} series`);
+    }
+  }
+  if (c.followUps != null && typeof c.followUps !== "boolean") problems.push(`followUps must be true or false, not ${JSON.stringify(c.followUps)}`);
   for (const [n, h] of Object.entries(c.skills ?? {})) if (!/^[0-9a-f]{12}$/.test(h)) problems.push(`skills.${n} must be a 12-hex skill hash, not "${h}"`);
   if (problems.length) throw new Error(`pmx.config.json: ${problems.join("; ")}`);
   return c;

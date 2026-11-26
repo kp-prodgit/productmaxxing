@@ -86,6 +86,13 @@ describe("team pull, run and run record (M3)", () => {
     const t = tracker.tasks.get("lin-1")!;
     expect(t.status).toBe("review");
     expect(tracker.comments.get("lin-1")!.at(-1)).toMatch(new RegExp(`^pmx:pr branch:${branch}`));
+    // TASK-10: the comment comes from the draft, not from the agent's last line of output.
+    expect(tracker.comments.get("lin-1")!.at(-1)).toBe([
+      `pmx:pr branch:${branch}`, "Draft ready for review: Draft a one-pager for SCIM sync.", "Admins sync users by hand.", "It leaves 1 open question.",
+      "Read it in the team repo at outputs/spec/PMX-14.md, on ana@m1's Mac until it's accepted.",
+    ].join("\n"));
+    // TASK-9: the agent's PM owns it in the tracker.
+    expect(tracker.assignees.get("lin-1")).toBe("me");
     expect(await svc.lease.list()).toEqual([]);
 
     const files = (await git(repo, "show", "--name-only", "--format=", branch)).split("\n");

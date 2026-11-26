@@ -1,4 +1,4 @@
-import type { TeamConfig } from "../core/config.js";
+import { webOn, type TeamConfig } from "../core/config.js";
 import { envFingerprint, profileChecks } from "../core/profile.js";
 import type { OutputKind } from "../core/skillcheck.js";
 
@@ -26,14 +26,21 @@ export interface RunRecord {
   checklist: { ok: boolean; problems: string[] };
   /** What the run produced and where (JOB-1): a Markdown file, a prototype directory, or a preview URL. */
   artifact: { kind: OutputKind; ref: string };
+  /**
+   * RUN-6: the run could search and read the web (WebSearch, WebFetch), because the team opened its kind of work to it.
+   * Absent for every other run. The profile checks and fingerprint are the web run's own.
+   */
+  web?: boolean;
+  /** RUN-6: how many web calls PMX's web guard blocked in the run, because they carried the task's evidence. */
+  webBlocked?: number;
 }
 
-export async function profileSummary(repoPath: string, team: TeamConfig): Promise<RunRecord["profile"]> {
-  const checks = await profileChecks(team);
+export async function profileSummary(repoPath: string, team: TeamConfig, o: { web?: boolean } = {}): Promise<RunRecord["profile"]> {
+  const checks = await profileChecks(team, o);
   return {
     checksPassed: checks.filter((c) => c.ok).map((c) => c.id),
     checksFailed: checks.filter((c) => !c.ok).map((c) => c.id),
-    fingerprint: await envFingerprint(repoPath, team),
+    fingerprint: await envFingerprint(repoPath, team, o),
   };
 }
 
@@ -58,5 +65,7 @@ export function verifyRecord(r: RunRecord, team: TeamConfig, expectedFingerprint
   if (!r.skill?.version) problems.push("skill version missing");
   if (!r.task?.category || !team.categories[r.task.category]) problems.push(`category ${r.task?.category} not in team config`);
   else if (team.categories[r.task.category]!.skill !== r.skill.name) problems.push(`skill ${r.skill.name} doesn't match category ${r.task.category}`);
+  // RUN-6: a run that used the web must be of a kind the team opened to it, in the settings the PR is judged by.
+  if (r.web === true && !webOn(team, r.task?.category)) problems.push(`the run used the web, but your team's settings don't open ${r.task?.category} to it`);
   return { ok: problems.length === 0, problems };
 }

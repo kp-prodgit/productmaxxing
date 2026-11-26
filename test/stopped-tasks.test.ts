@@ -167,10 +167,11 @@ describe("the stopped-task card on PMX's page (PULL-12)", () => {
     expect(ui.text("#toast")).toMatch(/Trying PMX-19 again\. It goes back to Ready at the next Linear sync, with its count of failed runs started over\./);
     await ui.until(() => ui!.posts.some((p) => p[0] === "stopped"), "Try again to be sent", 8000);
     expect(ui.posts.find((p) => p[0] === "stopped")![1]).toEqual({ identifier: "PMX-19", action: "retry" });
-    await eventually(async () => (await readOutbox()).ops.some((o: any) => o.kind === "set-label" && o.value === "ready"), "the task to go back to Ready");
+    await eventually(async () => (await readOutbox()).ops.some((o: any) => o.kind === "set-status" && o.value === "ready" && o.state === "unstarted"), "the task to go back to Ready");
     const ops = (await readOutbox()).ops as any[];
     expect(ops.filter((o) => o.kind === "comment").map((o) => o.body)).toEqual([expect.stringMatching(/^Try again: .* moved PMX-19 back to Ready after 2 runs in a row without a draft\./)]);
-    expect(ops.find((o) => o.kind === "set-label")).toMatchObject({ target: "PMX-19", group: "pmx-status", value: "ready" });
+    // TASK-7: the label and Linear's own state go back together, in one save.
+    expect(ops.find((o) => o.kind === "set-status")).toMatchObject({ target: "PMX-19", value: "ready", state: "unstarted" });
     await ui.until(() => !card(ui!), "the card to go");
   }, 30000);
 

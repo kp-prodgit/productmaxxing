@@ -36,13 +36,15 @@ import { AUTO_STEPS } from "../core/upgrade.js";
 import { formatChecklist, type Checklist, type Step } from "../setup/checklist.js";
 import { gatherChecklist } from "../setup/gather.js";
 import { syncOrgSkills, validateOrgSkill } from "../core/org-skills.js";
+import { checkChange, describe as describeChange, proposeTeamChanges } from "../flow/actions.js";
+import { rememberTeamPr } from "../flow/team-prs.js";
 import { enqueueSkillDoc } from "../tracker/relay.js";
 import { linearAccess } from "../linear/access.js";
 import { readFile } from "node:fs/promises";
 import { formatReceipt, formatSkills } from "../explain/format.js";
 import { resolveLive } from "../explain/resolve.js";
 import { startExplainServer } from "../explain/server.js";
-import { pullStep, releaseStep, synthStep, teamCommands } from "./team.js";
+import { evidenceTickStep, pullStep, releaseStep, synthStep, teamCommands } from "./team.js";
 import { reviewCommand } from "./review.js";
 import { cloudCommands } from "./cloud.js";
 import { companyStep, meetingCommands, todoStep } from "./meetings.js";
@@ -56,6 +58,7 @@ import { settingsCommands } from "./settings.js";
 import { jobsCommands } from "./jobs.js";
 import { loadFlowGraph } from "../flow/graph-load.js";
 import { syncAnalytics } from "../cloud/account.js";
+import { webGuardHook } from "../run/web-guard.js";
 
 export interface RunArgs {
   values: Record<string, any>;
@@ -63,6 +66,8 @@ export interface RunArgs {
   ask: Asker;
   ctx: () => Promise<Ctx>;
   cliPath: string;
+  /** Whether a person can answer prompts here (stdin is a terminal). Tests set it; absent, commands read process.stdin. */
+  tty?: boolean;
 }
 
 export interface Command {
@@ -85,6 +90,7 @@ export const tickSteps: [string, TickStep][] = [
   ["release", releaseStep],
   ["synthesize", synthStep],
   ["company", companyStep],
+  ["evidence", evidenceTickStep],
   ["pull", pullStep],
   ["events", syncAnalytics],
 ];
@@ -328,6 +334,23 @@ export const commands: Command[] = [
     },
   },
   {
+    // RUN-6: Claude Code runs this, never a person: the PreToolUse hook a web run's settings name for WebSearch and
+    // WebFetch. It reads the call on stdin, needs no config, and exits 2 to block.
+    name: "hook",
+    summary: "Claude Code's hook for a web run (web-guard): blocks a search or page that carries the task's evidence",
+    usage: "pmx hook web-guard < tool-call.json",
+    options: {},
+    async run(a) {
+      if (a.positionals[0] !== "web-guard") { process.stderr.write("pmx hook: the only hook is web-guard.\n"); return 2; }
+      const chunks: Buffer[] = [];
+      for await (const c of process.stdin) chunks.push(c as Buffer);
+      const r = await webGuardHook(Buffer.concat(chunks).toString("utf8"));
+      if (r.stdout) process.stdout.write(r.stdout);
+      if (r.stderr) process.stderr.write(r.stderr);
+      return r.code;
+    },
+  },
+  {
     name: "tick",
     summary: "One background run (launchd starts one every 30 minutes)",
     options: {},
@@ -377,7 +400,7 @@ export const commands: Command[] = [
   {
     name: "skills",
     summary: "List the Claude skills PMX can use; `sync` copies your org's skills from Linear, `publish` shares one with the team",
-    usage: "pmx skills [--json] | pmx skills sync [--from <dir>] | pmx skills publish <name>",
+    usage: "pmx skills [--json] | pmx skills update <pmx-skill …> | pmx skills sync [--from <dir>] | pmx skills publish <name>",
     options: { json: { type: "boolean" }, from: { type: "string" } },
     async run(a) {
       if (a.positionals[0] === "sync") {
@@ -407,7 +430,29 @@ export const commands: Command[] = [
         console.log(`Queued "${name}" to publish as the Linear document "pmx-skill:${name}". The next "PMX: sync Linear through Claude" run uploads it; teammates then get it with \`pmx skills sync\`.`);
         return 0;
       }
-      if (a.positionals[0]) throw new Error(`Unknown subcommand "${a.positionals[0]}". Use sync or publish.`);
+      if (a.positionals[0] === "update") {
+        // CAT-8: a team keeps its copies of PMX's skills until it asks for this pmx's, in a pull request a code owner reviews.
+        const ctx = await a.ctx();
+        const names = [...new Set(a.positionals.slice(1))];
+        const differ = (await skillInventory(ctx.personal.repoPath, ctx.team.categories)).filter((s) => s.status === "differs from built-in").map((s) => s.name);
+        if (!names.length) {
+          console.log(differ.length
+            ? `Your team's copies that differ from this PMX's: ${differ.join(", ")}.\nSend this PMX's to your team: pmx skills update ${differ.join(" ")}`
+            : "Your team's copies of PMX's skills match this PMX's.");
+          return 0;
+        }
+        const changes = names.map((name) => checkChange({ kind: "skill-update", name }, ctx.team));
+        const pr = await proposeTeamChanges(ctx, changes);
+        await rememberTeamPr({ id: pr.id, url: pr.url, at: ctx.now().toISOString(), changes: changes.map(describeChange) });
+        console.log([
+          `Sent this PMX's ${names.join(", ")} to your team for approval: ${pr.url}`,
+          "",
+          "If your team edited one of these, the pull request's diff shows what would change; keep your edits by editing it before it merges.",
+          names.includes("pmx-size") ? "Your size rubric keeps every row your team has, and gains PMX's new ones." : null,
+        ].filter((l) => l !== null).join("\n"));
+        return 0;
+      }
+      if (a.positionals[0]) throw new Error(`Unknown subcommand "${a.positionals[0]}". Use update, sync or publish.`);
       const personal = await loadPersonalConfig();
       const team = await loadTeamConfig(personal.repoPath);
       const skills = await skillInventory(personal.repoPath, team.categories);

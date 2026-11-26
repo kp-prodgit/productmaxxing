@@ -1,4 +1,5 @@
 import type { Size, Status, Task } from "../core/types.js";
+import { followState, STATE_FOR, typeOf, type StateType } from "./states.js";
 
 export interface NewTask {
   title: string;
@@ -45,6 +46,11 @@ export interface NewMeeting {
  */
 export interface Tracker {
   readonly kind: string;
+  /**
+   * When what `list` returns was read from the tracker, for a tracker that reads a copy (the Claude relay's snapshot).
+   * Absent: it reads the tracker itself, so now. RUN-5 removes a dropped task's evidence pack only once this is newer.
+   */
+  syncedAt?(): Promise<string | null>;
   list(o?: { status?: Status[] }): Promise<Task[]>;
   get(id: string): Promise<Task>;
   /**
@@ -52,8 +58,28 @@ export interface Tracker {
    * it with Start now (`ready`, APPROVE-3).
    */
   createInbox(t: NewTask): Promise<Task>;
+  /**
+   * Sets PMX's status label and, in the same save, moves the issue to the matching workflow state (TASK-7), marking it
+   * as one PMX keeps in step. Blocked leaves the state where it is.
+   */
   setStatus(id: string, status: Status): Promise<void>;
+  /**
+   * The agent that took the task (pmx-agent label). With a handle, the issue is also assigned to the tracker user this
+   * Mac acts as (TASK-9): through the relay, the PM's own Linear connector ("me"); with a key, the key's own user.
+   * Clearing it unassigns, but only when that user is still the assignee: a person's own assignment stays.
+   */
   setAgent(id: string, agent: string | null): Promise<void>;
+  /**
+   * TASK-8: follows a person's move in the tracker. Only while the label still says `from` and the state is still of
+   * type `type`, it rewrites the label to `to`, records `type` as the state PMX knows, and adds `comment`; otherwise
+   * nothing (another Mac followed it first).
+   */
+  follow(id: string, f: { from: Status; to: Status; type: string; comment: string }): Promise<void>;
+  /**
+   * TASK-8: the label decides. Only while the state type and the recorded one are still as PMX read them (`seen`), it
+   * moves the state to the one for `status` and records it. No comment. False when there was nothing it could do.
+   */
+  align(id: string, status: Status, seen: { type: string; recorded: string | null }): Promise<boolean>;
   setSize(id: string, size: Size): Promise<void>;
   /** The kind of work (pmx-category label). Only a PM moving work between their to-dos and the team's tasks calls it. */
   setCategory(id: string, category: string): Promise<void>;
@@ -82,8 +108,29 @@ export const meetingDescription = (m: NewMeeting) =>
   [`PMX processed a meeting on ${m.at} and marks it here so no teammate processes it twice (MEET-2). Not a task, and it holds no meeting details.`, ``, `Processed by: ${m.agent}`, ``, ...m.keys.map((k) => `pmx:meeting ${k}`)].join("\n");
 
 /** An in-memory tracker for tests, demos and teams that haven't connected Linear yet. */
-export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string, Task>; comments: Map<string, string[]>; meetings: Map<string, MeetingEntry> } {
-  const tasks = new Map(seed.map((t) => [t.id, { ...t }]));
+/**
+ * A task's status as PMX should see it, from its label and its workflow state (TASK-8): the shared rules in
+ * states.ts, so the memory tracker, the Linear API and the Claude relay agree.
+ */
+export function withWorkflow<T extends Pick<Task, "status">>(t: T, w: { type: string; name: string; recorded: string | null } | null | undefined): T & { workflow?: Task["workflow"] } {
+  if (!w?.type) return t;
+  const f = followState(t.status, w.type, w.recorded);
+  const workflow = { type: w.type, name: w.name, recorded: w.recorded, label: t.status, ...(f.kind === "leave" ? { held: f.why } : f.kind === "drop" ? { held: "canceled in Linear" } : {}), ...(f.kind === "align" ? { align: true } : {}) };
+  return { ...t, ...(f.kind === "follow" ? { status: f.to } : {}), workflow };
+}
+
+/** The workflow state names a memory tracker uses for each type, like a new Linear team's. */
+const STATE_NAMES: Record<StateType, string> = { triage: "Triage", backlog: "Backlog", unstarted: "Todo", started: "In Progress", completed: "Done", canceled: "Canceled" };
+
+/**
+ * An in-memory tracker for tests, demos and teams that haven't connected Linear yet. A task created here, or seeded
+ * with a `workflow`, also has a workflow state that follows its status like Linear's (TASK-7), with the type PMX
+ * recorded; `workflow` holds both, so a test can move the state as a person would, or the label as an older Mac would. `assignees` is who each task is assigned to ("me": the Mac's own user).
+ */
+export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string, Task>; comments: Map<string, string[]>; meetings: Map<string, MeetingEntry>; workflow: Map<string, { type: string; name: string; recorded: string | null }>; assignees: Map<string, string | null> } {
+  const tasks = new Map(seed.map((t) => { const { workflow: _w, ...rest } = t; return [t.id, { ...rest } as Task]; }));
+  const workflow = new Map(seed.filter((t) => t.workflow).map((t) => [t.id, { type: t.workflow!.type, name: t.workflow!.name, recorded: t.workflow!.recorded }]));
+  const assignees = new Map<string, string | null>();
   const meetings = new Map<string, MeetingEntry>();
   const comments = new Map<string, string[]>();
   let n = seed.length;
@@ -92,16 +139,28 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
     if (!t) throw new Error(`No task ${id} in the PMX project.`);
     return t;
   };
+  const view = (t: Task): Task => withWorkflow({ ...t }, workflow.get(t.id));
+  const moveTo = (id: string, status: Status) => {
+    const target = STATE_FOR[status];
+    const w = workflow.get(id);
+    if (!w || !target) return;
+    const type = typeOf(target);
+    const name = target === "review" ? "In Review" : STATE_NAMES[type];
+    if (w.type !== type || (target === "review" && w.name !== name)) Object.assign(w, { type, name });
+    w.recorded = w.type;
+  };
   return {
     kind: "memory",
     tasks,
     comments,
     meetings,
+    workflow,
+    assignees,
     async list(o) {
-      return [...tasks.values()].filter((t) => !o?.status || (t.status !== null && o.status.includes(t.status))).map((t) => ({ ...t }));
+      return [...tasks.values()].map(view).filter((t) => t.workflow?.type !== "canceled").filter((t) => !o?.status || (t.status !== null && o.status.includes(t.status)));
     },
     async get(id) {
-      const t = must(id);
+      const t = view(must(id));
       return { ...t, prUrl: [...(comments.get(id) ?? [])].reverse().map((c) => c.match(/^pmx:pr (\S+)/m)?.[1]).find(Boolean) ?? t.prUrl };
     },
     async createInbox(t) {
@@ -112,10 +171,31 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
         createdAt: new Date().toISOString(), ...(t.theme ? { theme: t.theme } : {}),
       };
       tasks.set(id, task);
-      return { ...task };
+      workflow.set(id, { type: "backlog", name: STATE_NAMES.backlog, recorded: "backlog" });
+      moveTo(id, task.status!);
+      return view(task);
     },
-    async setStatus(id, status) { must(id).status = status; },
-    async setAgent(id, agent) { must(id).agent = agent; },
+    async setStatus(id, status) { must(id).status = status; moveTo(id, status); },
+    async setAgent(id, agent) {
+      must(id).agent = agent;
+      if (agent) assignees.set(id, "me");
+      else if (assignees.get(id) === "me") assignees.set(id, null);
+    },
+    async follow(id, f) {
+      const t = must(id);
+      const w = workflow.get(id);
+      if (t.status !== f.from || w?.type !== f.type) return;
+      t.status = f.to;
+      w.recorded = w.type;
+      comments.set(id, [...(comments.get(id) ?? []), f.comment]);
+    },
+    async align(id, status, seen) {
+      const w = workflow.get(id);
+      if (!w || w.type !== seen.type || w.recorded !== seen.recorded) return false;
+      moveTo(id, status);
+      w.recorded = w.type;
+      return true;
+    },
     async setSize(id, size) { must(id).size = size; },
     async setCategory(id, category) { must(id).category = category; },
     async setPriority(id, priority) { must(id).priority = priority; },

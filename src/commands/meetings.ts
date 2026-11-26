@@ -1,13 +1,13 @@
 import { COLLECT_TASK, outsideHours, taskDue } from "../claude/tasks.js";
-import { checkCollected, collectPrompt, ensureCollectFolder } from "../collect/collect.js";
+import { checkCollected, collectPrompt, collectScope, ensureCollectFolder } from "../collect/collect.js";
 import { rollup } from "../company/rollup.js";
 import { savePersonalConfig } from "../core/config.js";
 import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { loadState, markTaskRun } from "../core/state.js";
-import { localDay } from "../meetings/ledger.js";
+import { localDay, REACH } from "../meetings/ledger.js";
 import { moveWork, type Place } from "../todo/move.js";
-import { completeTodo, formatTodos, loadTodos, refreshTodos, sendTodoToLinear, TODO_DAYS, TODO_MAX_DAYS, todoPeriod, todosInPeriod } from "../todo/todo.js";
+import { completeTodo, formatTodos, loadTodos, refreshTodos, sendTodoToLinear, TODO_BATCH, TODO_DAYS, TODO_MAX_DAYS, todoPeriod, todosInPeriod } from "../todo/todo.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
 
@@ -32,7 +32,7 @@ export const meetingCommands: Command[] = [
           await markTaskRun(COLLECT_TASK.id, "finish", ctx.now());
           return 0;
         }
-        console.log(await collectPrompt(ctx, { scope: a.values.team ? "team" : "mine" }));
+        console.log(await collectPrompt(ctx, { scope: collectScope(ctx, !!a.values.team) }));
         await markTaskRun(COLLECT_TASK.id, "start", ctx.now());
         return 0;
       }
@@ -41,10 +41,12 @@ export const meetingCommands: Command[] = [
       console.log([
         "PMX doesn't hold connector access. A scheduled task in your Claude app does the collecting, with the connectors you already have:",
         '  "Every day at 12:30 and 17:30: run `pmx collect --prompt` and follow its instructions." (On weekdays only, unless you choose around the clock.)',
-        "Add `--team` on the synthesizer's machine to collect meetings shared with your team, not just yours.",
+        collectScope(ctx) === "team"
+          ? "This is your team's synthesis Mac, so it also collects the meetings shared with your team, not just yours: it suggests tasks from them for everyone."
+          : "On your team's synthesis Mac it also collects the meetings shared with your team. (`--team` asks for them on any Mac.)",
         "",
         `Transcripts land in ${ctx.personal.sources.transcriptDirs.at(-1)}${added ? " (just added to your transcript folders)" : ""}.`,
-        `Last collected: ${s.lastCollectAt ?? "never"}.`,
+        `Last collected: ${s.lastCollectAt ?? `never. The first collection reaches back ${REACH.most} days for meetings and ${REACH.threads} for your team's channels`}.`,
       ].join("\n"));
       return 0;
     },
@@ -93,7 +95,7 @@ export const meetingCommands: Command[] = [
         if (period.days === Infinity) throw new Error(`--refresh reads at most ${TODO_MAX_DAYS} days of meetings. Try --days ${TODO_MAX_DAYS}.`);
         const since = period.since;
         const r = await refreshTodos(ctx, { since, dryRun: a.values["dry-run"] });
-        console.log(`Meetings since ${localDay(since)}: ${r.meetings.read} read now, ${r.meetings.alreadyRead} already read for to-dos.`);
+        console.log(`Meetings since ${localDay(since)}: ${r.meetings.read} read now${r.calls > 1 ? ` (${r.calls} Claude calls, up to ${TODO_BATCH} meetings each)` : ""}, ${r.meetings.alreadyRead} already read for to-dos.`);
         if (!r.meetings.read && !period.chosen) console.log(`The last ${TODO_DAYS} days are read by default. For earlier meetings: pmx todo --refresh --days 30`);
         console.log(r.added.length ? `${a.values["dry-run"] ? "Would add" : "Added"} ${r.added.length} to-do(s):\n${formatTodos(r.added)}` : "No new to-dos.");
         if (r.receiptId) console.log(`See how each meeting was read: pmx explain ${r.receiptId}`);

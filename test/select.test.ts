@@ -60,9 +60,10 @@ describe("pull policy and dry-run explanations (PULL-1..4, PULL-9)", () => {
 
   it("won't start L or XL close to the budget reset, or tasks that cost more than what's left", () => {
     const i = input({ tasks: [task("T1", { size: "XL" }), task("T2", { size: "L" }), task("T3", { size: "S" })] });
-    i.budget = { ...i.budget, minutesToReset: 45, remainingUsd: 5 };
+    i.budget = { ...i.budget, minutesToReset: 45, remainingUsd: 0.3 };
     const s = selectTasks(i);
-    expect(s.decisions.find((d) => d.task.id === "T1")!.why).toMatch(/needs ~\$8\.00, \$5\.00 left/);
+    // PULL-13: no runs to learn from yet, so the team's size table is the estimate, and the reason says so.
+    expect(s.decisions.find((d) => d.task.id === "T1")!.why).toMatch(/needs about \$0\.50, from your team's size table; \$0\.30 left today/);
     expect(s.decisions.find((d) => d.task.id === "T2")!.why).toMatch(/only 45 min until the budget resets/);
     expect(s.candidates.map((t) => t.id)).toEqual(["T3"]);
   });

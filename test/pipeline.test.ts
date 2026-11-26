@@ -303,7 +303,13 @@ describe("0.18.0: the board maps each category end to end (CAT-1)", () => {
       env: { kind: "document", tools: ["Read", "Write", "Edit", "Glob", "Grep"], output: "file" }, envProblems: [],
       output: "outputs/spec/{id}.md", sections: ["Problem", "Evidence"], minCitations: 2, externalFacing: false,
       required: false, custom: false, propose: null,
-      sizes: { S: { minutes: 15, usd: 0.5, text: "a" }, M: { minutes: 30, usd: 1.5, text: "b" }, L: { minutes: 60, usd: 4, text: "c" }, XL: { minutes: 120, usd: 8, text: "d" } },
+      sizes: {
+        S: { minutes: 15, usd: 0.5, text: "a", estimate: { usd: 0.5, basis: "table", runs: 0, text: "about $0.50, from your team's size table" } },
+        // PULL-13: one run so far, cheaper than the table: the table stays the estimate until there are three.
+        M: { minutes: 30, usd: 1.5, text: "b", estimate: { usd: 1.5, basis: "table", runs: 1, text: "about $1.50, from your team's size table (1 run so far; PMX learns from 3)" } },
+        L: { minutes: 60, usd: 4, text: "c", estimate: { usd: 4, basis: "table", runs: 0, text: "about $4.00, from your team's size table" } },
+        XL: { minutes: 120, usd: 8, text: "d", estimate: { usd: 8, basis: "table", runs: 0, text: "about $8.00, from your team's size table" } },
+      },
       takenOn: true, paused: null,
       tasks: { proposed: 1, inbox: 1, ready: 1, working: 0, review: 1, done: 0, blocked: 0 },
       runs: { n: 1, drafts: 1 },

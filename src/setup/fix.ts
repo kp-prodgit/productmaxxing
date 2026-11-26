@@ -155,6 +155,7 @@ export const FIXES: Record<string, Fix> = {
   "update.app-skills": { asks: never, run: (d) => autoStep(AUTO("app-skills"), d) },
   "update.mcp-entry": { asks: never, run: (d) => autoStep(AUTO("mcp-entry"), d) },
   "update.background-job": { asks: ask("rewrite PMX's background job with this PMX, today's Node and Claude Code"), run: (d) => autoStep(AUTO("background-job"), d) },
+  "update.evidence-backfill": { asks: never, run: (d) => autoStep(AUTO("evidence-backfill"), d) },
 };
 
 export interface FixResult { status: number; message: string; done?: boolean }

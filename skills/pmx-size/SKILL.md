@@ -27,6 +27,7 @@ Size is the expected agent effort to produce a reviewable draft, not the enginee
 | build-brief | A change to an existing prototype | A new single-workflow product | Several workflows or a real integration | Needs buyer data, a security review and several integrations |
 | validation-plan | One account, one ask | A handful of accounts in one segment | Several segments, with pricing options | A pilot programme with procurement packs |
 | validation-readout | One account's outcome | One segment's results | Several segments with iteration history | A full programme with a case for production |
+| decision-brief | One choice between two options from 1–2 sources | One decision with a date, two to four options across 3–8 sources | A decision across segments or teams, with the commitments at stake weighed | Several linked decisions; split it if you can |
 
 When unsure between two sizes, pick the larger one.
 

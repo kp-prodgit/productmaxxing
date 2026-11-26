@@ -1,7 +1,7 @@
 ---
 name: pmx-problem-brief
 description: Problem brief. States one customer problem from the evidence in a PMX task: who has it, how often, what it costs them, what they've asked for, and whether they would pay to have it solved.
-pmx: {"kind": "category", "category": "problem-brief", "stage": "identify", "output": "outputs/problem-brief/{id}.md", "requiredHeadings": ["Problem", "Who has it", "Evidence", "How much it matters", "What they've asked for", "Signals they'd pay", "Open questions"], "minCitations": 3}
+pmx: {"kind": "category", "category": "problem-brief", "stage": "identify", "output": "outputs/problem-brief/{id}.md", "requiredHeadings": ["Problem", "Who has it", "Evidence", "How much it matters", "What they've asked for", "Signals they'd pay", "Open questions"], "minCitations": 3, "propose": {"when": "A customer need that's new to the team, where who has it, how often and what it costs them still need stating.", "not": "The requirements are already in writing or the scope is agreed: that's a spec."}}
 ---
 
 # Problem brief

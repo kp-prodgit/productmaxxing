@@ -183,7 +183,7 @@ describe("moving work through the Claude relay (LINEAR-2)", () => {
     const ops = (await readOutbox()).ops.map(({ id, at, ...o }) => o);
     expect(ops.slice(0, 3)).toEqual([
       { kind: "set-label", target: "PMX-5", group: "pmx-category", value: COMMITMENT },
-      { kind: "set-label", target: "PMX-5", group: "pmx-status", value: "inbox" },
+      { kind: "set-status", target: "PMX-5", value: "inbox", state: "backlog" },
       { kind: "comment", target: "PMX-5", body: "ana took this as their own to-do. Agents don't pick it up." },
     ]);
     expect(ops[3]).toMatchObject({ kind: "create-task", category: COMMITMENT, title: "Ask finance about the discount" });

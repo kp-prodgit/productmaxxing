@@ -29,14 +29,14 @@ describe("0.25.0: tasks are proposed without anyone running pmx synthesize (SIG-
     expect(synthesizesHere({ synthesizer: null, tracker: { kind: "none" } }, me, "ana@m1")).toBe(false);
   });
 
-  it("each run reads from a day before the last one, 7 days the first time, never more than 14", () => {
+  it("each run reads from a day before the last one, 14 days the first time (what the first collection brought in), never more than 14", () => {
     const day = (d: Date) => d.toISOString().slice(0, 10);
     const local = (iso: string) => { const d = new Date(iso); d.setHours(0, 0, 0, 0); return d; };
-    expect(synthWindow(null, NOW).since.getTime()).toBe(local("2026-11-05T12:00:00").getTime());
+    expect(synthWindow(null, NOW).since.getTime()).toBe(local("2026-10-29T12:00:00").getTime());
     expect(synthWindow("2026-11-10T09:00:00Z", NOW).since.getTime()).toBe(local("2026-11-09T12:00:00").getTime());
     expect(synthWindow("2026-09-01T09:00:00Z", NOW).since.getTime()).toBe(local("2026-10-29T12:00:00").getTime());
     expect(day(synthWindow("2026-11-12T14:00:00Z", NOW).since)).toBe(day(local("2026-11-11T12:00:00")));
-    expect(synthWindow(null, NOW).days).toBeGreaterThanOrEqual(8);
+    expect(synthWindow(null, NOW).days).toBeGreaterThanOrEqual(15);
   });
 
   it("says why no task is waiting: meetings not read yet, with a cost, or every meeting kept out, by rule", async () => {
@@ -64,7 +64,7 @@ describe("0.25.0: tasks are proposed without anyone running pmx synthesize (SIG-
     expect((await synthStatus(ctx, { local: false, receipts: [], automatic: true, lastSynthAt: null })).meetings).toEqual([]);
 
     const elsewhere = await testCtx({ repo, now: NOW, team: { tracker: LINEAR, synthesizer: "bo" }, personal: { sources: { transcriptDirs: [dir], slackChannel: null } } });
-    expect((await synthStatus(elsewhere, { local: true, receipts: [], automatic: true, lastSynthAt: null })).reason).toMatch(/suggested on bo, your team's synthesis Mac/);
+    expect((await synthStatus(elsewhere, { local: true, receipts: [], automatic: true, lastSynthAt: null })).reason).toMatch(/suggested on bo's Mac, your team's synthesis Mac\. It collects the calls shared with your team in your meeting app and reads each once for everyone; a call you don't share there gives you only to-dos\./);
     const none = await testCtx({ repo, now: NOW, personal: { sources: { transcriptDirs: [dir], slackChannel: null } } });
     expect((await synthStatus(none, { local: true, receipts: [], automatic: true, lastSynthAt: null })).where).toBe("off");
   });

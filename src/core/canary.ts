@@ -29,8 +29,9 @@ function canaries(r: FilterRules): Canary[] {
   const list: Canary[] = [
     { name: "1:1 title", expect: { item: "one-on-one" }, applies: (x) => !x.allowOneOnOne,
       item: { title: `1:1 Alex / Jordan ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk("How is the roadmap going?") } },
-    // Without a company domain the run holds every meeting, which also holds this one.
-    { name: "internal-only meeting", expect: { item: ["no-external-participant", "no-company-domain"] }, applies: (x) => x.requireExternalParticipant,
+    // Without a company domain the run holds every meeting, which also holds this one. Two people are a 1:1 even when
+    // the title matches one of the team's approved series (F3).
+    { name: "internal-only meeting", expect: { item: ["no-external-participant", "no-company-domain", "one-on-one"] }, applies: (x) => x.requireExternalParticipant,
       item: { title: `Team sync ${CANARY_MARKER}`, at, participants: [inside, `lead@${r.internalDomains[0] ?? "company.example"}`], text: talk("Let's review the launch checklist.") } },
     { name: "two-person 1:1", expect: { item: ["one-on-one", "no-company-domain"] }, applies: (x) => !x.allowOneOnOne,
       item: { title: `Alex / Jordan`, at, participants: [OUTSIDE, inside], text: talk(`How is the roadmap going? ${CANARY_MARKER}`) } },
@@ -46,6 +47,15 @@ function canaries(r: FilterRules): Canary[] {
   // A thread from a place nobody approved (INPUT-1), whenever this run reads threads.
   if (r.approvedPlace) list.push({ name: "unapproved channel", expect: { item: "place-not-approved" }, applies: () => true, kind: "thread",
     item: { title: "#pmx-canary-unapproved", at, participants: [OUTSIDE], text: `Lee: Please add SCIM. ${CANARY_MARKER}`, origin: { source: "slack", sourceId: "canary" }, place: "#pmx-canary-unapproved" } });
+  // F3: a meeting in the team's first approved series is read, and still loses its pay passage; a 1:1 named like it is held.
+  const series = r.meetingSeries?.[0];
+  if (series && r.requireExternalParticipant) {
+    const three = [inside, `lead@${r.internalDomains[0] ?? "company.example"}`, `pm@${r.internalDomains[0] ?? "company.example"}`];
+    list.push({ name: "pay passage in a team meeting series", expect: { passage: "compensation" }, applies: () => true,
+      item: { title: `${series} ${CANARY_MARKER}`, at, participants: three, text: talk(`Your salary band moves next quarter. ${CANARY_MARKER}`) } });
+    list.push({ name: "1:1 named like a team meeting series", expect: { item: ["one-on-one", "no-company-domain"] }, applies: () => true,
+      item: { title: `1:1 ${series} ${CANARY_MARKER}`, at, participants: three, text: talk("How is the roadmap going?") } });
+  }
   // The PM's own do-not-read list, used in memory only: the first title and the first person on it.
   const title = r.neverIngest.meetingTitles[0];
   if (title) list.push({ name: "do-not-read title", expect: { item: "never-ingest" }, applies: () => true,
@@ -60,8 +70,12 @@ function canaries(r: FilterRules): Canary[] {
 export function runCanaries(r: FilterRules): { total: number; held: number; failed: string[] } {
   const list = canaries(r).filter((c) => c.applies(r));
   const failed: string[] = [];
+  // For the PM's own to-dos, each canary meeting is one the PM was in, so what must stop it is its topic, not that
+  // they weren't there (COLLECT-4).
+  const me = r.attendedBy ? r.attendedBy.emails[0] ?? r.attendedBy.names[0] : undefined;
   for (const [i, c] of list.entries()) {
     const item: SignalItem = { ...c.item, id: `C${i + 1}`, kind: c.kind ?? "transcript", ref: `canary:${i}` };
+    if (me && item.kind === "transcript") item.participants = [...item.participants, me];
     const d = filterItems([item], r).decisions[0];
     const ok = "item" in c.expect
       ? d?.decision === "held" && [c.expect.item].flat().includes(d.rule as HoldReason)

@@ -30,7 +30,12 @@ export type RunLogEntry =
   | ({ type: "drop"; taskId: string } & Base)
   | ({ type: "unpause"; category: string } & Base)
   /** The brain paused a category (BRAIN-2). `rule` is its fixed rule ID; `pmx review --unpause` lifts it. */
-  | ({ type: "pause"; category: string; by: "brain"; rule: string } & Base);
+  | ({ type: "pause"; category: string; by: "brain"; rule: string } & Base)
+  /**
+   * RUN-5: a task's evidence pack was written to the team repo's `pmx/evidence` branch ("shared"), or removed because
+   * its task is done or was dropped. IDs only, like every entry.
+   */
+  | ({ type: "evidence"; taskId: string; action: "shared" | "removed"; reason?: "done" | "dropped" } & Base);
 
 interface Base {
   ts: string;

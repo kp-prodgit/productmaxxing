@@ -31,7 +31,7 @@ describe("PMX's page shows where this Mac stands (SETUP-1)", () => {
     expect(ui.text("#setup-summary")).toMatch(/Next: PMX's own Claude profile is signed in\. Only you can sign in PMX's own Claude profile, once\. In the Claude app, type \/pmx-setup and Claude shows you how\./);
     await ui.click(ui.button("See every step", "main"));
     await ui.until(() => ui!.$("#setup-work"), "the steps");
-    expect(ui.text("#setup-step-work-ready")).toMatch(/A teammate makes tasks Ready for agents.*0 Ready for agents, 3 in the backlog.*Next: A teammate moves the backlog.s tasks worth an agent.s time to Ready.*To do/);
+    expect(ui.text("#setup-step-work-ready")).toMatch(/A teammate makes tasks Ready for agents.*0 Ready for agents, 3 in the backlog.*Next: A teammate moves the backlog.s tasks worth an agent.s time to Todo in Linear, or to Ready on your team.s board.*To do/);
     expect(ui.text("#setup-step-setup-remote")).toMatch(/no remote.*Look at this/);
     // The page never names PMX's terminal commands: /pmx-setup does those with the PM.
     expect(pageText(ui)).not.toMatch(/\bpmx [a-z]/);
@@ -58,7 +58,7 @@ describe("team settings without a remote, and approval wording (BOARD-9, #11)", 
     const { stageProposals } = await import("../src/synth/proposals.js");
     const [p] = await stageProposals([{ title: "Spec SCIM", category: "spec", size: "S", description: "Why.\n\npmx:source T1", sources: ["T1"], from: null } as any]);
     const msg = await pipelineHandlers(ctx).proposals?.("approve", [p!.id]);
-    expect(msg).toMatch(/^Approved PMX-\d+: it goes to your team's backlog in Linear\. An agent takes it only after a teammate moves it to Ready\.$/);
+    expect(msg).toMatch(/^Approved PMX-\d+: it goes to your team's backlog in Linear\. An agent takes it only after a teammate moves it to Todo in Linear\.$/);
   });
 
   it("says Start now makes a task Ready for agents, and Later puts it in the pool (APPROVE-3)", async () => {
@@ -67,7 +67,7 @@ describe("team settings without a remote, and approval wording (BOARD-9, #11)", 
     const { stageProposals } = await import("../src/synth/proposals.js");
     const [a, b] = await stageProposals([{ title: "Spec SCIM", category: "spec", size: "S", description: "Why.", sources: ["T1"], from: null } as any, { title: "Spec audit logs", category: "spec", size: "S", description: "Why.", sources: ["T2"], from: null } as any]);
     expect(await pipelineHandlers(ctx).proposals?.("start", [a!.id])).toMatch(/^Started PMX-\d+: it becomes Ready for agents now, and an agent takes it from there\.$/);
-    expect(await pipelineHandlers(ctx).proposals?.("approve", [b!.id])).toMatch(/^Approved PMX-\d+ for later: it waits in your team's backlog in Linear\. When you want an agent on it, move it to Ready on the team board\.$/);
+    expect(await pipelineHandlers(ctx).proposals?.("approve", [b!.id])).toMatch(/^Approved PMX-\d+ for later: it waits in your team's backlog in Linear\. When you want an agent on it, move it to Todo in Linear\.$/);
   });
 
   it("pmx status says practice mode and a stale team package", async () => {

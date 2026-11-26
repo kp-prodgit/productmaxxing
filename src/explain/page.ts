@@ -109,6 +109,17 @@ function h(tag, cls, ...kids) {
 const chip = (text, cls) => h("span", "chip" + (cls ? " " + cls : ""), text);
 const plural = (n, one, many) => n + " " + (n === 1 ? one : (many || one + "s"));
 const money = (n) => (n === null || n === undefined ? "cost unknown" : "$" + n.toFixed(2));
+// The same words as reconciledText in format.ts (TODO-6).
+const reconciledText = (x, sources) => {
+  const by = x.by ? " [" + x.by + "]" : "";
+  const m = x.by ? (sources || []).find((s) => s.id === x.by) : undefined;
+  const where = m && m.title ? 'in "' + m.title + '"' + (m.at ? " on " + m.at.slice(0, 10) : "") : "in a later meeting";
+  const why = x.why ? ". " + x.why : "";
+  if (x.how === "done") return "Done " + where + by + ", so dropped: " + x.text + why;
+  if (x.how === "overtaken") return "Overtaken " + where + by + ", so dropped: " + x.text + why;
+  if (x.how === "same-ask") return 'The same ask as "' + x.into + '"' + by + ", kept once citing both: " + x.text;
+  return (x.how === "merged" ? "Said again" : "Changed") + " in a later meeting" + by + ", kept once citing both: " + x.text;
+};
 
 async function api(path) {
   const r = await fetch(path, { headers: { authorization: "Bearer " + token }, cache: "no-store" });
@@ -194,9 +205,16 @@ function renderRun(el, { receipt: r, live }) {
       h("div", "row", s.decision === "used" ? chip("Used · " + s.id, "ok") : chip("Left out", "out"), h("span", "name", name)),
       title && title !== name ? h("div", "muted small", title) : null,
       h("div", "small", s.decision === "used" ? "Why: " + s.detail + "." : "Rule: " + holdLabels[s.rule] + ", because " + s.detail + "."));
-    const cutsLive = l.cuts.length ? l.cuts : s.passagesCut.map((c) => ({ rule: c.rule, line: null, matched: null }));
-    for (const c of cutsLive)
-      card.append(h("div", "cut", "Cut " + (c.line ? "the passage at line " + c.line : "one passage") + ": " + holdLabels[c.rule] + (c.matched ? " (matched “" + c.matched + "”)" : "") + ". The text was not sent or stored."));
+    const cutsLive = l.cuts.length ? l.cuts : s.passagesCut.map((c) => ({ rule: c.rule, line: null, matched: null, part: c.part, followUp: c.followUp }));
+    for (const c of cutsLive) {
+      const why = holdLabels[c.rule] + (c.matched ? " (matched “" + c.matched + "”)" : "");
+      const what = c.followUp
+        ? "Cut " + (c.line ? "the reply at line " + c.line : "one reply") + ": " + why + ". It answered the passage cut before it, so it was cut too."
+        : c.part
+        ? "Cut " + c.part.cut + " of " + c.part.of + " sentences " + (c.line ? "at line " + c.line : "in one passage") + ": " + why + ". The rest of that turn was sent, with [HELD] where the sentences were."
+        : "Cut " + (c.line ? "the passage at line " + c.line : "one passage") + ": " + why + ".";
+      card.append(h("div", "cut", what + " The cut text was not sent or stored."));
+    }
     if (s.ledger) card.append(h("div", "small", LEDGER[s.ledger.state] + (s.ledger.entry ? " (" + s.ledger.entry + ")" : "") + "."));
     if (s.decision === "used") card.append(h("div", "muted small", plural(s.passagesUsed, "passage") + " sent to Claude."));
     return card;
@@ -227,12 +245,19 @@ function renderRun(el, { receipt: r, live }) {
     step(6, "Draft waits for you", h("p", "small", "Saved at ", h("code", null, r.digest.staged), ". Only on your Mac. Approve, edit or reject it with ", h("code", null, "pmx digest --review"), "; approving commits it to your team folder."));
   }
   if (r.synth) {
-    step(5, plural(r.synth.tasks.length, "suggested task"), r.synth.tasks.map(taskCard), r.synth.skipped.map((s) => h("p", "small muted", "Skipped: " + s)));
+    step(5, plural(r.synth.tasks.length, "suggested task"), r.synth.tasks.map((t) => taskCard(t, r)), r.synth.skipped.map((s) => h("p", "small muted", "Skipped: " + s)),
+      (r.synth.quoted || []).length ? h("div", "card", h("strong", null, "Left out for repeating a source word for word"),
+        h("p", "muted small", "Linear gets summaries only. These words are from your own sources and stay on this Mac."),
+        r.synth.quoted.map((q) => h("p", "small", q.task + ", " + (q.part === "title" ? "its title" : "a sentence of its description") + (q.skipped ? " (so the task was skipped)" : "") + ": \u201c" + q.words + "\u201d, from " + quoteFrom(q.source, r.sources)))) : null,
+      (r.synth.waiting || []).length ? h("div", "card", h("strong", null, "Waiting for a kind of work your team hasn't turned on"),
+        h("p", "muted small", "They wait on this Mac and come back in the next run once your team turns the kind on."),
+        r.synth.waiting.map((w) => h("p", "small", w.title + " (" + w.category + ", " + plural(w.sources.length, "source") + ")"))) : null);
   }
   if (r.todo) {
     step(5, plural(r.todo.added.length, "new to-do"),
-      r.todo.added.map((t) => h("div", "card", h("strong", null, t.text), h("div", "muted small", "From " + t.source + (t.due ? " · due " + t.due : "")))),
+      r.todo.added.map((t) => h("div", "card", h("strong", null, t.text), h("div", "muted small", "From " + [t.source, ...(t.also ?? [])].join(", ") + (t.due ? " · due " + t.due : "")))),
       r.todo.duplicates ? h("p", "small muted", plural(r.todo.duplicates, "to-do") + " already on your list, so not added again.") : null,
+      (r.todo.reconciled ?? []).map((x) => h("p", "small muted", reconciledText(x, r.sources))),
       r.todo.dropped.map((d) => h("p", "small muted", "Dropped: " + d)));
   }
   if (r.error) steps.append(h("li", null, h("div", "num", "!"), h("h3", null, "The run failed"), h("p", "err", r.error)));
@@ -246,15 +271,21 @@ const LEDGER = {
   "in-progress-elsewhere": "Skipped: another machine is processing it",
   "before-window": "Skipped: before this run's start date",
 };
+function quoteFrom(id, sources) {
+  const s = (sources || []).find((x) => x.decision === "used" && x.id === id);
+  return s ? id + " (" + (s.title || s.file || "a source") + (s.at ? ", " + s.at.slice(0, 10) : "") + ")" : id;
+}
 let flagText = {};
-function taskCard(t) {
+function taskCard(t, r) {
   const s = t.sizing;
+  const words = t.leftOut && r && r.synth ? (r.synth.quoted || []).filter((q) => q.task === t.title && q.part === "description" && !q.skipped) : [];
   return h("div", "card",
     h("div", "row", h("span", "size", t.size), h("strong", null, t.title)),
     h("div", "muted small", t.category + " · " + plural(t.sources.length, "source") + ": " + t.sources.join(", ")),
     s ? h("div", "small", "Rubric cell it matched: “" + (s.cell || "none given") + "”" + (s.expectedCell && s.cell !== s.expectedCell ? " (the rubric says “" + s.expectedCell + "”)" : "")) : h("div", "small muted", "No sizing reason recorded."),
     s && s.why ? h("div", "small", "Why: " + s.why) : null,
-    s ? s.flags.map((f) => h("div", "flag", "Check the size: " + (flagText[f] || f) + ".")) : null);
+    s ? s.flags.map((f) => h("div", "flag", "Check the size: " + (flagText[f] || f) + ".")) : null,
+    t.leftOut ? h("div", "small", "Left out of what Linear gets: " + t.leftOut + "." + words.map((q) => " \u201c" + q.words + "\u201d, from " + quoteFrom(q.source, r.sources) + ".").join("")) : null);
 }
 
 // ---- Privacy rules ------------------------------------------------------------------------------
@@ -267,7 +298,9 @@ async function loadRules() {
       h("h3", null, t.label),
       h("p", "small muted", "Any passage that mentions one of these is cut, for example:"),
       h("div", null, t.examples.map((x) => chip(x))),
-      h("details", null, h("summary", null, "Exact patterns"), h("div", "mono small", t.patterns.join("  |  ")))));
+      h("details", null, h("summary", null, "Exact patterns"), h("div", "mono small", t.patterns.join("  |  ")),
+        t.notWhen && t.notWhen.length ? h("p", "small muted", "Not cut where the words mean something else:") : null,
+        t.notWhen && t.notWhen.length ? h("div", "mono small", t.notWhen.join("  |  ")) : null)));
     el.replaceChildren(
       h("h2", null, "Privacy rules"),
       h("p", "lede", "These rules run on your Mac before Claude sees anything. They are fixed and the same for everyone on your team, so a run is never a judgement call."),
@@ -278,7 +311,9 @@ async function loadRules() {
           h("p", "small muted", "Sources your team allows: " + r.allowedSources.join(", ") + (r.slackChannels.length ? " · Slack channels: " + r.slackChannels.join(", ") : ""))),
         h("div", "card", h("h3", null, "2. Customer calls only"),
           h("p", "small", "A call is used only if at least one participant has an email outside your company's domains. A file with no participant list is left out."),
-          list(r.internalDomains, "No company domain set, so PMX holds every call: it can't tell a customer from a colleague. Run pmx init, or add yours to internalDomains in pmx.config.json.")),
+          list(r.internalDomains, "No company domain set, so PMX holds every call: it can't tell a customer from a colleague. Run pmx init, or add yours to internalDomains in pmx.config.json."),
+          h("p", "small", "Internal meetings your team approved as a series are used for team tasks too, when their title contains one of these and three or more people were in them. Every other rule still applies to them."),
+          list(r.meetingSeries || [], "No meeting series approved.")),
         h("div", "card", h("h3", null, "3. Your do-not-read list"),
           h("p", "small", "Anything involving these people, meeting titles or channels is left out. Only you see this list; receipts record how many entries it has, not what they are."),
           h("p", "small muted", "People"), list(r.neverIngest.people, "None"),
@@ -288,7 +323,7 @@ async function loadRules() {
         h("div", "card", h("h3", null, "4. Masked before Claude sees it"),
           h("p", "small", "Email addresses, phone numbers, card numbers that pass a checksum, US Social Security numbers, and names on your customer list become [EMAIL], [PHONE], [CARD], [ID] and [PERSON-n]."))),
       h("h3", null, "5. Topics that are always cut"),
-      h("p", "small muted", "If a meeting title matches the 1:1 rule, the whole meeting is left out. Otherwise PMX cuts only the passages that match."),
+      h("p", "small muted", "If a meeting title matches one of these, the whole meeting is left out. Otherwise PMX cuts the sentences that match, with the sentence before and after when it's about a person, and marks the gap [HELD]; when that's more than half of what someone said, it cuts all of it. A short direct reply right after a cut about a person (up to two) is cut too."),
       h("div", "grid2", topics),
       h("div", "card", h("h3", null, "6. What Claude can do during a run"),
         h("p", "small", "PMX runs Claude in its own profile at " + r.profile + ". It can't see your personal Claude Code memory, settings, plugins or connectors. For digests and suggested tasks it gets no tools at all: it reads the masked text and writes text back. Source text is marked as data, so instructions inside a call are ignored.")));
@@ -329,7 +364,7 @@ async function loadSizing() {
         return h("td", null, s.rubric.cells[c][z], range ? h("div", "muted small", "checked: " + range[0] + (range[1] === null ? "+" : "–" + range[1]) + " sources") : null);
       })))));
     const tasks = s.latest && s.latest.tasks.length
-      ? [h("h3", null, "Sizes in the last suggested-task run (" + new Date(s.latest.at).toLocaleString() + ")"), s.latest.tasks.map(taskCard)]
+      ? [h("h3", null, "Sizes in the last suggested-task run (" + new Date(s.latest.at).toLocaleString() + ")"), s.latest.tasks.map((t) => taskCard(t, null))]
       : [h("div", "empty", "No suggested tasks yet. Sizes are chosen when you run ", h("code", null, "pmx synthesize"), ", which needs Linear.")];
     el.replaceChildren(
       h("h2", null, "How task sizes are chosen"),

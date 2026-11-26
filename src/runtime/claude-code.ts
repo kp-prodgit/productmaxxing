@@ -8,11 +8,11 @@ export function claudeCode(exec: Exec = defaultExec): AgentRuntime {
   return {
     name: "claude-code",
 
-    async probe(team: TeamConfig): Promise<ProbeResult> {
+    async probe(team: TeamConfig, o: { web?: boolean } = {}): Promise<ProbeResult> {
       const problems: string[] = [];
       const v = await resolveClaude(exec);
       if (!v) problems.push("Claude Code is not installed (https://code.claude.com).");
-      for (const c of await profileChecks(team)) if (!c.ok) problems.push(`clean profile: ${c.detail}`);
+      for (const c of await profileChecks(team, o)) if (!c.ok) problems.push(`clean profile: ${c.detail}`);
       if (v && (await profileSignedIn(exec))?.ok === false) problems.push(`clean profile isn't signed in: ${LOGIN_HINT}`);
       return { ok: problems.length === 0, version: v?.version ?? null, problems };
     },

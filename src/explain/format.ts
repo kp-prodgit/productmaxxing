@@ -1,10 +1,10 @@
 import { homedir } from "node:os";
 import { HOLD_LABELS } from "../core/filter.js";
-import type { RunReceipt } from "../core/receipt.js";
+import type { RunReceipt, SourceReceipt } from "../core/receipt.js";
 import type { RedactionKind } from "../core/redact.js";
 import type { SkillInfo } from "../core/skills.js";
 import { FLAG_TEXT } from "../synth/synthesize.js";
-import type { LiveSource } from "./resolve.js";
+import { unlocated, type LiveCut, type LiveSource } from "./resolve.js";
 
 const MASK_NAMES: Record<RedactionKind, [string, string]> = {
   email: ["email address", "email addresses"],
@@ -27,9 +27,26 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 const tilde = (p: string) => p.replace(homedir(), "~");
 const money = (n: number | null) => (n === null ? "cost unknown" : `$${n.toFixed(2)}`);
 
+/** Which source a quote came from (N4): a used source by its ID, title and date, or the released strategy's file. */
+export function quoteSource(id: string, sources: SourceReceipt[]): string {
+  const s = sources.find((x) => x.decision === "used" && x.id === id);
+  return s ? `${id} (${s.title ?? s.file ?? "a source"}${s.at ? `, ${s.at.slice(0, 10)}` : ""})` : id;
+}
+
 export function maskedText(m: RunReceipt["masked"]): string {
   const parts = (Object.entries(m) as [RedactionKind, number][]).filter(([, n]) => n).map(([k, n]) => plural(n, ...MASK_NAMES[k]));
   return parts.length ? parts.join(", ") : "nothing";
+}
+
+/**
+ * One cut in plain words: a whole turn ("cut line 7"), some sentences of a turn whose rest was used, or a reply
+ * cut with the passage before it. Never the text itself.
+ */
+export function cutText(c: LiveCut): string {
+  const why = `${HOLD_LABELS[c.rule]}${c.matched ? ` (matched "${c.matched}")` : ""}`;
+  if (c.followUp) return `cut ${c.line ? `line ${c.line}` : "a passage"}: ${why}, as a direct reply to the passage cut before it`;
+  if (c.part) return `cut ${c.part.cut} of ${c.part.of} sentences ${c.line ? `at line ${c.line}` : "in a passage"} and used the rest of that turn: ${why}`;
+  return `cut ${c.line ? `line ${c.line}` : "a passage"}: ${why}`;
 }
 
 /** The two lines `pmx digest` prints, so the PM sees counts in plain words and where to look. */
@@ -47,6 +64,23 @@ export function receiptSummary(r: RunReceipt): string {
   return `${parts.join(" · ")}\nSee how each one was decided: pmx explain (or pmx explain --web)`;
 }
 
+/**
+ * What a later meeting did to a to-do an earlier batch found (TODO-6). Only "done" and "overtaken" drop one, naming
+ * the meeting that shows it (its title and date, from the run's sources) and why; a to-do said again, changed or the
+ * same ask as another is kept once, citing both meetings. The explain page (page.ts) says the same.
+ */
+export function reconciledText(x: NonNullable<NonNullable<RunReceipt["todo"]>["reconciled"]>[number], sources: SourceReceipt[] = []): string {
+  const by = x.by ? ` [${x.by}]` : "";
+  const m = x.by ? sources.find((s) => s.id === x.by) : undefined;
+  const where = m?.title ? `in "${m.title}"${m.at ? ` on ${m.at.slice(0, 10)}` : ""}` : "in a later meeting";
+  const why = x.why ? `. ${x.why}` : "";
+  if (x.how === "done") return `done ${where}${by}, so dropped: ${x.text}${why}`;
+  if (x.how === "overtaken") return `overtaken ${where}${by}, so dropped: ${x.text}${why}`;
+  if (x.how === "same-ask") return `the same ask as "${x.into}"${by}, kept once citing both: ${x.text}`;
+  if (x.how === "merged") return `said again in a later meeting${by}, kept once citing both: ${x.text}`;
+  return `changed in a later meeting${by}, kept once citing both: ${x.text}`;
+}
+
 /** The full receipt for the terminal: every source, the rule that decided it, what Claude got. */
 export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
   const when = new Date(r.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
@@ -57,15 +91,13 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
   for (const s of r.skippedSources) out.push(`   - skipped: ${s}`);
   out.push("", "2. Privacy rules decided what Claude may read");
   if (r.rules.allowOneOnOne) out.push("   Your own to-dos: internal meetings and 1:1s are allowed, because the result stays on this Mac. Health, pay and performance passages are still cut.");
+  if (r.rules.meetingSeries?.length) out.push(`   Internal meetings in your team's approved series are used for team work, with every other rule: ${r.rules.meetingSeries.join(", ")}.`);
   r.sources.forEach((s, i) => {
     const l = live[i];
     const name = s.file ?? l?.file ?? (s.kind !== "transcript" ? `a thread${s.place ? ` in ${s.place}` : ""}` : "a file that's no longer in your folder");
     if (s.decision === "used") out.push(`   ✔ used      [${s.id}] ${name}: ${s.detail}${s.ledger ? `. ${LEDGER[s.ledger.state]}${s.ledger.entry ? ` (${s.ledger.entry})` : ""}` : ""}`);
     else out.push(`   ✘ left out  ${name}: ${HOLD_LABELS[s.rule!]}, because ${s.detail}`);
-    (l?.cuts ?? s.passagesCut.map((c) => ({ rule: c.rule, line: null, matched: null }))).forEach((c) => {
-      const at = c.line ? `line ${c.line}` : "a passage";
-      out.push(`               cut ${at}: ${HOLD_LABELS[c.rule]}${c.matched ? ` (matched "${c.matched}")` : ""}`);
-    });
+    (l?.cuts ?? s.passagesCut.map(unlocated)).forEach((c) => out.push(`               ${cutText(c)}`));
   });
   out.push("", `3. Masked before Claude saw it: ${maskedText(r.masked)}`);
   if (r.model) {
@@ -84,12 +116,34 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
         out.push(`      why: ${t.sizing.cell ?? "no rubric cell given"}${t.sizing.why ? `. ${t.sizing.why}` : ""}`);
         for (const f of t.sizing.flags) out.push(`      check: ${FLAG_TEXT[f]}`);
       }
+      // N4: what Linear doesn't get, with the words that matched, as the page shows them. Your own sources' words, on this Mac.
+      if (t.leftOut) {
+        out.push(`      left out of what Linear gets: ${t.leftOut}`);
+        for (const q of (r.synth.quoted ?? []).filter((x) => x.task === t.title && x.part === "description" && !x.skipped)) out.push(`         "${q.words}", from ${quoteSource(q.source, r.sources)}`);
+      }
     }
     for (const s of r.synth.skipped) out.push(`   skipped: ${s}`);
+    // N4: what repeated a source word for word, with the words and which source. Your own sources' words, on this Mac.
+    if (r.synth.quoted?.length) {
+      out.push("", "   Left out for repeating a source word for word (Linear gets summaries only). The words are from your own sources and stay on this Mac:");
+      for (const q of r.synth.quoted) out.push(`   · ${q.task}, ${q.part === "title" ? "its title" : "a sentence of its description"}${q.skipped ? " (so the task was skipped)" : ""}: "${q.words}", from ${quoteSource(q.source, r.sources)}`);
+    }
+    // N1: suggestions of a kind of work your team hasn't turned on, waiting on this Mac until it does.
+    if (r.synth.waiting?.length) {
+      out.push("", "   Waiting for a kind of work your team hasn't turned on (they come back in the next run once it's on):");
+      for (const w of r.synth.waiting) out.push(`   · ${w.title} (${w.category}, ${plural(w.sources.length, "source")}): pmx jobs add ${w.category}`);
+    }
+    // SIG-9: needs past the team's task limit, kept on this Mac for the next run.
+    if (r.synth.heldOver?.length) {
+      out.push("", `   Held over for the next run (past your team's task limit, synthesis.maxTasks):`);
+      for (const h of r.synth.heldOver) out.push(`   · ${h.title} (${h.category}, ${plural(h.sources.length, "source")}${h.rounds > 1 ? `, held ${h.rounds} runs in a row` : ""})`);
+    }
   }
   if (r.todo) {
     out.push("", `5. ${plural(r.todo.added.length, "new to-do")}${r.todo.duplicates ? `, ${r.todo.duplicates} already on your list` : ""}. They stay on this Mac (\`pmx todo\`):`);
-    for (const t of r.todo.added) out.push(`   ☐ ${t.text}${t.due ? ` (due ${t.due})` : ""}  [${t.source}]`);
+    for (const t of r.todo.added) out.push(`   ☐ ${t.text}${t.due ? ` (due ${t.due})` : ""}  [${[t.source, ...(t.also ?? [])].join(", ")}]`);
+    if ((r.todo.batches ?? 1) > 1) out.push(`   read oldest first, a few meetings per call: ${plural(r.todo.batches!, "call")}`);
+    for (const x of r.todo.reconciled ?? []) out.push(`   ${reconciledText(x, r.sources)}`);
     for (const d of r.todo.dropped) out.push(`   dropped: ${d}`);
   }
   if (r.error) out.push("", `The run failed: ${r.error}`);

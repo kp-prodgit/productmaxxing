@@ -16,7 +16,7 @@ PMX can't publish artifacts itself, so it prepares the page and you publish it.
 5. Run `pmx board --set-url <the published link>`.
 6. Tell the user the link and these four facts:
    - Each viewer allows Linear for the board once. The board shows the project through that person's own Linear access.
-   - The board changes only one thing in Linear: it moves cards between the backlog and Ready when someone clicks to do it. Agents, their runs and reviews stay in PMX.
+   - The board changes only one thing in Linear: it moves cards between the backlog and Ready when someone clicks to do it, and Linear's own status moves with them (Backlog, Todo). Moving a task from Backlog to Todo on Linear's own board does the same, so teammates who never open the board can pick work there. Agents, their runs and reviews stay in PMX.
    - Teammates can open it after the user shares it from the artifact's Share menu. To make it the team's board, add `"board": { "url": "<link>" }` to pmx.config.json in a PR.
    - It reads only Linear, so a PMX update doesn't change what it shows. It needs /pmx-board again only when an update changes the board's page; PMX says so when one does.
 

@@ -1,0 +1,327 @@
+import { join } from "node:path";
+import type { Ctx } from "../core/context.js";
+import { privateDir, readJson, withLock, writeJson } from "../core/fsutil.js";
+import { notify } from "../core/notify.js";
+import { paths } from "../core/paths.js";
+import { RunLogStore } from "../core/runlog-store.js";
+import type { Services } from "../core/services.js";
+import { loadState, updateState } from "../core/state.js";
+import type { Task } from "../core/types.js";
+import { readResolved } from "../tracker/relay.js";
+import { sourcesHere, taskEvidence } from "./evidence.js";
+import { evidenceStore, packSources, TASK, type EvidencePack, type EvidenceStore } from "./packs.js";
+import { expired, markStore, type TaskMark } from "../lease/marks.js";
+
+/**
+ * Sharing an approved task's quotes with the team (RUN-5). Approval stages the task here, on the Mac that suggested it;
+ * its pack is written to the team repo as soon as the task has its identifier in the tracker: at once with a Linear key,
+ * or after the next Claude sync through the relay (a PENDING-… identifier until then). The pack is worked out at that
+ * moment with the same function a run on this Mac uses (taskEvidence), so it holds exactly what this Mac's agent would
+ * be shown, under the privacy rules as they are then. The file holds the task's tracker text (what Linear has) and no
+ * quote, and stays on this Mac (owner-only).
+ */
+interface Waiting {
+  identifier: string;
+  title: string;
+  description: string;
+  sources: string[];
+  at: string;
+  /** FOLLOW-1: a follow-up's original task, whose pack may quote the same sources when this Mac has none of them. */
+  follows?: string | null;
+  /** The PM was told it failed (once per task). */
+  told?: boolean;
+}
+
+const file = () => join(paths.staging(), "evidence-share.json");
+const read = async (): Promise<Waiting[]> => (await readJson<{ v: 1; tasks: Waiting[] }>(file()))?.tasks ?? [];
+const save = async (tasks: Waiting[]) => { await privateDir(paths.staging()); await writeJson(file(), { v: 1, tasks }, 0o600); };
+
+/** A task's identifier waits this long for its first Claude sync, and a failing share is retried for this long. */
+const GIVE_UP_MS = 7 * 86400000;
+/** A pack outlives a task that's gone from the tracker by at most this much, however stale a Mac's copy of it. */
+export const PACK_MAX_MS = 30 * 86400000;
+/** Clocks on two Macs can differ: a pack is taken as older than a tracker copy only with this much to spare. */
+const SKEW_MS = 10 * 60000;
+/** How often a Mac looks for packs whose tasks are done or dropped. */
+const TIDY_EVERY_MS = 3 * 3600000;
+
+export const storeFor = (ctx: Pick<Ctx, "repo" | "personal">) => evidenceStore(ctx.repo, { email: `${ctx.personal.handle}@pmx.local` });
+
+/** Stages approved tasks that cite sources, for their packs (RUN-5). A team without a tracker has no tasks to share. */
+export async function stageShares(ctx: Pick<Ctx, "team" | "now">, tasks: { identifier: string; title: string; description: string; sources: string[]; follows?: string | null }[]): Promise<void> {
+  const want = tasks.filter((t) => t.sources.length);
+  if (ctx.team.tracker.kind === "none" || !want.length) return;
+  await withLock(file(), async () => {
+    const all = await read();
+    const seen = new Set(all.map((w) => w.identifier));
+    for (const t of want) if (!seen.has(t.identifier)) all.push({ ...t, follows: t.follows ?? null, at: ctx.now().toISOString() });
+    await save(all);
+  });
+}
+
+export interface ShareResult {
+  shared: string[];
+  /** "PMX couldn't share PMX-12's quotes with your team: …", once per task. */
+  notices: string[];
+}
+
+const list = (ids: string[]) => (ids.length <= 2 ? ids.join(" and ") : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`);
+
+/**
+ * A task's pack as this Mac would write it now (RUN-5), or null when this Mac has nothing of it to quote. Exactly what
+ * this Mac's agent would be shown: the task's own cited sources, screened and redacted as they are now (taskEvidence).
+ * A follow-up whose sources aren't on this Mac reuses its original's pack, which the team has already. The one builder
+ * for an approval and for the backfill; the store refuses a pack that carries a canary (FLOW-3).
+ */
+async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; description: string; sources: string[]; follows?: string | null }, id: string, now: Date): Promise<EvidencePack | null> {
+  let sources = (await taskEvidence(ctx, { title: t.title, description: t.description, sources: t.sources }).catch(() => ({ sources: [] as EvidencePack["sources"] }))).sources;
+  if (!sources.length && t.follows) sources = packSources(await store.read(t.follows).catch(() => null), t.sources);
+  return sources.length ? { v: 1, task: id, at: now.toISOString(), sources } : null;
+}
+
+/** "PMX couldn't share PMX-12's quotes with your team: …", a sentence per reason. */
+function notShared(failed: { id: string; why: string }[]): string[] {
+  const by = new Map<string, string[]>();
+  for (const f of failed) by.set(f.why, [...(by.get(f.why) ?? []), f.id]);
+  return [...by].map(([why, ids]) => `PMX couldn't share ${ids.length === 1 ? `${ids[0]}'s quotes` : `the quotes of ${list(ids)}`} with your team: ${why}. Until it does, only this Mac's agent can draft ${ids.length === 1 ? "it" : "them"}; PMX tries again in its next background run.`);
+}
+
+async function logShared(ctx: Ctx, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const log = new RunLogStore(ctx);
+  for (const id of ids) await log.record({ type: "evidence", agent: ctx.agent, machine: ctx.personal.machineId, taskId: id, action: "shared" }).catch(() => {});
+}
+
+/**
+ * Writes the packs of every staged task whose identifier is known (RUN-5). `say`: where a failure is told, once per
+ * task: in the answer to the PM's approval, or (from the background run and the Claude sync) as a notification.
+ */
+export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; store?: EvidenceStore }): Promise<ShareResult> {
+  const out: ShareResult = { shared: [], notices: [] };
+  const all = await read();
+  if (!all.length) return out;
+  const store = o.store ?? storeFor(ctx);
+  const resolved = all.some((w) => w.identifier.startsWith("PENDING-")) ? await readResolved() : {};
+  const now = ctx.now();
+  const old = (w: Waiting) => now.getTime() - Date.parse(w.at) > GIVE_UP_MS;
+  const drop = new Set<string>();
+  const ready: { w: Waiting; pack: EvidencePack }[] = [];
+  for (const w of all) {
+    const id = w.identifier.startsWith("PENDING-") ? resolved[w.identifier]?.identifier ?? null : w.identifier;
+    if (!id) { if (old(w)) drop.add(w.identifier); continue; }
+    const pack = await packFor(ctx, store, w, id, now);
+    // Nothing this Mac can quote, so nothing to share: the task runs where its sources are, as before.
+    if (!pack) { drop.add(w.identifier); continue; }
+    ready.push({ w, pack });
+  }
+  // One task at a time, so one that fails doesn't hold back the others, and each is told about once.
+  const failed = new Map<string, string>();
+  for (const r of ready) {
+    try {
+      await store.write({ put: [r.pack] }, `evidence: quotes for ${r.pack.task}`);
+      out.shared.push(r.pack.task);
+      drop.add(r.w.identifier);
+    } catch (e: any) {
+      failed.set(r.w.identifier, String(e?.message ?? e));
+    }
+  }
+  out.notices.push(...notShared(ready.filter((r) => failed.has(r.w.identifier) && !r.w.told).map((r) => ({ id: r.pack.task, why: failed.get(r.w.identifier)! }))));
+  await withLock(file(), async () => {
+    const kept: Waiting[] = [];
+    for (const w of await read()) {
+      if (drop.has(w.identifier)) continue;
+      // A share that kept failing for a week is let go: the task still runs on this Mac, as before RUN-5.
+      if (failed.has(w.identifier)) { if (!old(w)) kept.push({ ...w, told: true }); }
+      else kept.push(w);
+    }
+    await save(kept);
+  });
+  await logShared(ctx, out.shared);
+  if (o.say === "notify" && out.notices.length) await notify("ProductMaxxing", out.notices.join(" ")).catch(() => {});
+  return out;
+}
+
+/**
+ * The backfill's memory (RUN-5), on this Mac only (owner-only), by task ID: a task it had nothing to quote for, looked
+ * at again after a week, and a task whose pack it couldn't write, tried again at every background run and told once.
+ */
+interface Tried { at: string; result: "nothing" | "failed"; told?: boolean }
+const backfillFile = () => join(paths.staging(), "evidence-backfill.json");
+const readTried = async (): Promise<Record<string, Tried>> => (await readJson<{ v: 1; tasks: Record<string, Tried> }>(backfillFile()))?.tasks ?? {};
+
+/** At most this many of this Mac's tasks get a pack in one background run, so a long backlog doesn't hold up the run. */
+export const BACKFILL_MAX = 20;
+/** Once the backfill has nothing left to write, it looks again this much later. */
+const BACKFILL_EVERY_MS = 24 * 3600000;
+/** A task this Mac had nothing to quote for is looked at again after this long: a folder or a privacy rule may have changed. */
+const NOTHING_AGAIN_MS = 7 * 86400000;
+/** Open tasks: waiting in the backlog, Ready, or blocked. One being drafted or in review has its agent already. */
+const OPEN = new Set<string>(["inbox", "ready", "blocked"]);
+/** A follow-up's original task, as its description names it (FOLLOW-1). */
+const followsIn = (description: string) => description.match(/^\*\*Follows ([A-Za-z][A-Za-z0-9]*-\d+):\*\*/m)?.[1] ?? null;
+
+export interface BackfillResult {
+  shared: string[];
+  /** "PMX couldn't share PMX-12's quotes with your team: …", once per task. */
+  notices: string[];
+  /** How many more of this Mac's tasks wait for a pack than one run writes: the next background run goes on. */
+  more: number;
+  /** How many packs couldn't be written: the next background run tries them again. */
+  failed: number;
+}
+
+/**
+ * RUN-5's backfill: tasks approved before evidence packs (or whose share was let go after a week) have none, so every
+ * other Mac's agent skips them. On the Mac that holds a task's synthesis run (its receipt is here), this writes the
+ * pack for each of that Mac's open tasks without one, with the same builder and checks as an approval (packFor; the
+ * store refuses a canary). At most `max` tasks a run, those never tried first; a task the share queue still holds is
+ * left to it. Writing what the team has already changes nothing, so running it again is safe.
+ */
+export async function backfillEvidence(ctx: Ctx, svc: Pick<Services, "tracker">, o: { store?: EvidenceStore; max?: number; say?: "notify" | "none" } = {}): Promise<BackfillResult> {
+  const out: BackfillResult = { shared: [], notices: [], more: 0, failed: 0 };
+  if (ctx.team.tracker.kind === "none") return out;
+  const now = ctx.now();
+  const open = (await svc.tracker.list()).filter((t) => t.status !== null && OPEN.has(t.status) && t.workflow?.type !== "completed" && t.workflow?.type !== "canceled"
+    && t.sources.length && TASK.test(t.identifier) && !t.identifier.startsWith("PENDING-"));
+  // Only the Mac with the task's synthesis run: its receipt is here. No meeting is read to find out.
+  const here: Task[] = [];
+  for (const t of open) if ((await sourcesHere(t).catch(() => ({ receipt: false }))).receipt) here.push(t);
+  const tried = await readTried();
+  const keep = (next: Record<string, Tried>) => withLock(backfillFile(), async () => { await privateDir(paths.staging()); await writeJson(backfillFile(), { v: 1, tasks: next }, 0o600); });
+  if (!here.length) { if (Object.keys(tried).length) await keep({}); return out; }
+
+  const store = o.store ?? storeFor(ctx);
+  const packed = new Set(await store.list());
+  // N7: never a task whose pack was removed, or that another Mac marked done or dropped (PULL-14), whatever this Mac's
+  // copy of Linear says. A team repo it can't read now waits for the next run, like the packs.
+  const marks = await markStore(ctx.repo).list();
+  const finished = (id: string) => {
+    const m = marks.get(id);
+    return !!m && !expired(m, now) && (!!m.packRemovedAt || m.state === "done" || m.state === "dropped");
+  };
+  // Approved since RUN-5 and still waiting for its share: the share queue tries it, and tells about it.
+  const queue = await read();
+  const resolved = queue.some((w) => w.identifier.startsWith("PENDING-")) ? await readResolved() : {};
+  const queued = new Set(queue.map((w) => (w.identifier.startsWith("PENDING-") ? resolved[w.identifier]?.identifier ?? w.identifier : w.identifier)));
+  const want = here.filter((t) => !packed.has(t.identifier) && !queued.has(t.identifier) && !finished(t.identifier)).filter((t) => {
+    const x = tried[t.identifier];
+    return !(x?.result === "nothing" && now.getTime() - Date.parse(x.at) < NOTHING_AGAIN_MS);
+  });
+  // Never tried first, then the ones that failed, then the ones with nothing to quote; oldest try first.
+  const rank = (t: Task) => (!tried[t.identifier] ? 0 : tried[t.identifier]!.result === "failed" ? 1 : 2);
+  want.sort((a, b) => rank(a) - rank(b) || (tried[a.identifier]?.at ?? "").localeCompare(tried[b.identifier]?.at ?? ""));
+  const batch = want.slice(0, Math.max(0, o.max ?? BACKFILL_MAX));
+  out.more = want.length - batch.length;
+
+  // What's remembered: only this Mac's open tasks that still have no pack.
+  const next: Record<string, Tried> = {};
+  for (const t of here) if (!packed.has(t.identifier) && !finished(t.identifier) && tried[t.identifier]) next[t.identifier] = tried[t.identifier]!;
+  const failed: { id: string; why: string }[] = [];
+  // One task at a time, so one that fails doesn't hold back the others.
+  for (const t of batch) {
+    const id = t.identifier;
+    const pack = await packFor(ctx, store, { title: t.title, description: t.description, sources: t.sources, follows: followsIn(t.description) }, id, now);
+    if (!pack) { next[id] = { at: now.toISOString(), result: "nothing" }; continue; }
+    try {
+      const r = await store.write({ put: [pack] }, `evidence: quotes for ${id}`);
+      if (r.put.includes(id)) out.shared.push(id);
+      delete next[id];
+    } catch (e: any) {
+      out.failed++;
+      if (!tried[id]?.told) failed.push({ id, why: String(e?.message ?? e) });
+      next[id] = { at: now.toISOString(), result: "failed", told: true };
+    }
+  }
+  await keep(next);
+  await logShared(ctx, out.shared);
+  out.notices = notShared(failed);
+  if (o.say === "notify" && out.notices.length) await notify("ProductMaxxing", out.notices.join(" ")).catch(() => {});
+  return out;
+}
+
+/**
+ * RUN-5: removes the packs of tasks that are done (accepted, or closed in the tracker) or dropped (canceled, so gone from
+ * the tracker's list), and says so in the run log. Any Mac may do it. A pack whose task this Mac can't see is removed
+ * only when this Mac's copy of the tracker was read after the pack was written, so a Mac behind on its Linear sync
+ * never removes a new task's pack, and in any case 30 days after it was written. N7: the packs listed are the team
+ * repo's now, and a pack whose task another Mac marked done or dropped, or whose pack was removed before (a Mac with an
+ * older copy of Linear wrote it again), goes whatever this Mac's copy says. Each removal leaves a tombstone in the
+ * task's mark (PULL-14), so no Mac's backfill writes it again.
+ */
+export async function tidyEvidence(ctx: Ctx, svc: Pick<Services, "tracker">, store: EvidenceStore = storeFor(ctx)): Promise<{ id: string; why: "done" | "dropped" }[]> {
+  const ids = await store.list();
+  if (!ids.length) return [];
+  const tasks: Task[] = await svc.tracker.list();
+  const now = ctx.now().getTime();
+  const synced = svc.tracker.syncedAt ? await svc.tracker.syncedAt() : null;
+  const asOf = synced ? Date.parse(synced) : now;
+  const byId = new Map(tasks.map((t) => [t.identifier, t]));
+  const marksOf = markStore(ctx.repo);
+  const marks = await marksOf.list().catch(() => new Map<string, TaskMark>());
+  const gone: { id: string; why: "done" | "dropped" }[] = [];
+  for (const id of ids) {
+    const m = marks.get(id);
+    const said = m && !expired(m, ctx.now()) ? m : null;
+    if (said && (said.state === "done" || said.state === "dropped" || said.packRemovedAt)) { gone.push({ id, why: said.state === "dropped" ? "dropped" : "done" }); continue; }
+    const t = byId.get(id);
+    if (t) {
+      if (t.status === "done" || t.workflow?.type === "completed") gone.push({ id, why: "done" });
+      continue;
+    }
+    const at = Date.parse((await store.read(id))?.at ?? "");
+    if (!Number.isFinite(at) || at < asOf - SKEW_MS || now - at > PACK_MAX_MS) gone.push({ id, why: "dropped" });
+  }
+  if (!gone.length) return [];
+  const r = await store.write({ remove: gone.map((g) => g.id) }, `evidence: remove the quotes of ${gone.map((g) => g.id).join(", ")} (task done or dropped)`);
+  const removed = gone.filter((g) => r.removed.includes(g.id));
+  // The tombstone: the task's step as this Mac's copy of Linear shows it (landed then), unless a mark says it already.
+  const at = ctx.now().toISOString();
+  const seen = synced ?? at;
+  for (const g of gone) {
+    await marksOf.update(g.id, (cur) => {
+      if (cur?.packRemovedAt && (cur.state === "done" || cur.state === "dropped")) return null;
+      const same = cur && (cur.state === "done" || cur.state === "dropped");
+      return same ? { ...cur, packRemovedAt: at }
+        : { v: 1, task: g.id, state: g.why, at, by: ctx.agent, machine: ctx.personal.machineId, landed: seen, packRemovedAt: at };
+    }).catch(() => null);
+  }
+  const log = new RunLogStore(ctx);
+  for (const g of removed) await log.record({ type: "evidence", agent: ctx.agent, machine: ctx.personal.machineId, taskId: g.id, action: "removed", reason: g.why }).catch(() => {});
+  return removed;
+}
+
+/**
+ * The background run's step for RUN-5: shares what's staged, and every few hours removes the packs of finished tasks.
+ * Returns what changed in a line, or null.
+ */
+export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "tracker">>): Promise<string | null> {
+  if (ctx.team.tracker.kind === "none") return null;
+  const lines: string[] = [];
+  // One store a run, so the team's packs are fetched once.
+  const store = storeFor(ctx);
+  let tracker: Promise<Pick<Services, "tracker">> | null = null;
+  const services = () => (tracker ??= svc());
+  const s = await shareEvidence(ctx, { say: "notify", store });
+  const st = await loadState();
+  const now = ctx.now();
+  // The backfill: due after an update (UPGRADE-1), daily, and at once again after a run that stopped at its limit or failed.
+  const bf = st.evidenceBackfill;
+  const b = !bf || bf.due || !bf.at || now.getTime() - Date.parse(bf.at) >= BACKFILL_EVERY_MS
+    // A tracker PMX can't read yet (no Linear sync on this Mac), or a team repo it can't reach, waits for the next run.
+    ? await services().then((x) => backfillEvidence(ctx, x, { store, say: "notify" })).catch(() => null)
+    : null;
+  if (b) await updateState((x) => { x.evidenceBackfill = { at: now.toISOString(), due: b.more > 0 || b.failed > 0 }; });
+  const shared = [...s.shared, ...(b?.shared ?? [])];
+  if (shared.length) lines.push(`shared the quotes of ${list(shared)} with your team`);
+  if (b?.more) lines.push(`${b.more} more ${b.more === 1 ? "task's quotes go" : "tasks' quotes go"} to your team at the next background run`);
+  lines.push(...s.notices, ...(b?.notices ?? []));
+  if (!st.evidenceTidyAt || now.getTime() - Date.parse(st.evidenceTidyAt) >= TIDY_EVERY_MS) {
+    // A tracker PMX can't read yet (no Linear sync on this Mac) waits for the next run; the pull step says why.
+    const gone = await services().then((x) => tidyEvidence(ctx, x, store)).catch(() => null);
+    if (gone) {
+      await updateState((x) => { x.evidenceTidyAt = ctx.now().toISOString(); });
+      if (gone.length) lines.push(`removed the shared quotes of ${list(gone.map((g) => `${g.id} (${g.why})`))}`);
+    }
+  }
+  return lines.join("; ") || null;
+}

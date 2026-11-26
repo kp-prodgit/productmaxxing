@@ -6,10 +6,13 @@ import type { Services } from "../core/services.js";
 import { loadState } from "../core/state.js";
 import type { Task } from "../core/types.js";
 import { leaseTtlSeconds } from "../lease/types.js";
+import { lookAt, markBlocks, markStore, taskTaken } from "../lease/marks.js";
 import { runTask, type RunOutcome } from "../run/run.js";
 import { explain, selectTasks, type Selection } from "./select.js";
 import { failStreaks } from "./failures.js";
 import { inlineSources, sourcesHere } from "../run/evidence.js";
+import { packSources } from "../run/packs.js";
+import { storeFor } from "../run/share.js";
 import { loadSkill } from "../core/skills.js";
 import { skillMeta } from "../core/skillcheck.js";
 
@@ -27,10 +30,13 @@ export function isDryRunDefault(ctx: Ctx): boolean {
 
 /**
  * Ready tasks this Mac can't draft (RUN-3): a kind of work that must cite sources, and none of the task's sources
- * quotable here. Their quotes are on the Mac that proposed them, which runs them; nobody spends a run to fail.
+ * quotable here. Their quotes are on the Mac that proposed them, which runs them; nobody spends a run to fail. A task
+ * whose quotes the team has in the repo (RUN-5, an evidence pack) runs on any Mac.
  */
 export async function citationGaps(ctx: Ctx, tasks: Task[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
+  const store = storeFor(ctx);
+  const packed = async (t: Task) => packSources(await store.read(t.identifier).catch(() => null), t.sources).length > 0;
   const mins = new Map<string, number>();
   const minFor = async (category: string) => {
     if (!mins.has(category)) {
@@ -47,6 +53,7 @@ export async function citationGaps(ctx: Ctx, tasks: Task[]): Promise<Map<string,
     const here = await sourcesHere(t);
     // The skill counts citations, not sources: one source cited twice is enough for a minimum of 2.
     if (inlineSources(t).length || here.ids.length) continue;
+    if (!here.receipt && t.sources.length && (await packed(t))) continue;
     const need = `a ${t.category} draft must cite its sources ${min === 1 ? "once" : `${min} times`}`;
     out.set(t.id, !t.sources.length ? `it names no sources, and ${need}`
       : !here.receipt ? `its sources are quoted only on the Mac that suggested it, and ${need}`
@@ -61,6 +68,16 @@ export async function plan(ctx: Ctx, svc: Services): Promise<Selection> {
   const runs = (await log.exists().catch(() => false)) ? await log.entries().catch(() => []) : [];
   const now = ctx.now();
   const live = new Set(leases.filter((l) => l.holder !== ctx.agent && new Date(l.expiresAt) > now).map((l) => l.taskId));
+  // PULL-14: a step another Mac took that this Mac's copy of Linear can't show yet. A team repo out of reach leaves the
+  // run log; the claim reads the task's mark again before any run.
+  const marks = await markStore(ctx.repo).list().catch(() => new Map());
+  const look = await lookAt(ctx, svc.tracker);
+  const taken = new Map<string, string>();
+  for (const t of tasks) {
+    if (t.status !== "ready") continue;
+    const why = taskTaken(t.identifier, marks.get(t.identifier), runs, look);
+    if (why) taken.set(t.id, why);
+  }
   return selectTasks({
     tasks,
     agent: ctx.agent,
@@ -73,19 +90,31 @@ export async function plan(ctx: Ctx, svc: Services): Promise<Selection> {
     leasedTaskIds: live,
     failStreaks: failStreaks(runs),
     unrunnable: await citationGaps(ctx, tasks),
+    runs,
+    taken,
   });
 }
 
-/** Claims a task: lease first (atomic), then mark it in the tracker. */
+/**
+ * Claims a task: lease first (atomic), then mark it in the tracker. After winning, the task is read again: in the
+ * tracker, and its mark in the team repo (PULL-14), since a run that just ended elsewhere released its lease only after
+ * marking its draft, which this Mac's copy of Linear may not show yet.
+ */
 export async function claim(ctx: Ctx, svc: Services, task: Task) {
   const ttl = leaseTtlSeconds(ctx.team.sizes[task.size ?? "M"].minutes);
   const got = await svc.lease.acquire(task.id, ctx.agent, ttl);
   if (!got.ok) return got;
   // Re-check after winning: someone may have moved it out of ready since we listed.
   const fresh = await svc.tracker.get(task.id);
-  if (fresh.status !== "ready") {
+  if (fresh.status !== "ready" || fresh.workflow?.held) {
     await svc.lease.release(task.id, ctx.agent);
-    return { ok: false as const, holder: "tracker", expiresAt: "" , reason: `status is now ${fresh.status}` };
+    return { ok: false as const, holder: "tracker", expiresAt: "" , reason: fresh.workflow?.held ?? `status is now ${fresh.status}` };
+  }
+  const mark = await markStore(ctx.repo).read(fresh.identifier).catch(() => null);
+  const taken = mark ? markBlocks(mark, await lookAt(ctx, svc.tracker)) : null;
+  if (taken) {
+    await svc.lease.release(task.id, ctx.agent);
+    return { ok: false as const, holder: "team repo", expiresAt: "", reason: taken };
   }
   await svc.tracker.setAgent(task.id, ctx.agent);
   await svc.tracker.setStatus(task.id, "claimed");
@@ -106,7 +135,7 @@ export async function pull(ctx: Ctx, svc: Services, o: { dryRun: boolean }): Pro
   for (const task of sel.candidates) {
     const got = await claim(ctx, svc, task);
     if (!got.ok) {
-      ctx.out.info(`${task.identifier} was claimed by ${got.holder} first; trying the next one.`);
+      ctx.out.info("reason" in got && got.reason ? `${task.identifier}: ${got.reason}; trying the next one.` : `${task.identifier} was claimed by ${got.holder} first; trying the next one.`);
       continue;
     }
     const ran = await runTask(ctx, svc, { ...task, agent: ctx.agent, status: "claimed" }, got.lease);

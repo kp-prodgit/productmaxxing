@@ -96,7 +96,7 @@ describe("Start now (APPROVE-3)", () => {
   it("is a team setting the page proposes to the team like the others", async () => {
     expect(checkChange({ kind: "start-now", value: false }, team)).toEqual({ kind: "start-now", value: false });
     expect(() => checkChange({ kind: "start-now", value: "off" }, team)).toThrow(/Turn Start now on or off/);
-    expect(describeChange({ kind: "start-now", value: false })).toBe("No Start now: approved tasks wait in the backlog until a teammate moves them to Ready");
+    expect(describeChange({ kind: "start-now", value: false })).toBe("No Start now: approved tasks wait in the backlog until a teammate moves them to Todo in Linear");
   });
 });
 
@@ -113,7 +113,7 @@ describe("Start now in the page's Settings (APPROVE-3)", () => {
     expect(ui.switchFor("Start now on new tasks").getAttribute("aria-checked")).toBe("false");
     expect(ui.bar()).toMatch(/1 for your team to approve/);
     await ui.click(ui.button("Save Changes", "#savebar"));
-    expect(ui.text("#review")).toMatch(/No Start now: approved tasks wait in the backlog until a teammate moves them to Ready/);
+    expect(ui.text("#review")).toMatch(/No Start now: approved tasks wait in the backlog until a teammate moves them to Todo in Linear/);
     await ui.click(ui.button("Send to your team", "#review"));
     await ui.until(() => /Saved your team's changes on this Mac|couldn't be sent/.test(ui!.text("#review")), "the proposal");
     const repo = ui.ctx.personal.repoPath;

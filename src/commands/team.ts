@@ -10,6 +10,7 @@ import { compareReports, neutralityRun, type NeutralityReport } from "../run/neu
 import { runTask } from "../run/run.js";
 import { verifyPr } from "../run/verify.js";
 import { synthesize } from "../synth/synthesize.js";
+import { heldOverLine, kindLine } from "../synth/held-over.js";
 import { evidenceOf } from "../synth/evidence.js";
 import { approvedText, approveProposals, dropProposals, formatProposals, readProposals, setProposalTheme } from "../synth/proposals.js";
 import { startsNow } from "../core/config.js";
@@ -17,6 +18,9 @@ import { startOfDay } from "../meetings/ledger.js";
 import { formatSynthStatus, recentReceipts, synthesizesHere, synthStatus, synthWindow } from "../synth/status.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
+import { evidenceStep } from "../run/share.js";
+import { tendMarks } from "../lease/marks.js";
+import { followMoves } from "../tracker/follow.js";
 
 async function findTask(svc: Services, ref: string) {
   const all = await svc.tracker.list();
@@ -45,21 +49,30 @@ export const teamCommands: Command[] = [
   {
     name: "synthesize",
     summary: "Turn customer calls into new tasks; you approve each one before it reaches Linear (`pmx proposals`)",
-    usage: "pmx synthesize [--since today | YYYY-MM-DD] [--days 1] [--dry-run]",
+    usage: "pmx synthesize [--since today | YYYY-MM-DD] [--days N] [--dry-run]  (by default it reads what the background job would: since a day before the last run, or 14 days the first time)",
     options: { days: { type: "string" }, since: { type: "string" }, "dry-run": { type: "boolean" } },
     async run(a) {
       const ctx = await a.ctx();
-      const since = sinceDate(a.values.since, ctx.now());
-      const days = Math.max(Number(a.values.days ?? 1), Math.ceil((ctx.now().getTime() - since.getTime()) / 86400000) + 1);
+      // N3: by hand, the same window as the background job (MEET-3, SIG-6); `--since` still picks one.
+      const w = a.values.since === undefined ? synthWindow((await loadState()).lastSynthAt, ctx.now()) : null;
+      const since = w?.since ?? sinceDate(a.values.since, ctx.now());
+      const days = Math.max(Number(a.values.days ?? 1), w?.days ?? 0, Math.ceil((ctx.now().getTime() - since.getTime()) / 86400000) + 1);
       const r = await synthesize(ctx, await services(ctx), { days, since, dryRun: a.values["dry-run"] });
-      for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}`);
-      for (const p of r.staged) console.log(`? [${p.id}] ${p.title}`);
+      // A kept task that lost a sentence is kept, and says so; `pmx explain` shows the sentence's words.
+      const cut = (n?: number) => (n ? ` (${n} ${n === 1 ? "sentence" : "sentences"} left out)` : "");
+      for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}${cut(p.leftOut)}`);
+      for (const p of r.staged) console.log(`? [${p.id}] ${p.title}${cut(p.leftOut)}`);
       for (const s of r.skipped) console.log(`· skipped ${s}`);
       const m = r.meetings;
       console.log(`Meetings since ${since.toDateString()}: ${m.processed.length} processed now (recorded in your PMX repo, not Linear), ${m.already} already processed by the team, ${m.busy} being processed on another machine.`);
       console.log(a.values["dry-run"]
         ? `Dry run: ${r.posted.length} task(s) would be suggested; nothing was. ${r.held} item(s) or passage(s) left out or cut.`
         : `${r.staged.length} new task(s) waiting for you; nothing was written to Linear. ${r.held} item(s) or passage(s) left out or cut.\nSee exactly what Linear would get, then approve or drop each: pmx proposals`);
+      // SIG-9: needs past the team's task limit wait on this Mac for the next run.
+      const more = heldOverLine(r.heldOver);
+      if (more) console.log(a.values["dry-run"] ? `${more.replace(/ back in the next run\.$/, " back in the next run")} (a real run would keep them; synthesis.maxTasks is ${ctx.team.synthesis?.maxTasks ?? 15}).` : `${more} Your team's limit is ${ctx.team.synthesis?.maxTasks ?? 15} tasks a run (synthesis.maxTasks).`);
+      // N1: suggestions of one of PMX's kinds your team hasn't turned on wait on this Mac until it does.
+      for (const k of r.waiting ?? []) console.log(`${kindLine(k)}. They wait on this Mac until your team turns it on, then come back in the next run. Send it to your team for approval: pmx jobs add ${k.kind}`);
       console.log("See why each was suggested and sized: pmx explain (or pmx explain --web)");
       return 0;
     },
@@ -112,6 +125,8 @@ export const teamCommands: Command[] = [
       for (const m of r.missing) console.log(`· no waiting task ${m}`);
       // APPROVE-1, APPROVE-3: say when the task reaches agents: now (Start now), or once someone moves it to Ready.
       if (r.posted.length) console.log(approvedText(r.posted, { start, startNow: startsNow(ctx.team) }));
+      // RUN-5: nothing to say when the quotes reached the team; once, when they couldn't.
+      for (const n of r.notShared) console.log(n);
       return r.missing.length ? 1 : 0;
     },
   },
@@ -212,7 +227,7 @@ export const releaseStep: TickStep = async (ctx) => {
   return r.length ? r.join("; ") : null;
 };
 
-/** `--since today` (default) or a date: the first day whose meetings count as unprocessed (MEET-3). */
+/** `--since today` or a date: the first day whose meetings count as unprocessed (MEET-3). */
 function sinceDate(v: string | undefined, now: Date): Date {
   if (!v || v === "today") return startOfDay(now);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`--since takes "today" or a date like 2026-11-05, not "${v}".`);
@@ -230,11 +245,21 @@ export const synthStep: TickStep = async (ctx: Ctx) => {
   const w = synthWindow(s.lastSynthAt, ctx.now());
   const r = await synthesize(ctx, await services(ctx), { ...w, skipIfNothingNew: !slackDue });
   if (!r.meetings.processed.length && !r.staged.length) return null;
-  return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} new task(s) waiting for your approval (pmx proposals)`;
+  return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} new task(s) waiting for your approval (pmx proposals)${r.heldOver ? `; ${heldOverLine(r.heldOver)!.replace(/\.$/, "")}` : ""}${(r.waiting ?? []).map((k) => `; ${kindLine(k)} (pmx jobs add ${k.kind})`).join("")}`;
 };
+
+/** RUN-5: approved tasks' quotes shared with the team, and the quotes of finished tasks removed. */
+export const evidenceTickStep: TickStep = (ctx) => evidenceStep(ctx, () => services(ctx));
 
 export const pullStep: TickStep = async (ctx) => {
   if (ctx.team.tracker.kind === "none") return null;
-  const r = await pull(ctx, await services(ctx), { dryRun: isDryRunDefault(ctx) });
-  return r.ran ? r.ran.message : r.dryRun ? `dry run: ${r.selection?.candidates[0]?.identifier ?? "nothing"} would be pulled` : null;
+  const svc = await services(ctx);
+  // TASK-8: Linear agrees with the moves PMX follows before the pull reads the queue. Bookkeeping, not an agent run,
+  // so it happens in practice mode too. A tracker PMX can't read yet fails the pull below with the reason.
+  const followed = await followMoves(svc.tracker).catch(() => [] as string[]);
+  // PULL-14: this Mac's steps its last sync applied have landed; marks older than a week go. Bookkeeping, quietly.
+  await tendMarks(ctx, svc.tracker).catch(() => 0);
+  const r = await pull(ctx, svc, { dryRun: isDryRunDefault(ctx) });
+  const said = r.ran ? r.ran.message : r.dryRun ? `dry run: ${r.selection?.candidates[0]?.identifier ?? "nothing"} would be pulled` : null;
+  return [...followed, ...(said ? [said] : [])].join("; ") || null;
 };

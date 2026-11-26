@@ -1,7 +1,7 @@
 ---
 name: pmx-spec
 description: Spec drafting. Writes the one-pager or PRD for building the production version of a product, grounded in the cited customer evidence, the validation behind it and team memory.
-pmx: {"kind": "category", "category": "spec", "stage": "productionize", "output": "outputs/spec/{id}.md", "requiredHeadings": ["Problem", "Evidence", "Validated by", "Proposal", "Success metrics", "Open questions"], "minCitations": 2}
+pmx: {"kind": "category", "category": "spec", "stage": "productionize", "output": "outputs/spec/{id}.md", "requiredHeadings": ["Problem", "Evidence", "Validated by", "Proposal", "Success metrics", "Open questions"], "minCitations": 2, "propose": {"when": "The requirements are already in writing or the scope is agreed (a requirements list, acceptance terms, a scope the team settled), so the work is to specify the build.", "not": "The need is new and nobody has said yet who has it or what it costs them: that's a problem brief."}}
 ---
 
 # Spec draft

@@ -4,7 +4,7 @@ This guide is written for **Claude Code** to follow on a PM's Mac. To use it, op
 
 > Install PMX following https://github.com/kp-prodgit/productmaxxing/blob/main/INSTALL.md
 
-The install is one command, `npx --yes productmaxxing@latest install`, then `pmx init`. Installing by hand from the release package (version **0.36.0**, `productmaxxing-0.36.0.tgz` from the [v0.36.0 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.36.0)) is the fallback at the end.
+The install is one command, `npx --yes productmaxxing@latest install`, then `pmx init`. Installing by hand from the release package (version **0.37.0**, `productmaxxing-0.37.0.tgz` from the [v0.37.0 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.37.0)) is the fallback at the end.
 
 ---
 
@@ -92,7 +92,7 @@ Run `pmx guide` and read all of it. Then run `pmx checklist --json` and tell the
 `pmx init` asks questions only the user can answer, and reads tokens without showing them. Ask the user to run it themselves in Terminal. Don't run it for them, and never type a token or password for them.
 
 Tell the user beforehand:
-- **The PMX repo** holds the team's shared skills, memory and settings. On their own: accept the default, and PMX creates one at `~/pmx`. Joining a team: give the folder where they cloned the team repo.
+- **The PMX repo** holds the team's shared skills, memory and settings. On their own: accept the default, and PMX creates one at `~/pmx`, with this Mac as the team's synthesis Mac (it suggests the team's tasks and reads its approved channels; a teammate who joins later can pick another). Joining a team: give the folder where they cloned the team repo.
 - **Every answer is checked.** If they paste something by mistake, init asks again. At the end it shows a summary, and nothing is saved until they confirm.
 - **Sign in when asked.** PMX runs Claude Code with its own profile, so the user's personal setup never loads, and that profile needs its own sign-in. Init opens the browser for it. Without it, every agent run fails with "Not logged in". `pmx claude login` does it later.
 - **Say yes** to:
@@ -145,24 +145,24 @@ The fallback when `npx` can't reach npm. Download the package and its checksum f
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.36.0/productmaxxing-0.36.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.36.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.37.0/productmaxxing-0.37.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.37.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.36.0.tgz
+npm install -g ./productmaxxing-0.37.0.tgz
 ```
 
-If `shasum` doesn't print `productmaxxing-0.36.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
+If `shasum` doesn't print `productmaxxing-0.37.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
 
 - **If npm says `EACCES`**, its own folder belongs to the system. Don't use `sudo`. Install into `~/.local` instead, and put its folder on the PATH once:
 
   ```bash
-  npm install -g --prefix ~/.local ./productmaxxing-0.36.0.tgz
+  npm install -g --prefix ~/.local ./productmaxxing-0.37.0.tgz
   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
   ```
 
   Then open a new Terminal window. `pmx update` keeps using `~/.local` by itself.
 - **Joining a team?** Clone the team's PMX repo (ask the team lead for its URL), then `npm install -g <repo>/.pmx/cli/productmaxxing.tgz` (with `--prefix ~/.local` if npm needed it above).
-- **Check:** `pmx --version` in a new Terminal window prints `0.36.0`, or the team's version. Then go on with step 4.
+- **Check:** `pmx --version` in a new Terminal window prints `0.37.0`, or the team's version. Then go on with step 4.
 
 ## Background for people reading this
 

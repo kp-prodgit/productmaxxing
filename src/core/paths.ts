@@ -15,6 +15,8 @@ export const paths = {
   /** The clean Claude Code profile (B1). */
   claudeProfile: () => join(pmxHome(), "claude"),
   runSettings: () => join(pmxHome(), "claude", "pmx-run-settings.json"),
+  /** RUN-6: the settings for a run of a kind of work the team opened to the web (competitive analysis only). */
+  webRunSettings: () => join(pmxHome(), "claude", "pmx-run-settings-web.json"),
   mcpConfig: () => join(pmxHome(), "claude", "pmx-mcp.json"),
   staging: () => join(pmxHome(), "staging"),
   /** Run receipts for `pmx explain` (PRIV-4): private, local, never synced. */
@@ -40,3 +42,7 @@ export const KEYCHAIN_SERVICE = "productmaxxing";
 export const TEAM_CONFIG_FILE = "pmx.config.json";
 export const KILL_SWITCH_FILE = "pmx.stop";
 export const RUNLOG_BRANCH = "pmx/runlog";
+/** RUN-5: where the team repo keeps approved tasks' evidence packs: `refs/pmx/evidence/<task>`, one `<task>.json` each. Never main. */
+export const EVIDENCE_REFS = "refs/pmx/evidence";
+/** PULL-14: each task's last PMX step (a draft in review, done, rejected, dropped, back to Ready): `refs/pmx/task-state/<task>`. Never main. */
+export const TASK_STATE_REFS = "refs/pmx/task-state";

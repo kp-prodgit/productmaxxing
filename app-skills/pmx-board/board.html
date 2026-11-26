@@ -166,8 +166,8 @@ header .sub code { font-family: var(--mono); font-size: 12px }
   const CFG = JSON.parse(document.getElementById("pmx-config").textContent || "{}");
   const LINEAR = "Linear";
   const ZONES = [
-    { key: "pool", title: "Backlog", hint: "New work. Triage it to Ready.", color: "--inbox" },
-    { key: "ready", title: "Ready", hint: "Agents pick these up on their next run.", color: "--ready" },
+    { key: "pool", title: "Backlog", hint: "New work. Triage it to Ready (Todo in Linear).", color: "--inbox" },
+    { key: "ready", title: "Ready", hint: "Todo in Linear. Agents pick these up on their next run.", color: "--ready" },
     { key: "inFlight", title: "In flight", hint: "Claimed, running or blocked.", color: "--running" },
     { key: "review", title: "Review", hint: "Drafts waiting for a human.", color: "--review" },
     { key: "done", title: "Done", hint: "Accepted or finished.", color: "--done" },
@@ -239,13 +239,22 @@ header .sub code { font-family: var(--mono); font-size: 12px }
       if (pick(names, "pmx-kind", L) === "meeting") continue;
       let status = pick(names, "pmx-status", L);
       const labelled = !!status && !!STATUS_ZONE[status];
-      if (!labelled) {
-        if (i.statusType === "canceled") continue;
-        status = i.statusType === "completed" ? "done" : "inbox";
+      const label = labelled ? status : null;
+      // Canceled in Linear: dropped from the queue, whatever its label (TASK-8).
+      if (i.statusType === "canceled") continue;
+      const recorded = pick(names, "pmx-state", L);
+      if (!labelled) status = i.statusType === "completed" ? "done" : "inbox";
+      else if (i.statusType && i.statusType !== recorded) {
+        // TASK-8, read the way PMX reads it: PMX records the state type it set (pmx-state). A state that moved away
+        // from it was moved by a person on Linear's own board, and their move wins where PMX follows it; closing a task
+        // there shows it closed without counting it accepted. A state still where PMX left it means the label decides.
+        if (recorded && status === "inbox" && i.statusType === "unstarted") status = "ready";
+        else if (recorded && status === "ready" && (i.statusType === "backlog" || i.statusType === "triage")) status = "inbox";
+        else if (i.statusType === "completed" && status !== "done") status = "done";
       }
       const prio = typeof i.priority === "object" && i.priority ? i.priority.value : Number(i.priority) || 0;
       out[STATUS_ZONE[status]].push({
-        uuid: i.uuid || i.id, identifier: i.id, title: i.title || "(untitled)", url: i.url, status, labelled,
+        uuid: i.uuid || i.id, identifier: i.id, title: i.title || "(untitled)", url: i.url, status, labelled, label, recorded,
         category: pick(names, "pmx-category", L), size: pick(names, "pmx-size", L), agent: pick(names, "pmx-agent", L),
         assignee: personOf(i.assignee), priority: prio, description: i.description || "",
         finished: i.completedAt || i.updatedAt || "",
@@ -360,7 +369,11 @@ header .sub code { font-family: var(--mono); font-size: 12px }
     const L = labelIndex(), st = L.ids["pmx-status"] || {};
     if (!st[to]) { S.notes[card.uuid] = { err: true, text: `The "${to}" label is missing from the pmx-status group in Linear. Run \`pmx doctor\` to set the labels up.` }; return render(); }
     const add = [st[to]], remove = [];
-    if (card.labelled && st[card.status]) remove.push(st[card.status]);
+    if (card.label && card.label !== to && st[card.label]) remove.push(st[card.label]);
+    // TASK-7: the card's Linear status moves with it (Todo for Ready, Backlog for the backlog), with the new state's
+    // type recorded in pmx-state the way PMX records its own writes, so PMX reads the move as made.
+    const rec = L.ids["pmx-state"] || {}, type = to === "ready" ? "unstarted" : "backlog";
+    if (rec[type]) { add.push(rec[type]); if (card.recorded && card.recorded !== type && rec[card.recorded]) remove.push(rec[card.recorded]); }
     for (const [g, key] of [["pmx-category", "category"], ["pmx-size", "size"]]) {
       const want = extra && extra[key];
       if (!want || want === card[key]) continue;
@@ -371,7 +384,7 @@ header .sub code { font-family: var(--mono); font-size: 12px }
     }
     S.busy[card.uuid] = to; S.open = null; delete S.notes[card.uuid]; render();
     try {
-      const input = { id: card.identifier, addLabels: add };
+      const input = { id: card.identifier, addLabels: add, state: to === "ready" ? "unstarted" : "backlog" };
       if (remove.length) input.removeLabels = remove;
       await S.mcp.callTool(LINEAR, "save_issue", input);
       S.notes[card.uuid] = { text: to === "ready" ? "Moved to Ready." : "Moved back to the backlog." };

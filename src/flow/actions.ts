@@ -7,10 +7,11 @@ import { cleanDomain } from "../core/filter.js";
 import { writeFileIn } from "../core/git.js";
 import { outputHost } from "../core/host.js";
 import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
-import { loadSkill, orgSkillPath, teamSkillPath } from "../core/skills.js";
+import { bundledSkillsDir, loadSkill, orgSkillPath, teamSkillPath } from "../core/skills.js";
+import { parseRubric } from "../core/skillcheck.js";
 import { SIZES, type Size } from "../core/types.js";
 import { addNeverIngest, checkNeverIngest, type NeverIngestKind } from "./edit.js";
-import { channelInputs, checkConnector, checkLook, checkPlace, connectorId } from "../inputs/inputs.js";
+import { channelInputs, checkConnector, checkLook, checkPlace, checkSeries, connectorId, MAX_SERIES, meetingSeries } from "../inputs/inputs.js";
 
 /**
  * What the pipeline board's Rules tab can change (BOARD-3). Personal settings apply on this Mac at once; team settings
@@ -35,6 +36,11 @@ export type Change =
   | { kind: "call-input"; op: "add" | "remove"; connector: string; look?: string | null }
   /** The places the team approves in one channel connector, as a whole list; empty stops reading it (INPUT-1). */
   | { kind: "team-input"; connector: string; places: string[]; look?: string | null }
+  /**
+   * F3 (INPUT-4): the recurring internal meetings the team approves for team work, by title pattern, as a whole list;
+   * empty approves none. A team setting, like the channels.
+   */
+  | { kind: "meeting-series"; patterns: string[] }
   /** Whose Mac proposes team tasks and reads the team's channels (Q2), by PMX handle. */
   | { kind: "synthesizer"; value: string }
   /** INSTALL-4: who the team's product lead is, by PMX handle, or nobody (null). PMX offers PMX Engine only to them. */
@@ -44,12 +50,20 @@ export type Change =
   /** A kind of work the team defines with the template (JOB-8): its skill, sample task, size row and config line. */
   | { kind: "new-kind"; slug: string; draft: KindDraft }
   /** Whether every PM's agent on the team must take a kind of work (JOB-9). */
-  | { kind: "kind-required"; name: string; value: boolean };
+  | { kind: "kind-required"; name: string; value: boolean }
+  /** CAT-8: one of PMX's own kinds of work a team doesn't have yet (a newer one, like decision-brief): its config line and size row. */
+  | { kind: "builtin-kind"; name: string }
+  /**
+   * CAT-8: the team's copy of one of PMX's own skills replaced by this pmx's (`pmx skills update`). A team keeps its copy
+   * until it asks, so a newer built-in never overwrites a team's edits unseen; the pull request's diff shows them. The
+   * size rubric keeps every row the team has and gains PMX's new ones.
+   */
+  | { kind: "skill-update"; name: string };
 
 const RANK = { off: 0, mine: 1, linear: 2 } as const;
 const own = (o: object, k: unknown) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 const FIELD = { title: "meetingTitles", person: "people", channel: "channels" } as const;
-export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "start-now" || c.kind === "team-input" || c.kind === "synthesizer" || c.kind === "product-lead" || c.kind === "new-kind" || c.kind === "kind-required";
+export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "start-now" || c.kind === "team-input" || c.kind === "meeting-series" || c.kind === "synthesizer" || c.kind === "product-lead" || c.kind === "new-kind" || c.kind === "kind-required" || c.kind === "builtin-kind" || c.kind === "skill-update";
 
 /** A change that lets more through: the board asks once more before it, and only the local page may send it. */
 export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolean {
@@ -63,6 +77,11 @@ export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolea
   if (c.kind === "team-input") {
     const cur = team ? channelInputs(team).find((x) => connectorId(x.connector) === connectorId(c.connector)) : undefined;
     return c.places.some((x) => !(cur?.places ?? []).some((y) => y.toLowerCase() === x.toLowerCase())) || (!!c.places.length && !!cur && (cur.look ?? null) !== (c.look ?? null));
+  }
+  // A new meeting series lets internal meetings through to team work.
+  if (c.kind === "meeting-series") {
+    const cur = team ? meetingSeries(team).map((x) => x.toLowerCase()) : [];
+    return c.patterns.some((x) => !cur.includes(x.toLowerCase()));
   }
   // Turning on "send my to-dos to Linear" lets the PM's own commitments leave this Mac.
   if (c.kind === "todos-linear") return c.value && !p.todosToLinear;
@@ -140,10 +159,24 @@ export function checkChange(c: any, team: TeamConfig): Change {
       const { slug, draft } = checkKindDraft(c.draft, team);
       return { kind: "new-kind", slug, draft };
     }
+    case "skill-update":
+      if (typeof c.name !== "string" || !/^pmx-[a-z][a-z0-9-]{1,40}$/.test(c.name)) fail(`Name one of PMX's own skills, like pmx-synthesize, not ${JSON.stringify(c.name)}.`);
+      return { kind: "skill-update", name: c.name };
+    case "builtin-kind":
+      if (!own(DEFAULT_TEAM.categories, c.name)) fail(`PMX has no kind of work called ${String(c.name)}. Its own are: ${Object.keys(DEFAULT_TEAM.categories).join(", ")}.`);
+      if (own(team.categories, c.name)) fail(`Your team already has ${c.name}.`);
+      return { kind: "builtin-kind", name: c.name };
     case "kind-required":
       if (!own(team.categories, c.name)) fail(`Unknown kind of work ${c.name}.`);
       if (typeof c.value !== "boolean") fail("Require a kind of work for everyone, or stop requiring it.");
       return { kind: "kind-required", name: c.name, value: c.value };
+    case "meeting-series": {
+      if (!Array.isArray(c.patterns)) fail("Give the team's meeting series as a list.");
+      const seen = new Set<string>();
+      const patterns = (c.patterns as unknown[]).map(checkSeries).filter((p) => !seen.has(p.toLowerCase()) && !!seen.add(p.toLowerCase()));
+      if (patterns.length > MAX_SERIES) fail(`Up to ${MAX_SERIES} meeting series.`);
+      return { kind: "meeting-series", patterns };
+    }
     case "team-input": {
       const connector = checkConnector(c.connector);
       const places: string[] = [...new Set((Array.isArray(c.places) ? (c.places as unknown[]) : []).map(checkPlace))];
@@ -202,7 +235,7 @@ export function describe(c: Change): string {
     case "size": return `Size ${c.size}: ${[c.minutes !== undefined ? `${c.minutes} min` : "", c.usd !== undefined ? `~$${c.usd}` : ""].filter(Boolean).join(", ")}`;
     case "rubric": return `${c.category} ${c.size}: "${c.text}"`;
     case "review-cap": return `Stop pulling at ${c.value} drafts waiting for review`;
-    case "start-now": return c.value ? "Offer Start now: a PM's approval can make a task Ready for agents at once" : "No Start now: approved tasks wait in the backlog until a teammate moves them to Ready";
+    case "start-now": return c.value ? "Offer Start now: a PM's approval can make a task Ready for agents at once" : "No Start now: approved tasks wait in the backlog until a teammate moves them to Todo in Linear";
     case "digest-day": return `Build the digest on ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][c.value]}s`;
     case "digest-dm": return c.value ? `Send the approved digest to Slack member ${c.value}` : "Don't send the digest to Slack";
     case "call-input": return c.op === "add" ? `Collect calls from ${c.connector}${c.look ? ` (only ${c.look})` : ""}` : `Stop collecting calls from ${c.connector}`;
@@ -211,6 +244,9 @@ export function describe(c: Change): string {
     case "product-lead": return c.value ? `${c.value} is your team's product lead, so PMX offers them PMX Engine` : "Your team names no product lead";
     case "new-kind": return `Add the kind of work "${c.draft.name}" (${c.slug})${c.draft.required ? ", required for everyone on the team" : ""}`;
     case "kind-required": return `${c.value ? "Require" : "Stop requiring"} ${c.name} for everyone on the team`;
+    case "builtin-kind": return `Add PMX's kind of work ${c.name}; each PM chooses whether their agent takes it`;
+    case "skill-update": return `Use this PMX's ${c.name} instead of your team's copy${c.name === "pmx-size" ? ", keeping your team's rows" : ""}`;
+    case "meeting-series": return c.patterns.length ? `Read the team's internal meeting series for team work: ${c.patterns.join(", ")}` : "Read no internal meeting series for team work";
     case "team-input": return c.places.length ? `Read ${c.connector}: ${c.places.join(", ")}${c.look ? ` (only ${c.look})` : ""}` : `Stop reading ${c.connector}`;
   }
 }
@@ -272,6 +308,25 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
         await writeFileIn(wt.cwd, join(dir, "fixtures", "sample-task.md"), renderKindFixture(c.slug, c.draft));
         rubric = upsertRubricRow(rubric ?? (await loadSkill(wt.cwd, "pmx-size")).text, c.slug, c.draft.sizes);
         kinds.push(c);
+      } else if (c.kind === "skill-update") {
+        const fresh = await readFile(join(bundledSkillsDir(), c.name, "SKILL.md"), "utf8").catch(() => null);
+        if (!fresh) throw new Error(`PMX has no skill called ${c.name}.`);
+        const rel = teamSkillPath("", c.name).replace(/^\//, "");
+        if (c.name === "pmx-size") {
+          // The team's own rows (its kinds of work, its wording) stay; PMX's new rows come in.
+          const before: string = rubric ?? (await readFile(join(wt.cwd, rel), "utf8").catch(() => fresh));
+          const ours: Record<string, Record<Size, string>> = parseRubric(before).cells;
+          rubric = Object.entries(ours).reduce((t: string, [cat, cells]) => upsertRubricRow(t, cat, cells), fresh);
+        } else await writeFileIn(wt.cwd, rel, fresh);
+      } else if (c.kind === "builtin-kind") {
+        // A kind of work PMX added after this team's repo was set up (CAT-8): the skill is built in, so the team adds its
+        // line, and its size row where the team keeps its own copy of the rubric.
+        cfg.categories = { ...(cfg.categories ?? DEFAULT_TEAM.categories) };
+        if (own(cfg.categories, c.name)) throw new Error(`Your team already has ${c.name}.`);
+        cfg.categories[c.name] = { ...DEFAULT_TEAM.categories[c.name]! };
+        const current = rubric ?? (await loadSkill(wt.cwd, "pmx-size")).text;
+        const row = parseRubric(await readFile(join(bundledSkillsDir(), "pmx-size", "SKILL.md"), "utf8")).cells[c.name];
+        if (row && !parseRubric(current).cells[c.name]) rubric = upsertRubricRow(current, c.name, row);
       } else if (c.kind === "kind-required") {
         cfg.categories = { ...(cfg.categories ?? DEFAULT_TEAM.categories) };
         const cur = own(cfg.categories, c.name) ? cfg.categories[c.name] : null;
@@ -288,11 +343,16 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
         // The old Slack list now lives in `inputs`; leaving it would make Slack impossible to turn off the old way.
         cfg.slackChannels = [];
       }
+      else if (c.kind === "meeting-series") {
+        if (c.patterns.length) cfg.meetingSeries = c.patterns;
+        else delete cfg.meetingSeries;
+      }
     }
     await writeFileIn(wt.cwd, TEAM_CONFIG_FILE, `${JSON.stringify(cfg, null, 2)}\n`);
     if (rubric !== null) await writeFileIn(wt.cwd, teamSkillPath("", "pmx-size").replace(/^\//, ""), rubric);
     const lines = team.map((c) => `- ${describe(c)}`);
-    const title = kinds.length === 1 && team.length === 1 ? `New kind of work: ${kinds[0]!.draft.name}` : kinds.length ? `New kinds of work and team settings from PMX` : "Team settings from the PMX board";
+    const updates = team.filter((c): c is Extract<Change, { kind: "skill-update" }> => c.kind === "skill-update");
+    const title = kinds.length === 1 && team.length === 1 ? `New kind of work: ${kinds[0]!.draft.name}` : kinds.length ? `New kinds of work and team settings from PMX` : updates.length === team.length ? `PMX's newer skills: ${updates.map((u) => u.name).join(", ")}` : "Team settings from the PMX board";
     const sha = await wt.commitAll(`${title}\n\n${lines.join("\n")}`);
     if (!sha) throw new Error("Those team settings are already in place.");
     const host = await outputHost(ctx.repo, ctx.keychain, ctx.exec, ctx.fetch);

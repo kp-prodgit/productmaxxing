@@ -21,7 +21,11 @@ Write one markdown file to the path given in the task (`outputs/research-synthes
    Say how many distinct sources support each theme. Describe the problem people have, not the feature they asked for.
 4. `## Insights`: the themes the team can act on. Each insight is one bullet: what we now believe, the decision it
    informs, and its source IDs. A theme with no decision behind it isn't an insight; leave it under Themes.
-5. `## Open questions`: what the evidence can't answer yet, and who to ask.
+5. `## Open questions`: what the evidence can't answer yet. Right after each question, say who or what answers it:
+   `— ask: <role>` when one person can answer it (`Who signs the order? — ask: the account lead`), or
+   `— needs: <kind of work>` when it takes research or a document (`— needs: research`, `— needs: a validation plan`).
+   Name a role, never a person. When the draft is accepted, each ask becomes the PM's to-do and each need a suggested
+   task.
 
 Then reply with one line: what you concluded, for the tracker comment.
 
@@ -34,6 +38,7 @@ Then reply with one line: what you concluded, for the tracker comment.
 - Decisions (go or no-go, price, scope, kill) are options with a recommendation, marked **PM decides**. Never write them as settled.
 - No market figure, price or forecast without a source or a stated method. Use ranges.
 - End with the decision the draft supports or the questions blocking it.
+- No names other than redaction placeholders. Write each person as their role and company: "Globex's brand lead", "our head of product", "a Globex admin". Never a person's name, even one the task, a source or `memory/` gives. In your own sentences a role reads better than a placeholder like `[PERSON-2, Globex]`: keep placeholders for quotes, or for someone the sources give no role or company for.
 
 ## Quality checklist
 
@@ -42,4 +47,4 @@ Then reply with one line: what you concluded, for the tracker comment.
 - [ ] Contradicting evidence is shown, not dropped.
 - [ ] Every insight names the decision it informs.
 - [ ] Follows the drafting rules.
-- [ ] No names other than redaction placeholders. Nothing personal about colleagues.
+- [ ] No names other than redaction placeholders: people appear as their role and company, never by name. Nothing personal about colleagues.

@@ -30,6 +30,8 @@ export async function runStatus(ctx: Ctx, extra: string[] = [], o: { engine?: En
     // SIG-9: needs past the team's task limit aren't lost; one line says they come back.
     const more = heldOverLine(board.needs.heldOver ?? 0);
     if (more) lines.push(`  ${more}`);
+    // JOB-11: a kind of work your team has that you never chose about: your agent skips it until you do.
+    for (const k of board.kindsToChoose ?? []) lines.push(`  ${k.text}. Turn it on for your agent: pmx categories add ${k.kind} (or keep it off: pmx categories remove ${k.kind}).`);
     // N1: suggestions of one of PMX's kinds of work your team hasn't turned on wait on this Mac until it does.
     for (const k of board.kindsWaiting ?? []) lines.push(`  ${k.text}${k.pending ? ": the change waits for a teammate's approval" : `: pmx jobs add ${k.kind} sends it to your team for approval`}.`);
   } catch (e) {

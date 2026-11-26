@@ -45,7 +45,9 @@ A single JSON object and nothing else:
 - `sources`: the IDs of the sources that directly support the task. One is fine; never add a weak or
   unrelated source to reach two.
 - `support`: for each cited source, one sentence on how it supports this task, in your own words.
-- `sameAs`: null, or the ID of the open task or waiting proposal this is the same need as.
+- `sameAs`: null, or the ID of the open task or waiting proposal this is the same need as, or of a task your team
+  finished recently whose work this repeats.
+- `follows`: null, or the ID of a task your team finished recently that this is new work after.
 - `heldOver`: the needs you found beyond the task limit, highest value first, each with a title, a category, its
   sources and one sentence on why it matters. Empty when everything fits.
 
@@ -93,6 +95,10 @@ launch weekly, exec staff or a design review. Read them as context, above all fo
 - When the prompt lists needs held over from the last run, reconsider them first, alongside the new ones.
 - When the prompt lists what's already on the team's list and a need is the same as one of those, return it with
   `"sameAs"` set to that ID. PMX adds your sources to it instead of making a second task.
+- When the prompt lists what your team finished recently, never suggest that work again as new. A need it already
+  covered goes back with `"sameAs"` set to that ID. When your sources bring something it couldn't have covered (a new
+  requirement, another kind of customer, a decision that changed since), suggest only the new work, titled for what's
+  new, with `"follows"` set to that ID.
 - Only propose work an agent can finish as a written draft with a repo checkout and the cited sources, in one
   of the categories listed in the prompt. Choose the category by its description, and when a category says
   "Propose it when" or "Don't propose it when", follow that. A draft a person then sends, posts or applies (an

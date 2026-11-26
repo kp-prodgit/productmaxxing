@@ -112,13 +112,17 @@ export interface PipelineData {
    * Local level only. `at`: when synthesis staged it, so the page can say how long it has waited (0.36.0). `follows`: the
    * task whose accepted draft left this follow-up (FOLLOW-1), shown as "Follows PMX-12"; absent for synthesis's own.
    * `followUp`: where that draft is (its path in the team repo, its pull request and the task on the web, when they have
-   * links) and how many more of its questions stayed in it, for the task's details.
+   * links) and how many more of its questions stayed in it, for the task's details. R6: `followUp.done`, the day the task
+   * it follows was done, for synthesis's own follow-up to finished work. R16: `fills`, the open task with no sources that
+   * approving it gives this description and its sources.
    */
   proposals: {
-    id: string; title: string; category: string; size: Size; from: string; description: string; theme: string | null; at?: string; follows?: string | null;
+    id: string; title: string; category: string; size: Size; from: string; description: string; theme: string | null; at?: string; follows?: string | null; fills?: string;
     /** N2: what later runs added since it was suggested (sources, and sentences in the description). */
     changed?: string;
-    followUp?: { path: string; draft: string | null; task: string | null; more: number };
+    /** R3: why approving it didn't send it; it waits until the PM drops it or keeps it as a to-do. */
+    held?: string;
+    followUp?: { path: string; draft: string | null; task: string | null; more: number; done?: string };
   }[];
   /** The team's open roadmap themes (EQ-38), for the proposals' theme picker. Local level only, like the proposals. */
   themes?: string[];
@@ -160,6 +164,12 @@ export interface PipelineData {
    * `pending` when that change already waits for a teammate, and then Team changes shows it instead. Local level only.
    */
   kindsWaiting?: { kind: string; words: string; n: number; text: string; pending: boolean }[];
+  /**
+   * JOB-11: the team's kinds of work this PM's agent doesn't take and the PM never chose about, such as one a teammate
+   * added with `pmx jobs add`. Each is a Needs you card with Turn on and Keep off, the same change Settings → Kinds of
+   * work sends; `ready` counts the Ready tasks of that kind. Local level only.
+   */
+  kindsToChoose?: { kind: string; words: string; ready: number; text: string }[];
   /** `problems` stays plain text for boards published before 0.17.0; `items` carries each one's fix. */
   health: { ok: boolean; problems: string[]; items: HealthProblem[]; facts: string[] };
   checks: FlowCheck[];
@@ -203,7 +213,8 @@ export interface PipelineRules {
   /** Local: the entries. Shared: how many of each, never the entries. */
   neverIngest: { people: string[] | number; titles: string[] | number; channels: string[] | number };
   budget: { dailyUsd: number | null; teamCap: number; spentUsd: number; tokens: number };
-  categories: { name: string; accepted: boolean; required?: boolean }[];
+  /** `toChoose` (JOB-11): the PM never chose about it, so it's off until they do. */
+  categories: { name: string; accepted: boolean; required?: boolean; toChoose?: boolean }[];
   reviewCap: number;
   sizes: Record<Size, { minutes: number; usd: number }>;
   rubric: Record<string, Record<Size, string>>;
@@ -226,6 +237,11 @@ export interface PipelineRules {
    * (an older PMX) doesn't offer the setting.
    */
   meetingSeries?: string[];
+  /**
+   * F5: the team's investors' and other confidential contacts' domains, a team setting in pmx.config.json. This Mac's
+   * own page only, which is where team settings are changed; a board without it doesn't offer the setting.
+   */
+  confidentialDomains?: string[];
 }
 
 export interface PipelineInputs {
@@ -252,6 +268,7 @@ export interface PipelineInputs {
   themes?: string[];
   pendingTeam?: PipelineData["pendingTeam"];
   kindsWaiting?: PipelineData["kindsWaiting"];
+  kindsToChoose?: PipelineData["kindsToChoose"];
   proposals: Proposal[];
   /** SIG-9: how many needs wait on this Mac for the next synthesis run. */
   heldOver?: number;
@@ -469,8 +486,10 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     proposals: local ? i.proposals.map((p) => ({
       id: p.id, title: p.title, category: p.category, size: p.size, description: p.description, theme: p.theme ?? null, at: p.at,
       ...(changedText(p) ? { changed: changedText(p)! } : {}),
+      ...(p.held ? { held: p.held.why } : {}),
       from: !p.from.length ? (p.follows ? `The sources of ${p.follows.identifier}` : "No sources") : p.from.length === 1 ? `1 source (${p.from[0]!.at.slice(0, 10)})` : `${p.from.length} sources (${[...new Set(p.from.map((f) => f.at.slice(0, 10)))].join(", ")})`,
-      ...(p.follows ? { follows: p.follows.identifier, followUp: { path: p.follows.path, draft: web(p.follows.draft), task: web(p.follows.url), more: p.follows.more ?? 0 } } : {}),
+      ...(p.follows ? { follows: p.follows.identifier, followUp: { path: p.follows.path, draft: web(p.follows.draft), task: web(p.follows.url), more: p.follows.more ?? 0, ...(p.follows.where === "done" && p.follows.done ? { done: p.follows.done } : {}) } } : {}),
+      ...(p.fills ? { fills: p.fills } : {}),
     })) : [],
     drafts: review.map((x) => ({ identifier: x.identifier, title: x.title, url: x.url ?? null, since: x.createdAt ?? null, draftedAt: draftedAt.get(x.identifier) ?? null, mine: x.agent === undefined || x.agent === i.agent })),
     stopped: stoppedTasks(tasksNow, i.runlog ?? []),
@@ -486,6 +505,7 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
     themes: local ? i.themes ?? [] : [],
     pendingTeam: i.pendingTeam ?? [],
     ...(local && i.kindsWaiting?.length ? { kindsWaiting: i.kindsWaiting } : {}),
+    ...(local && i.kindsToChoose?.length ? { kindsToChoose: i.kindsToChoose } : {}),
     health: { ok: !problems.length, problems: problems.map((p) => p.text), items: problems, facts: i.health.facts },
     checks: i.checks,
     held,

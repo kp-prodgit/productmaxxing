@@ -43,7 +43,14 @@ function canaries(r: FilterRules): Canary[] {
       item: { title: `Customer call ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk(`We need to talk about a performance improvement plan. ${CANARY_MARKER}`) } },
     { name: "health passage", expect: { passage: "health" }, applies: () => true,
       item: { title: `Customer call ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk(`I'm on sick leave after the surgery. ${CANARY_MARKER}`) } },
+    // F5: team work never reads fundraising; the PM's own to-dos may.
+    { name: "fundraising meeting", expect: { item: "fundraising" }, applies: (x) => !x.allowConfidential,
+      item: { title: `Series B follow-up ${CANARY_MARKER}`, at, participants: [OUTSIDE, inside], text: talk("Where does the moat question stand?") } },
   ];
+  // F5: someone from the team's first confidential domain (an investor's, say) holds the meeting from team work.
+  const confidential = r.confidentialDomains?.[0];
+  if (confidential) list.push({ name: "confidential contact", expect: { item: "confidential" }, applies: (x) => !x.allowConfidential,
+    item: { title: `Quarterly catch-up ${CANARY_MARKER}`, at, participants: [`partner@${confidential}`, inside], text: talk("How is the roadmap going?") } });
   // A thread from a place nobody approved (INPUT-1), whenever this run reads threads.
   if (r.approvedPlace) list.push({ name: "unapproved channel", expect: { item: "place-not-approved" }, applies: () => true, kind: "thread",
     item: { title: "#pmx-canary-unapproved", at, participants: [OUTSIDE], text: `Lee: Please add SCIM. ${CANARY_MARKER}`, origin: { source: "slack", sourceId: "canary" }, place: "#pmx-canary-unapproved" } });

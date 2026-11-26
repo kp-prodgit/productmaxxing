@@ -46,9 +46,9 @@ describe("the web guard: nothing from the task's evidence in a search (RUN-6)", 
     expect(check(search("jane@acme.example"))).toContain("person");
     expect(check(search("max lee product manager"))).toEqual(["person"]);
     expect(check(fetchUrl("https://globex.example/search?q=Jane%20Doe"))).toEqual(["person"]);
-    // Customers and partners: an outside participant's company, and a name the passages mention.
+    // Customers and partners: an outside participant's company. A name the passages only mention isn't one (R18).
     expect(check(search("acme admin tools"))).toEqual(["company"]);
-    expect(check(search("Hooli identity provider"))).toEqual(["company"]);
+    expect(check(search("Hooli identity provider"))).toEqual([]);
     expect(check(fetchUrl("https://www.acme.example/about"))).toEqual(["company"]);
     expect(check(search("SSO pricing", { allowed_domains: ["acme.example"] }))).toEqual(["company"]);
     // The guard holds salted hashes only: the agent, which can read it, learns no name.
@@ -77,7 +77,7 @@ describe("the web guard: nothing from the task's evidence in a search (RUN-6)", 
       webGuardHook(JSON.stringify({ hook_event_name: "PreToolUse", tool_name: tool, tool_input, cwd: dir }), env);
 
     expect(await call("WebSearch", { query: "Globex SSO pricing" })).toEqual({ code: 0, stdout: "", stderr: "" });
-    const no = await call("WebSearch", { query: "Hooli and Jane" });
+    const no = await call("WebSearch", { query: "Acme and Jane" });
     expect(no.code).toBe(2);
     expect(no.stderr).toMatch(/^PMX blocked this search: it names a person from the task's sources, and it names a customer or partner from the task's sources\. /);
     const json = JSON.parse(no.stdout);

@@ -47,7 +47,9 @@ async function everything(ctx: Ctx) {
   await stageProposals([{ at: ago(5 * 24 * H), receipt: "r0", title: "Export approval history to CSV", description: "Admins need a record.", category: "spec", size: "M", sources: ["T1"], from: [{ id: "T1", title: "Beta call", at: ago(5 * 24 * H).slice(0, 10), why: "asked twice" }] }]);
   await mkdir(paths.staging(), { recursive: true });
   await writeFile(join(paths.staging(), "digest-2026-W47.md"), "# Digest\n\n## Themes\n\n- Exports matter [T1]\n");
-  await git(ctx.personal.repoPath, "branch", "pmx/settings-20261120120000");
+  // A settings change not merged yet (R22): one commit past the team's base.
+  const sent = await git(ctx.personal.repoPath, "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Team settings from PMX");
+  await git(ctx.personal.repoPath, "branch", "pmx/settings-20261120120000", sent);
   await writeFile(join(paths.home(), "settings-prs.json"), JSON.stringify([{ id: "pmx/settings-20261120120000", url: "branch:pmx/settings-20261120120000", at: ago(4 * 24 * H), changes: ["Agents wait at 4 drafts"] }]));
   await recordChecklist(buildChecklist({
     now: new Date(), version: "0.35.0", personal: ctx.personal, team: { ...DEFAULT_TEAM, tracker: LINEAR } as any,

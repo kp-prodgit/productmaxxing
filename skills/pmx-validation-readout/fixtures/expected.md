@@ -25,8 +25,8 @@ One of two buyers signed a paid pilot through procurement [T5]. The other liked 
 - **Iterate:** wait for the pilot to run its course first.
 - **Stop:** not supported by the evidence.
 
-**PM decides**.
+**PM decides:** whether to scale, iterate or stop.
 
 ## Open questions
 
-- Does the pilot convert to a subscription?
+- Does the pilot convert to a subscription? — ask: the account lead

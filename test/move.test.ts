@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { pipelineAct } from "../src/flow/pipeline-act.js";
 import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
-import { readProposals, stageProposals } from "../src/synth/proposals.js";
+import { CHECKED, readProposals, stageProposals } from "../src/synth/proposals.js";
 import { moveWork } from "../src/todo/move.js";
 import { addTodo, COMMITMENT, loadTodos } from "../src/todo/todo.js";
 import { readOutbox, relayDir, relayTracker } from "../src/tracker/relay.js";
@@ -69,11 +69,10 @@ describe("moving work between private, to-do and product (TODO-5)", () => {
     expect(await todos()).toEqual([]);
   });
 
-  it("nothing leaves the Mac while sending to-dos to Linear is off; taking work in from Linear still works", async () => {
+  it("no to-do goes to Linear as your own while sending to-dos to Linear is off; taking work in from Linear still works", async () => {
     const { tr, move, todos } = await setup({ optIn: false, seed: [task(5)] });
-    const t = await addTodo({ text: "Call Dana back" }, NOW);
+    const t = await addTodo({ text: "Call the beta customer back" }, NOW);
     await expect(move(t.id, "todo")).rejects.toThrow(/is off, so they stay on this Mac/);
-    await expect(move(t.id, "product", { kind: "spec" })).rejects.toThrow(/is off/);
     expect(tr.tasks.size).toBe(1);
     await move("PMX-5", "todo");
     expect((await todos()).map((x) => x.linear ?? null)).toEqual([null, "PMX-5"]);
@@ -120,7 +119,7 @@ describe("moving work between private, to-do and product (TODO-5)", () => {
   it("a proposal can be kept as a private to-do or a to-do in Linear, or approved by moving it to product", async () => {
     const { tr, move, todos } = await setup();
     const from = [{ id: "T1", title: "Acme weekly sync", at: "2026-11-18T14:00:00Z", why: "Asked twice for CSV export." }];
-    const base = { at: NOW.toISOString(), receipt: "r-none", description: "Spec it.", category: "spec", size: "M" as const, sources: ["T1"], from };
+    const base = { at: NOW.toISOString(), receipt: "r-none", description: "Spec it.", category: "spec", size: "M" as const, sources: ["T1"], from, checked: CHECKED };
     const [a, b, c] = await stageProposals([{ ...base, title: "CSV export that doesn't break" }, { ...base, title: "Follow up with Acme" }, { ...base, title: "Bulk edit for roles" }]);
     const kept = await move(a!.id, "private");
     expect(kept).toMatchObject({ from: "product", to: "private", identifier: null });

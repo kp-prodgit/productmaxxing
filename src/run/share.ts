@@ -2,14 +2,20 @@ import { join } from "node:path";
 import type { Ctx } from "../core/context.js";
 import { privateDir, readJson, withLock, writeJson } from "../core/fsutil.js";
 import { notify } from "../core/notify.js";
+import { holdRulesKey, screened, screensOut } from "../core/filter.js";
+import { privacyRules } from "../digest/gather.js";
+import { heldNow } from "./evidence.js";
 import { paths } from "../core/paths.js";
 import { RunLogStore } from "../core/runlog-store.js";
 import type { Services } from "../core/services.js";
 import { loadState, updateState } from "../core/state.js";
 import type { Task } from "../core/types.js";
+import { followsIn } from "../tracker/mentions.js";
 import { readResolved } from "../tracker/relay.js";
-import { sourcesHere, taskEvidence } from "./evidence.js";
-import { evidenceStore, packSources, TASK, type EvidencePack, type EvidenceStore } from "./packs.js";
+import type { Tracker } from "../tracker/types.js";
+import { sourceCompanies } from "./comment.js";
+import { sourcesHere, swapLists, swapPassages, taskEvidence, type Evidence } from "./evidence.js";
+import { evidenceStore, NAME_SWAP, packCompanies, packSources, swappedPack, TASK, type EvidencePack, type EvidenceStore } from "./packs.js";
 import { expired, markStore, type TaskMark } from "../lease/marks.js";
 
 /**
@@ -28,6 +34,8 @@ interface Waiting {
   at: string;
   /** FOLLOW-1: a follow-up's original task, whose pack may quote the same sources when this Mac has none of them. */
   follows?: string | null;
+  /** FOLLOW-1: the follow-up's copy of the original's quotes, kept at the accept, for when the original's pack is gone. */
+  quotes?: PackQuotes;
   /** The PM was told it failed (once per task). */
   told?: boolean;
 }
@@ -48,15 +56,30 @@ const TIDY_EVERY_MS = 3 * 3600000;
 export const storeFor = (ctx: Pick<Ctx, "repo" | "personal">) => evidenceStore(ctx.repo, { email: `${ctx.personal.handle}@pmx.local` });
 
 /** Stages approved tasks that cite sources, for their packs (RUN-5). A team without a tracker has no tasks to share. */
-export async function stageShares(ctx: Pick<Ctx, "team" | "now">, tasks: { identifier: string; title: string; description: string; sources: string[]; follows?: string | null }[]): Promise<void> {
+export async function stageShares(ctx: Pick<Ctx, "team" | "now">, tasks: { identifier: string; title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null }[]): Promise<void> {
   const want = tasks.filter((t) => t.sources.length);
   if (ctx.team.tracker.kind === "none" || !want.length) return;
   await withLock(file(), async () => {
     const all = await read();
     const seen = new Set(all.map((w) => w.identifier));
-    for (const t of want) if (!seen.has(t.identifier)) all.push({ ...t, follows: t.follows ?? null, at: ctx.now().toISOString() });
+    for (const { quotes, ...t } of want) if (!seen.has(t.identifier)) all.push({ ...t, follows: t.follows ?? null, ...(quotes?.length ? { quotes } : {}), at: ctx.now().toISOString() });
     await save(all);
   });
+}
+
+/** The passages a pack holds per source. */
+export type PackQuotes = EvidencePack["sources"];
+
+/**
+ * FOLLOW-1, RUN-5: what a follow-up keeps of its original's quotes, staged with its proposal on the accepting Mac. An
+ * accept removes the original's pack from the team repo, so a follow-up approved later on a Mac without the original's
+ * meetings would have nothing to quote. Only quotes read from the team's pack (`from: "team"`), exactly as the pack had
+ * them: the Mac that suggested the task quotes its own files when the follow-up is approved, under its privacy rules
+ * as they are then, and keeps no copy. Undefined when there's nothing to keep.
+ */
+export function followUpQuotes(e: { sources: PackQuotes; from?: string | null }): PackQuotes | undefined {
+  if (e.from !== "team" || !e.sources.length) return undefined;
+  return e.sources.map((s) => ({ id: s.id, kind: s.kind, at: s.at, passages: [...s.passages] }));
 }
 
 export interface ShareResult {
@@ -69,14 +92,28 @@ const list = (ids: string[]) => (ids.length <= 2 ? ids.join(" and ") : `${ids.sl
 
 /**
  * A task's pack as this Mac would write it now (RUN-5), or null when this Mac has nothing of it to quote. Exactly what
- * this Mac's agent would be shown: the task's own cited sources, screened and redacted as they are now (taskEvidence).
- * A follow-up whose sources aren't on this Mac reuses its original's pack, which the team has already. The one builder
- * for an approval and for the backfill; the store refuses a pack that carries a canary (FLOW-3).
+ * this Mac's agent would be shown: the task's own cited sources, screened and redacted as they are now, with every
+ * person PMX finds swapped for a placeholder (taskEvidence, R5), and the sources' outside companies. A follow-up whose
+ * sources aren't on this Mac reuses its original's pack, which the team has already, with its names swapped if it's
+ * from before R5, or, once an accept removed that pack, the copy of it this Mac kept with the follow-up (followUpQuotes),
+ * checked like a pack and swapped the same way. The one builder for an approval, the backfill and a rewrite (`at`: the pack's first write); the
+ * store refuses a pack that carries a canary (FLOW-3).
  */
-async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; description: string; sources: string[]; follows?: string | null }, id: string, now: Date): Promise<EvidencePack | null> {
-  let sources = (await taskEvidence(ctx, { title: t.title, description: t.description, sources: t.sources }).catch(() => ({ sources: [] as EvidencePack["sources"] }))).sources;
-  if (!sources.length && t.follows) sources = packSources(await store.read(t.follows).catch(() => null), t.sources);
-  return sources.length ? { v: 1, task: id, at: now.toISOString(), sources } : null;
+async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null }, id: string, now: Date, at?: string): Promise<EvidencePack | null> {
+  const e: Evidence = await taskEvidence(ctx, { title: t.title, description: t.description, sources: t.sources }).catch(() => ({ sources: [], missing: [] }));
+  let sources = e.sources;
+  let companies = e.companies ?? [];
+  if (!sources.length && t.follows) {
+    const o = await store.read(t.follows).catch(() => null);
+    sources = packSources(o, t.sources);
+    companies = packCompanies(o);
+    if (sources.length && !swappedPack(o)) sources = swapPassages(sources, [...companies, ...sourceCompanies(t.description, t.title)], await swapLists(ctx)).sources;
+  }
+  if (!sources.length && t.quotes?.length) {
+    sources = packSources({ v: 1, task: id, at: now.toISOString(), sources: t.quotes }, t.sources);
+    if (sources.length) sources = swapPassages(sources, sourceCompanies(t.description, t.title), await swapLists(ctx)).sources;
+  }
+  return sources.length ? { v: 1, task: id, at: at ?? now.toISOString(), nameSwap: NAME_SWAP, ...(companies.length ? { companies } : {}), sources } : null;
 }
 
 /** "PMX couldn't share PMX-12's quotes with your team: …", a sentence per reason. */
@@ -143,9 +180,10 @@ export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; sto
 
 /**
  * The backfill's memory (RUN-5), on this Mac only (owner-only), by task ID: a task it had nothing to quote for, looked
- * at again after a week, and a task whose pack it couldn't write, tried again at every background run and told once.
+ * at again after a week, a task whose pack it couldn't write, tried again at every background run and told once, and
+ * (R5) a task whose pack it removed to write it again without names and couldn't write back yet.
  */
-interface Tried { at: string; result: "nothing" | "failed"; told?: boolean }
+interface Tried { at: string; result: "nothing" | "failed" | "rewrite"; told?: boolean }
 const backfillFile = () => join(paths.staging(), "evidence-backfill.json");
 const readTried = async (): Promise<Record<string, Tried>> => (await readJson<{ v: 1; tasks: Record<string, Tried> }>(backfillFile()))?.tasks ?? {};
 
@@ -157,8 +195,6 @@ const BACKFILL_EVERY_MS = 24 * 3600000;
 const NOTHING_AGAIN_MS = 7 * 86400000;
 /** Open tasks: waiting in the backlog, Ready, or blocked. One being drafted or in review has its agent already. */
 const OPEN = new Set<string>(["inbox", "ready", "blocked"]);
-/** A follow-up's original task, as its description names it (FOLLOW-1). */
-const followsIn = (description: string) => description.match(/^\*\*Follows ([A-Za-z][A-Za-z0-9]*-\d+):\*\*/m)?.[1] ?? null;
 
 export interface BackfillResult {
   shared: string[];
@@ -168,6 +204,8 @@ export interface BackfillResult {
   more: number;
   /** How many packs couldn't be written: the next background run tries them again. */
   failed: number;
+  /** R5: packs this Mac wrote before the name swap, written again without names. Only when there are some. */
+  rewritten?: string[];
 }
 
 /**
@@ -176,19 +214,27 @@ export interface BackfillResult {
  * pack for each of that Mac's open tasks without one, with the same builder and checks as an approval (packFor; the
  * store refuses a canary). At most `max` tasks a run, those never tried first; a task the share queue still holds is
  * left to it. Writing what the team has already changes nothing, so running it again is safe.
+ *
+ * R5: packs written before PMX swapped names still name people, so the same run writes again each pack of this Mac's
+ * tasks (any not done or dropped) that has no `nameSwap`, from its sources here if it still has them, else from the
+ * pack's own passages with the names `namesIn` finds there swapped. The pack is removed and written afresh, keeping
+ * when it was first written: a new commit on top would keep the names in the ref's history, and PMX never forces a
+ * push. New packs come first within `max`; the rest go at the next run.
  */
 export async function backfillEvidence(ctx: Ctx, svc: Pick<Services, "tracker">, o: { store?: EvidenceStore; max?: number; say?: "notify" | "none" } = {}): Promise<BackfillResult> {
   const out: BackfillResult = { shared: [], notices: [], more: 0, failed: 0 };
   if (ctx.team.tracker.kind === "none") return out;
   const now = ctx.now();
-  const open = (await svc.tracker.list()).filter((t) => t.status !== null && OPEN.has(t.status) && t.workflow?.type !== "completed" && t.workflow?.type !== "canceled"
+  const active = (await svc.tracker.list()).filter((t) => t.status !== null && t.status !== "done" && t.workflow?.type !== "completed" && t.workflow?.type !== "canceled"
     && t.sources.length && TASK.test(t.identifier) && !t.identifier.startsWith("PENDING-"));
   // Only the Mac with the task's synthesis run: its receipt is here. No meeting is read to find out.
-  const here: Task[] = [];
-  for (const t of open) if ((await sourcesHere(t).catch(() => ({ receipt: false }))).receipt) here.push(t);
+  const mine: Task[] = [];
+  for (const t of active) if ((await sourcesHere(t).catch(() => ({ receipt: false }))).receipt) mine.push(t);
   const tried = await readTried();
+  // Open tasks, and (R5) one whose pack was removed for a rewrite that couldn't be written back, whatever its step.
+  const here = mine.filter((t) => OPEN.has(t.status!) || tried[t.identifier]?.result === "rewrite");
   const keep = (next: Record<string, Tried>) => withLock(backfillFile(), async () => { await privateDir(paths.staging()); await writeJson(backfillFile(), { v: 1, tasks: next }, 0o600); });
-  if (!here.length) { if (Object.keys(tried).length) await keep({}); return out; }
+  if (!mine.length) { if (Object.keys(tried).length) await keep({}); return out; }
 
   const store = o.store ?? storeFor(ctx);
   const packed = new Set(await store.list());
@@ -207,15 +253,26 @@ export async function backfillEvidence(ctx: Ctx, svc: Pick<Services, "tracker">,
     const x = tried[t.identifier];
     return !(x?.result === "nothing" && now.getTime() - Date.parse(x.at) < NOTHING_AGAIN_MS);
   });
-  // Never tried first, then the ones that failed, then the ones with nothing to quote; oldest try first.
-  const rank = (t: Task) => (!tried[t.identifier] ? 0 : tried[t.identifier]!.result === "failed" ? 1 : 2);
+  // Never tried first (and a removed pack waiting to be written back), then the ones that failed, then the ones with
+  // nothing to quote; oldest try first.
+  const rank = (t: Task) => (!tried[t.identifier] || tried[t.identifier]!.result === "rewrite" ? 0 : tried[t.identifier]!.result === "failed" ? 1 : 2);
   want.sort((a, b) => rank(a) - rank(b) || (tried[a.identifier]?.at ?? "").localeCompare(tried[b.identifier]?.at ?? ""));
-  const batch = want.slice(0, Math.max(0, o.max ?? BACKFILL_MAX));
-  out.more = want.length - batch.length;
+  const max = Math.max(0, o.max ?? BACKFILL_MAX);
+  const batch = want.slice(0, max);
+  // R5: this Mac's packs from before the name swap, after the new ones.
+  const stale: { t: Task; p: EvidencePack }[] = [];
+  for (const t of mine) {
+    if (!packed.has(t.identifier) || finished(t.identifier) || queued.has(t.identifier)) continue;
+    const p = await store.read(t.identifier).catch(() => null);
+    if (p && !swappedPack(p)) stale.push({ t, p });
+  }
+  const again = stale.slice(0, Math.max(0, max - batch.length));
+  out.more = want.length - batch.length + stale.length - again.length;
 
-  // What's remembered: only this Mac's open tasks that still have no pack.
+  // What's remembered: only this Mac's tasks that still have no pack, or an old one.
   const next: Record<string, Tried> = {};
   for (const t of here) if (!packed.has(t.identifier) && !finished(t.identifier) && tried[t.identifier]) next[t.identifier] = tried[t.identifier]!;
+  for (const { t } of stale) if (tried[t.identifier]) next[t.identifier] = tried[t.identifier]!;
   const failed: { id: string; why: string }[] = [];
   // One task at a time, so one that fails doesn't hold back the others.
   for (const t of batch) {
@@ -229,11 +286,32 @@ export async function backfillEvidence(ctx: Ctx, svc: Pick<Services, "tracker">,
     } catch (e: any) {
       out.failed++;
       if (!tried[id]?.told) failed.push({ id, why: String(e?.message ?? e) });
-      next[id] = { at: now.toISOString(), result: "failed", told: true };
+      next[id] = { at: now.toISOString(), result: tried[id]?.result === "rewrite" ? "rewrite" : "failed", told: true };
     }
   }
+  const rewritten: string[] = [];
+  for (const { t, p } of again) {
+    const id = t.identifier;
+    // From the sources here, as an approval would; else the same passages with the names they show swapped.
+    let pack = await packFor(ctx, store, { title: t.title, description: t.description, sources: t.sources, follows: followsIn(t.description) }, id, now, p.at);
+    if (!pack) {
+      const companies = packCompanies(p);
+      const sources = swapPassages(packSources(p, t.sources), [...companies, ...sourceCompanies(t.description, t.title)], await swapLists(ctx)).sources;
+      pack = sources.length ? { v: 1, task: id, at: p.at, nameSwap: NAME_SWAP, ...(companies.length ? { companies } : {}), sources } : null;
+    }
+    try {
+      await store.write({ remove: [id] }, `evidence: write the quotes of ${id} again without names`);
+      if (pack) { await store.write({ put: [pack] }, `evidence: quotes for ${id}`); rewritten.push(id); }
+      delete next[id];
+    } catch (e: any) {
+      out.failed++;
+      if (!tried[id]?.told) failed.push({ id, why: String(e?.message ?? e) });
+      next[id] = { at: now.toISOString(), result: "rewrite", told: true };
+    }
+  }
+  if (rewritten.length) out.rewritten = rewritten;
   await keep(next);
-  await logShared(ctx, out.shared);
+  await logShared(ctx, [...out.shared, ...rewritten]);
   out.notices = notShared(failed);
   if (o.say === "notify" && out.notices.length) await notify("ProductMaxxing", out.notices.join(" ")).catch(() => {});
   return out;
@@ -246,9 +324,11 @@ export async function backfillEvidence(ctx: Ctx, svc: Pick<Services, "tracker">,
  * never removes a new task's pack, and in any case 30 days after it was written. N7: the packs listed are the team
  * repo's now, and a pack whose task another Mac marked done or dropped, or whose pack was removed before (a Mac with an
  * older copy of Linear wrote it again), goes whatever this Mac's copy says. Each removal leaves a tombstone in the
- * task's mark (PULL-14), so no Mac's backfill writes it again.
+ * task's mark (PULL-14), so no Mac's backfill writes it again. An accept or a drop through PMX removes its task's pack
+ * at once (removePackNow); this background clean-up catches the rest: a task closed or canceled in Linear, and a
+ * removal the team repo didn't take then.
  */
-export async function tidyEvidence(ctx: Ctx, svc: Pick<Services, "tracker">, store: EvidenceStore = storeFor(ctx)): Promise<{ id: string; why: "done" | "dropped" }[]> {
+export async function tidyEvidence(ctx: Ctx, svc: Pick<Services, "tracker">, store: EvidenceStore = storeFor(ctx)): Promise<Gone[]> {
   const ids = await store.list();
   if (!ids.length) return [];
   const tasks: Task[] = await svc.tracker.list();
@@ -256,9 +336,8 @@ export async function tidyEvidence(ctx: Ctx, svc: Pick<Services, "tracker">, sto
   const synced = svc.tracker.syncedAt ? await svc.tracker.syncedAt() : null;
   const asOf = synced ? Date.parse(synced) : now;
   const byId = new Map(tasks.map((t) => [t.identifier, t]));
-  const marksOf = markStore(ctx.repo);
-  const marks = await marksOf.list().catch(() => new Map<string, TaskMark>());
-  const gone: { id: string; why: "done" | "dropped" }[] = [];
+  const marks = await markStore(ctx.repo).list().catch(() => new Map<string, TaskMark>());
+  const gone: Gone[] = [];
   for (const id of ids) {
     const m = marks.get(id);
     const said = m && !expired(m, ctx.now()) ? m : null;
@@ -272,22 +351,100 @@ export async function tidyEvidence(ctx: Ctx, svc: Pick<Services, "tracker">, sto
     if (!Number.isFinite(at) || at < asOf - SKEW_MS || now - at > PACK_MAX_MS) gone.push({ id, why: "dropped" });
   }
   if (!gone.length) return [];
+  // A tombstone written afresh: the task's step as this Mac's copy of Linear shows it, so landed then.
+  return removePacks(ctx, store, gone, synced ?? ctx.now().toISOString());
+}
+
+/** A finished task whose pack goes, and why. */
+type Gone = { id: string; why: "done" | "dropped" };
+
+/**
+ * Removes finished tasks' packs from the team repo (RUN-5), for the clean-up and for an accept or a drop alike: each
+ * ref deleted with a push that's never forced, a tombstone in each task's mark (PULL-14) so no Mac's backfill writes it
+ * again, and a run log line by task ID. A mark that says done or dropped keeps its step and gains the tombstone;
+ * otherwise the mark becomes the step, with `landed` for when the tracker had it. Throws, leaving every mark as it
+ * was, when the team repo doesn't take a removal. Returns the packs it removed.
+ */
+async function removePacks(ctx: Ctx, store: EvidenceStore, gone: Gone[], landed: string | null): Promise<Gone[]> {
   const r = await store.write({ remove: gone.map((g) => g.id) }, `evidence: remove the quotes of ${gone.map((g) => g.id).join(", ")} (task done or dropped)`);
   const removed = gone.filter((g) => r.removed.includes(g.id));
-  // The tombstone: the task's step as this Mac's copy of Linear shows it (landed then), unless a mark says it already.
   const at = ctx.now().toISOString();
-  const seen = synced ?? at;
+  const marks = markStore(ctx.repo);
   for (const g of gone) {
-    await marksOf.update(g.id, (cur) => {
+    await marks.update(g.id, (cur) => {
       if (cur?.packRemovedAt && (cur.state === "done" || cur.state === "dropped")) return null;
       const same = cur && (cur.state === "done" || cur.state === "dropped");
       return same ? { ...cur, packRemovedAt: at }
-        : { v: 1, task: g.id, state: g.why, at, by: ctx.agent, machine: ctx.personal.machineId, landed: seen, packRemovedAt: at };
+        : { v: 1, task: g.id, state: g.why, at, by: ctx.agent, machine: ctx.personal.machineId, landed, packRemovedAt: at };
     }).catch(() => null);
   }
   const log = new RunLogStore(ctx);
   for (const g of removed) await log.record({ type: "evidence", agent: ctx.agent, machine: ctx.personal.machineId, taskId: g.id, action: "removed", reason: g.why }).catch(() => {});
   return removed;
+}
+
+/**
+ * RUN-5 (founder, 2026-11-26): a task's shared quotes leave the team repo when its draft is accepted, and when PMX drops
+ * the task, not at the next clean-up. The same removal and tombstone as the clean-up (removePacks), so no Mac shares
+ * them again. Call it after the task's mark (markTask), so the tombstone joins that step. Never throws: a team repo it
+ * can't reach, or a push it refuses, leaves the pack to the clean-up, which removes it by the task's mark. True when it
+ * removed the pack.
+ */
+export async function removePackNow(ctx: Ctx, tracker: Pick<Tracker, "syncedAt">, identifier: string, why: Gone["why"]): Promise<boolean> {
+  if (ctx.team.tracker.kind === "none" || !TASK.test(identifier)) return false;
+  try {
+    const store = storeFor(ctx);
+    // The team's packs now: a task that has none has nothing to remove and needs no tombstone.
+    if (!(await store.list()).includes(identifier)) return false;
+    // A mark written afresh lands as markTask's would: at once when PMX reads the tracker itself, else at the next sync.
+    return (await removePacks(ctx, store, [{ id: identifier, why }], tracker.syncedAt ? null : ctx.now().toISOString())).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * F5 (RUN-5): a pack shared under older privacy rules may quote what today's rules hold from team work: an investor's
+ * call, a fundraising meeting, a confidential contact's thread, or a passage about a raise in a customer call. The Mac
+ * that wrote each pack (its task's synthesis run is here) works its sources out again (taskEvidence) and, when the
+ * rules now hold one of them or cut one of its passages, builds the pack again with the same builder as an approval and
+ * the backfill (packFor) from the sources they don't hold: exactly what this Mac would share now, so a source whose
+ * file is gone goes too, with when it was first written. The pack is removed and written afresh, so no ref history
+ * keeps those quotes; one left with nothing is just removed. `failed`: packs it couldn't write; the next background run
+ * tries again.
+ */
+export async function dropHeldSources(ctx: Ctx, svc: Pick<Services, "tracker">, store: EvidenceStore = storeFor(ctx)): Promise<{ changed: string[]; removed: string[]; failed: number }> {
+  const out = { changed: [] as string[], removed: [] as string[], failed: 0 };
+  if (ctx.team.tracker.kind === "none") return out;
+  const packed = new Set(await store.list());
+  if (!packed.size) return out;
+  const rules = privacyRules(ctx);
+  const log = new RunLogStore(ctx);
+  for (const t of await svc.tracker.list()) {
+    if (!packed.has(t.identifier) || !t.sources.length || !(await sourcesHere(t).catch(() => ({ receipt: false }))).receipt) continue;
+    const pack = await store.read(t.identifier).catch(() => null);
+    const e = pack ? await taskEvidence(ctx, t).catch(() => null) : null;
+    if (!pack || !e) continue;
+    const held = new Set(pack.sources.filter((x) => heldNow(e, x.id)).map((x) => x.id));
+    if (!held.size && !pack.sources.some((x) => x.passages.some((p) => screensOut(p, rules)))) continue;
+    // Built again with the same builder as an approval and the backfill (packFor), from the sources the rules don't
+    // hold, keeping when it was first written. A follow-up's fallback to its original's quotes was screened under the
+    // rules then, so it's screened again.
+    const built = await packFor(ctx, store, { title: t.title, description: t.description, sources: t.sources.filter((id) => !held.has(id)), follows: followsIn(t.description) }, t.identifier, ctx.now());
+    const sources = (built?.sources ?? []).map((x) => ({ ...x, passages: x.passages.map((p) => (screensOut(p, rules) ? screened(p, rules) : p)).filter((p) => p.trim()) }))
+      .filter((x) => x.passages.length);
+    try {
+      await store.write({ remove: [t.identifier] }, `evidence: remove the quotes of ${t.identifier} your privacy rules now hold`);
+      if (built && sources.length) {
+        await store.write({ put: [{ ...built, at: pack.at, sources }] }, `evidence: quotes for ${t.identifier}`);
+        out.changed.push(t.identifier);
+      } else out.removed.push(t.identifier);
+      await log.record({ type: "evidence", agent: ctx.agent, machine: ctx.personal.machineId, taskId: t.identifier, action: built && sources.length ? "shared" : "removed", reason: "held" }).catch(() => {});
+    } catch {
+      out.failed++;
+    }
+  }
+  return out;
 }
 
 /**
@@ -313,8 +470,18 @@ export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "
   if (b) await updateState((x) => { x.evidenceBackfill = { at: now.toISOString(), due: b.more > 0 || b.failed > 0 }; });
   const shared = [...s.shared, ...(b?.shared ?? [])];
   if (shared.length) lines.push(`shared the quotes of ${list(shared)} with your team`);
+  if (b?.rewritten?.length) lines.push(`took the names out of the shared quotes of ${list(b.rewritten)}`);
   if (b?.more) lines.push(`${b.more} more ${b.more === 1 ? "task's quotes go" : "tasks' quotes go"} to your team at the next background run`);
   lines.push(...s.notices, ...(b?.notices ?? []));
+  // F5: once the rules that decide what team work may read change (an update, a merged confidentialDomains, the
+  // do-not-read list), this Mac's packs lose what those rules now hold.
+  const key = holdRulesKey(privacyRules(ctx));
+  if (st.evidenceRulesKey !== key) {
+    const d = await services().then((x) => dropHeldSources(ctx, x, store)).catch(() => null);
+    if (d && !d.failed) await updateState((x) => { x.evidenceRulesKey = key; });
+    if (d?.changed.length) lines.push(`took what your privacy rules now hold out of the shared quotes of ${list(d.changed)}`);
+    if (d?.removed.length) lines.push(`removed the shared quotes of ${list(d.removed)}: your privacy rules now hold all of them`);
+  }
   if (!st.evidenceTidyAt || now.getTime() - Date.parse(st.evidenceTidyAt) >= TIDY_EVERY_MS) {
     // A tracker PMX can't read yet (no Linear sync on this Mac) waits for the next run; the pull step says why.
     const gone = await services().then((x) => tidyEvidence(ctx, x, store)).catch(() => null);

@@ -7,6 +7,26 @@ import { BRIDGE_CLI, OLD, repackAs } from "./rename.js";
 /** Where a PMX repo keeps the CLI package its PMs and its CI install. */
 export const VENDORED_CLI = ".pmx/cli/productmaxxing.tgz";
 
+/**
+ * Every file `vendorCli` writes: the package, and the bridge older Macs read (RENAME-1). A function, not a constant:
+ * rename.ts is in an import cycle with this module, so BRIDGE_CLI isn't ready while this module loads.
+ */
+export const vendoredFiles = (): string[] => [VENDORED_CLI, BRIDGE_CLI];
+
+/**
+ * What `pmx vendor` says (R10): each file it wrote by name, and to commit them all. With `--require` that's the team
+ * config too. A team that committed only the package left the bridge out, and Macs on 0.14.0 or older never moved over.
+ */
+export function vendorMessage(o: { repo: string; version: string; config?: string | null; autoUpdate?: boolean }): string {
+  const files = [...vendoredFiles(), ...(o.config ? [o.config] : [])];
+  const list = `${files.slice(0, -1).join(", ")} and ${files.at(-1)}`;
+  return [
+    `Wrote ${VENDORED_CLI} (productmaxxing ${o.version}) and ${BRIDGE_CLI} (the same build, for teammates' Macs on PMX 0.14.0 or older) in ${o.repo}.`,
+    ...(o.config ? [`Set cli.min to ${o.version} in ${o.config}: older machines keep personal work but stop shared team work until they run \`pmx update\`.${o.autoUpdate ? " Auto-update is on: each machine's background job installs it within the hour." : ""}`] : []),
+    `Commit ${files.length === 2 ? "both" : "all three"} files (${list}) in a PR of its own. Teammates update with \`pmx update\`.`,
+  ].join("\n");
+}
+
 export async function cliVersion(): Promise<string> {
   return JSON.parse(await readFile(join(packageRoot(), "package.json"), "utf8")).version;
 }

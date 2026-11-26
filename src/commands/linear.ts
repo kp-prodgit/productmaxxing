@@ -7,8 +7,8 @@ import { macKeychain } from "../core/keychain.js";
 import { markTaskRun } from "../core/state.js";
 import { linearAccess } from "../linear/access.js";
 import { linearLogin, linearLogout, readGrant } from "../linear/oauth.js";
-import { shareEvidence } from "../run/share.js";
-import { checkRelay, readOutbox, readSnapshot, relayPrompt, relayTracker } from "../tracker/relay.js";
+import { removePackNow, shareEvidence } from "../run/share.js";
+import { checkRelay, dropOps, formatOutbox, opWords, readOutbox, readSnapshot, relayPrompt, relayTracker } from "../tracker/relay.js";
 import { markTask, tendMarks } from "../lease/marks.js";
 import type { Command } from "./index.js";
 import { services } from "../core/services.js";
@@ -38,7 +38,7 @@ export const linearCommands: Command[] = [
   {
     name: "linear",
     summary: "How PMX reaches Linear: through your Claude app's Linear connector (no key or sign-in) by default",
-    usage: "pmx linear status | pmx linear written [--json] | pmx linear tidy [--yes] | pmx linear withdraw <PMX-12 …> [--yes] | pmx linear relay --prompt | --check | pmx linear key (advanced: store a Linear API key)",
+    usage: "pmx linear status | pmx linear written [--json] | pmx linear tidy [--yes] | pmx linear withdraw <PMX-12 …> [--yes] | pmx linear outbox [drop <ID …>] | pmx linear relay --prompt | --check | pmx linear key (advanced: store a Linear API key)",
     options: { prompt: { type: "boolean" }, check: { type: "boolean" }, json: { type: "boolean" }, yes: { type: "boolean", short: "y" } },
     async run(a) {
       const sub = a.positionals[0] ?? "status";
@@ -57,6 +57,18 @@ export const linearCommands: Command[] = [
         await macKeychain().set("linear-token", v);
         console.log("Saved the Linear API key in the keychain. PMX now talks to Linear directly; the Claude sync task is no longer needed on this Mac.");
         return 0;
+      }
+      // R16b: what waits for the Claude sync, what Linear refused, and dropping one before it reaches Linear.
+      if (sub === "outbox") {
+        if (!a.positionals[1]) { console.log(await formatOutbox()); return 0; }
+        if (a.positionals[1] !== "drop") throw new Error("Use pmx linear outbox, or pmx linear outbox drop <ID …>.");
+        const ids = a.positionals.slice(2);
+        if (!ids.length) throw new Error("Say which: pmx linear outbox drop <ID>, from `pmx linear outbox`.");
+        const r = await dropOps(ids);
+        for (const op of r.dropped) console.log(`- dropped ${opWords(op)}`);
+        for (const m of r.missing) console.log(`· no waiting change ${m}`);
+        if (r.dropped.length) console.log("Nothing of these reaches Linear.");
+        return r.missing.length ? 1 : 0;
       }
       const ctx = await a.ctx();
       if (sub === "relay") {
@@ -121,14 +133,18 @@ export const linearCommands: Command[] = [
           if (!a.values.yes && !(await a.ask.confirm("Withdraw them?", false))) { console.log("Nothing changed."); return 0; }
           for (const w of hit) {
             await svc.tracker.rewrite(w.id, { description: WITHDRAWN, cancel: true });
-            // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it.
-            if (w.kind !== "meeting") await markTask(ctx, svc.tracker, w.identifier, "dropped");
+            // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it. RUN-5: canceled, so its shared
+            // quotes leave the team repo now, as the clean-up would remove them.
+            if (w.kind !== "meeting") {
+              await markTask(ctx, svc.tracker, w.identifier, "dropped");
+              await removePackNow(ctx, svc.tracker, w.identifier, "dropped");
+            }
           }
         }
         console.log(svc.tracker.kind === "claude-relay" ? "Queued. The next \"PMX: sync Linear through Claude\" run applies it in Linear." : "Done in Linear.");
         return 0;
       }
-      throw new Error(`Unknown subcommand "${sub}". Use status, written, tidy, withdraw, relay or key.`);
+      throw new Error(`Unknown subcommand "${sub}". Use status, written, tidy, withdraw, outbox, relay or key.`);
     },
   },
   {

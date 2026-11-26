@@ -280,7 +280,8 @@ describe("no duplicate meetings or tasks (INPUT-2)", () => {
     await writeTranscript(dir, "m.md", `---\ntitle: Acme <> Us weekly\ndate: ${today}T10:05:00Z\nparticipants: jane@acme.com, ana@us.com\nsource: momentum\nsource_id: m1\n---\n${TALK}${TALK}`);
     await thread("t.md", { place: "#product-feedback" });
     const tracker = memoryTracker();
-    await tracker.createInbox({ title: "Validate the pricing page", description: "d", category: "spec", size: "S", sources: [] });
+    // An open task with a source of its own: a repeat of it is heard again (R16: one with none is given the repeat's).
+    await tracker.createInbox({ title: "Validate the pricing page", description: "d\n\npmx:source T9", category: "spec", size: "S", sources: ["T9"] });
     await stageProposals([{ at: NOW.toISOString(), receipt: "r0", title: "Draft a one-pager for SCIM sync", description: "Manual CSV.\n\n**Based on** one meeting (2026-11-05). The sources stay on the PM's Mac.", category: "spec", size: "M", sources: ["T1"], from: [{ id: "T1", title: "Beta call", at: "2026-11-05", why: "w" }] }]);
     const [waiting] = await readProposals();
     const reply = JSON.stringify({ tasks: [

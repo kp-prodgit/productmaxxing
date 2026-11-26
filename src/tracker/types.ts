@@ -99,6 +99,12 @@ export interface Tracker {
    * back or reword what PMX wrote. Never deletes.
    */
   rewrite(id: string, o: { title?: string; description?: string; cancel?: boolean }): Promise<void>;
+  /**
+   * R16b: takes back an issue this Mac queued for the tracker that the tracker hasn't created yet (the Claude relay's
+   * PENDING-…): its queued creation and every queued change to it are removed, so nothing of it reaches the tracker.
+   * False when the issue already exists there. Trackers that create at once don't have it.
+   */
+  unqueue?(id: string): Promise<boolean>;
 }
 
 /** An opaque title: the meeting's first identity hash, which only the PM's own Mac can match to a meeting. */
@@ -221,7 +227,8 @@ export function memoryTracker(seed: Task[] = []): Tracker & { tasks: Map<string,
       const m = meetings.get(id);
       if (!t && !m) throw new Error(`No task ${id} in the PMX project.`);
       if (o.cancel) { tasks.delete(id); meetings.delete(id); return; }
-      if (t) Object.assign(t, o.title ? { title: o.title } : {}, o.description !== undefined ? { description: o.description } : {});
+      // As Linear reads them, a task's sources are its description's `pmx:source` lines.
+      if (t) Object.assign(t, o.title ? { title: o.title } : {}, o.description !== undefined ? { description: o.description, sources: [...o.description.matchAll(/^pmx:source (\S+)/gm)].map((m) => m[1]!) } : {});
       if (m && o.title) m.title = o.title;
     },
     async finishMeeting(id, o) {

@@ -30,4 +30,4 @@ Missed offboarding became an audit finding at one customer [T2], so the cost is 
 ## Open questions
 
 - Pursue this as a security offboarding problem rather than a convenience feature? **PM decides**.
-- How many accounts have more than one workspace?
+- How many accounts have more than one workspace? — needs: research

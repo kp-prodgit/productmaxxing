@@ -8,6 +8,7 @@ import { jobEnv, plist, stableNode, type Launchd } from "./launchd.js";
 import { paths, pmxHome } from "./paths.js";
 import { loadState, updateState } from "./state.js";
 import { isDevInstall } from "./update.js";
+import { NAME_SWAP } from "../run/packs.js";
 import { compareVersions, currentVersion } from "./version.js";
 
 /**
@@ -109,6 +110,20 @@ export const AUTO_STEPS: AutoStep[] = [
       if ((await loadState()).evidenceBackfill?.due) return null;
       await updateState((st) => { st.evidenceBackfill = { at: st.evidenceBackfill?.at ?? null, due: true }; });
       return "the next background run shares the quotes of this Mac's open tasks that have none yet with your team";
+    },
+  },
+  {
+    // R5: packs shared before PMX's name swap as it is now (NAME_SWAP) still name people. The backfill writes this Mac's
+    // again (src/run/share.ts, backfillEvidence); this makes its next look due at once, not in a day. R5e: keyed to the
+    // swap, and checked against the one this Mac last asked for, so every bump of NAME_SWAP rewrites them at the next
+    // background run, even within one version; an update that doesn't bump it does nothing.
+    id: `evidence-names-${NAME_SWAP}`,
+    since: null,
+    title: "The quotes this Mac shared name no one",
+    async run() {
+      if (((await loadState()).evidenceNameSwap ?? 0) >= NAME_SWAP) return null;
+      await updateState((st) => { st.evidenceBackfill = { at: st.evidenceBackfill?.at ?? null, due: true }; st.evidenceNameSwap = NAME_SWAP; });
+      return "the next background run writes the quotes this Mac shared with your team again, with people's names swapped for placeholders";
     },
   },
 ];

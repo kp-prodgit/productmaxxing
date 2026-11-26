@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Ctx } from "../core/context.js";
-import { companyDomains, domainLabel, filterItems, outsideDomains, sourceOf, type FilterResult } from "../core/filter.js";
+import { companyDomains, confidentialCompanies, confidentialDomains, domainLabel, filterItems, outsideDomains, sourceOf, type FilterResult } from "../core/filter.js";
 import { makeRedactor } from "../core/redact.js";
 import { sourceReceipts, topicRulesHash, type RunReceipt } from "../core/receipt.js";
 import type { SignalItem } from "../core/types.js";
@@ -14,6 +14,8 @@ import { runCanaries } from "../core/canary.js";
 /**
  * The privacy rules for one run (B2). Team and digest runs need an outside participant and hold a meeting whole when
  * it keeps returning to a sensitive topic; private to-dos (TODO-2) may read the PM's own 1:1s and internal meetings.
+ * F5: team work holds fundraising and the team's confidential contacts (`confidentialDomains`); the PM's own to-dos may
+ * read them, since they never leave the Mac.
  */
 export function privacyRules(ctx: Pick<Ctx, "team" | "personal">, individual = false, o: { digest?: boolean } = {}) {
   const { team, personal } = ctx;
@@ -23,6 +25,7 @@ export function privacyRules(ctx: Pick<Ctx, "team" | "personal">, individual = f
     meetingSeries: individual || o.digest ? [] : meetingSeries(team),
     internalDomains: companyDomains(team.internalDomains, { companyDomains: personal.companyDomains, emails: personal.identity?.emails }),
     requireExternalParticipant: !individual, neverIngest: personal.neverIngest, allowOneOnOne: individual, wholeMeeting: !individual,
+    confidentialDomains: confidentialDomains(team.confidentialDomains), allowConfidential: individual,
     // "off" blocks a source everywhere; "mine" lets it feed only the PM's own to-dos.
     blockedSources: Object.entries(personal.sources?.routes ?? {}).filter(([, v]) => v === "off" || (v === "mine" && !individual)).map(([k]) => k),
     // Threads only from places the team approves today (INPUT-1).
@@ -40,10 +43,17 @@ export interface Gathered {
   /** Meetings and threads kept out, by when and why: no title or text (SIG-6, why a meeting gave no task). */
   heldList: { kind: SignalItem["kind"]; at: string; rule: string }[];
   /**
-   * F14: who the sources name (attendees, speaker labels) and the names listed on purpose (the CRM list, the
-   * do-not-read people), so text for the tracker never names them. In memory for this run only, never written.
+   * F14: who the sources name (attendees, speaker labels, names in their text) and the names listed on purpose (the
+   * CRM list, the do-not-read people), so text for the tracker never names them. In memory for this run only, never
+   * written.
    */
   people: { found: string[]; listed: string[] };
+  /**
+   * F5: the confidential companies this batch shows, by their domains' names: the team's confidential domains, and the
+   * outside companies of the meetings held as fundraising or a confidential contact's. Text for the tracker never names
+   * them. In memory for this run only.
+   */
+  confidential: string[];
   /** The parts of the run receipt that gathering decides (PRIV-4). */
   receipt: Pick<RunReceipt, "window" | "rules" | "skippedSources" | "sources" | "masked" | "canaries" | "twins">;
 }
@@ -97,7 +107,7 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
   // Titles of used sources are redacted with a separate redactor, so the masking counts cover only what the model saw.
   const titles = makeRedactor(names);
   return {
-    items, held: filtered.held, heldItems: filtered.heldItems, read: raw.length, people,
+    items, held: filtered.held, heldItems: filtered.heldItems, read: raw.length, people, confidential: confidentialCompanies(filtered.decisions, rules),
     heldList: filtered.decisions.filter((d) => d.decision === "held").map((d) => ({ kind: d.item.kind, at: d.item.at, rule: d.rule ?? "unknown-participants" })),
     receipt: {
       window: { days: o.days, since: new Date(sinceMs).toISOString(), scope: o.scope },
@@ -106,6 +116,7 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
         neverIngest: { people: personal.neverIngest.people.length, channels: personal.neverIngest.channels.length, meetingTitles: personal.neverIngest.meetingTitles.length },
         folders: team.allowedSources.includes("transcripts") ? personal.sources.transcriptDirs : [],
         ...(rules.meetingSeries.length ? { meetingSeries: rules.meetingSeries } : {}),
+        ...(!individual && rules.confidentialDomains.length ? { confidentialDomains: rules.confidentialDomains } : {}),
       },
       skippedSources,
       ...(twins ? { twins } : {}),

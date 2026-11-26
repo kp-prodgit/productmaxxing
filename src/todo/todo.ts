@@ -35,6 +35,12 @@ export interface Todo {
   doneAt: string | null;
   /** The run that found it: `pmx explain <receiptId>`. */
   receiptId: string;
+  /**
+   * R16: the IDs its meetings have in that run's receipt (`source` first, then `also`), so moving it to the team carries
+   * them (TODO-5). A to-do kept from a waiting task has that task's. To-dos from before this have none; their run's
+   * receipt still says which (`todo.added`).
+   */
+  sources?: string[];
   /** SIG-7: the Linear issue the PM sent it to, when they chose to. */
   linear?: string | null;
 }
@@ -435,7 +441,7 @@ export async function refreshTodos(ctx: Ctx, o: { since?: Date; dryRun?: boolean
     const todo: Todo = {
       id: createHash("sha256").update(`${receipt.id}\n${t.text}`).digest("hex").slice(0, 6),
       text: t.text, due: t.due, why: t.why, source: meeting(t.source), ...(t.also.length ? { also: t.also.map(meeting) } : {}),
-      status: "open", createdAt: now.toISOString(), doneAt: null, receiptId: receipt.id,
+      status: "open", createdAt: now.toISOString(), doneAt: null, receiptId: receipt.id, sources: [t.source, ...t.also],
     };
     result.added.push(todo);
     refs.push({ text: t.text, source: t.source, due: t.due, ...(t.also.length ? { also: t.also } : {}) });
@@ -519,7 +525,7 @@ export async function getTodo(id: string): Promise<Todo> {
  * A to-do that came from somewhere else: a proposal the PM kept for themself, or a task taken off the team's list
  * (TODO-5). An open to-do with the same words is reused rather than doubled, and takes the Linear link if it has none.
  */
-export async function keepTodo(input: { text: string; due?: string | null; why?: string; source?: Todo["source"]; receiptId?: string; linear?: string | null }, now: Date): Promise<Todo> {
+export async function keepTodo(input: { text: string; due?: string | null; why?: string; source?: Todo["source"]; receiptId?: string; linear?: string | null; sources?: string[] }, now: Date): Promise<Todo> {
   const text = input.text.replace(/\s+/g, " ").trim().slice(0, 200);
   if (!text) throw new Error("Give the to-do some words.");
   return mutateTodos((s) => {
@@ -533,6 +539,7 @@ export async function keepTodo(input: { text: string; due?: string | null; why?:
       text, due: input.due ?? null, why: input.why ?? "", when: null,
       source: input.source ?? { title: "Added by you", at: now.toISOString().slice(0, 10), keys: [] },
       status: "open", createdAt: now.toISOString(), doneAt: null, receiptId: input.receiptId ?? "", linear: input.linear ?? null,
+      ...(input.sources?.length ? { sources: [...input.sources] } : {}),
     };
     s.items.push(todo);
     return todo;

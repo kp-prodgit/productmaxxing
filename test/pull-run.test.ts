@@ -1,5 +1,5 @@
 import { DEFAULT_TEAM } from "../src/core/config.js";
-import { approveProposals, dropProposals, readProposals, stageProposals } from "../src/synth/proposals.js";
+import { approveProposals, CHECKED, dropProposals, readProposals, stageProposals } from "../src/synth/proposals.js";
 import { listReceipts, readReceipt } from "../src/core/receipt.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -227,7 +227,7 @@ describe("synthesis (SIG-2, SIG-4, SEC-1)", () => {
 
   it("drops proposals the PM says no to, and approving twice never posts twice", async () => {
     const now = new Date();
-    const base = { at: now.toISOString(), receipt: "synthesize-none", description: "d", category: "spec", size: "S" as const, sources: ["T1"], from: [] };
+    const base = { at: now.toISOString(), receipt: "synthesize-none", description: "d", category: "spec", size: "S" as const, sources: ["T1"], from: [], checked: CHECKED };
     await stageProposals([{ ...base, title: "Keep me" }, { ...base, title: "Drop me" }, { ...base, title: "Keep me" }]);
     expect((await readProposals()).map((p) => p.title)).toEqual(["Keep me", "Drop me"]);
     expect((await dropProposals(["2", "p000000"])).missing).toEqual(["p000000"]);

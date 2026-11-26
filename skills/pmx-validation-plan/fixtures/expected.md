@@ -30,4 +30,5 @@ No security review started at either customer within 30 days of the build being 
 ## Open questions
 
 - Pilot price. **PM decides**.
-- Ask a third customer now, or wait for the first result?
+- Whether to ask a third customer now or wait for the first result. **PM decides**.
+- Does the customer's legal team need a DPA before the pilot? — ask: the account lead

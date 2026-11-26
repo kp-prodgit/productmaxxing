@@ -89,6 +89,7 @@ export async function startExplainServer(o: {
         allowedSources: o.team.allowedSources,
         slackChannels: o.team.slackChannels,
         meetingSeries: privacyRules(o).meetingSeries,
+        confidentialDomains: privacyRules(o).confidentialDomains,
         folders: o.personal.sources.transcriptDirs,
         // The PM's own do-not-read list, on their own screen. Receipts store only how many entries it has.
         neverIngest: o.personal.neverIngest,

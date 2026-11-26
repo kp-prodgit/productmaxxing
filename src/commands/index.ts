@@ -11,12 +11,12 @@ import { macKeychain } from "../core/keychain.js";
 import { OLD } from "../core/rename.js";
 import { capTickLogs, macLaunchd } from "../core/launchd.js";
 import { runDigest } from "./digest.js";
-import { doctorJson, formatDoctor, runDoctor } from "./doctor.js";
+import { doctorJson, formatDoctor, refreshProfile, runDoctor } from "./doctor.js";
 import { nextSteps, runInit, type InviteFile } from "./init.js";
 import { runStatus } from "./status.js";
 import { digestStep, recordTick, runTick, type TickStep } from "./tick.js";
 import { runUninstall } from "./uninstall.js";
-import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
+import { VENDORED_CLI, vendorCli, vendorMessage } from "../core/vendor.js";
 import { atLeast, compareVersions, currentVersion, isVersion, vendoredVersion } from "../core/version.js";
 import { formatNotes, markSeen, markUpdatingFrom, newVersionNotes, notesBetween, RELEASE_NOTES } from "../core/whats-new.js";
 import { engineChecklist, engineNotes, engineSource, findPmxe, formatEngineNotes, pmxeCandidates, runEngineUpdate } from "../engine/bridge.js";
@@ -475,8 +475,7 @@ export const commands: Command[] = [
         const autoUpdate = a.values["auto-update"] ? true : a.values["no-auto-update"] ? false : prev.autoUpdate;
         await writeJson(file, { ...raw, cli: { min: version, ...(autoUpdate !== undefined ? { autoUpdate } : {}) } }, 0o644);
       }
-      console.log(`Wrote ${VENDORED_CLI} (productmaxxing ${version}) in ${repo}.${a.values.require ? `\nSet cli.min to ${version} in ${TEAM_CONFIG_FILE}: older machines keep personal work but stop shared team work until they run \`pmx update\`.${a.values["auto-update"] ? " Auto-update is on: each machine's background job installs it within the hour." : ""}` : ""}
-Commit ${a.values.require ? "both files" : "it"} in a PR of its own. Teammates update with \`pmx update\`.`);
+      console.log(vendorMessage({ repo, version, config: a.values.require ? TEAM_CONFIG_FILE : null, autoUpdate: a.values["auto-update"] === true }));
       return 0;
     },
   },
@@ -641,5 +640,6 @@ async function doctorChecks() {
   } catch (e: any) {
     teamError = e.message;
   }
-  return runDoctor({ personal, team, teamError, keychain: macKeychain(), oldKeychain: macKeychain(exec, OLD.keychain), launchd: macLaunchd(), exec, extra: doctorExtra });
+  // R20: like every command that runs work, doctor writes the clean profile for the team before it checks it.
+  return runDoctor({ personal, team, teamError, keychain: macKeychain(), oldKeychain: macKeychain(exec, OLD.keychain), launchd: macLaunchd(), exec, extra: doctorExtra, refreshProfile });
 }

@@ -7,7 +7,10 @@ import type { Evidence } from "./evidence.js";
  * Evidence packs (RUN-5). When a PM approves a task, the Mac that suggested it writes the passages the drafting agent
  * would get there (RUN-3: the task's own cited sources, screened by the privacy rules and redacted) to the team repo,
  * so any PM's agent can draft it. A pack holds the task's identifier, when it was written, and per cited source its ID,
- * kind, date and passages. Nothing else: no meeting title, no participants, no other meeting, no receipt.
+ * kind, date and passages. R5: its passages name no one (every person PMX finds is a placeholder, `nameSwap`), and it
+ * lists the sources' outside companies as their email domains name them ("globex"), so a Mac drafting from it never
+ * takes a customer for a person. Nothing else: no meeting title, no participants, no address, no other meeting, no
+ * receipt.
  *
  * Each pack is one file, `<identifier>.json`, in a commit of its own at `refs/pmx/evidence/<identifier>`, the way PMX
  * keeps claims (src/lease/git-ref.ts) and the meeting ledger (src/meetings/git-ledger.ts): never on the team's main
@@ -22,7 +25,30 @@ export interface EvidencePack {
   task: string;
   /** When it was written (ISO). A pack whose task is gone from the tracker is removed once the tracker is newer. */
   at: string;
+  /**
+   * R5: the name swap its passages went through (NAME_SWAP). A pack without it was written before PMX swapped the
+   * names it finds, so it still names people: the Mac that wrote it rewrites it, and a reader swaps them meanwhile.
+   */
+  nameSwap?: number;
+  /** R5: the sources' outside companies, their participants' email domains' names ("globex"). Never a person. */
+  companies?: string[];
   sources: Evidence["sources"];
+}
+
+/**
+ * R5: the name swap new packs' passages go through. A higher one later makes every Mac rewrite the packs it wrote.
+ * 2 (R5a, R5c): every name this Mac knows, possessives, and company runs; packs from the first R5 swap are rewritten.
+ */
+export const NAME_SWAP = 2;
+/** Whether a pack's passages went through today's name swap. */
+export const swappedPack = (p: Partial<EvidencePack> | null | undefined): boolean => typeof p?.nameSwap === "number" && p.nameSwap >= NAME_SWAP;
+
+/** An email domain's name, as a pack's companies are written: "globex", "acme-corp". */
+const COMPANY = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+/** A pack's companies as data (R5): domain names only, at most 20. Anyone with the team repo can write a pack. */
+export function packCompanies(raw: unknown): string[] {
+  const c = (raw as Partial<EvidencePack> | null)?.companies;
+  return Array.isArray(c) ? [...new Set(c.filter((x): x is string => typeof x === "string" && COMPANY.test(x)))].slice(0, 20) : [];
 }
 
 const MIRROR = "refs/pmx/remote-evidence";
@@ -111,7 +137,9 @@ export function evidenceStore(git: Git, o: { email?: string } = {}): EvidenceSto
     if (hasCanary(JSON.stringify(p))) throw new Error("a privacy rule let PMX's test meeting through, so nothing was sent; run `pmx doctor`");
     const at = await base();
     const remote = at === MIRROR;
-    const blob = await git.ok(["hash-object", "-w", "--stdin"], { input: JSON.stringify({ v: 1, task: p.task, at: p.at, sources: p.sources }, null, 2) + "\n" });
+    const companies = packCompanies(p);
+    const body = { v: 1, task: p.task, at: p.at, ...(p.nameSwap ? { nameSwap: p.nameSwap } : {}), ...(companies.length ? { companies } : {}), sources: p.sources };
+    const blob = await git.ok(["hash-object", "-w", "--stdin"], { input: JSON.stringify(body, null, 2) + "\n" });
     const tree = await git.ok(["mktree"], { input: `100644 blob ${blob}\t${p.task}.json\n` });
     let cur = await tip(`${at}/${p.task}`);
     for (let attempt = 0; ; attempt++) {
@@ -159,7 +187,9 @@ export function evidenceStore(git: Git, o: { email?: string } = {}): EvidenceSto
       if (r.code !== 0) return null;
       try {
         const p = JSON.parse(r.stdout);
-        return p && p.v === 1 && typeof p.at === "string" && Array.isArray(p.sources) ? { v: 1, task: identifier, at: p.at, sources: p.sources } : null;
+        if (!p || p.v !== 1 || typeof p.at !== "string" || !Array.isArray(p.sources)) return null;
+        const companies = packCompanies(p);
+        return { v: 1, task: identifier, at: p.at, ...(typeof p.nameSwap === "number" ? { nameSwap: p.nameSwap } : {}), ...(companies.length ? { companies } : {}), sources: p.sources };
       } catch {
         return null;
       }

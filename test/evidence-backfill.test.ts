@@ -13,13 +13,15 @@ import { services } from "../src/core/services.js";
 import { loadState, updateState } from "../src/core/state.js";
 import { AUTO_STEPS, type UpgradeDeps } from "../src/core/upgrade.js";
 import { plan, pull } from "../src/pull/pull.js";
+import { markStore } from "../src/lease/marks.js";
 import { loadQueue, recordDecision } from "../src/review/queue.js";
 import { taskEvidence } from "../src/run/evidence.js";
 import { evidenceStore } from "../src/run/packs.js";
-import { BACKFILL_MAX, backfillEvidence, evidenceStep, storeFor, tidyEvidence } from "../src/run/share.js";
+import { BACKFILL_MAX, backfillEvidence, evidenceStep, removePackNow, storeFor, tidyEvidence } from "../src/run/share.js";
 import { mockRuntime } from "../src/runtime/mock.js";
 import { approveProposals, readProposals } from "../src/synth/proposals.js";
 import { synthesize } from "../src/synth/synthesize.js";
+import { moveWork } from "../src/todo/move.js";
 import { keepTodo, loadTodos } from "../src/todo/todo.js";
 import { memoryTracker, type Tracker } from "../src/tracker/types.js";
 import { freshHome, git, pmxRepo, testCtx, tmp, writeTranscript } from "./helpers.js";
@@ -143,7 +145,7 @@ describe("evidence packs for tasks approved before them (RUN-5 backfill)", () =>
     const pack = await packIn(a.origin, "PMX-1");
     const task = byId(a.tracker, "PMX-1");
     // Exactly what this Mac's agent is shown, as at approval: the cited passages, filtered and redacted, nothing else.
-    expect(pack).toEqual({ v: 1, task: "PMX-1", at: a.ctx.now().toISOString(), sources: (await taskEvidence(a.ctx, task)).sources });
+    expect(pack).toEqual({ v: 1, task: "PMX-1", at: a.ctx.now().toISOString(), nameSwap: 2, companies: ["acme"], sources: (await taskEvidence(a.ctx, task)).sources });
     const text = JSON.stringify(pack);
     expect(text).toContain("SCIM provisioning would fix it");
     expect(text).not.toMatch(/salary|Acme weekly|jane@acme\.com|synthesize-\d/);
@@ -291,7 +293,7 @@ describe("a removed pack stays removed (N7, RUN-5)", () => {
     const before = structuredClone(await a.tracker.list());
     const anaCopy: Tracker = { ...a.tracker, async syncedAt() { return a.ctx.now().toISOString(); }, async list() { return structuredClone(before); } };
 
-    // Sam's Mac drafts it from the pack, accepts it, and its tidy removes the pack.
+    // Sam's Mac drafts it from the pack and accepts it, which removes the pack at once: its tidy has nothing left.
     const homeB = await freshHome();
     const later = new Date(a.ctx.now().getTime() + 3600000);
     const b = await testCtx({ repo: await clone(a.origin, "mac-b"), runtime: a.rt, team, personal: { handle: "sam", machineId: "m2" }, now: later });
@@ -299,8 +301,8 @@ describe("a removed pack stays removed (N7, RUN-5)", () => {
     expect((await pull(b, svcB, { dryRun: false })).ran).toMatchObject({ outcome: "ok" });
     const { items, host } = await loadQueue(b, svcB);
     await recordDecision(b, svcB, host, items[0]!, "accepted");
-    expect(await tidyEvidence(b, svcB)).toEqual([{ id: "PMX-1", why: "done" }]);
     expect(await packsIn(a.origin)).toEqual([]);
+    expect(await tidyEvidence(b, svcB)).toEqual([]);
     // The removal is in the team repo, with the task's mark, not only in a run log.
     const mark = JSON.parse(await git(a.origin, "for-each-ref", "--format=%(contents:subject)", "refs/pmx/task-state/PMX-1"));
     expect(mark).toMatchObject({ state: "done", by: "sam@m2", packRemovedAt: later.toISOString() });
@@ -327,6 +329,122 @@ describe("a removed pack stays removed (N7, RUN-5)", () => {
     expect(await packsIn(a.origin)).toEqual([]);
     const removed = (await new RunLogStore(a.ctx).entries()).filter((e) => e.type === "evidence" && e.action === "removed");
     expect(removed.map((e) => e.agent)).toEqual(["sam@m2", "sam@m2", "ana@m1"]);
+  });
+});
+
+describe("an accepted or dropped task's quotes leave the team repo at once (RUN-5)", () => {
+  beforeEach(freshHome);
+
+  const markIn = async (gitDir: string, id: string) => JSON.parse(await git(gitDir, "for-each-ref", "--format=%(contents:subject)", `refs/pmx/task-state/${id}`));
+  const evidenceLog = async (ctx: Awaited<ReturnType<typeof testCtx>>) => (await new RunLogStore(ctx).entries()).filter((e) => e.type === "evidence").map((e: any) => [e.taskId, e.action, e.reason ?? null, e.agent]);
+  /** A Mac's copy of Linear from before a step another Mac took: the tasks as they were. */
+  const copyFrom = async (a: Awaited<ReturnType<typeof suggestingMac>>): Promise<Tracker> => {
+    const before = structuredClone(await a.tracker.list());
+    return { ...a.tracker, async syncedAt() { return a.ctx.now().toISOString(); }, async list() { return structuredClone(before); } };
+  };
+
+  it("an accept on another PM's Mac removes the pack with its tombstone, after its follow-ups read it, and no backfill shares it again", async () => {
+    const a = await suggestingMac();
+    await approveProposals(a.ctx, a.svc, ["1"], { start: true });
+    expect(await packsIn(a.origin)).toEqual(["PMX-1"]);
+    const anaCopy = await copyFrom(a);
+
+    const homeB = await freshHome();
+    const later = new Date(a.ctx.now().getTime() + 3600000);
+    const b = await testCtx({ repo: await clone(a.origin, "mac-b"), runtime: a.rt, team, personal: { handle: "sam", machineId: "m2" }, now: later });
+    const svcB = await services(b, { tracker: a.tracker });
+    expect((await pull(b, svcB, { dryRun: false })).ran).toMatchObject({ outcome: "ok" });
+    const { items, host } = await loadQueue(b, svcB);
+    const d = await recordDecision(b, svcB, host, items[0]!, "accepted");
+    // The accept says what it always did; its follow-ups still read who suggested the task from the pack.
+    expect(d.message).toBe("PMX-1 accepted. 1 decision added to your to-dos.");
+    expect(d.followUps).toMatchObject({ suggestedBy: "ana" });
+    expect(byId(a.tracker, "PMX-1").status).toBe("done");
+
+    // Gone from the team repo now, not at the next clean-up, with the tombstone in the task's mark and a run log line.
+    expect(await packsIn(a.origin)).toEqual([]);
+    expect(await markIn(a.origin, "PMX-1")).toMatchObject({ state: "done", by: "sam@m2", at: later.toISOString(), packRemovedAt: later.toISOString() });
+    expect(await evidenceLog(b)).toEqual([["PMX-1", "shared", null, "ana@m1"], ["PMX-1", "removed", "done", "sam@m2"]]);
+    expect(await tidyEvidence(b, svcB)).toEqual([]);
+
+    // Ana's backfill, on a copy of Linear from before the accept that still shows the task Ready, shares nothing.
+    process.env.PMX_HOME = a.home;
+    expect(await backfillEvidence(a.ctx, { tracker: anaCopy })).toEqual({ shared: [], notices: [], more: 0, failed: 0 });
+    expect(await packsIn(a.origin)).toEqual([]);
+    // Nor does her background run, which leaves the tombstone as it is.
+    await updateState((s) => { s.evidenceBackfill = { at: a.ctx.now().toISOString(), due: true }; });
+    expect(await evidenceStep(a.ctx, async () => ({ tracker: anaCopy }))).toBeNull();
+    expect(await packsIn(a.origin)).toEqual([]);
+    expect(await markIn(a.origin, "PMX-1")).toMatchObject({ state: "done", packRemovedAt: later.toISOString() });
+  });
+
+  it("an accept whose removal the team repo refuses still stands, and the clean-up removes the quotes later", async () => {
+    const a = await suggestingMac();
+    await approveProposals(a.ctx, a.svc, ["1"], { start: true });
+    expect((await pull(a.ctx, a.svc, { dryRun: false })).ran).toMatchObject({ outcome: "ok" });
+    // The team repo takes every push but the removal of a pack.
+    const hook = join(a.origin, "hooks", "pre-receive");
+    await mkdir(dirname(hook), { recursive: true });
+    await writeFile(hook, [
+      "#!/bin/sh",
+      "while read old new ref; do",
+      '  case "$ref" in refs/pmx/evidence/*) [ "$new" = 0000000000000000000000000000000000000000 ] && { echo "not today" >&2; exit 1; } ;; esac',
+      "done",
+      "exit 0",
+    ].join("\n") + "\n", { mode: 0o755 });
+
+    const { items, host } = await loadQueue(a.ctx, a.svc);
+    const d = await recordDecision(a.ctx, a.svc, host, items[0]!, "accepted");
+    expect(d.message).toBe("PMX-1 accepted. 1 decision added to your to-dos.");
+    expect(byId(a.tracker, "PMX-1").status).toBe("done");
+    expect((await new RunLogStore(a.ctx).entries()).filter((e) => e.type === "verdict").map((e: any) => [e.taskId, e.verdict])).toEqual([["PMX-1", "accepted"]]);
+    // The quotes are still there, and the mark says done but records no removal.
+    expect(await packsIn(a.origin)).toEqual(["PMX-1"]);
+    const mark = await markIn(a.origin, "PMX-1");
+    expect(mark).toMatchObject({ state: "done", by: "ana@m1" });
+    expect(mark).not.toHaveProperty("packRemovedAt");
+    expect(await evidenceLog(a.ctx)).toEqual([["PMX-1", "shared", null, "ana@m1"]]);
+
+    // Once the team repo takes it, the clean-up removes it by the task's mark, with the tombstone.
+    await rm(hook);
+    const later = await testCtx({ repo: a.repo, team, personal: a.personal, now: new Date(a.ctx.now().getTime() + 3 * 3600000) });
+    expect(await tidyEvidence(later, a.svc)).toEqual([{ id: "PMX-1", why: "done" }]);
+    expect(await packsIn(a.origin)).toEqual([]);
+    expect(await markIn(a.origin, "PMX-1")).toMatchObject({ state: "done", packRemovedAt: later.now().toISOString() });
+  });
+
+  it("a reject keeps the quotes, since the task may be drafted again; taking the task off the team's list removes them at once", async () => {
+    const a = await suggestingMac();
+    await approveProposals(a.ctx, a.svc, ["1"], { start: true });
+    expect((await pull(a.ctx, a.svc, { dryRun: false })).ran).toMatchObject({ outcome: "ok" });
+    const { items, host } = await loadQueue(a.ctx, a.svc);
+    await recordDecision(a.ctx, a.svc, host, items[0]!, "rejected", { note: "Wrong customer." });
+    expect(await packsIn(a.origin)).toEqual(["PMX-1"]);
+    expect(await markIn(a.origin, "PMX-1")).not.toHaveProperty("packRemovedAt");
+
+    // A teammate moves it back to Ready by hand, and Ana takes it off the team's list as a private to-do: dropped.
+    await a.tracker.setStatus(byId(a.tracker, "PMX-1").id, "ready");
+    const samCopy = await copyFrom(a);
+    const m = await moveWork(a.ctx, async () => a.svc, "PMX-1", "private");
+    // R16c: the to-do keeps the task's source, so moving it back brings it.
+    expect(m.message).toBe("Now your private to-do: Spec SCIM provisioning. PMX-1 is canceled in Linear. It keeps its source, so moving it to the team again brings it back.");
+    expect(await packsIn(a.origin)).toEqual([]);
+    expect(await markIn(a.origin, "PMX-1")).toMatchObject({ state: "dropped", by: "ana@m1", packRemovedAt: a.ctx.now().toISOString() });
+    expect(await evidenceLog(a.ctx)).toEqual([["PMX-1", "shared", null, "ana@m1"], ["PMX-1", "removed", "dropped", "ana@m1"]]);
+    // A backfill on a copy of Linear from before the move still sees it Ready, and shares nothing.
+    expect(await backfillEvidence(a.ctx, { tracker: samCopy })).toEqual({ shared: [], notices: [], more: 0, failed: 0 });
+    expect(await packsIn(a.origin)).toEqual([]);
+  });
+
+  it("a team without a tracker, or a task with no pack, has nothing to remove and gets no tombstone", async () => {
+    const { repo } = await pmxRepo({}, { remote: true });
+    const none = await testCtx({ repo });
+    expect(await removePackNow(none, memoryTracker(), "PMX-1", "done")).toBe(false);
+    const ctx = await testCtx({ repo, team });
+    await markStore(ctx.repo).update("PMX-2", () => ({ v: 1, task: "PMX-2", state: "done", at: ctx.now().toISOString(), by: ctx.agent, machine: "m1", landed: null }));
+    expect(await removePackNow(ctx, memoryTracker(), "PMX-2", "done")).toBe(false);
+    expect(await markStore(ctx.repo).read("PMX-2")).not.toHaveProperty("packRemovedAt");
+    expect(await removePackNow(ctx, memoryTracker(), "PENDING-1A2B3C", "done")).toBe(false);
   });
 });
 

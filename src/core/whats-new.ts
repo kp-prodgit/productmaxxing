@@ -19,6 +19,17 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.38.0", date: "2026-11-26", headline: "No names in your team's repo, follow-ups that fit, and web research that works",
+    items: [
+      { what: "Your team's repo names no one: shared quotes swap people for placeholders, drafts write roles, and investors and fundraising stay out of team work. List your investors' domains once, in a change a teammate approves.", try: "pmx domains confidential add <domain>" },
+      { what: "Approving a task checks it again with today's rules, so Linear never names someone the sources mention, even one named only in passing." },
+      { what: "After an accept, a decision becomes one 'Decide …' to-do, a question one person can answer becomes an 'Ask <role>: …' to-do, and only real work becomes a task. Work your team just finished isn't suggested again." },
+      { what: "Web research for competitive analyses works: drafts cite the pages they read, and customers' names stay out of every search." },
+      { what: "Every PM hears when the team adds a kind of work, with one command to take it, and PMX Engine's board counts each task once.", try: "pmx categories add decision-brief" },
+      { what: "Teams with their own copies of PMX's skills take this version's drafting rules in one reviewed change.", try: "pmx skills update" },
+    ],
+  },
+  {
     version: "0.37.0", date: "2026-11-26", headline: "Linear that tells the truth, work that follows a draft, and any Mac can draft",
     items: [
       { what: "Linear's own state follows PMX: Todo means Ready for agents, a task an agent takes is assigned, and accepted work is Done. Tasks name the customer, deal and deadline, never people, quotes or meeting titles." },

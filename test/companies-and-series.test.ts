@@ -233,7 +233,7 @@ describe("approved internal meeting series (F3)", () => {
     expect(privacyRules(ctx, true).meetingSeries).toEqual([]);
     const can = runCanaries(privacyRules(ctx));
     expect(can.failed).toEqual([]);
-    expect(can.total).toBe(10);
+    expect(can.total).toBe(11);
     // The internal-only canary holds even when its title is in a series: two people are a 1:1.
     expect(runCanaries({ ...privacyRules(ctx), meetingSeries: ["Team sync PMX"] }).failed).toEqual([]);
   });

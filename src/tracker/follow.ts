@@ -14,8 +14,10 @@ const leftFile = () => join(paths.home(), "linear", "left.json");
  * TASK-7, or a label an older Mac or board changed alone), with no comment; and logs, once,
  * each task it leaves alone (closed in Linear without a review, started by hand). Each write is conditional on the
  * issue still being as PMX read it, so when several Macs follow the same move, only the first one writes.
+ * `finished` (PULL-14): a task the team repo says a Mac marked done or dropped, which this Mac's copy of Linear can't
+ * show yet. What that copy shows of it is from before, so PMX neither follows nor aligns it, nor says it did.
  */
-export async function followMoves(tracker: Tracker): Promise<string[]> {
+export async function followMoves(tracker: Tracker, o: { finished?: (identifier: string) => boolean } = {}): Promise<string[]> {
   const out: string[] = [];
   const left = (await readJson<Record<string, string>>(leftFile())) ?? {};
   const now: Record<string, string> = {};
@@ -23,6 +25,7 @@ export async function followMoves(tracker: Tracker): Promise<string[]> {
   for (const t of await tracker.list()) {
     const w = t.workflow;
     if (!w?.label || !t.status) continue;
+    if (o.finished?.(t.identifier)) continue;
     if (w.label !== t.status) {
       await tracker.follow(t.id, { from: w.label, to: t.status, type: w.type, comment: followComment(t.status, w.name) });
       out.push(`${t.identifier} followed a move in Linear${w.name ? ` to ${w.name}` : ""}: ${t.status === "ready" ? "Ready for agents" : "back in the backlog"}`);

@@ -11,15 +11,15 @@ import { runTask } from "../run/run.js";
 import { verifyPr } from "../run/verify.js";
 import { synthesize } from "../synth/synthesize.js";
 import { heldOverLine, kindLine } from "../synth/held-over.js";
-import { evidenceOf } from "../synth/evidence.js";
-import { approvedText, approveProposals, dropProposals, formatProposals, readProposals, setProposalTheme } from "../synth/proposals.js";
+import { EVIDENCE_FORMAT, evidenceOf, formatEvidence } from "../synth/evidence.js";
+import { approvedText, approveProposals, dropProposals, dropReason, formatProposals, heldText, readProposals, setProposalTheme } from "../synth/proposals.js";
 import { startsNow } from "../core/config.js";
 import { startOfDay } from "../meetings/ledger.js";
 import { formatSynthStatus, recentReceipts, synthesizesHere, synthStatus, synthWindow } from "../synth/status.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
 import { evidenceStep } from "../run/share.js";
-import { tendMarks } from "../lease/marks.js";
+import { finishedElsewhere, lookAt, markStore, tendMarks, type TaskMark } from "../lease/marks.js";
 import { followMoves } from "../tracker/follow.js";
 
 async function findTask(svc: Services, ref: string) {
@@ -32,17 +32,17 @@ async function findTask(svc: Services, ref: string) {
 export const teamCommands: Command[] = [
   {
     // Bridge 2 of joining PMX and PMX Engine: counts only, to standard output. The head of product pipes them on.
+    // OUT-6: each task counts once, in its theme or else its kind of work; `--format 1` is for PMX Engine 0.14 and earlier.
     name: "evidence",
-    summary: "Counts of approved tasks per kind of work and roadmap theme, for PMX Engine's studio: no titles, quotes or meetings",
-    usage: "pmx evidence --json | pmxe propose -",
-    options: { json: { type: "boolean" } },
+    summary: "Counts of approved tasks per roadmap theme, and per kind of work for tasks without one, for PMX Engine's studio: no titles, quotes or meetings",
+    usage: "pmx evidence [--json] [--format 1]  (pmx evidence --json | pmxe propose -)",
+    options: { json: { type: "boolean" }, format: { type: "string" } },
     async run(a) {
+      const f = a.values.format === undefined ? EVIDENCE_FORMAT : Number(a.values.format);
+      if (f !== 1 && f !== 2) throw new Error("Use --format 1 for PMX Engine 0.14 or earlier, or leave it out.");
       const ctx = await a.ctx();
-      const e = evidenceOf(await (await services(ctx)).tracker.list(), ctx.team.team, ctx.now());
-      if (a.values.json) { console.log(JSON.stringify(e, null, 2)); return 0; }
-      if (!e.rows.length) console.log("No approved tasks yet.");
-      for (const r of e.rows) console.log(`${r.by === "theme" ? "theme" : "category"}  ${r.label}: ${r.tasks} tasks, ${r.sources} sources, ${r.first} to ${r.last}`);
-      if (e.rows.length) console.log("\nTo bring these into PMX Engine's studio, where you map each to a roadmap theme: pmx evidence --json | pmxe propose -");
+      const e = evidenceOf(await (await services(ctx)).tracker.list(), ctx.team.team, ctx.now(), f);
+      console.log(a.values.json ? JSON.stringify(e, null, 2) : formatEvidence(e));
       return 0;
     },
   },
@@ -80,8 +80,8 @@ export const teamCommands: Command[] = [
   {
     name: "proposals",
     summary: "Tasks PMX suggested from your calls, exactly as Linear would get them: start, approve or drop each (nothing reaches Linear before you do)",
-    usage: "pmx proposals [--brief] [--json] | pmx proposals start <number or ID …> | --all | pmx proposals approve <number or ID …> | --all | pmx proposals drop <number or ID …> | --all | pmx proposals theme <number or ID> \"<roadmap theme>\" | none",
-    options: { all: { type: "boolean" }, brief: { type: "boolean" }, json: { type: "boolean" } },
+    usage: "pmx proposals [--brief] [--json] | pmx proposals start <number or ID …> | --all | pmx proposals approve <number or ID …> | --all | pmx proposals drop <number or ID …> | --all [--reason \"…\"] | pmx proposals theme <number or ID> \"<roadmap theme>\" | none",
+    options: { all: { type: "boolean" }, brief: { type: "boolean" }, json: { type: "boolean" }, reason: { type: "string" } },
     async run(a) {
       const sub = a.positionals[0] ?? "list";
       const refs = [...a.positionals.slice(1), ...(a.values.all ? ["all"] : [])];
@@ -94,7 +94,8 @@ export const teamCommands: Command[] = [
           console.log(formatSynthStatus(st, ctx.now()));
           return 0;
         }
-        console.log(a.values.json ? JSON.stringify(list, null, 2) : formatProposals(list, !a.values.brief, startsNow((await a.ctx()).team)));
+        // A follow-up's kept quotes (RUN-5) are for its pack only: the listing shows what Linear would get, never a quote.
+        console.log(a.values.json ? JSON.stringify(list.map(({ quotes: _q, ...p }) => p), null, 2) : formatProposals(list, !a.values.brief, startsNow((await a.ctx()).team)));
         return 0;
       }
       if (sub === "theme") {
@@ -111,20 +112,28 @@ export const teamCommands: Command[] = [
       if (sub !== "approve" && sub !== "start" && sub !== "drop") throw new Error(`Unknown subcommand "${sub}". Use start, approve, drop or theme.`);
       if (!refs.length) throw new Error(`Say which: pmx proposals ${sub} 1 2, an ID like p1a2b3c, or --all.`);
       const ctx = await a.ctx();
+      if (a.values.reason !== undefined && sub !== "drop") throw new Error("--reason goes with drop: pmx proposals drop 1 --reason \"done as PMX-5\".");
       if (sub === "drop") {
-        const r = await dropProposals(refs, ctx.now());
-        for (const p of r.dropped) console.log(`- dropped ${p.title}`);
+        // R6: the PM's reason goes with the drop in its run's receipt, and `pmx explain` shows it.
+        const reason = dropReason(a.values.reason);
+        const r = await dropProposals(refs, ctx.now(), reason);
+        for (const p of r.dropped) console.log(`- dropped ${p.title}${reason ? ` (${reason})` : ""}`);
         for (const m of r.missing) console.log(`· no waiting task ${m}`);
         return r.missing.length ? 1 : 0;
       }
       const start = sub === "start";
       const r = await approveProposals(ctx, await services(ctx), refs, { start });
-      for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}${p.theme ? ` (theme ${p.theme})` : ""}`);
+      for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}${p.theme ? ` (theme ${p.theme})` : ""}${p.filled ? " (gained its sources)" : ""}`);
       for (const d of r.duplicates) console.log(`· not posted: ${d}`);
+      // R3: checked again by today's rules: what was left out, and what stays waiting and why.
+      for (const c of r.checked) console.log(`· ${c}`);
+      for (const h of r.held) console.log(`· not sent: ${heldText(h, { command: true })}`);
       for (const u of r.unthemed) console.log(`· ${u}`);
       for (const m of r.missing) console.log(`· no waiting task ${m}`);
       // APPROVE-1, APPROVE-3: say when the task reaches agents: now (Start now), or once someone moves it to Ready.
-      if (r.posted.length) console.log(approvedText(r.posted, { start, startNow: startsNow(ctx.team) }));
+      // R16: a task that gave an open task its sources is said in `checked`; that task stays where it is.
+      const made = r.posted.filter((p) => !p.filled);
+      if (made.length) console.log(approvedText(made, { start, startNow: startsNow(ctx.team) }));
       // RUN-5: nothing to say when the quotes reached the team; once, when they couldn't.
       for (const n of r.notShared) console.log(n);
       return r.missing.length ? 1 : 0;
@@ -256,7 +265,10 @@ export const pullStep: TickStep = async (ctx) => {
   const svc = await services(ctx);
   // TASK-8: Linear agrees with the moves PMX follows before the pull reads the queue. Bookkeeping, not an agent run,
   // so it happens in practice mode too. A tracker PMX can't read yet fails the pull below with the reason.
-  const followed = await followMoves(svc.tracker).catch(() => [] as string[]);
+  // Never for a task another Mac already finished (PULL-14): this Mac's copy may still show it as it was before.
+  const marks = await markStore(ctx.repo).list().catch(() => new Map<string, TaskMark>());
+  const look = await lookAt(ctx, svc.tracker);
+  const followed = await followMoves(svc.tracker, { finished: (id) => finishedElsewhere(marks.get(id), look) }).catch(() => [] as string[]);
   // PULL-14: this Mac's steps its last sync applied have landed; marks older than a week go. Bookkeeping, quietly.
   await tendMarks(ctx, svc.tracker).catch(() => 0);
   const r = await pull(ctx, svc, { dryRun: isDryRunDefault(ctx) });

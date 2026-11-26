@@ -10,6 +10,8 @@ import { RunLogStore } from "../src/core/runlog-store.js";
 import { registerServices, services } from "../src/core/services.js";
 import type { Task } from "../src/core/types.js";
 import { pull } from "../src/pull/pull.js";
+import { bundledSkillsDir } from "../src/core/skills.js";
+import { draftComment, draftCounts } from "../src/run/comment.js";
 import { deadlineIn, draftFile, FOLLOW_TASKS, FOLLOW_TODOS, followUpKind, followUpsOnAccept, followUpText, readFollowUps } from "../src/review/followups.js";
 import { decide, loadQueue } from "../src/review/queue.js";
 import { startReviewServer } from "../src/review/server.js";
@@ -83,6 +85,55 @@ const BIG_DRAFT = DRAFT.replace(/## Implications[\s\S]*$/, [
   "",
 ].join("\n"));
 
+/**
+ * R1: a decision brief shaped exactly as the pmx-decision-brief skill asked before this fix: Decision, Options,
+ * Criteria, Evidence by option, a Recommendation ending in a bare **PM decides**, and Open questions. Its decision made
+ * no to-do, while the draft-ready comment counted one call.
+ */
+const DECISION_BRIEF = `# PMX-16: Decide on Globex's renewal terms
+
+## Decision
+
+Whether to accept, counter or decline Globex's request for a two-year price lock at renewal. Lee Park makes the call, and it's needed before Dec 12 [T1]. With no answer by then, the current terms roll over for a year [T1].
+
+## Options
+
+1. **Accept.** Lock today's price for two years [T1].
+2. **Counter.** Offer a one-year lock with a usage floor [S1].
+3. **Decline.** Renew at list price [S1].
+
+## Criteria
+
+1. Revenue at stake: the account's renewal [T1].
+2. Margin risk over two years [S1].
+3. How reversible it is: a one-year lock can be extended.
+
+## Evidence by option
+
+- **Accept.** For: keeps the account [T1]. Against: margin risk if costs rise [S1].
+- **Counter.** For: limits the risk to one year [S1]. Against: *Unknown* whether Globex takes it; Sam Ortiz could ask.
+- **Decline.** For: full margin [S1]. Against: the account may leave [T1].
+
+## Recommendation
+
+Counter with a one-year lock and a usage floor: it keeps the account and caps the margin risk at a year [T1] [S1]. A competing two-year offer in writing would change this.
+
+**PM decides**
+
+## Open questions
+
+- Will Globex accept a one-year lock [T1]?
+`;
+
+/** The skill's form from now on: the Recommendation ends with the decision, in a few words. */
+const DECISION_BRIEF_NAMED = DECISION_BRIEF.replace("**PM decides**\n", "**PM decides:** whether to accept, counter or decline the two-year lock.\n");
+
+/** The call also marked beside the choice in the Decision section, labelled "Choice:", as one real draft did. */
+const DECISION_BRIEF_INLINE = DECISION_BRIEF.replace(
+  "Whether to accept, counter or decline Globex's request for a two-year price lock at renewal.",
+  "Choice: accept, counter or decline Globex's request for a two-year price lock at renewal (**PM decides**).",
+);
+
 const task = (over: Partial<Task> = {}): Task => ({
   id: "lin-1", identifier: "PMX-14", title: "Draft a one-pager for SCIM sync",
   // Quoted inline, as tasks before PRIV-6 were, so this Mac can run it without a synthesis receipt.
@@ -91,9 +142,9 @@ const task = (over: Partial<Task> = {}): Task => ({
   sources: ["T1", "S1"], prUrl: null, createdAt: "2026-11-01T00:00:00Z", ...over,
 });
 
-async function drafted(o: { draft?: string; team?: Partial<TeamConfig>; tasks?: Task[] } = {}) {
+async function drafted(o: { draft?: string; team?: Partial<TeamConfig>; tasks?: Task[]; task?: Partial<Task> } = {}) {
   const { repo } = await pmxRepo(o.team ?? {});
-  const tracker = memoryTracker([task(), ...(o.tasks ?? [])]);
+  const tracker = memoryTracker([task(o.task), ...(o.tasks ?? [])]);
   const runtime = mockRuntime(async (r) => {
     const out = r.prompt.match(/Write the output to (\S+?\.md)/)![1]!;
     await mkdir(dirname(join(r.cwd, out)), { recursive: true });
@@ -112,23 +163,25 @@ describe("reading a draft's follow-ups (FOLLOW-1)", () => {
 
   it("each PM decides call is a decision to make, and each open or blocking question one to answer", () => {
     const r = readFollowUps(DRAFT, "PMX-14", now);
+    // R2b: the draft names a call ("PM decides: whether to …"), so it gives its named and worded calls only: the bare
+    // mark after "Self-serve setup is the gap." has no decision of its own and stays in the draft. R2e: a question
+    // marked PM decides ("…? PM decides: pursue.") is the PM's call, never a task.
     expect(r.decisions.map((d) => d.text)).toEqual([
-      "Decide: Self-serve setup is the gap. Options: a guided setup, or a support-led one (PMX-14)",
       "Decide whether to include SCIM in every plan (PMX-14)",
       "Decide whether SCIM ships in the first release (PMX-14)",
+      "Decide whether to pursue: How long does a CSV import take an admin today? (PMX-14)",
       "Decide whether to offer SCIM on the free plan (PMX-14)",
     ]);
     // The recommendation rides along in the draft's own words; only a stated deadline becomes a due date.
     expect(r.decisions.map((d) => [d.why, d.due])).toEqual([
-      ["Recommend a guided setup.", null],
       ["Options: SCIM in every plan, or only in Business. Recommendation: Business only, settled before Dec 8.", "2026-12-08"],
       ["", null],
+      ["Recommend asking two admins this week.", null],
       ["", null],
     ]);
     expect(r.questions.map((q) => [q.where, q.question, q.rest.join(" ")])).toEqual([
       ["blocking", "Which identity providers do our largest accounts use?", ""],
       ["blocking", "Would an account pay for SCIM as an add-on, or sign a pilot to try it?", ""],
-      ["open", "How long does a CSV import take an admin today?", "PM decides: pursue. Recommend asking two admins this week."],
     ]);
     // A plain bullet, the Summary and the evidence are not follow-ups.
     expect(JSON.stringify(r)).not.toMatch(/most asked-for|export every week/);
@@ -175,6 +228,78 @@ describe("reading a draft's follow-ups (FOLLOW-1)", () => {
   });
 });
 
+describe("a decision brief's decision becomes one to-do (FOLLOW-1, R1)", () => {
+  const now = new Date(2026, 10, 26, 10);
+  const one = (md: string) => {
+    const r = readFollowUps(md, "PMX-16", now);
+    return { decisions: r.decisions.map((d) => [d.text, d.why, d.due]), questions: r.questions.map((q) => [q.where, q.question]) };
+  };
+  const WHY = "Recommendation: Counter with a one-year lock and a usage floor: it keeps the account and caps the margin risk at a year.";
+
+  it("a bare PM decides ending the Recommendation is the Decision section's choice, the Recommendation's why and the Decision's date", () => {
+    expect(one(DECISION_BRIEF)).toEqual({
+      decisions: [["Decide whether to accept, counter or decline Globex's request for a two-year price lock at renewal (PMX-16)", WHY, "2026-12-12"]],
+      questions: [["open", "Will Globex accept a one-year lock?"]],
+    });
+    // The same when the mark ends the Recommendation's last paragraph instead of standing alone.
+    expect(one(DECISION_BRIEF.replace("would change this.\n\n**PM decides**\n", "would change this. **PM decides**.\n"))).toEqual(one(DECISION_BRIEF));
+  });
+
+  it("**PM decides:** <the decision> gives the to-do its words, with the same why and date", () => {
+    expect(one(DECISION_BRIEF_NAMED).decisions).toEqual([["Decide whether to accept, counter or decline the two-year lock (PMX-16)", WHY, "2026-12-12"]]);
+  });
+
+  it("(PM decides) beside a Choice: line is the same one decision, its label left out", () => {
+    const decision = [["Decide whether to accept, counter or decline Globex's request for a two-year price lock at renewal (PMX-16)", WHY, "2026-12-12"]];
+    // Marked twice, beside the choice and at the end of the Recommendation: still one to-do.
+    expect(one(DECISION_BRIEF_INLINE).decisions).toEqual(decision);
+    // Marked beside the choice only.
+    expect(one(DECISION_BRIEF_INLINE.replace("**PM decides**\n", "")).decisions).toEqual(decision);
+    // Outside a decision brief, a "Choice:" label is left out of the to-do too.
+    const spec = DRAFT.replace("- SCIM is the most asked-for", "- Choice: renew, extend or drop the importer contract (**PM decides**). Recommend renewing before Jan 15.\n- SCIM is the most asked-for");
+    expect(readFollowUps(spec, "PMX-14", now).decisions.find((d) => /importer/.test(d.text))).toMatchObject({
+      text: "Decide whether to renew, extend or drop the importer contract (PMX-14)", why: "Recommend renewing before Jan 15.", due: "2027-01-15",
+    });
+    const labelled = DRAFT.replace("- SCIM is the most asked-for", "- Decision: keep or retire the legacy importer. **PM decides.**\n- SCIM is the most asked-for");
+    expect(readFollowUps(labelled, "PMX-14", now).decisions.map((d) => d.text)).toContain("Decide whether to keep or retire the legacy importer (PMX-14)");
+  });
+
+  it("other calls in a decision brief are read as before", () => {
+    const md = DECISION_BRIEF.replace("- Will Globex accept", "- Should we also offer a usage report? **PM decides.**\n- Will Globex accept");
+    expect(one(md).decisions.map((d) => d[0])).toEqual([
+      "Decide whether to accept, counter or decline Globex's request for a two-year price lock at renewal (PMX-16)",
+      "Decide whether to also offer a usage report (PMX-16)",
+    ]);
+  });
+
+  it("the draft-ready comment counts the calls and questions accepting reads, for these drafts and every skill's own example", async () => {
+    const counted = (md: string) => {
+      const r = readFollowUps(md, "PMX-1", now);
+      return { open: r.questions.filter((q) => q.where === "open").length, blocking: r.questions.filter((q) => q.where === "blocking").length, pmDecides: r.decisions.length };
+    };
+    const examples: [string, string][] = [];
+    for (const s of ["pmx-build-brief", "pmx-competitive", "pmx-decision-brief", "pmx-problem-brief", "pmx-research", "pmx-spec", "pmx-validation-plan", "pmx-validation-readout"]) {
+      examples.push([s, await readFile(join(bundledSkillsDir(), s, "fixtures", "expected.md"), "utf8")]);
+    }
+    for (const [name, md] of [["spec", DRAFT], ["big", BIG_DRAFT], ["done", DONE_DRAFT], ["brief", DECISION_BRIEF], ["named", DECISION_BRIEF_NAMED], ["inline", DECISION_BRIEF_INLINE], ...examples] as [string, string][]) {
+      expect(draftCounts(md), name).toEqual(counted(md));
+    }
+    // The skills built around one decision give it, with its recommendation alongside and the Decision section's date.
+    const example = (s: string) => readFollowUps(examples.find(([n]) => n === s)![1], "PMX-1", now).decisions.map((d) => [d.text, d.why, d.due]);
+    expect(example("pmx-decision-brief")).toEqual([[
+      "Decide which integration ships with the launch (PMX-1)", "Recommendation: The email builder first: it carries a paid commitment and has no partner paperwork in the way.", "2026-12-02",
+    ]]);
+    expect(example("pmx-validation-readout")).toEqual([["Decide whether to scale, iterate or stop (PMX-1)", "Recommendation: Scale: ask more security owners now, with the contractor fix as proof.", null]]);
+    // A readout written before this fix, with a bare PM decides under its options, names them.
+    const bare = examples.find(([n]) => n === "pmx-validation-readout")![1].replace("**PM decides:** whether to scale, iterate or stop.", "**PM decides**.");
+    expect(readFollowUps(bare, "PMX-1", now).decisions.map((d) => d.text)).toEqual(["Decide between Scale, Iterate and Stop (PMX-1)"]);
+    const base = { title: "Decide on Globex's renewal terms", prUrl: "branch:pmx/task/PMX-16-x", path: "outputs/decision-brief/PMX-16.md", agent: "ana@m1" };
+    for (const md of [DECISION_BRIEF, DECISION_BRIEF_NAMED, DECISION_BRIEF_INLINE]) {
+      expect(draftComment({ ...base, markdown: md })).toContain("\nIt leaves 1 open question and 1 call marked PM decides.\n");
+    }
+  });
+});
+
 describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
   beforeEach(freshHome);
 
@@ -183,16 +308,16 @@ describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
     const before = tracker.tasks.size;
     const { items, host } = await loadQueue(ctx, svc);
     const msg = await decide(ctx, svc, host, items[0]!, "accepted", { reviewMinutes: 3 });
-    expect(msg).toBe("PMX-14 accepted. 4 decisions added to your to-dos; 3 follow-up tasks wait for your approval in Needs you.");
+    expect(msg).toBe("PMX-14 accepted. 4 decisions added to your to-dos; 2 follow-up tasks wait for your approval in Needs you.");
     expect(tracker.tasks.get("lin-1")!.status).toBe("done");
     // APPROVE-1: nothing reached the tracker.
     expect(tracker.tasks.size).toBe(before);
 
     const todos = (await loadTodos()).items;
     expect(todos.map((t) => [t.text, t.due, t.source.title])).toEqual([
-      ["Decide: Self-serve setup is the gap. Options: a guided setup, or a support-led one (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
       ["Decide whether to include SCIM in every plan (PMX-14)", "2026-12-08", "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
       ["Decide whether SCIM ships in the first release (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
+      ["Decide whether to pursue: How long does a CSV import take an admin today? (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
       ["Decide whether to offer SCIM on the free plan (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
     ]);
     expect(todos.every((t) => t.status === "open" && t.source.keys.length === 0)).toBe(true);
@@ -201,22 +326,21 @@ describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
     expect(ps.map((p) => [p.title, p.category, p.size, p.follows])).toEqual([
       ["Which identity providers do our largest accounts use?", "research-synthesis", "S", { identifier: "PMX-14", path: "outputs/spec/PMX-14.md", url: "https://linear.app/acme/issue/PMX-14", where: "blocking" }],
       ["Would an account pay for SCIM as an add-on, or sign a pilot to try it?", "validation-plan", "S", { identifier: "PMX-14", path: "outputs/spec/PMX-14.md", url: "https://linear.app/acme/issue/PMX-14", where: "blocking" }],
-      ["How long does a CSV import take an admin today?", "research-synthesis", "S", { identifier: "PMX-14", path: "outputs/spec/PMX-14.md", url: "https://linear.app/acme/issue/PMX-14", where: "open" }],
     ]);
-    // The original task's sources, and a pointer to the accepted draft; the question and recommendation in its words.
-    const open = ps[2]!;
+    // The original task's sources, and a pointer to the accepted draft; the question in its words.
+    const open = ps[1]!;
     expect(open.sources).toEqual(["T1", "S1"]);
     expect(open.description).toBe([
-      "How long does a CSV import take an admin today? PM decides: pursue. Recommend asking two admins this week.",
+      "Would an account pay for SCIM as an add-on, or sign a pilot to try it?",
       "",
-      "**Follows PMX-14:** an open question its accepted draft left, in the team repo at outputs/spec/PMX-14.md.",
+      "**Follows PMX-14:** a blocking question its accepted draft left, in the team repo at `outputs/spec/PMX-14.md`.",
       "**Size S, not checked:** PMX doesn't size follow-ups. Change the size if the work is bigger.",
       "**Based on** one meeting and one channel thread (2026-11-01, 2026-11-02). The sources stay on the PM's Mac.",
       "",
       "pmx:source T1",
       "pmx:source S1",
     ].join("\n"));
-    expect(formatProposal(open, 3, false)).toBe(`3. [${open.id}] How long does a CSV import take an admin today?  (research-synthesis, size S, follows PMX-14)`);
+    expect(formatProposal(open, 2, false)).toBe(`2. [${open.id}] Would an account pay for SCIM as an add-on, or sign a pilot to try it?  (validation-plan, size S, follows PMX-14)`);
 
     // The run log and Linear get exactly what an accept always records.
     const verdicts = (await new RunLogStore(ctx).entries()).filter((e) => e.type === "verdict");
@@ -229,6 +353,20 @@ describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
     expect(made).toMatchObject({ title: "Which identity providers do our largest accounts use?", category: "research-synthesis", size: "S", status: "inbox", sources: ["T1", "S1"] });
   });
 
+  it("a decision brief's decision becomes one to-do with its why and date, as the draft-ready comment counted (R1)", async () => {
+    const { tracker, ctx, svc } = await drafted({ draft: DECISION_BRIEF, task: { identifier: "PMX-16", title: "Decide on Globex's renewal terms", category: "decision-brief" } });
+    expect(tracker.comments.get("lin-1")!.at(-1)).toContain("\nIt leaves 1 open question and 1 call marked PM decides.\n");
+    const { items, host } = await loadQueue(ctx, svc);
+    expect(await decide(ctx, svc, host, items[0]!, "accepted")).toBe("PMX-16 accepted. 1 decision added to your to-dos; 1 follow-up task waits for your approval in Needs you.");
+    expect((await loadTodos()).items.map((t) => [t.text, t.why, t.due, t.source.title])).toEqual([[
+      "Decide whether to accept, counter or decline Globex's request for a two-year price lock at renewal (PMX-16)",
+      "Recommendation: Counter with a one-year lock and a usage floor: it keeps the account and caps the margin risk at a year.",
+      "2026-12-12",
+      "From PMX-16's accepted draft, outputs/decision-brief/PMX-16.md",
+    ]]);
+    expect((await readProposals()).map((p) => p.title)).toEqual(["Will Globex accept a one-year lock?"]);
+  });
+
   it("accepting the same draft again doesn't double them, even after the PM acted on them", async () => {
     const { ctx, svc } = await drafted();
     const { items, host } = await loadQueue(ctx, svc);
@@ -238,10 +376,10 @@ describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
     // surface retrying, or the same draft decided again) makes nothing new.
     await approveProposals(ctx, svc, [(await readProposals())[0]!.id]);
     const again = await followUpsOnAccept(ctx, svc, item);
-    expect(again).toMatchObject({ todos: [], proposals: [], repeated: 7, duplicates: 0 });
-    expect(followUpText(again)).toBe("7 follow-ups were already made from this draft.");
+    expect(again).toMatchObject({ todos: [], proposals: [], repeated: 6, duplicates: 0 });
+    expect(followUpText(again)).toBe("6 follow-ups were already made from this draft.");
     expect((await loadTodos()).items).toHaveLength(4);
-    expect(await readProposals()).toHaveLength(2);
+    expect(await readProposals()).toHaveLength(1);
   });
 
   it("makes at most 3 tasks (blocking questions first) and 5 to-dos per draft; the rest stay in the draft, also on a second accept", async () => {
@@ -258,7 +396,8 @@ describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
     ]);
     expect(ps.every((p) => p.follows!.more === 2)).toBe(true);
     expect(formatProposal(ps[0]!, 1, true)).toContain("· Follows PMX-14: a blocking question from its accepted draft, outputs/spec/PMX-14.md (2 more questions stay there)");
-    expect((await loadTodos()).items.map((t) => t.text)).toEqual([1, 2, 3, 4, 5].map((n) => `Decide: Call ${n} (PMX-14)`));
+    // R2b: "**Call 1.** Whether to offer …" is a label, then the decision: the to-do is the decision.
+    expect((await loadTodos()).items.map((t) => t.text)).toEqual(["guided setup", "a support-led setup", "SCIM in every plan", "a Business-only plan", "an admin audit log"].map((x) => `Decide whether to offer ${x} (PMX-14)`));
     // Accepting it again makes neither the ones made nor the ones left in the draft.
     const again = await followUpsOnAccept(ctx, svc, item);
     expect(again).toMatchObject({ todos: [], proposals: [], repeated: 8, moreQuestions: 2, moreDecisions: 2 });
@@ -269,11 +408,11 @@ describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
 
   it("skips what is already open or waiting under the same title", async () => {
     const { ctx, svc } = await drafted({ tasks: [task({ id: "lin-2", identifier: "PMX-15", title: "Which identity providers do our largest accounts use?", status: "inbox" })] });
-    await stageProposals([{ at: new Date().toISOString(), receipt: "", title: "How long does a CSV import take an admin today", description: "Waiting.", category: "spec", size: "S", sources: [], from: [] }]);
+    await stageProposals([{ at: new Date().toISOString(), receipt: "", title: "Would an account pay for SCIM as an add-on, or sign a pilot to try it", description: "Waiting.", category: "spec", size: "S", sources: [], from: [] }]);
     const { items, host } = await loadQueue(ctx, svc);
     const msg = await decide(ctx, svc, host, items[0]!, "accepted");
-    expect(msg).toBe("PMX-14 accepted. 4 decisions added to your to-dos; 1 follow-up task waits for your approval in Needs you; 2 follow-ups were already on your list.");
-    expect((await readProposals()).map((p) => p.title)).toEqual(["How long does a CSV import take an admin today", "Would an account pay for SCIM as an add-on, or sign a pilot to try it?"]);
+    expect(msg).toBe("PMX-14 accepted. 4 decisions added to your to-dos; 2 follow-ups were already on your list.");
+    expect((await readProposals()).map((p) => p.title)).toEqual(["Would an account pay for SCIM as an add-on, or sign a pilot to try it"]);
   });
 
   it("a follow-up that can't be made never undoes the accept, and says why in a sentence with no command", async () => {
@@ -368,12 +507,12 @@ describe("pmx review without a terminal (F21)", () => {
     const { tracker, ctx } = await drafted2();
     const r = await run(ctx, { accept: ["pmx-14"] });
     expect(r.code).toBe(0);
-    expect(r.out).toBe("PMX-14 accepted. 4 decisions added to your to-dos; 3 follow-up tasks wait for your approval in Needs you.\nYour to-dos: pmx todo · Tasks waiting for your approval: pmx proposals");
+    expect(r.out).toBe("PMX-14 accepted. 4 decisions added to your to-dos; 2 follow-up tasks wait for your approval in Needs you.\nYour to-dos: pmx todo · Tasks waiting for your approval: pmx proposals");
     expect(tracker.tasks.get("lin-1")!.status).toBe("done");
     expect(tracker.comments.get("lin-1")!.at(-1)).toBe("Accepted by ana.");
     const verdicts = (await new RunLogStore(ctx).entries()).filter((e) => e.type === "verdict");
     expect(verdicts).toMatchObject([{ verdict: "accepted", taskId: "PMX-14", category: "spec", reviewMinutes: null }]);
-    expect(await readProposals()).toHaveLength(3);
+    expect(await readProposals()).toHaveLength(2);
   });
 
   it("--redo and --reject need a note, take one task, and record it", async () => {
@@ -414,7 +553,7 @@ describe("the pages after Accept (FOLLOW-1)", () => {
     try {
       const token = new URL(s.url).searchParams.get("t")!;
       const r = await fetch(`http://127.0.0.1:${s.port}/api/items/lin-1/accept`, { method: "POST", headers: { "x-pmx-token": token, "content-type": "application/json" }, body: "{}" });
-      expect(await r.json()).toEqual({ ok: true, message: "PMX-14 accepted. 4 decisions added to your to-dos; 3 follow-up tasks wait for your approval in Needs you." });
+      expect(await r.json()).toEqual({ ok: true, message: "PMX-14 accepted. 4 decisions added to your to-dos; 2 follow-up tasks wait for your approval in Needs you." });
     } finally { await s.close(); }
   });
 
@@ -427,8 +566,8 @@ describe("the pages after Accept (FOLLOW-1)", () => {
         const repo = ctx.personal.repoPath;
         await git(repo, "checkout", "-q", "-b", branch);
         await mkdir(join(repo, "outputs", "spec"), { recursive: true });
-        // One open question more than the cap of 3 tasks.
-        await writeFile(join(repo, "outputs", "spec", "PMX-7.md"), `${DRAFT.replace(/PMX-14/g, "PMX-7")}- How many admins run the export by hand?\n`);
+        // One question more than the cap of 3 tasks (the open question marked PM decides is a call, not a task).
+        await writeFile(join(repo, "outputs", "spec", "PMX-7.md"), `${DRAFT.replace(/PMX-14/g, "PMX-7")}- How many admins run the export by hand?\n- Which plans do those admins pay for?\n`);
         await git(repo, "add", "-A");
         await git(repo, "commit", "-q", "-m", "PMX-7: Spec SCIM sync");
         await git(repo, "checkout", "-q", "main");

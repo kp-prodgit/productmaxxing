@@ -21,7 +21,7 @@ function summary(item: ReviewItem): string {
 
 /** Where the terminal finds what an accept made (FOLLOW-1). Only the CLI says it: the pages never show a command. */
 export function followUpHint(made: (FollowUpResult | null)[]): string | null {
-  const todos = made.some((f) => f?.todos.length), tasks = made.some((f) => f?.proposals.length);
+  const todos = made.some((f) => f?.todos.length || f?.asks?.length), tasks = made.some((f) => f?.proposals.length);
   if (!todos && !tasks) return null;
   return [todos ? "Your to-dos: pmx todo" : "", tasks ? "Tasks waiting for your approval: pmx proposals" : ""].filter(Boolean).join(" · ");
 }
@@ -31,8 +31,10 @@ export const NO_TERMINAL = "No terminal here: use --accept, --redo or --reject w
 
 /** `pmx review`: the terminal review queue (REV-2). */
 export async function terminalReview(ctx: Ctx, svc: Services, ask: Asker, o: { all?: boolean } = {}): Promise<string> {
-  const { items, host } = await loadQueue(ctx, svc, o);
-  if (!items.length) return "Nothing waiting for review.";
+  const { items, host, decided } = await loadQueue(ctx, svc, o);
+  // R13: a draft decided on another Mac since this Mac's last Linear sync is said, never offered.
+  if (!items.length) return [...decided.map((d) => d.text), "Nothing waiting for review."].join("\n");
+  for (const d of decided) ctx.out.info(d.text);
   const done: string[] = [];
   const made: (FollowUpResult | null)[] = [];
   for (const item of items) {
@@ -82,12 +84,17 @@ export async function scriptedReview(ctx: Ctx, svc: Services, o: ScriptedReview)
   const twice = picks.find((p, i) => picks.findIndex((x) => x.id === p.id) !== i);
   if (twice) throw new Error(`${twice.id} is named twice. Decide each draft once.`);
   // Any draft waiting here can be decided by its identifier, as PMX's page can: the person named it.
-  const { items, host } = await loadQueue(ctx, svc, { all: true });
+  const { items, host, decided } = await loadQueue(ctx, svc, { all: true });
   const byId = new Map(items.map((i) => [i.task.identifier.toUpperCase(), i]));
+  const gone = new Map(decided.map((d) => [d.identifier.toUpperCase(), d.text]));
   const missing = picks.filter((p) => !byId.has(p.id)).map((p) => p.id);
   if (missing.length) {
+    // R13: a draft decided on another Mac says so, rather than that it isn't waiting.
+    const told = missing.filter((id) => gone.has(id)).map((id) => gone.get(id)!);
+    const rest = missing.filter((id) => !gone.has(id));
     const waiting = items.length ? ` Waiting for review here: ${items.map((i) => i.task.identifier).join(", ")}.` : " Nothing is waiting for review here.";
-    return { text: `${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} waiting for review here, so nothing was decided.${waiting}`, code: 1 };
+    const why = rest.length ? `${rest.join(", ")} ${rest.length === 1 ? "isn't" : "aren't"} waiting for review here, so nothing was decided.${waiting}` : "Nothing was decided.";
+    return { text: [...told, why].join("\n"), code: 1 };
   }
   const lines: string[] = [];
   const made: (FollowUpResult | null)[] = [];

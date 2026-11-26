@@ -33,7 +33,8 @@ describe("kinds of work that fit where a team is (F13, CAT-8, SIG-8)", () => {
     const text = await skill("pmx-decision-brief");
     expect(text).toMatch(/"requiredHeadings": \["Decision", "Options", "Criteria", "Evidence by option", "Recommendation", "Open questions"\]/);
     expect(text).toMatch(/the date it's needed by, with the source ID/);
-    expect(text).toMatch(/End it with \*\*PM decides\*\*/);
+    // R1: the Recommendation ends with the decision in words, so accepting the brief makes it a to-do (FOLLOW-1).
+    expect(text).toMatch(/End it with a line of its own: `\*\*PM decides:\*\* <the decision, in a few words>`/);
     const rubric = parseRubric(await skill("pmx-size"));
     expect(rubric.cells["decision-brief"]?.M).toBe("One decision with a date, two to four options across 3–8 sources");
   });

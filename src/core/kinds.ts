@@ -36,6 +36,13 @@ export interface KindDraft {
   example: string | null;
 }
 
+/**
+ * R5 (founder decision 2026-11-26): no people's names in the team repo, so every drafting skill writes roles. PMX's
+ * own drafting skills carry this line word for word in their drafting rules (pmx-hygiene in words for issues), and so
+ * does every kind of work a team defines.
+ */
+export const NO_NAMES_RULE = "No names other than redaction placeholders. Write each person as their role and company: \"Globex's brand lead\", \"our head of product\", \"a Globex admin\". Never a person's name, even one the task, a source or `memory/` gives. In your own sentences a role reads better than a placeholder like `[PERSON-2, Globex]`: keep placeholders for quotes, or for someone the sources give no role or company for.";
+
 export const KIND_LIMITS = { name: [3, 40], line: [10, 300], section: [2, 40], step: [3, 300], sections: 8, steps: 12, checks: 8, example: 1200 } as const;
 
 export const GENERIC_SIZES: Record<Size, string> = {
@@ -153,6 +160,7 @@ ${[
       ? "- This goes outside the team. Write it as a draft for the PM to send. Never send, post or publish anything, and never promise a date, price or feature."
       : "- You write a draft. A person sends, posts or applies anything it proposes; you never do.",
     "- Redaction placeholders like `[PERSON-2]` stay as they are.",
+    `- ${NO_NAMES_RULE}`,
   ].join("\n")}
 
 ## Quality checklist
@@ -162,7 +170,7 @@ ${[
     cite ? "- [ ] Every claim cites a source ID from the task." : null,
     ...d.checks.map((c) => `- [ ] ${ensureStop(c)}`),
     "- [ ] Follows the drafting rules.",
-    "- [ ] No names other than redaction placeholders. Nothing personal about colleagues.",
+    "- [ ] No names other than redaction placeholders: people appear as their role and company, never by name. Nothing personal about colleagues.",
   ].filter(Boolean).join("\n")}
 `;
 }

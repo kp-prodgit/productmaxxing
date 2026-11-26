@@ -176,12 +176,16 @@ const shows = (look: Look, at: number) => look.asOf === null || look.asOf > at +
 
 const DID: Record<Exclude<MarkState, "ready">, string> = { review: "drafted it", done: "marked it done", blocked: "rejected its draft", dropped: "dropped it" };
 
-/** "another Mac (ana@m1) drafted it at 06:58; waiting for review", in this Mac's time. */
-export function takenText(state: Exclude<MarkState, "ready">, by: string, at: string, look: Pick<Look, "agent" | "now">): string {
+/** "at 06:58" today, else "on Nov 25 at 06:58", in this Mac's time. */
+function whenText(at: string, now: Date): string {
   const d = new Date(at);
   const hm = d.toTimeString().slice(0, 5);
-  const when = d.toDateString() === look.now.toDateString() ? `at ${hm}` : `on ${d.toDateString().slice(4, 10)} at ${hm}`;
-  return `${by === look.agent ? "this Mac" : `another Mac (${by})`} ${DID[state]} ${when}${state === "review" ? "; waiting for review" : ""}`;
+  return d.toDateString() === now.toDateString() ? `at ${hm}` : `on ${d.toDateString().slice(4, 10)} at ${hm}`;
+}
+
+/** "another Mac (ana@m1) drafted it at 06:58; waiting for review", in this Mac's time. */
+export function takenText(state: Exclude<MarkState, "ready">, by: string, at: string, look: Pick<Look, "agent" | "now">): string {
+  return `${by === look.agent ? "this Mac" : `another Mac (${by})`} ${DID[state]} ${whenText(at, look.now)}${state === "review" ? "; waiting for review" : ""}`;
 }
 
 export const expired = (m: Pick<TaskMark, "at">, now: Date) => !(now.getTime() - Date.parse(m.at) <= MARK_KEEP_MS);
@@ -192,6 +196,26 @@ export function markBlocks(m: TaskMark, look: Look): string | null {
   if (m.landed && shows(look, Date.parse(m.landed))) return null;
   return takenText(m.state, m.by, m.at, look);
 }
+
+const DECIDED: Partial<Record<MarkState, string>> = { done: "accepted", blocked: "rejected", dropped: "dropped" };
+
+/**
+ * R13: why a draft this Mac's copy of Linear still shows waiting for review is no longer needed, or null when the copy
+ * decides. The task's mark says a Mac accepted, rejected or dropped it since, and this copy can't show that yet: a
+ * teammate's leftover draft of the same task must not be accepted a second time before this Mac's next Linear sync.
+ */
+export function draftDecided(identifier: string, m: TaskMark | null | undefined, look: Look): string | null {
+  const did = m ? DECIDED[m.state] : undefined;
+  if (!m || !did || !markBlocks(m, look)) return null;
+  return `${identifier} was ${did} ${m.by === look.agent ? "on this Mac" : `on another Mac (${m.by})`} ${whenText(m.at, look.now)}; this draft is no longer needed.`;
+}
+
+/**
+ * TASK-8 with PULL-14: the task's mark says a Mac marked it done or dropped it, and this Mac's copy of Linear can't show
+ * that yet. A move that copy shows is from before, so PMX doesn't follow it, or say it did.
+ */
+export const finishedElsewhere = (m: TaskMark | null | undefined, look: Look): boolean =>
+  !!m && (m.state === "done" || m.state === "dropped") && markBlocks(m, look) !== null;
 
 /** A task's last step in the team's run log: a draft, a verdict, a release or a drop. */
 function lastStep(runs: readonly RunLogEntry[], identifier: string): { state: MarkState; ts: string; agent: string } | null {

@@ -15,9 +15,13 @@ import type { Evidence } from "./evidence.js";
  * A call is blocked when its search query, or its URL (host, path and decoded query string), carries:
  * - `quote`: any 5 words in a row from the task's source passages;
  * - `person`: a person's name or email from the sources: participants, speakers, the CRM list, the do-not-read list;
- * - `company`: a customer or partner company named in the sources (an outside participant's email domain, a name in the
- *   passages, or a company the description's sources line names), unless the task names it as a competitor: in its
- *   title, or elsewhere in its description when it isn't one of those sources' own companies.
+ * - `company`: a customer or partner company of the sources (an outside participant's email domain, a company the
+ *   description's sources line names, a company on the CRM list, or one the passages name with a strong signal:
+ *   `passageCompanies`), unless the task names it as a competitor: in its title, or elsewhere in its description when
+ *   it isn't one of those companies. R18: not every capitalized word in the passages, which made "price", "brand",
+ *   "teams" and "enterprise" customers and blocked ordinary searches about competitors' plans. A company is its whole
+ *   name, and each of its words that isn't a common word (`COMMON`): "Umbrella Health" blocks "umbrella health" and
+ *   "umbrella", never "health" alone.
  */
 export const GUARD_FILE = ".pmx/tmp/web-guard.json";
 export type GuardRule = "quote" | "person" | "company" | "guard";
@@ -81,13 +85,179 @@ export function speakers(passages: string[]): string[] {
 const label = (domain: string) => domain.toLowerCase().split(".").filter((x) => x && !["www", "mail", "app", "com", "org", "net", "io", "co", "example"].includes(x))[0] ?? null;
 
 /**
+ * R18: words that are never a customer by themselves, because a search about a competitor's plans and prices carries
+ * them ("Globex Teams plan price", "brand kit features"). In a company's whole name they still count ("Acme Studio").
+ */
+export const COMMON = new Set(("price prices pricing cost costs brand brands kit kits team teams enterprise enterprises studio studios pro plus " +
+  "premium basic free starter standard business plan plans tier tiers feature features edition editions suite cloud app apps platform " +
+  "design designs tool tools ai online software solutions services systems digital global international labs group partners media " +
+  "data tech technologies health industries holdings ventures review reviews comparison alternative alternatives").split(" "));
+/** A company's legal form at the end of its name, which a search rarely carries: "Acme Corp" is Acme. */
+const LEGAL = new Set("inc corp corporation ltd limited llc llp co company gmbh ag sa bv nv plc pty".split(" "));
+
+/** A company's name as the guard holds it: its words, without a legal form at the end. */
+function companyWords(name: string): string[] {
+  const ws = words(name);
+  while (ws.length > 1 && LEGAL.has(ws.at(-1)!)) ws.pop();
+  return ws;
+}
+
+/**
+ * The companies the description's sources line names (PRIV-6, F14): "a customer call with Acme (Nov 20); 2 partner
+ * calls with Umbrella Health (Nov 3–5)" names Acme and Umbrella Health. Threads and internal meetings name none.
+ */
+export function sourceLineCompanies(description: string): string[] {
+  const line = (description.match(SOURCES_LINE)?.[0] ?? "").replace(/^\*\*(?:Sources:|Based on)\*\*\s*/, "").replace(/\.\s*They stay on the PM's Mac.*$/, "");
+  return line.split(";").flatMap((part) => {
+    const m = part.match(/\bcalls? with (.+?)\s*(?:\(|$)/);
+    return m ? [m[1]!.replace(/[.\s]+$/, "")] : [];
+  }).filter(Boolean);
+}
+
+/**
+ * The CRM list's companies, if it has any (SEC-8 keeps people on it): a line with a company's legal form at the end
+ * ("Acme Corp", "Initrode GmbH"), an `&` ("Vandelay & Sons"), or a domain ("acme.example").
+ */
+export function crmCompanies(lines: string[]): string[] {
+  return lines.map((l) => l.trim()).filter((l) => l && !l.includes("@")).flatMap((l) => {
+    if (/^[\w-]+(?:\.[\w-]+)+$/.test(l)) return label(l) ? [label(l)!] : [];
+    const ws = words(l);
+    return ws.length > 1 && (LEGAL.has(ws.at(-1)!) || l.includes("&")) ? [l] : [];
+  });
+}
+
+/**
+ * A company found in the passages: its words, and how much of it the guard holds. `all`: its whole name and each of its
+ * own words, as for a company the sources line names. `name`: its whole name only (one word or a run of them).
+ */
+export interface PassageCompany { words: string[]; hold: "all" | "name" }
+
+/** Words before a customer: "the customer Initrode", "our client Hooli Hotels", "the prospect Vandelay". */
+const CUSTOMER_BEFORE = new Set("customer customers client clients prospect prospects partner partners".split(" "));
+/** Words that go before a company as often as before anything else: "a pilot with Initrode", "the call at Hooli". */
+const PLACE_BEFORE = new Set("at with for from".split(" "));
+/** Words after one: "the Hooli deal", "Initrode's renewal", "the Vandelay pilot". */
+const CUE_AFTER = new Set("deal deals account accounts pilot pilots contract contracts renewal renewals opportunity opp rfp rfi procurement expansion".split(" "));
+/** Labels a CRM record puts before its company: "Account: Hooli Hotels", "Opportunity: Initrode — Renewal". */
+const RECORD_LABEL = /^\s*(?:[-*•>]\s*)*(?:account|opportunity|opp|customer|client|company|prospect|partner|organi[sz]ation|org|deal)(?:\s+name)?\s*:\s*/i;
+/** Words after a run that make it a product or a feature, not a company: "Magic Resize feature", "Brand Kit plan". */
+const PRODUCT_AFTER = new Set("feature features plan plans tier tiers add on addon plugin plugins template templates tool tools button mode editor app apps integration integrations api sso login connector connectors extension sync export import bot workspace".split(" "));
+/**
+ * Words that are never a company's own: a sentence's or a heading's opener ("Yesterday Hooli Hotels asked…", "Next
+ * steps — …"), a role ("the Customer's request"), and the words products and features are named with ("Single Sign-On",
+ * "Audit Log"). The guard's other lists (`COMMON`, `LEGAL`) count too.
+ */
+const NOT_COMPANY = new Set(("every each all some any many most few several both other another such no not only just very " +
+  "yesterday today tomorrow also however meanwhile then now last next earlier later update updates note notes fyi re " +
+  "summary recap agenda action actions item items step steps stage owner owners status everyone everybody nobody someone somebody let " +
+  "customer customers client clients user users buyer buyers admin admins partner vendor vendors competitor competitors product products " +
+  "people folks account accounts deal deals opportunity renewal pilot contract quote quotes " +
+  "single sign signin signon login logout audit log logs export import sync share sharing search approval approvals workflow workflows " +
+  "template templates dashboard report reports permission permissions role roles access security settings").split(" "));
+const NAME_SHAPE = /^\p{Lu}[\p{Ll}\p{M}]+(?:-\p{Lu}?[\p{Ll}\p{M}]+)*$/u;
+
+interface Tok { raw: string; w: string; cap: boolean; poss: boolean; start: boolean; sep: string; end: number }
+
+function tokens(line: string): Tok[] {
+  const out: Tok[] = [];
+  let prev = 0;
+  for (const m of line.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)) {
+    let raw = m[0]!.replace(/[-'’]+$/, "");
+    const poss = /['’]s$/i.test(raw) || /s['’]$/.test(m[0]!);
+    if (/['’]s$/i.test(raw)) raw = raw.slice(0, -2);
+    if (!raw) continue;
+    const sep = line.slice(prev, m.index!);
+    prev = m.index! + m[0]!.length;
+    out.push({ raw, w: words(raw).join(" "), cap: NAME_SHAPE.test(raw), poss, start: !out.length || /[.!?:;—–]/.test(sep), sep, end: prev });
+  }
+  return out;
+}
+
+const SPACE = /^[ \t]+$/;
+
+/**
+ * R18: the customers and partners internal sources name, where no email domain, sources line or CRM list does: a
+ * competitive analysis is often fed by the team's own threads and a CRM record, every participant inside the company.
+ * Strong signals only, so ordinary words stay searchable:
+ * - a possessive ("Initrode's"), a customer word before ("our client Hooli Hotels") or a deal word after ("the Hooli
+ *   deal", "the Vandelay pilot"), a CRM record's label or title ("Account: Hooli Hotels", "Hooli Hotels — Teams
+ *   Expansion"), or an ampersand ("Vandelay & Kramer"): the whole name and each of its own words;
+ * - "at", "with", "for" or "from" before ("a pilot with Initrode"): the whole name, unless the passages show it's a tool
+ *   ("Initrode integration");
+ * - a run of two or more capitalized words ("Hooli Hotels"): the whole name only, unless it's a product (a word like
+ *   "feature" or "plan" after it) or the passages also write it in lower case.
+ * Never a competitor the title names, its products and plans ("Globex Teams", "Globex's Magic Resize"), or a run of
+ * ordinary words ("Brand Kit", "Enterprise Price"). A single capitalized word with none of these is no customer. A
+ * person's name may come out as a company here; the guard blocks it either way.
+ */
+export function passageCompanies(passages: string[], competitor: (w: string) => boolean = () => false): PassageCompany[] {
+  const out = new Map<string, PassageCompany>();
+  const lines = passages.flatMap((p) => p.split("\n"));
+  // What the passages write in lower case ("we love magic resize"), and the capitalized words they put before a tool
+  // word ("Initrode integration"), across every line.
+  const lower = new Set<string>(), tools = new Set<string>();
+  for (const l of lines) {
+    const ts = tokens(l);
+    let seg: string[] = [];
+    const flush = () => { for (let n = 1; n <= NAME_WORDS; n++) for (const g of grams(seg, n)) lower.add(g); seg = []; };
+    ts.forEach((t, i) => {
+      if (t.raw === t.raw.toLowerCase()) seg.push(...t.w.split(" ")); else flush();
+      const next = ts[i + 1];
+      if (t.cap && next && SPACE.test(next.sep) && PRODUCT_AFTER.has(next.w)) tools.add(t.w);
+    });
+    flush();
+  }
+  const soft = (w: string) => w.length < 3 || COMMON.has(w) || NOT_NAMES.has(w) || LEGAL.has(w) || NOT_COMPANY.has(w);
+  const add = (ws: string[], hold: PassageCompany["hold"], shapeOnly = false) => {
+    while (ws.length && soft(ws[0]!)) ws = ws.slice(1);
+    // Not a legal form, a date or an opener at its end ("Initrode GmbH", "Hooli Monday"); a common word stays ("Acme Studio").
+    while (ws.length > 1 && (LEGAL.has(ws.at(-1)!) || NOT_NAMES.has(ws.at(-1)!) || NOT_COMPANY.has(ws.at(-1)!))) ws = ws.slice(0, -1);
+    if (!ws.length || ws.length > NAME_WORDS || ws.every(soft) || ws.some(competitor) || (hold === "name" && ws.length === 1 && shapeOnly)) return;
+    const key = ws.join(" ");
+    if (out.get(key)?.hold !== "all") out.set(key, { words: ws, hold });
+  };
+  for (const raw of lines) {
+    // A CRM record's company comes after its label ("Account: Hooli Hotels"); a speaker's label is a person, counted
+    // elsewhere ("Dana:", "Max Lee:").
+    const labelled = RECORD_LABEL.test(raw);
+    const line = labelled ? raw.replace(RECORD_LABEL, "") : raw.replace(/^\s*(?:[>*-]\s*)*(?:[\p{L}][\p{L} .'-]{0,40}:\s+)/u, "");
+    const ts = tokens(line);
+    for (let i = 0; i < ts.length; i++) {
+      if (!ts[i]!.cap) continue;
+      // A run of capitalized words, joined by spaces or by "&" ("Vandelay & Kramer"); a possessive ends it.
+      let j = i, amp = false;
+      while (j + 1 < ts.length && ts[j + 1]!.cap && !ts[j]!.poss && (SPACE.test(ts[j + 1]!.sep) || (/^[ \t]*&[ \t]*$/.test(ts[j + 1]!.sep) && (amp = true)))) j++;
+      const run = ts.slice(i, j + 1), before = ts[i - 1], before2 = ts[i - 2], after = ts[j + 1], last = run.at(-1)!;
+      const from = i;
+      i = j;
+      // A competitor's product or plan: "Globex's Magic Resize", "Globex Teams".
+      if (before && competitor(before.w) && /^[ \t]*$/.test(run[0]!.sep)) continue;
+      const ws = run.flatMap((t) => t.w.split(" "));
+      const joined = SPACE.test(run[0]!.sep);
+      const cue = (set: Set<string>) => !!before && joined && (set.has(before.w) || (["the", "our", "a", "an"].includes(before.w) && !!before2 && set.has(before2.w) && SPACE.test(before.sep)));
+      const dealAfter = !!after && SPACE.test(after.sep) && CUE_AFTER.has(after.w);
+      const recordTitle = from === 0 && (labelled || /^[ \t]+[—–-][ \t]+\S/.test(line.slice(last.end)));
+      if (last.poss || cue(CUSTOMER_BEFORE) || dealAfter || recordTitle || amp) { add(ws, "all"); continue; }
+      const product = !!after && SPACE.test(after.sep) && PRODUCT_AFTER.has(after.w);
+      if (product || lower.has(ws.join(" "))) continue;
+      if (cue(PLACE_BEFORE)) { if (!(ws.length === 1 && tools.has(ws[0]!))) add(ws, "name"); continue; }
+      // Only its shape: a whole name of two words or more. A sentence's first word may be the sentence's own.
+      if (ws.length >= 2) { add(ws, "name", true); if (run[0]!.start && ws.length > 2) add(ws.slice(1), "name", true); }
+    }
+  }
+  return [...out.values()];
+}
+
+/**
  * What the guard checks for one web run, from the task and the evidence the agent was shown. `people`: names and emails
- * to keep out (participants, the CRM list, the do-not-read list). `internalDomains`: the company's own, never a customer.
+ * to keep out (participants, the CRM list, the do-not-read list). `crm`: the CRM list's lines, for the companies it has.
+ * `internalDomains`: the company's own, never a customer.
  */
 export function buildGuard(o: {
   task: { title: string; description: string };
   evidence: Pick<Evidence, "sources"> & { people?: string[] };
   people: string[];
+  crm?: string[];
   internalDomains: string[];
 }): WebGuard {
   const salt = randomBytes(12).toString("hex");
@@ -106,25 +276,40 @@ export function buildGuard(o: {
     const name = words(x.replace(EMAIL, " "));
     if (name.length && name.length <= NAME_WORDS && name.join(" ").length >= 3) people.add(h(salt, name.join(" ")));
   }
-  // Customers and partners: outside participants' companies, and the names the passages mention.
+  // Customers and partners (R18): outside participants' companies (their email domains), the companies the
+  // description's sources line names (PRIV-6, F14), the CRM list's, and those the passages name with a strong signal
+  // (`passageCompanies`). Never every capitalized word in the passages.
   const internal = new Set(o.internalDomains.map((d) => d.toLowerCase()));
-  const outside = new Set<string>();
+  const domains = new Set<string>();
   for (const x of everyone) for (const e of x.match(EMAIL) ?? []) {
     const d = e.split("@")[1]!.toLowerCase();
-    if ([...internal].some((i) => d === i || d.endsWith(`.${i}`))) continue;
-    const l = label(d);
-    if (l && l.length >= 3) outside.add(l);
+    if (![...internal].some((i) => d === i || d.endsWith(`.${i}`))) domains.add(d);
   }
-  // The description's sources line (PRIV-6, F14) names the sources' companies: "a customer call with Acme (Nov 20)".
-  const line = o.task.description.match(SOURCES_LINE)?.[0] ?? "";
-  const named = new Set(properNames(line.replace(/^\*\*(?:Sources:|Based on)\*\*\s*/, "").replace(/\.\s*They stay on the PM's Mac.*$/, ""), { all: true }));
-  const fromText = new Set([...properNames(passages.join("\n")), ...named]);
-  // The task's competitors: names in its title, and in the rest of its description unless they're a source's company.
+  // The task's competitors: names in its title, and in the rest of its description unless they're one of those
+  // companies. A competitor stays searchable with its products and plans ("Globex Teams", "Globex Pro").
   const inTitle = new Set(properNames(o.task.title, { all: true }));
   const inDescription = new Set(properNames(o.task.description.replace(/^pmx:\w+ .*$/gm, "").replace(SOURCES_LINE, "")));
-  const competitor = (c: string) => inTitle.has(c) || (inDescription.has(c) && !outside.has(c) && !named.has(c));
+  const named = [...sourceLineCompanies(o.task.description), ...crmCompanies(o.crm ?? [])].map(companyWords);
+  // Only the title makes a company the passages name a competitor: a description may name the customer it's for.
+  const inPassages = passageCompanies(passages, (w) => inTitle.has(w));
+  const own = new Set([...[...domains].map(label).filter((l): l is string => !!l), ...named.flat(), ...inPassages.flatMap((c) => c.words)]);
+  const competitor = (w: string) => inTitle.has(w) || (inDescription.has(w) && !own.has(w));
   const companies = new Set<string>();
-  for (const c of [...outside, ...fromText]) if (!competitor(c)) companies.add(h(salt, c));
+  for (const d of domains) {
+    const l = label(d);
+    if (!l || l.length < 3 || competitor(l)) continue;
+    const host = words(d.replace(/^(?:www|mail|app)\./, ""));
+    if (host.length > 1 && host.length <= NAME_WORDS) companies.add(h(salt, host.join(" ")));
+    if (!COMMON.has(l)) companies.add(h(salt, l));
+  }
+  // A named company: its whole name, and each of its words that isn't common, unless the task names it as a competitor.
+  for (const c of inPassages) if (c.hold === "name") companies.add(h(salt, c.words.join(" ")));
+  for (const ws of [...named, ...inPassages.filter((c) => c.hold === "all").map((c) => c.words)]) {
+    const distinct = ws.filter((w) => w.length >= 3 && !COMMON.has(w) && !NOT_NAMES.has(w) && !LEGAL.has(w));
+    if (!ws.length || (distinct.length && distinct.every(competitor))) continue;
+    if (ws.length > 1 && ws.length <= NAME_WORDS) companies.add(h(salt, ws.join(" ")));
+    for (const w of distinct) if (!competitor(w)) companies.add(h(salt, w));
+  }
   return { v: 1, salt, quotes: [...quotes], people: [...people], emails: [...emails], companies: [...companies] };
 }
 
@@ -157,7 +342,8 @@ export function checkWebCall(tool: string, input: unknown, g: WebGuard): GuardRu
     if (grams(ws, QUOTE_WORDS).some((x) => quotes.has(h(g.salt, x)))) rules.add("quote");
     for (let n = 1; n <= NAME_WORDS; n++) for (const x of grams(ws, n)) {
       if (people.has(h(g.salt, x))) rules.add("person");
-      if (n === 1 && companies.has(h(g.salt, x))) rules.add("company");
+      // A company is held as its whole name and its own words (R18), so any run of up to four words may be one.
+      if (companies.has(h(g.salt, x))) rules.add("company");
     }
   }
   return ORDER.filter((r) => rules.has(r));

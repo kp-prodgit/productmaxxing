@@ -3,6 +3,7 @@ import { RunLogStore } from "../core/runlog-store.js";
 import type { Services } from "../core/services.js";
 import type { Task } from "../core/types.js";
 import { markTask } from "../lease/marks.js";
+import { removePackNow } from "../run/share.js";
 import { stoppedTasks, type StoppedTask } from "./failures.js";
 
 /**
@@ -39,12 +40,16 @@ export async function retryStopped(ctx: Ctx, svc: Services, ref: string): Promis
   return `${task.identifier} is back in Ready${relayed(svc) ? " from the next Claude sync" : ""}. An agent tries it again on PMX's next background run, and it stops again only if the next two runs fail too.`;
 }
 
-/** Drop: the task leaves the agents' queue for good. It moves to canceled in Linear; nothing is deleted. */
+/**
+ * Drop: the task leaves the agents' queue for good. It moves to canceled in Linear; nothing is deleted there. Its shared
+ * quotes leave the team repo now (RUN-5), as the clean-up would remove them for a dropped task.
+ */
 export async function dropStopped(ctx: Ctx, svc: Services, ref: string): Promise<string> {
   const { task, s, log } = await stopped(ctx, svc, ref);
   await log.record({ type: "drop", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier });
   await svc.tracker.comment(task.id, `Dropped by ${ctx.agent} after ${s.runs} runs in a row without a draft. No agent will take it again.`);
   await svc.tracker.rewrite(task.id, { cancel: true });
   await markTask(ctx, svc.tracker, task.identifier, "dropped");
+  await removePackNow(ctx, svc.tracker, task.identifier, "dropped");
   return `Dropped ${task.identifier}: no agent will take it again. It moves to canceled in Linear${relayed(svc) ? " at the next Claude sync" : ""}.`;
 }

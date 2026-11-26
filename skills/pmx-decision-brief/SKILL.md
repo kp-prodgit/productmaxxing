@@ -30,9 +30,14 @@ Write `outputs/decision-brief/<task id>.md`:
 5. `## Evidence by option`: for each option, what supports it and what argues against it, every line with source
    IDs. Mark what nobody knows yet as *Unknown* and say who could find out.
 6. `## Recommendation`: the option you recommend, why it wins on the criteria, and what would change your
-   recommendation. End it with **PM decides**.
-7. `## Open questions`: what still blocks the decision or could flip it, and whether it can be answered before
-   the date.
+   recommendation. End it with a line of its own: `**PM decides:** <the decision, in a few words>`, for example
+   `**PM decides:** whether to ship the importer in the first release.` When the brief is accepted, that line becomes
+   the PM's to-do, with your recommendation and the date from `## Decision` beside it.
+7. `## Open questions`: what still blocks the decision or could flip it, and whether it can be answered before the
+   date. Right after each question, say who or what answers it: `— ask: <role>` when one person can answer it
+   (`Who signs the order? — ask: the account lead`), or `— needs: <kind of work>` when it takes research or a document
+   (`— needs: research`, `— needs: a validation plan`). Name a role, never a person. When the draft is accepted, each
+   ask becomes the PM's to-do and each need a suggested task.
 
 Then reply with one line for the tracker comment: the decision, its date and the option you recommend.
 
@@ -45,13 +50,14 @@ Then reply with one line for the tracker comment: the decision, its date and the
 - Decisions (go or no-go, price, scope, kill) are options with a recommendation, marked **PM decides**. Never write them as settled.
 - No market figure, price or forecast without a source or a stated method. Use ranges.
 - End with the decision the draft supports or the questions blocking it.
+- No names other than redaction placeholders. Write each person as their role and company: "Globex's brand lead", "our head of product", "a Globex admin". Never a person's name, even one the task, a source or `memory/` gives. In your own sentences a role reads better than a placeholder like `[PERSON-2, Globex]`: keep placeholders for quotes, or for someone the sources give no role or company for.
 
 ## Quality checklist
 
 - [ ] The decision has a date from a cited source, or says plainly that the sources give none.
 - [ ] At least two real options, judged on the same criteria.
 - [ ] Every option has evidence for and against it, each with source IDs, or is marked *Unknown*.
-- [ ] The recommendation follows from the criteria and is marked **PM decides**, never written as settled.
+- [ ] The recommendation follows from the criteria, is never written as settled, and ends with `**PM decides:**` and the decision.
 - [ ] A decision already recorded in `memory/decisions/` is treated as made, not argued again.
 - [ ] Follows the drafting rules.
-- [ ] No names other than redaction placeholders.
+- [ ] No names other than redaction placeholders: people appear as their role and company, never by name.

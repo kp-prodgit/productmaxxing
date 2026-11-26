@@ -55,8 +55,11 @@ export async function gatherChecklist(d: GatherDeps): Promise<Checklist> {
   const state = await loadState();
   const access = team ? await linearAccess(team, d.keychain).catch(() => "none" as const) : "none";
   const relay = team?.tracker.kind === "linear" && access === "relay";
+  // JOB-11: Ready tasks by kind too, so the checklist can say how many wait for a kind this PM's agent skips.
+  const readyByKind: Record<string, number> = {};
   const tasks = relay ? await relayTracker(team!).list().then((ts) => {
     const work = ts.filter((t) => t.category !== COMMITMENT);
+    for (const t of work) if (t.status === "ready" && t.category) readyByKind[t.category] = (readyByKind[t.category] ?? 0) + 1;
     return { pool: work.filter((t) => t.status === "inbox").length, ready: work.filter((t) => t.status === "ready").length, blocked: work.filter((t) => t.status === "blocked").length };
   }, () => null) : null;
   const runs = d.ctx ? await new RunLogStore(d.ctx).entries().catch(() => []) : [];
@@ -69,7 +72,7 @@ export async function gatherChecklist(d: GatherDeps): Promise<Checklist> {
     hasRemote: personal ? await new Git(personal.repoPath, d.exec).hasRemote().catch(() => null) : null,
     memoryFilled: personal ? await memoryFilled(personal.repoPath) : null,
     proposals: personal ? await readProposals().then((ps) => ps.length, () => null) : null,
-    tasks, practiceUntil: practiceUntil(personal, d.now),
+    tasks, readyByKind: tasks ? readyByKind : null, practiceUntil: practiceUntil(personal, d.now),
     lastRun: last ? { taskId: last.taskId, outcome: last.outcome, ts: last.ts } : null,
     setupSkill, linearCron: relay ? (await appliedSchedule(LINEAR_SYNC_TASK).catch(() => null))?.cron ?? null : null,
     engine: d.engine ? await d.engine().catch(() => null) : null, extra,

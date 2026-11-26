@@ -29,10 +29,12 @@ const base = { title: "Competitive analysis for light users", prUrl: "branch:pmx
 
 describe("the comment PMX writes when a draft is ready (TASK-10)", () => {
   it("says what the draft is, what it leaves open and where to read it, without a pull request", () => {
+    // The two questions marked PM decides are calls, as accepting reads them (R2e): each becomes the PM's to-do, never a
+    // task. The blocking item is a statement, not a question, so it stays in the draft and isn't counted (R2c).
     expect(draftComment({ ...base, markdown: BRIEF })).toBe([
       "Draft ready for review: Light users don't pay for accuracy.",
       "Light users buy speed, not accuracy. Brand leads may pay for accuracy, but no source shows it yet.",
-      "It leaves 1 blocking question, 3 open questions and 2 calls marked PM decides.",
+      "It leaves 1 open question and 2 calls marked PM decides.",
       "Read it in the team repo at outputs/competitive-analysis/PMX-5.md, on ana@m1's Mac until it's accepted.",
     ].join("\n"));
   });

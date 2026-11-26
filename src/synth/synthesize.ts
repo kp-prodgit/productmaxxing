@@ -11,7 +11,7 @@ import { newReceiptId, refHash, writeReceipt, type RunReceipt, type SizeFlag, ty
 import { parseRubric, type SizeRubric } from "../core/skillcheck.js";
 import { categoryMenu, loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
 import { updateState } from "../core/state.js";
-import { COMPANY_ROLES, SIZES, type CandidateTask, type CompanyRole, type SignalItem, type Size } from "../core/types.js";
+import { COMPANY_ROLES, SIZES, type CandidateTask, type CompanyRole, type SignalItem, type Size, type Task } from "../core/types.js";
 import { domainLabel } from "../core/filter.js";
 import { cutText, isFundraising, meaningful, quoteGuard, sentencesIn, trackerGuard, type TrackerGuard, type TrackerRules } from "../core/tracker-text.js";
 import { meetingSeries } from "../inputs/inputs.js";
@@ -19,7 +19,10 @@ import { checkBudget, recordSpend } from "../budget/provider.js";
 import { gather } from "../digest/gather.js";
 import { planMeetings, startOfDay } from "../meetings/ledger.js";
 import type { MeetingEntry } from "../tracker/types.js";
-import { addEvidence, readProposals, stageProposals } from "./proposals.js";
+import { addEvidence, CHECKED, companiesOf, newFacts, readProposals, stageProposals } from "./proposals.js";
+import { doneDay, DONE_DAYS, recentlyDone, sameWords, type DoneTask } from "./done.js";
+import { COMMITMENT } from "../todo/todo.js";
+import { inlineSources } from "../run/evidence.js";
 import { heldOverBlock, heldSource, heldSourcesIn, isHeldSource, kindWords, nextHeld, nextWaiting, readHeldOver, saveHeldOver, WAIT_DAYS, type HeldNeed } from "./held-over.js";
 import { knownBlock, matchKnown, sameTitle, type Known } from "./dedup.js";
 import { openThemes, themeBlock, themeNamed, type RoadmapTheme } from "./themes.js";
@@ -162,6 +165,8 @@ export interface TrackerContext {
   titles?: string[];
   /** The team's approved meeting series (F3): their names are titles too. */
   series?: string[];
+  /** F5: confidential companies (`confidentialCompanies`): the team's confidential domains and fundraising meetings'. */
+  confidential?: string[];
   /** The batch itself, so a company can be checked against the source that names it, and an internal-only task found. */
   items?: SignalItem[];
 }
@@ -195,7 +200,7 @@ export function checkCompany(raw: unknown, item: Pick<SignalItem, "title" | "tex
 
 /** The tracker guard for one run (F14): the names its sources hold, its meetings' titles and the team's series. */
 export function runGuard(t: TrackerContext = {}): TrackerGuard {
-  const rules: TrackerRules = { names: t.people?.listed ?? [], people: t.people?.found ?? [], titles: t.titles ?? [], series: t.series ?? [] };
+  const rules: TrackerRules = { names: t.people?.listed ?? [], people: t.people?.found ?? [], titles: t.titles ?? [], series: t.series ?? [], confidential: t.confidential ?? [] };
   return trackerGuard(rules);
 }
 
@@ -246,6 +251,7 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
     const cited = [...new Set((Array.isArray(t.sources) ? t.sources : []).map(String).filter((id: string) => validIds.has(id)))] as string[];
     const sources = cited.filter((id) => oneLine(String(support[id] ?? "")).length >= 10);
     let rationale = oneLine(String(t.rationale ?? "")).slice(0, 1000);
+    const firstSaid = sentencesIn(rationale)[0];
     if (!title) { skipped.push("untitled task"); continue; }
     if (!categories.includes(t.category)) {
       // N1: one of PMX's own kinds the team hasn't turned on waits on this Mac, and Needs you asks to turn it on.
@@ -314,7 +320,8 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
       }
       // Kept: the note goes with the task (the receipt, `pmx explain`, `pmx synthesize`), not among the skipped ones.
       leftOut = { sentences: qm.cut.length + qs.cut.length + clean.cut.length + named, why };
-      rationale = left.join(" ");
+      // R12b: with its first sentence gone, a summary that starts mid-thought leads with the title.
+      rationale = left[0] !== firstSaid ? leadWithTitle(title, left.join(" ")) : left.join(" ");
     }
     // F3: internal meetings alone can carry a decision or launch readiness, not a customer need.
     const srcItems = sources.map((id) => byId.get(id));
@@ -326,11 +333,13 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
     if (dropped.length) skipped.push(`${title}: dropped source(s) ${dropped.join(", ")} with no reason they support it`);
     const sizing = checkSizing({ category: t.category, size: t.size, sources }, t.sizing, rubric);
     const sameAs = typeof t.sameAs === "string" && /^[\w-]{2,40}$/.test(t.sameAs) ? t.sameAs : null;
+    // R6: a recently done task this is new work after, by the model's word; synthesis checks it says something new.
+    const follows = typeof t.follows === "string" && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t.follows.trim()) ? t.follows.trim().toUpperCase() : null;
     const theme = themeNamed(t.theme, team.themes ?? []);
     if (t.theme !== undefined && t.theme !== null && !theme) skipped.push(`${title}: kept without a theme, because its theme isn't one of your team's open roadmap themes`);
     tasks.push({
       title, category: t.category, size: t.size as Size, rationale, sources, sizing, support: Object.fromEntries(sources.map((id) => [id, oneLine(String(support[id])).slice(0, 300)])),
-      ...(sameAs ? { sameAs } : {}), ...(theme ? { theme } : {}), ...(Object.keys(companies).length ? { companies } : {}), ...(leftOut ? { leftOut } : {}),
+      ...(sameAs ? { sameAs } : {}), ...(follows ? { follows } : {}), ...(theme ? { theme } : {}), ...(Object.keys(companies).length ? { companies } : {}), ...(leftOut ? { leftOut } : {}),
     });
   }
   // A need in both lists is a task.
@@ -340,9 +349,10 @@ export function parseCandidates(text: string, categories: string[], validIds: Se
 }
 
 /** Why a title can't go to the tracker, in a PM's words. */
-const PROBLEM_WORDS: Record<import("../core/tracker-text.js").TextProblem, string> = {
+export const PROBLEM_WORDS: Record<import("../core/tracker-text.js").TextProblem, string> = {
   transcript: "carries transcript markup", quote: "quotes someone", placeholder: "has a redaction placeholder", fundraising: "is about fundraising",
   name: "names a person", title: "names a meeting by its title", contact: "has contact details",
+  confidential: "names an investor or other confidential contact",
 };
 /**
  * The held-over needs the model listed (SIG-9), checked like tasks: a known kind of work and at least one real source.
@@ -442,6 +452,25 @@ export function groupsLine(groups: SourceGroup[]): string {
   }).join("; ");
 }
 
+/**
+ * Words a sentence opens with when it leans on the one before it: "This", "They", "Its", "The same", "The full …".
+ * Case matters, so "IT admins" isn't "It".
+ */
+const REFERS_BACK = /^(?:This|That|These|Those|It|Its|They|Their|Them|He|She|His|Her|Such|Also|And|But|However|Instead|Otherwise|The same|The full|The rest|The other|The remaining)\b/;
+
+/**
+ * R12b (PRIV-6): when the tracker guard left out a description's first sentence and what's left opens with a word
+ * that refers back to it ("The full workflow and a log screen follow at GA"), the description leads with the task's
+ * title as a sentence, so it still reads as a whole. The title has passed the same guard and adds no fact of its own;
+ * a description that doesn't open that way is left as it is.
+ */
+export function leadWithTitle(title: string, text: string): string {
+  const t = title.replace(/\s+/g, " ").trim().replace(/[\s.,;:]+$/, "");
+  // Already led by it (synthesis did, and approval looks again), or it doesn't start mid-thought: as it is.
+  if (!t || text.startsWith(t) || !REFERS_BACK.test(sentencesIn(text)[0] ?? "")) return text;
+  return `${t}${/[!?]$/.test(t) ? "" : "."} ${text}`;
+}
+
 /** The readable source line in a description, from this version (`**Sources:**`) or before it (`**Based on**`). */
 export const SOURCES_LINE = /^\*\*(?:Sources:|Based on)\*\*.*$/m;
 
@@ -450,15 +479,18 @@ export const SOURCES_LINE = /^\*\*(?:Sources:|Based on)\*\*.*$/m;
  * read (the kind of source, the company, the channel, the dates), never what they said or what they were called. Which
  * meetings they were stays in the PM's receipt on their Mac. The `pmx:source` lines PMX reads back come last.
  */
-export function describe(c: CandidateTask, items: SignalItem[], receiptId?: string): string {
+export function describe(c: CandidateTask, items: SignalItem[], receiptId?: string, after?: Pick<DoneTask, "identifier" | "at"> | null): string {
   const byId = new Map(items.map((i) => [i.id, i]));
+  // R6: a follow-up to work the team finished says which task, and that this is what's new since. Its own sources are
+  // cited below, so the line isn't FOLLOW-1's "**Follows PMX-12:**", which lets a draft's follow-up use its task's quotes.
+  const follows = after ? [`**Follows ${after.identifier}, done ${doneDay(after.at)}:** this is the new work its sources raised since.`] : [];
   const sz = c.sizing;
   const why = sz
     ? [`**Why size ${c.size}:** ${sz.cell ?? "no rubric cell given"}${sz.why ? `. ${sz.why}` : ""}`, ...sz.flags.map((f) => `**Check the size:** ${FLAG_TEXT[f]}.`), ""]
     : [];
   const line = sourceLine(c, items);
   const based = `**Sources:** ${line || `${c.sources.length} ${c.sources.length === 1 ? "source" : "sources"}`}. They stay on the PM's Mac${receiptId ? `: \`pmx explain ${receiptId}\` there shows them` : ""}.`;
-  return [c.rationale, "", ...why, based, "", ...c.sources.map((id) => `pmx:source ${id} ${byId.get(id)!.kind === "slack" ? byId.get(id)!.ref : ""}`.trim())].join("\n");
+  return [c.rationale, "", ...follows, ...why, based, "", ...c.sources.map((id) => `pmx:source ${id} ${byId.get(id)!.kind === "slack" ? byId.get(id)!.ref : ""}`.trim())].join("\n");
 }
 
 /**
@@ -551,11 +583,16 @@ export async function synthesize(
   const categories = Object.keys(ctx.team.categories);
   const { tag, block } = dataBlock(work);
   // What's already open or waiting, so a need heard again from another source isn't a second task (INPUT-2).
-  const open = (await svc.tracker.list()).filter((t) => t.status !== "done");
-  const known: Known[] = [
+  const listed = await svc.tracker.list();
+  // R6: and what the team finished lately (accepted or done in the last DONE_DAYS days), so it isn't suggested again.
+  const recent = await recentlyDone(ctx, listed);
+  const finished = new Set(recent.map((d) => d.identifier));
+  const open = listed.filter((t) => t.status !== "done" && !finished.has(t.identifier));
+  const openKnown: Known[] = [
     ...(await readProposals()).map((p) => ({ id: p.id, title: p.title, where: "waiting" as const })),
     ...[...open].sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")).map((t) => ({ id: t.identifier, title: t.title, where: "tracker" as const })),
   ];
+  const known: Known[] = [...openKnown, ...recent.map((d) => ({ id: d.identifier, title: d.title, where: "done" as const, at: d.at }))];
   // EQ-38: the open roadmap themes in the team's repo, from PMX Engine. Most teams have none, and the prompt is unchanged.
   const themes = await openThemes(ctx.personal.repoPath);
   const prompt = [
@@ -571,7 +608,7 @@ export async function synthesize(
     limitRules(maxTasks(ctx.team)),
     ...(back.offered.length ? [heldOverBlock(back.offered)] : []),
     ...(themes.length ? [themeBlock(themes)] : []),
-    knownBlock(known),
+    knownBlock(known, DONE_DAYS),
     DATA_RULES(tag),
     "",
     block,
@@ -594,6 +631,8 @@ export async function synthesize(
     guarded: await strategyFiles(ctx.personal.repoPath), themes, maxTasks: maxTasks(ctx.team), offKinds,
     // F14: who the sources name, what the meetings are called and the team's series never reach the tracker.
     people: { found: [...g.people.found, ...back.people.found], listed: g.people.listed }, titles: work.filter((i) => i.kind === "transcript").map((i) => i.title), series: meetingSeries(ctx.team), items: work,
+    // F5: nor do investors' and other confidential contacts' names.
+    confidential: g.confidential,
   });
   const posted: SynthResult["posted"] = [];
   const bySource = new Map<string, number>();
@@ -601,14 +640,32 @@ export async function synthesize(
   const went = new Map<CandidateTask, NonNullable<TaskReceipt["posted"]>>();
   const fresh: CandidateTask[] = [];
   const folded = new Set<CandidateTask>();
+  // R6: follow-ups to recently done tasks, and R16: suggestions that give a sourceless open task its sources.
+  const after = new Map<CandidateTask, DoneTask>();
+  const fills = new Map<CandidateTask, string>();
   const byId = new Map(work.map((i) => [i.id, i]));
   const fromOf = (c: CandidateTask) => c.sources.map((id) => ({ id, title: byId.get(id)!.title, at: byId.get(id)!.at, why: c.support?.[id] ?? "" }));
   for (const c of tasks) {
     // Two tasks from this run for one need become one: the second's sources go to the first.
     const twin = fresh.find((f) => sameTitle(f.title, c.title));
     if (twin) { twin.sources = [...new Set([...twin.sources, ...c.sources])]; twin.support = { ...c.support, ...twin.support }; folded.add(c); skipped.push(`${c.title}: the same need as "${twin.title}" in this run, so its sources were added there`); continue; }
-    const hit = matchKnown(c, known);
-    if (hit?.where === "tracker") { skipped.push(`${c.title}: already open as ${hit.id}; heard again in ${c.sources.length} more source(s)`); went.set(c, { duplicateOf: hit.id }); continue; }
+    // R6: finished work isn't suggested again as new. New work after a done task (the model's `follows`, and something
+    // its description doesn't say) is a follow-up that links it; the same work again, by the model's `sameAs` or a title
+    // the same or nearly the same as the done task's, is recorded as done and heard again, whatever the prompt got.
+    const followed = c.follows ? recent.find((d) => d.identifier === c.follows) ?? null : null;
+    // The same fact in other words (R12a's `sameFact`, by the done task's companies) isn't new either.
+    const linked = followed && newFacts(followed.description, c.rationale, undefined, companiesOf({ description: followed.description })).length ? followed : null;
+    const doneHit = linked ? null : followed ?? doneMatch(c, recent);
+    if (doneHit) {
+      skipped.push(`${c.title}: done as ${doneHit.identifier} (${doneDay(doneHit.at)}); heard again in ${c.sources.length} source(s)`);
+      went.set(c, { duplicateOf: doneHit.identifier, done: doneHit.at });
+      continue;
+    }
+    const hit = matchKnown(c, openKnown);
+    // R16: an open task that names no sources (a to-do moved to the team) can't be drafted, so it doesn't cover a need
+    // with sources: the sourced version is suggested, and approving it gives that task these sources (APPROVE-1).
+    const sourceless = hit?.where === "tracker" ? open.find((t) => t.identifier === hit.id && fillable(t)) : undefined;
+    if (hit?.where === "tracker" && !sourceless) { skipped.push(`${c.title}: already open as ${hit.id}; heard again in ${c.sources.length} more source(s)`); went.set(c, { duplicateOf: hit.id }); continue; }
     if (hit?.where === "waiting" && !o.dryRun) {
       // N2: the waiting task gains this run's facts (its summary, already through the tracker guard) and its sources.
       const merged = await addEvidence(hit.id, {
@@ -620,12 +677,20 @@ export async function synthesize(
       if (merged) { skipped.push(`${c.title}: the same need as a task already waiting for you, so its sources were added to it`); went.set(c, { mergedInto: hit.id }); continue; }
     }
     if (o.dryRun) { posted.push({ identifier: "(dry run)", title: c.title, ...(c.leftOut ? { leftOut: c.leftOut.sentences } : {}) }); went.set(c, { dryRun: true }); continue; }
+    if (linked) after.set(c, linked);
+    if (sourceless) fills.set(c, sourceless.identifier);
     fresh.push(c);
   }
   // APPROVE-1: proposals wait on this Mac, exactly as they'd be written, until the PM approves them.
   const staged = await stageProposals(fresh.map((c) => ({
-    at: ctx.now().toISOString(), receipt: receipt.id, title: c.title, description: describe(c, work, receipt.id), category: c.category, size: c.size, sources: c.sources,
+    at: ctx.now().toISOString(), receipt: receipt.id, title: c.title, description: describe(c, work, receipt.id, after.get(c)), category: c.category, size: c.size, sources: c.sources,
     from: fromOf(c), sourceGroups: sourceGroups(c, work), ...(c.theme ? { theme: c.theme } : {}),
+    // R6: a follow-up to work the team finished links it, as an accepted draft's follow-ups do (FOLLOW-1).
+    ...(after.get(c) ? { follows: { identifier: after.get(c)!.identifier, path: "", url: after.get(c)!.url || null, where: "done" as const, done: after.get(c)!.at } } : {}),
+    // R16: approving it gives this open task, which names no sources, its description and sources.
+    ...(fills.get(c) ? { fills: fills.get(c)! } : {}),
+    // R3: checked by this PMX's tracker rules, which approval relies on if it can't read the sources again.
+    checked: CHECKED,
   })));
   for (const c of fresh) {
     const s = staged.find((p) => p.title === c.title);
@@ -668,6 +733,23 @@ export async function synthesize(
   for (const w of o.dryRun ? [...stillWaiting, ...waiting] : wait.waiting) kinds.set(w.category, (kinds.get(w.category) ?? 0) + 1);
   const cutFrom = (title: string) => fresh.find((c) => c.title === title)?.leftOut?.sentences;
   return { ...result0, posted, staged: staged.map((p) => ({ id: p.id, title: p.title, ...(cutFrom(p.title) ? { leftOut: cutFrom(p.title) } : {}) })), skipped, heldOver: next.needs.length, waiting: [...kinds].map(([kind, n]) => ({ kind, n })) };
+}
+
+/**
+ * R6: the recently done task a suggestion repeats: the one its `sameAs` names, or one whose title is the same or nearly
+ * the same (`sameTitle`, the near-identical check INPUT-2 uses for open tasks).
+ */
+export function doneMatch(c: Pick<CandidateTask, "title" | "sameAs">, recent: DoneTask[]): DoneTask | null {
+  const said = c.sameAs ? recent.find((d) => d.identifier.toLowerCase() === c.sameAs!.toLowerCase()) : undefined;
+  return said ?? recent.find((d) => sameWords(d.title, c.title) || sameTitle(d.title, c.title)) ?? null;
+}
+
+/**
+ * R16: an open task that names no sources and that a suggestion with sources can give them to: a product task (not the
+ * PM's own commitment, SIG-7) in the backlog or Ready that no agent has taken, with no quotes in its description either.
+ */
+export function fillable(t: Pick<Task, "sources" | "category" | "status" | "agent" | "description">): boolean {
+  return !t.sources.length && !inlineSources(t).length && t.category !== COMMITMENT && (t.status === "inbox" || t.status === "ready") && !t.agent;
 }
 
 /**

@@ -24,3 +24,4 @@ Add SCIM 2.0 user provisioning for SSO-enabled workspaces. Non-goals: group sync
 ## Open questions
 
 - Which identity providers first? **PM decides**.
+- Do all SSO-enabled workspaces run on the current admin API? — ask: the platform engineering lead

@@ -1,5 +1,8 @@
 import { domainLabel } from "../core/filter.js";
-import { peopleIn, trackerGuard, type TrackerRules } from "../core/tracker-text.js";
+import { peopleIn, thingsIn, trackerGuard, type TrackerRules } from "../core/tracker-text.js";
+import { plain, readFollowUps, sections, sentencesOf } from "../review/draft-reader.js";
+
+export { plain, sections, sentencesOf, type Section } from "../review/draft-reader.js";
 
 /**
  * TASK-10: the comment PMX leaves on the task when a draft is ready, written by PMX from the draft itself. Before, it
@@ -9,7 +12,7 @@ import { peopleIn, trackerGuard, type TrackerRules } from "../core/tracker-text.
  * calls it leaves, and where to read it. Never a quote, a name, contact details or fundraising (F14): a sentence that
  * has one is left out. A company, a date and a role ("the VP of Brand's team") may stay. N5: the names are the CRM list,
  * the do-not-read people and everyone the task's sources name: their participants, inside and outside the company,
- * and their speakers.
+ * their speakers, and (R4) anyone their text names.
  */
 export const COMMENT_MAX = 600;
 const SUMMARY_MAX = 320;
@@ -27,40 +30,12 @@ export interface DraftCommentInput {
   agent: string;
   /** Names that must never appear: the team's CRM list and the PM's do-not-read people. */
   names?: string[];
-  /** N5: the people the task's sources name (participants and speakers, from `sourcePeople`), matched as names are written. */
+  /**
+   * N5, R4: the people the task's sources name (participants, speakers and names in their text, from `sourcePeople`),
+   * matched as names are written.
+   */
   people?: string[];
   noun?: "Draft" | "Prototype";
-}
-
-export interface Section { heading: string; lines: string[] }
-
-/** A draft's title, the lines before its first `##` section, and each `##` section with its lines. Code blocks are left out. */
-export function sections(md: string): { title: string | null; intro: string[]; sections: Section[] } {
-  let title: string | null = null;
-  const intro: string[] = [];
-  const out: Section[] = [];
-  let fence = false;
-  for (const line of md.replace(/\r\n?/g, "\n").split("\n")) {
-    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; continue; }
-    if (fence) continue;
-    const h1 = line.match(/^#\s+(.+?)\s*#*\s*$/);
-    if (h1 && title === null && !out.length) { title = h1[1]!; continue; }
-    const h2 = line.match(/^#{2,3}\s+(.+?)\s*#*\s*$/);
-    if (h2 && line.startsWith("## ")) { out.push({ heading: h2[1]!, lines: [] }); continue; }
-    (out.at(-1)?.lines ?? intro).push(line);
-  }
-  return { title, intro, sections: out };
-}
-
-/** Plain words from a Markdown line: no emphasis, links, code marks or source IDs like [T7]. */
-export function plain(s: string): string {
-  return s
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\[([^\]]+)\]\((?:[^)]*)\)/g, "$1")
-    .replace(/\s*\[(?:[A-Z]{1,3}\d+(?:\s*[,;]\s*[A-Z]{1,3}\d+)*)\]/g, "")
-    .replace(/[*_`]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 const LIST = /^\s{0,3}(?:[-*+•]|\d+[.)])\s+/;
@@ -75,19 +50,37 @@ export function safe(sentence: string, names: string[], rules: Omit<TrackerRules
 }
 
 /**
- * N5: who the task's sources name, for the tracker guard: every participant (inside and outside the company, where this
- * Mac has the files) and every speaker in the passages, as `peopleIn` reads them. A company's own name never counts as
- * a person's: the participants' email domains and the team's own are left out ("Acme" in "Acme Support").
+ * N5, R4: who the task's sources name, for the tracker guard: every participant (inside and outside the company, where
+ * this Mac has the files), every speaker in the passages, and every name the passages' text gives ("questionnaire in
+ * from Dana Ruiz"), as `namesIn` reads them. A company's own name never counts as a person's: the participants' email
+ * domains and the team's own are left out ("Acme" in "Acme Support"), and so is every name in `companies`: the ones
+ * the task's own text names (`sourceCompanies`), or the sources' outside companies an evidence pack carries.
+ *
+ * R5c: passages that went through the name swap (`swapped`: this Mac's own evidence, and every team pack's once read)
+ * name no one, so they're never read for people: the placeholders are the guard's own rule, and what reads like a
+ * name there is a stage ("Closed Lost"), a company ("Initech:") or a screen's words ("Teach Acme your brand"). The real
+ * names are in `people`, in this Mac's memory, when it has the sources.
  */
-export function sourcePeople(e: { sources: { passages: string[] }[]; people?: string[] }, internalDomains: string[] = []): string[] {
+export function sourcePeople(e: { sources: { passages: string[] }[]; people?: string[]; swapped?: boolean }, internalDomains: string[] = [], companies: string[] = []): string[] {
   const emails = (e.people ?? []).flatMap((p) => p.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) ?? []);
-  const companies = [...new Set([...emails.map((m) => m.split("@")[1]!), ...internalDomains].map(domainLabel).filter(Boolean))];
-  return peopleIn([{ participants: e.people ?? [] }, ...e.sources.map((s) => ({ text: s.passages.join("\n") }))], companies);
+  const exclude = [...new Set([...[...emails.map((m) => m.split("@")[1]!), ...internalDomains].map(domainLabel), ...companies].filter(Boolean))];
+  return peopleIn([{ participants: e.people ?? [] }, ...(e.swapped ? [] : e.sources.map((s) => ({ text: s.passages.join("\n") })))], exclude);
 }
 
-/** Sentences, split only after . ! or ? followed by a capital, a digit or an opening bracket. */
-export function sentencesOf(text: string): string[] {
-  return text.split(/(?<=[.!?])\s+(?=[A-Z0-9(])/).map((x) => x.trim()).filter(Boolean);
+const SOURCES_LINE = /^\*\*(?:Sources:|Based on)\*\*.*$/m;
+
+/**
+ * The companies and products a task's own text names, so they never count as people (F14, R4b):
+ * - the companies its Sources line names: "Acme" in "**Sources:** a customer call with Acme (Nov 20); 2 partner calls
+ *   with Globex (Nov 19–25)", which PMX wrote there from the sources;
+ * - the single capitalized words its title and description use as things ("Globex needs restricted terms…", as
+ *   `thingsIn` reads them). That text went through the tracker guard. An evidence pack has no participants, so on a
+ *   teammate's Mac this is how a customer's name is known to be a company's.
+ */
+export function sourceCompanies(description: string, title = ""): string[] {
+  const line = description.match(SOURCES_LINE)?.[0] ?? "";
+  const listed = [...line.matchAll(/\bcalls? with (.+?) \(/g)].map((m) => m[1]!.trim());
+  return [...new Set([...listed, ...thingsIn(title), ...thingsIn(description.replace(SOURCES_LINE, ""))].filter(Boolean))];
 }
 
 /**
@@ -119,20 +112,18 @@ export function draftSummary(markdown: string, names: string[] = [], max = SUMMA
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-/** How many questions the draft leaves open or blocking, and how many calls it marks "PM decides". */
+/**
+ * How many questions the draft leaves open or blocking, and how many calls it marks "PM decides", read by the reader an
+ * accept uses (FOLLOW-1), so the two never disagree: a call is a to-do to make, a question marked PM decides counts once,
+ * as a question. Counted before the caps and the tracker rules decide what an accept makes.
+ */
 export function draftCounts(markdown: string): { open: number; blocking: number; pmDecides: number } {
-  const doc = sections(markdown);
-  // Top-level list items only: a nested bullet explains its parent, it isn't another question.
-  const items = (s: Section) => s.lines.filter((l) => /^ ?(?:[-*+•]|\d+[.)])\s+/.test(l)).length;
-  let open = 0, blocking = 0;
-  for (const s of doc.sections) {
-    const h = plain(s.heading);
-    if (/blocking/i.test(h)) blocking += items(s);
-    else if (/\bquestions?\b/i.test(h)) open += items(s);
-  }
-  const all = [...doc.intro, ...doc.sections.flatMap((s) => s.lines)];
-  const pmDecides = all.filter((l) => /PM decides/i.test(l)).length;
-  return { open, blocking, pmDecides };
+  const { decisions, questions } = readFollowUps(markdown, "", new Date());
+  return {
+    open: questions.filter((q) => q.where === "open").length,
+    blocking: questions.filter((q) => q.where === "blocking").length,
+    pmDecides: decisions.length,
+  };
 }
 
 /** TASK-10: the comment, without the `pmx:pr` line PMX puts above it. At most COMMENT_MAX characters, never cut mid-sentence. */

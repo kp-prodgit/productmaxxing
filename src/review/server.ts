@@ -90,7 +90,7 @@ export async function startReviewServer(ctx: Ctx, svc: Services, o: { all?: bool
         if (req.headers["content-type"] !== "application/json") return json(res, 415, { error: "json only" });
         cache ??= await loadQueue(ctx, svc, { all: o.all });
         const item = cache.items.find((i) => i.task.id === decodeURIComponent(m[1]!));
-        if (!item) return json(res, 404, { error: "not in your review queue" });
+        if (!item) return json(res, 404, { error: cache.decided.find((d) => d.id === decodeURIComponent(m[1]!))?.text ?? "not in your review queue" });
         const verdict: Verdict = m[2] === "accept" ? "accepted" : m[2] === "reject" ? "rejected" : "redo";
         const { note } = await body(req);
         const started = shownAt.get(item.task.id) ?? Date.now();

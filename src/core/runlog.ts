@@ -14,9 +14,13 @@ import { join } from "node:path";
  */
 
 export type RunLogEntry =
+  /**
+   * `web` and `webBlocked` (RUN-6, R21): a run that used the web, and how many of its web calls PMX's web guard blocked,
+   * as its run record says. Absent for every other run.
+   */
   | ({ type: "run"; taskId: string; category: string; size: string; skill: string; skillVersion: string;
       outcome: "ok" | "failed" | "capped" | "refused"; durationMs: number; tokens: number | null; costUsd: number | null;
-      runtime: string; fencingToken?: number } & Base)
+      runtime: string; fencingToken?: number; web?: true; webBlocked?: number } & Base)
   /** `week` (from 0.20.0) is the digest's own week, like 2026-W45: a digest approved late still belongs to its week. */
   | ({ type: "digest"; outcome: "approved" | "rejected" | "staged"; items: number; held: number; durationMs: number;
       tokens: number | null; costUsd: number | null; receipt?: string; week?: string } & Base)
@@ -35,7 +39,7 @@ export type RunLogEntry =
    * RUN-5: a task's evidence pack was written to the team repo's `pmx/evidence` branch ("shared"), or removed because
    * its task is done or was dropped. IDs only, like every entry.
    */
-  | ({ type: "evidence"; taskId: string; action: "shared" | "removed"; reason?: "done" | "dropped" } & Base);
+  | ({ type: "evidence"; taskId: string; action: "shared" | "removed"; reason?: "done" | "dropped" | "held" } & Base);
 
 interface Base {
   ts: string;

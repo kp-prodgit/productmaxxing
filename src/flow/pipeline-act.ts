@@ -7,7 +7,8 @@ import type { PipelineData } from "./pipeline.js";
 export interface PipelineActions {
   data(hours: number): Promise<PipelineData>;
   /** "start" is Start now (APPROVE-3): approve and make Ready. "approve" sends to the pool. */
-  proposals(action: "approve" | "start" | "drop", ids: string[]): Promise<string>;
+  /** R6: `reason`, for a drop only: why the PM dropped it, kept with the drop on this Mac. */
+  proposals(action: "approve" | "start" | "drop", ids: string[], reason?: string): Promise<string>;
   /** EQ-38: set or clear one proposal's roadmap theme. This Mac's page only, like the proposals themselves. */
   proposalTheme?(id: string, theme: string | null): Promise<{ status: number; body: unknown }>;
   changes(changes: unknown[], confirmLoosening: boolean): Promise<{ status: number; body: unknown }>;
@@ -53,7 +54,8 @@ export async function pipelineAct(o: PipelineActions, path: string, body: any): 
   if (path === "proposals") {
     if (body.action !== "approve" && body.action !== "start" && body.action !== "drop") return [400, { error: "action must be start, approve or drop" }];
     if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((x: unknown) => typeof x !== "string")) return [400, { error: "ids must be the IDs of tasks waiting for approval" }];
-    return [200, { message: await o.proposals(body.action, body.ids) }];
+    if (body.reason !== undefined && (typeof body.reason !== "string" || body.action !== "drop")) return [400, { error: "reason is a few words, for a drop" }];
+    return [200, { message: await o.proposals(body.action, body.ids, body.action === "drop" && typeof body.reason === "string" ? body.reason.slice(0, 300) : undefined) }];
   }
   if (path === "proposal-theme" && o.proposalTheme) {
     if (typeof body.id !== "string" || (body.theme !== null && typeof body.theme !== "string")) return [400, { error: "id is the ID of a task waiting for approval, and theme a theme name or null" }];

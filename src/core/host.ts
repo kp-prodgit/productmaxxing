@@ -12,7 +12,11 @@ import type { Keychain } from "./keychain.js";
 export interface OutputHost {
   readonly kind: "github" | "local";
   openPr(o: { branch: string; base: string; title: string; body: string; labels?: string[] }): Promise<{ id: string; url: string }>;
-  accept(id: string): Promise<void>;
+  /**
+   * Merges the draft. `unpushed` (R24, local host only) says, in a sentence for the PM, that the accept stands on this
+   * Mac but didn't reach the team's repo.
+   */
+  accept(id: string): Promise<{ unpushed?: string } | void>;
   reject(id: string, comment: string): Promise<void>;
   comment(id: string, body: string): Promise<void>;
   /** Changed files with their content at the PR head, for the review queue. */
@@ -92,6 +96,21 @@ function draftWords(branch: string): { name: string; verb: string; it: string } 
 
 const fileList = (xs: string[]) => (xs.length <= 3 ? xs.join(xs.length === 2 ? " and " : ", ").replace(/, ([^,]*)$/, ", and $1") : `${xs.slice(0, 2).join(", ")} and ${xs.length - 2} more files`);
 
+/**
+ * R24: a team repo that isn't on GitHub shares its base branch through origin, so an accept made here goes there too:
+ * a plain push, fast-forward only, never forced. When origin has newer work or can't be reached, the accept stands on
+ * this Mac and the sentence says so, once. A repo with no origin has nowhere to push.
+ */
+async function pushBase(git: Git, base: string, what: string): Promise<{ unpushed?: string }> {
+  if (!(await git.hasRemote())) return {};
+  const r = await git.raw(["push", "--quiet", "origin", `refs/heads/${base}:refs/heads/${base}`]);
+  if (r.code === 0) return {};
+  const why = /rejected|non-fast-forward|fetch first|stale info/i.test(r.stderr)
+    ? "your team's repo has newer work, so PMX didn't push over it"
+    : "PMX couldn't reach your team's repo";
+  return { unpushed: `The ${what} is only on this Mac until you run git push in your team repo: ${why}.` };
+}
+
 /** The folder where `branch` is checked out, in the PM's checkout or any other worktree; null when nowhere. */
 async function checkedOutAt(git: Git, branch: string): Promise<string | null> {
   await git.raw(["worktree", "prune"]);
@@ -135,6 +154,7 @@ export function localHost(git: Git): OutputHost {
     },
     async accept(branch) {
       const d = draftWords(branch);
+      const what = d.verb === "apply" ? "applied settings change" : "accepted draft";
       const base = await git.defaultBranch();
       const old = await git.ok(["rev-parse", "--verify", `refs/heads/${base}^{commit}`]);
       if ((await git.raw(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code !== 0) throw new Error(`PMX can't ${d.verb} ${d.name}: it isn't on this Mac any more.`);
@@ -148,7 +168,7 @@ export function localHost(git: Git): OutputHost {
           await git.ok(["merge", "--squash", branch], { cwd: where });
           await git.ok(["commit", "-q", "-m", `Accept ${branch}`], { cwd: where });
           await git.raw(["branch", "-D", branch]);
-          return;
+          return pushBase(git, base, what);
         }
         throw new Error(`PMX can't ${d.verb} ${d.name} on this Mac while other work is open: its developer tools are too old. Update them (in Terminal: xcode-select --install), then ${d.verb} again.`);
       }
@@ -177,6 +197,7 @@ export function localHost(git: Git): OutputHost {
         }
       }
       await git.raw(["branch", "-D", branch]);
+      return files.length ? pushBase(git, base, what) : {};
     },
     async reject(branch) {
       await git.raw(["branch", "-D", branch]);
@@ -190,7 +211,12 @@ export function localHost(git: Git): OutputHost {
       return out;
     },
     async isOpen(branch) {
-      return (await git.raw(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code === 0;
+      if ((await git.raw(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])).code !== 0) return false;
+      // R22: a branch a teammate already merged into the team's base (origin's, or this repo's own without a remote)
+      // isn't waiting any more, though its local copy is still here.
+      const base = await git.defaultBranch();
+      const into = (await git.hasRemote()) ? `refs/remotes/origin/${base}` : `refs/heads/${base}`;
+      return (await git.raw(["merge-base", "--is-ancestor", `refs/heads/${branch}`, into])).code !== 0;
     },
   };
 }

@@ -4,6 +4,7 @@ import { readJson, writeJson } from "./fsutil.js";
 import { paths, TEAM_CONFIG_FILE } from "./paths.js";
 import { SIZES, type Size } from "./types.js";
 import { checkSeries, MAX_SERIES } from "../inputs/inputs.js";
+import { cleanDomain, publicMail } from "./filter.js";
 
 /** Team config, committed to the PMX repo as `pmx.config.json`. Changed only by reviewed PR (NEUT-2). */
 export interface TeamConfig {
@@ -53,6 +54,13 @@ export interface TeamConfig {
   allowPrivateChannels: boolean;
   /** Calls are ingested only when someone outside these domains took part (B2). */
   internalDomains: string[];
+  /**
+   * F5: email domains of the team's investors and other confidential contacts (an acquirer, outside counsel): a
+   * meeting, email or thread with someone from one is held from team work like an internal 1:1 (no suggested task, no
+   * evidence pack, no agent), and their companies' names never reach the tracker. It may still give the PM private
+   * to-dos. Changed only by reviewed PR (NEUT-2), like `internalDomains`.
+   */
+  confidentialDomains?: string[] | null;
   /** Q2: the agent handle that runs team synthesis on a timer. */
   synthesizer: string | null;
   caps: { perRunUsd: number; perDayUsd: number };
@@ -128,6 +136,9 @@ export function isProductLead(team: Pick<TeamConfig, "productLead"> | null, pers
   return !!lead && !!personal && (lead === personal.handle || lead === agentHandle(personal));
 }
 
+/** F5: how many confidential domains a team may list. */
+export const MAX_CONFIDENTIAL = 100;
+
 /** SIG-9: the default and the ceiling for `synthesis.maxTasks`. */
 export const SYNTH_TASKS = { default: 15, max: 30 } as const;
 
@@ -148,6 +159,27 @@ export function takesCategory(personal: Pick<PersonalConfig, "categories">, team
   return !!c && (c.required === true || personal.categories.includes(category));
 }
 
+/**
+ * JOB-11: the team's kinds of work this PM's agent doesn't take and that the PM never chose about: not switched on
+ * (`categories`), not turned off on purpose (`categoriesOff`), and not required. A kind a teammate added to the team
+ * (`pmx jobs add`, a new kind of work) is one, until this PM turns it on or keeps it off. Needs you, `pmx status` and
+ * the checklist ask about each.
+ */
+export function kindsToChoose(personal: Pick<PersonalConfig, "categories" | "categoriesOff">, team: Pick<TeamConfig, "categories">): string[] {
+  const off = new Set(personal.categoriesOff ?? []);
+  return Object.keys(team.categories).filter((c) => !takesCategory(personal, team, c) && !off.has(c));
+}
+
+/**
+ * JOB-11: this PM's choice for one kind of work, the one way Settings → Kinds of work and `pmx categories add|remove`
+ * record it. On: the agent takes it. Off: it doesn't, and PMX never asks again.
+ */
+export function chooseKind(personal: Pick<PersonalConfig, "categories" | "categoriesOff">, name: string, on: boolean): void {
+  const off = (personal.categoriesOff ?? []).filter((c) => c !== name);
+  personal.categories = on ? [...new Set([...personal.categories, name])] : personal.categories.filter((c) => c !== name);
+  personal.categoriesOff = on ? off : [...off, name];
+}
+
 export type Plan = "team" | "enterprise" | "api" | "bedrock" | "vertex" | "pro" | "max" | "free";
 
 /** Personal config, in `~/.pmx/config.json`. Never synced, never committed. */
@@ -158,7 +190,14 @@ export interface PersonalConfig {
   repoPath: string;
   installedAt: string;
   plan: Plan;
+  /** The kinds of work this PM's agent takes (JOB-9), beyond any the team requires. */
   categories: string[];
+  /**
+   * JOB-11: the kinds of work this PM turned off on purpose: left out at `pmx init`, switched off in Settings → Kinds of
+   * work, or `pmx categories remove`. A team kind in neither list is one the PM never chose about, and PMX asks. A config
+   * written before this list existed has none, so every team kind its agent doesn't take is asked about once.
+   */
+  categoriesOff?: string[];
   /**
    * No longer used (0.13.0): PMX works whenever the Mac is on and awake. `pmx init` still writes "always", so an
    * older pmx reading this file behaves the same; older saved hours are ignored.
@@ -249,6 +288,7 @@ export const DEFAULT_TEAM: Omit<TeamConfig, "team"> = {
   slackChannels: [],
   allowPrivateChannels: false,
   internalDomains: [],
+  confidentialDomains: [],
   synthesizer: null,
   productLead: null,
   caps: { perRunUsd: 3, perDayUsd: 20 },
@@ -300,6 +340,22 @@ export function validateTeamConfig(c: TeamConfig): TeamConfig {
     else {
       for (const p of c.meetingSeries) try { checkSeries(p); } catch (e: any) { problems.push(`meetingSeries: ${e.message}`); }
       if (c.meetingSeries.length > MAX_SERIES) problems.push(`meetingSeries: up to ${MAX_SERIES} series`);
+    }
+  }
+  if (c.confidentialDomains != null) {
+    if (!Array.isArray(c.confidentialDomains)) problems.push("confidentialDomains must be a list of email domains, like [\"initech-ventures.example\"]");
+    else {
+      const internal = (c.internalDomains ?? []).map((d) => cleanDomain(String(d)));
+      const clean: string[] = [];
+      for (const d of c.confidentialDomains) {
+        const x = typeof d === "string" ? cleanDomain(d) : null;
+        if (!x) problems.push(`confidentialDomains: ${JSON.stringify(d)} isn't an email domain like initech-ventures.example`);
+        else if (publicMail(x)) problems.push(`confidentialDomains: ${x} is a mail provider anyone can sign up with, so it can't stand for an investor or other confidential contact`);
+        else if (internal.includes(x)) problems.push(`confidentialDomains: ${x} is one of your company's own internalDomains, so it can't be a confidential contact's too`);
+        else if (!clean.includes(x)) clean.push(x);
+      }
+      if (c.confidentialDomains.length > MAX_CONFIDENTIAL) problems.push(`confidentialDomains: up to ${MAX_CONFIDENTIAL} domains`);
+      c.confidentialDomains = clean;
     }
   }
   if (c.followUps != null && typeof c.followUps !== "boolean") problems.push(`followUps must be true or false, not ${JSON.stringify(c.followUps)}`);

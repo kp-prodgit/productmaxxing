@@ -1,6 +1,7 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { recordSpend } from "../budget/provider.js";
+import { confidentialDomains } from "../core/filter.js";
 import type { Ctx } from "../core/context.js";
 import { writeFileIn, type Git } from "../core/git.js";
 import { outputHost } from "../core/host.js";
@@ -17,9 +18,9 @@ import type { Services } from "../core/services.js";
 import { profileSummary, type RunRecord } from "./record.js";
 import { evidenceBlock, runEvidence, type Evidence } from "./evidence.js";
 import { webOn } from "../core/config.js";
-import { WEB_TOOLS } from "../core/profile.js";
+import { openCheckoutToWeb, WEB_TOOLS } from "../core/profile.js";
 import { failStreak, FAILS_TO_BLOCK } from "../pull/failures.js";
-import { draftComment, draftSummary, sourcePeople } from "./comment.js";
+import { draftComment, draftSummary, sourceCompanies, sourcePeople } from "./comment.js";
 import { buildGuard, clearGuard, guardBlocked, writeGuard } from "./web-guard.js";
 
 export function slug(s: string): string {
@@ -150,20 +151,29 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     const webSetting = webOn(team, category);
     const web = webSetting && (skill.source !== "org" || verdict.allowlisted);
     const tools = web ? [...env.tools, ...WEB_TOOLS.filter((t) => !env.tools.includes(t))] : env.tools;
-    const probe = await ctx.runtime.probe(team, { web });
+    // R17: judged on the checkout's own project settings, merged with the run's, as Claude Code will load them.
+    const probe = await ctx.runtime.probe(team, { web, repo: wt.cwd });
     if (!probe.ok) throw new Error(`runtime refused to start (fail closed): ${probe.problems.join("; ")}`);
     // RUN-6: what the web guard keeps out of every search and page: the task's quotes, its people and its customers.
-    if (web) await writeGuard(wt.cwd, buildGuard({ task, evidence, people: await privateNames(ctx), internalDomains: [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])] }));
+    if (web) await writeGuard(wt.cwd, buildGuard({ task, evidence, people: await privateNames(ctx), crm: await crmNames(ctx), internalDomains: [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])] }));
 
-    const result = await ctx.runtime.run({
-      team,
-      cwd: wt.cwd,
-      tools,
-      web,
-      ...(web ? { guard: wt.cwd } : {}),
-      maxTurns: env.maxTurns ?? 40,
-      prompt: [skillBody(skill.text), "", runInstructions(env, output, task.identifier, web ? { web: { today: ctx.now().toISOString().slice(0, 10) } } : {})].join("\n"),
-    });
+    // R17: the repo denies the web to every Claude session in it; this run's checkout alone gets its settings without
+    // those two denies, until the agent is done. Interactive sessions and every other run keep them.
+    const putBack = web ? await openCheckoutToWeb(wt) : null;
+    let result: Awaited<ReturnType<typeof ctx.runtime.run>>;
+    try {
+      result = await ctx.runtime.run({
+        team,
+        cwd: wt.cwd,
+        tools,
+        web,
+        ...(web ? { guard: wt.cwd } : {}),
+        maxTurns: env.maxTurns ?? 40,
+        prompt: [skillBody(skill.text), "", runInstructions(env, output, task.identifier, web ? { web: { today: ctx.now().toISOString().slice(0, 10) } } : {})].join("\n"),
+      });
+    } finally {
+      await putBack?.();
+    }
 
     const check = await checkRun(env, meta, wt.cwd, output, idsIn(snapshot), { web });
     const blocked = web ? await guardBlocked(wt.cwd) : null;
@@ -197,6 +207,8 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
       type: "run", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier, category, size: task.size!,
       skill: skillName, skillVersion: skill.version, outcome, durationMs: result.durationMs, tokens: result.tokens,
       costUsd: result.costUsd, runtime: ctx.runtime.name,
+      // R21: like the run record, the run log says a run used the web and how many calls its guard blocked.
+      ...(web ? { web: true as const, webBlocked: blocked?.count ?? 0 } : {}),
     });
 
     if (outcome !== "ok") {
@@ -209,8 +221,10 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     // TASK-10: what PMX says about the draft comes from the draft itself, read before the worktree goes.
     const draft = env.kind === "document" ? await readFile(join(wt.cwd, output), "utf8").catch(() => null) : null;
     const names = await privateNames(ctx);
-    // N5: and everyone the task's sources name (their participants where this Mac has the files, and their speakers).
-    const people = sourcePeople(evidence, [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])]);
+    // N5, R4: and everyone the task's sources name (their participants where this Mac has the files, their speakers and
+    // the names in their text), never a company the task's own text names, nor (R5) one its evidence lists: the
+    // sources' outside companies, which an evidence pack carries since it has no participants.
+    const people = sourcePeople(evidence, [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])], [...sourceCompanies(task.description, task.title), ...(evidence.companies ?? [])]);
     await rm(join(wt.cwd, ".pmx", "tmp"), { recursive: true, force: true });
     await writeFileIn(wt.cwd, `.pmx/runs/${task.identifier}.json`, JSON.stringify(record, null, 2) + "\n");
     await wt.ok(["add", ...stagePaths(env)]);
@@ -220,7 +234,7 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     const noun = env.kind === "prototype" ? "Prototype" : "Draft";
     const checkLabel = env.kind === "prototype" ? "Build check" : "Checklist";
     const host = await outputHost(wt, ctx.keychain, ctx.exec, ctx.fetch);
-    const summary = draft ? draftSummary(draft, names, undefined, { people }) : "";
+    const summary = draft ? draftSummary(draft, names, undefined, { people, confidential: confidentialDomains(ctx.team.confidentialDomains) }) : "";
     const pr = await host.openPr({
       branch,
       base,
@@ -275,8 +289,13 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
 
 /** Names a comment must never carry (TASK-10): the team's CRM list and the PM's do-not-read people. */
 export async function privateNames(ctx: Pick<Ctx, "personal">): Promise<string[]> {
+  return [...(await crmNames(ctx)), ...(ctx.personal.neverIngest?.people ?? [])].map((n) => n.trim()).filter((n) => n.length >= 3);
+}
+
+/** The team's CRM list on this Mac, one name a line (SEC-8): people, and the companies it has, if any. */
+export async function crmNames(ctx: Pick<Ctx, "personal">): Promise<string[]> {
   const crm = ctx.personal.crmNamesFile ? (await readFile(ctx.personal.crmNamesFile, "utf8").catch(() => "")).split("\n") : [];
-  return [...crm, ...(ctx.personal.neverIngest?.people ?? [])].map((n) => n.trim()).filter((n) => n.length >= 3);
+  return crm.map((n) => n.trim()).filter((n) => n.length >= 3);
 }
 
 /**

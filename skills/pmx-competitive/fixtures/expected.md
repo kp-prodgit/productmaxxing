@@ -20,3 +20,6 @@ A buyer who already chose Rival A for SCIM [T4] would need SCIM from us plus a c
 - SCIM is a deal blocker in at least one loss [T4]
 - SSO pricing could be a counter-position [S7]
 - Whether to lead with SCIM or with pricing. **PM decides**.
+
+Open questions:
+- How many of our lost deals named missing SCIM as the reason? — needs: research

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { agentHandle, isProductLead, startsNow, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { agentHandle, isProductLead, kindsToChoose, startsNow, type PersonalConfig, type TeamConfig } from "../core/config.js";
 import { channelInputs, collectsChannels, NO_SYNTH_MAC } from "../inputs/inputs.js";
 import { readJson, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
@@ -7,6 +7,7 @@ import { TICK_GAP_MS, type State } from "../core/state.js";
 import { AUTO_STEPS, applies, type UpgradeRecord } from "../core/upgrade.js";
 import { compareVersions } from "../core/version.js";
 import { selfUpdating } from "../claude/pages.js";
+import { kindsWords } from "../synth/held-over.js";
 import type { DoctorCheck } from "../commands/doctor.js";
 
 /**
@@ -90,6 +91,8 @@ export interface ChecklistInputs {
   proposals: number | null;
   /** Tasks in Linear as PMX last saw them; null when it can't count them without asking Linear. */
   tasks: { pool: number; ready: number; blocked: number } | null;
+  /** JOB-11: Ready tasks by kind of work, from the same copy of Linear; missing or null when PMX can't count them. */
+  readyByKind?: Record<string, number> | null;
   /** When the first week's practice mode ends, or null once agents run for real. */
   practiceUntil: string | null;
   lastRun: { taskId: string; outcome: string; ts: string } | null;
@@ -208,11 +211,19 @@ export function buildChecklist(i: ChecklistInputs): Checklist {
       const d = bad("privacy.company-domains") ?? bad("privacy.canaries");
       return step({ id: "setup.privacy", title: "Privacy rules know your company and hold private meetings", status: !c("privacy.canaries") ? "skip" : d ? "todo" : "done", detail: clean((d ?? c("privacy.canaries"))?.detail ?? "after pmx init"), required: true, ...(d ? { do: "pmx init (add your company's email domains)", who: "you" as const, how: "terminal" as const, fix: placeFix("Open Who counts as a customer", "rule:domains", "Add your company's email domains in Settings, under Who counts as a customer.") } : {}) });
     })(),
+    // R5: a suggestion. PMX swaps the people it finds before quotes reach the team repo; a list also catches the rest.
+    fromCheck("privacy.crm-names", "PMX knows your customers' names", { as: "setup.names", required: false, skip: "after pmx init",
+      do: "Optional: save your customers' contacts in a text file, one full name per line (an export from your CRM works), then set \"crmNamesFile\" to the file's full path in ~/.pmx/config.json", who: "you", how: "terminal",
+      fix: claudeFix("/pmx-setup", "Optional: give PMX a list of your customers' names, one full name per line from your CRM, so it swaps those names for placeholders too. In the Claude app, type /pmx-setup and Claude adds it with you.") }),
     i.memoryFilled === null ? step({ id: "setup.memory", title: "Team memory describes your product", status: "skip", detail: "after pmx init", required: false })
       : step({ id: "setup.memory", title: "Team memory describes your product", status: i.memoryFilled ? "done" : "warn", required: false,
         detail: i.memoryFilled ? "memory/product.md has your product's context, so agents draft with it" : "memory/product.md is still the empty template, so agents draft without your product's context",
         ...(i.memoryFilled ? {} : { do: "Fill in memory/product.md in your team repo (what you sell, to whom, the words you use) and commit it. Claude can help.", who: "you" as const, how: "claude" as const,
           fix: claudeFix("/pmx-setup", "In the Claude app, type /pmx-setup and ask Claude to help you describe your product in your team memory.") }) }),
+    // F5: a suggestion. Fundraising meetings are held anyway; listing investors' domains also holds their other calls.
+    fromCheck("privacy.confidential-domains", "Your team's investors and other confidential contacts are listed", { as: "setup.confidential", required: false, skip: "after pmx init",
+      do: "Optional: pmx domains confidential add <your investor's email domain> (a pull request a teammate approves), or add it to confidentialDomains in pmx.config.json", who: "team-lead", how: "terminal",
+      fix: claudeFix("/pmx-setup", "Optional: list your team's investors and other confidential contacts by their email domains, so PMX holds all their meetings from team work. In the Claude app, type /pmx-setup and Claude sends them to your team with you.") }),
     ...["home.private", "secrets.not-in-config"].map((id) => bad(id)).filter((x): x is DoctorCheck => !!x)
       .map((x) => step({ id: `setup.${x.id}`, title: "PMX's private files stay private", status: "todo", detail: clean(x.detail), do: "Follow the fix in the detail, then pmx checklist", who: "you", how: "terminal", required: true,
         fix: x.id === "home.private" ? pmxFix("Make them private", "PMX makes its own folders private to you again.") : SETUP_FIX })),
@@ -355,6 +366,7 @@ export function buildChecklist(i: ChecklistInputs): Checklist {
         detail: `${i.tasks.ready} Ready for agents, ${i.tasks.pool} in the backlog${i.tasks.blocked ? `, ${i.tasks.blocked} Blocked` : ""}. Approving sends a task to the backlog; an agent takes it only after a teammate moves it to Todo in Linear.`,
         ...(!i.tasks.ready && i.tasks.pool ? { do: "In Linear, move the backlog's tasks worth an agent's time to Todo (or to Ready on the team board, /pmx-board)", who: "teammate" as const, how: "linear" as const,
           fix: personFix("A teammate moves the backlog's tasks worth an agent's time to Todo in Linear, or to Ready on your team's board.", team?.board?.url ?? p.board?.url ?? undefined) } : {}) }),
+    kindsStep(team, p, i.readyByKind ?? null, step),
     step({ id: "work.practice", title: "Agents run tasks for real", status: i.practiceUntil ? "warn" : "done", required: false,
       detail: i.practiceUntil ? `practice mode until ${day(i.practiceUntil)}: for its first week your agent says which task it would take, without running it` : "your agent runs Ready tasks that fit the budget",
       ...(i.practiceUntil ? { do: "Wait, or run one now with pmx pull --live", who: "you" as const, how: "terminal" as const, page: `Real runs start ${day(i.practiceUntil)}.`,
@@ -436,6 +448,28 @@ export function buildChecklist(i: ChecklistInputs): Checklist {
       pending: all.filter((s) => s.afterUpdate && open(s)),
     } : null,
   };
+}
+
+/**
+ * JOB-11: a kind of work the team has that this PM's agent doesn't take and the PM never chose about (one a teammate
+ * added, say) leaves its Ready tasks to others with nothing said. The PM turns each on or keeps it off; either clears it.
+ */
+function kindsStep(team: TeamConfig | null, p: PersonalConfig, ready: Record<string, number> | null, step: (s: Step) => Step): Step {
+  const title = "You chose which of your team's kinds of work your agent takes";
+  if (!team) return step({ id: "work.kinds", title, status: "skip", detail: "after pmx init", required: false });
+  if (!Array.isArray(p.categories)) return step({ id: "work.kinds", title, status: "skip", detail: "your settings on this Mac don't list the kinds of work your agent takes", required: false });
+  const open = kindsToChoose(p, team);
+  const all = Object.keys(team.categories);
+  if (!open.length) return step({ id: "work.kinds", title, status: "done", required: false, detail: `your agent takes ${all.filter((c) => !!team.categories[c]?.required || p.categories.includes(c)).length} of your team's ${plural(all.length, "kind")} of work` });
+  const waiting = open.reduce((n, k) => n + (ready?.[k] ?? 0), 0);
+  const one = open.length === 1;
+  const { words, them } = kindsWords(open);
+  return step({
+    id: "work.kinds", title, status: "todo", required: false,
+    detail: `your team has ${words}, and you haven't chosen whether your agent takes ${them}, so it skips ${them}${waiting ? `; ${plural(waiting, "Ready task")} ${waiting === 1 ? "is" : "are"} waiting for ${one ? "that kind" : "those kinds"} of work` : ""}`,
+    do: `pmx categories add ${open[0]} (or pmx categories remove ${open[0]} to keep it off)`, who: "you", how: "page",
+    fix: placeFix("Open Needs you", "tab:needs", `Turn ${one ? "it" : "each one"} on, or keep it off, in Needs you.`),
+  });
 }
 
 /**

@@ -7,7 +7,7 @@ import { commands } from "../src/commands/index.js";
 import { DEFAULT_TEAM, startsNow, validateTeamConfig, type TeamConfig } from "../src/core/config.js";
 import { services } from "../src/core/services.js";
 import { checkChange, describe as describeChange } from "../src/flow/actions.js";
-import { approveProposals, formatProposals, readProposals, stageProposals, START_OFF } from "../src/synth/proposals.js";
+import { approveProposals, CHECKED, formatProposals, readProposals, stageProposals, START_OFF } from "../src/synth/proposals.js";
 import { overlay, readOutbox, readSnapshot, relayDir, relayPrompt, relayTracker } from "../src/tracker/relay.js";
 import { memoryTracker } from "../src/tracker/types.js";
 import { freshHome, git, pmxRepo, testCtx } from "./helpers.js";
@@ -16,8 +16,8 @@ import { openBoard, type Ui } from "./ui-helpers.js";
 const LINEAR = { kind: "linear" as const, teamKey: "PMX", projectId: "proj-1" };
 const team = { ...DEFAULT_TEAM, team: "Acme PM", tracker: LINEAR } as TeamConfig;
 const stage = () => stageProposals([
-  { at: "2026-11-20T10:00:00Z", receipt: "r0", title: "Export approval history to CSV", description: "Admins need a record.\n\npmx:source T1", category: "spec", size: "M", sources: ["T1"], from: [] },
-  { at: "2026-11-20T10:00:00Z", receipt: "r0", title: "Fix the project name in emails", description: "Emails show the wrong name.\n\npmx:source T2", category: "spec", size: "S", sources: ["T2"], from: [] },
+  { at: "2026-11-20T10:00:00Z", receipt: "r0", title: "Export approval history to CSV", description: "Admins need a record.\n\npmx:source T1", category: "spec", size: "M", sources: ["T1"], from: [], checked: CHECKED },
+  { at: "2026-11-20T10:00:00Z", receipt: "r0", title: "Fix the project name in emails", description: "Emails show the wrong name.\n\npmx:source T2", category: "spec", size: "S", sources: ["T2"], from: [], checked: CHECKED },
 ]);
 const snapshot = async () => {
   await mkdir(relayDir(), { recursive: true });

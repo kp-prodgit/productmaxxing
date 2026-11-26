@@ -17,13 +17,14 @@ import { join } from "node:path";
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
 import type { Exec } from "../core/exec.js";
 import { Git } from "../core/git.js";
+import { parseGitHubRemote } from "../core/host.js";
 import type { Keychain } from "../core/keychain.js";
 import { killSwitchOn } from "../core/killswitch.js";
 import { jobEnv, VERSIONED_NODE, type Launchd } from "../core/launchd.js";
 import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
-import { profileChecks, webKinds, type Check } from "../core/profile.js";
+import { localGuard, profileChecks, webKinds, writeProfile, type Check } from "../core/profile.js";
 import { RunLogStore } from "../core/runlog-store.js";
-import { teamSkillPath } from "../core/skills.js";
+import { bundledSkillsDir, teamSkillPath } from "../core/skills.js";
 import type { RunLogEntry } from "../core/runlog.js";
 import { SIZES, type Size } from "../core/types.js";
 import { tickHealth } from "./tick.js";
@@ -55,6 +56,16 @@ export interface DoctorDeps {
   extra?: () => Promise<DoctorCheck[]>;
   /** PMX Engine's checks; tests pass their own. */
   engine?: () => Promise<DoctorCheck[]>;
+  /**
+   * R20: writes the clean profile for the team first, as every command that runs work does, so the checks judge the
+   * settings this Mac's next run gets (`pmx doctor` passes `refreshProfile`). Without it, the checks read what's there.
+   */
+  refreshProfile?: (team: TeamConfig) => Promise<void>;
+}
+
+/** R20: what `pmx doctor` writes before it checks: the clean profile, with this Mac's web guard. */
+export async function refreshProfile(team: TeamConfig): Promise<void> {
+  await writeProfile(team, { guard: await localGuard() });
 }
 
 export interface DoctorCheck extends Check {
@@ -121,6 +132,11 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
     const ok = await stat(join(repo, f)).then(() => true, () => false);
     add(`repo.${f}`, ok, `PMX repo has ${f}${f === "memory" ? " (shared team memory, B4)" : f === "CODEOWNERS" ? " (code owners on skills, memory, config)" : ""}`);
   }
+  // R24: a team repo with a remote that isn't GitHub keeps drafts as local branches, and an accept pushes the base.
+  const remote = await new Git(repo, d.exec).remoteUrl().catch(() => null);
+  if (remote && !parseGitHubRemote(remote)) {
+    add("repo.host", true, "team repo isn't on GitHub, so drafts wait as local branches on the Mac that drafted them; accepting one pushes your team's base branch to its remote (fast-forward only, never forced)");
+  }
   // EQ-37 (bridge 3 of the join): PMX Engine's released strategy reaches agents only through CLAUDE.md.
   if (await stat(join(repo, "memory", "engine", "README.md")).then(() => true, () => false)) {
     const points = (await readFile(join(repo, "CLAUDE.md"), "utf8").catch(() => "")).includes("memory/engine");
@@ -133,18 +149,30 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (themeList.format !== null && themeList.format !== THEMES_FORMAT) {
     add("repo.engine-themes", false, `memory/engine/themes.json is at a format this pmx can't read (${themeList.format}), so it offers no roadmap themes: run \`pmx update\``, "warn");
   }
+  // NEUT-2: each kind of work's skill lives in the team repo, so every Mac drafts from the same reviewed copy. R8: with
+  // no team copy, a run uses the one this PMX ships, which works, so that only warns; only a skill nobody has fails.
   for (const [cat, { skill }] of Object.entries(d.team.categories)) {
     const ok = await stat(teamSkillPath(repo, skill)).then(() => true, () => false);
-    add(`skill.${skill}`, ok, `shared skill ${skill} for ${cat} in .claude/skills (NEUT-2)`);
+    const bundled = !ok && (await stat(join(bundledSkillsDir(), skill, "SKILL.md")).then(() => true, () => false));
+    if (ok) add(`skill.${skill}`, true, `shared skill ${skill} for ${cat} in .claude/skills (NEUT-2)`);
+    else if (bundled) add(`skill.${skill}`, false, `${cat} runs PMX's built-in ${skill}: your team has no copy in .claude/skills, so each Mac uses the one its own PMX ships. Send it to your team so every Mac drafts from the same copy: \`pmx skills update ${skill}\` (NEUT-2)`, "warn");
+    else add(`skill.${skill}`, false, `no skill ${skill} for ${cat}: it isn't in your team's .claude/skills or in PMX, so agents can't draft ${cat}. Add its SKILL.md in a pull request, or take ${cat} out of ${TEAM_CONFIG_FILE} (NEUT-2)`);
   }
   const digestSkill = await stat(teamSkillPath(repo, "pmx-digest")).then(() => true, () => false);
   add("skill.pmx-digest", digestSkill, "shared skill pmx-digest in .claude/skills", "warn");
 
-  for (const c of await profileChecks(d.team)) add(c.id, c.ok, c.detail);
+  if (d.refreshProfile) {
+    const wrote = await d.refreshProfile(d.team).then(() => null, (e: any) => String(e?.message ?? e));
+    if (wrote) add("profile.write", false, `PMX couldn't write its clean profile in ${paths.claudeProfile()}: ${wrote}`);
+  }
+  // R17: each run's settings as Claude Code merges them with the team repo's project settings.
+  for (const c of await profileChecks(d.team, { repo })) add(c.id, c.ok, c.detail);
   // RUN-6: a team that opened competitive analysis to the web has a second set of run settings; one check covers them.
   if (webKinds(d.team).length) {
-    const bad = (await profileChecks(d.team, { web: true })).filter((c) => !c.ok);
-    add("profile.web-run", !bad.length, bad.length ? `the web run's settings fail: ${bad.map((c) => c.id).join(", ")}` : `web runs (${webKinds(d.team).join(", ")}) open only WebSearch and WebFetch`);
+    const bad = (await profileChecks(d.team, { web: true, repo })).filter((c) => !c.ok);
+    add("profile.web-run", !bad.length, bad.length
+      ? `the web run's settings fail: ${bad.map((c) => `${c.id} (${c.detail})`).join("; ")}`
+      : `web runs (${webKinds(d.team).join(", ")}) open only WebSearch and WebFetch, with the PMX repo's other project settings`);
   }
 
   // Versions (COMPAT-2, COMPAT-5): too old for the team fails; a newer team or release package warns.
@@ -214,7 +242,13 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
     ? `meetings with only ${rules.internalDomains.join(", ")} attendees count as internal and never reach the team's tracker`
     : "PMX doesn't know your company's email domain, so it holds every meeting from team tasks and your digest. Run `pmx init` and give your work email domain (or add it to internalDomains in pmx.config.json)");
   const can = runCanaries(rules);
-  add("privacy.canaries", !can.failed.length, can.failed.length ? `privacy rules let ${can.failed.length} test meeting(s) through (${can.failed.join(", ")}): nothing is sent, but check internalDomains in pmx.config.json and your do-not-read list` : `privacy rules hold all ${can.total} test meetings (1:1s, internal-only, hiring, pay, performance, health${can.total > 8 ? ", do-not-read" : ""})`);
+  add("privacy.canaries", !can.failed.length, can.failed.length ? `privacy rules let ${can.failed.length} test meeting(s) through (${can.failed.join(", ")}): nothing is sent, but check internalDomains in pmx.config.json and your do-not-read list` : `privacy rules hold all ${can.total} test meetings (1:1s, internal-only, hiring, pay, performance, health, fundraising${rules.confidentialDomains.length ? ", a confidential contact" : ""}${rules.neverIngest.meetingTitles.length || rules.neverIngest.people.length ? ", do-not-read" : ""})`);
+  // F5: a suggestion, never a failure. Fundraising meetings are held by their title and content; an investor's call
+  // about something else is held only when the team lists the investor's domain.
+  add("privacy.confidential-domains", rules.confidentialDomains.length > 0, confidentialNote(rules.confidentialDomains), "warn");
+  // R5: a suggestion, never a failure. PMX swaps the people it finds; a list also catches a contact it can't tell apart.
+  const crm = await crmNames(d.personal.crmNamesFile);
+  add("privacy.crm-names", crm.ok, crm.detail, "warn");
   // FLOW-4/5: the /pmx-flow board reads this Mac through a server the Claude app starts.
   const mh = await mcpHealth();
   if (mh) add("flow.mcp", mh.ok, mh.detail, "warn");
@@ -307,7 +341,34 @@ export function calibrate(entries: RunLogEntry[], team: TeamConfig, minRuns = 5)
   return out;
 }
 
+/** How a team lists its confidential contacts, in doctor's and the checklist's words (F5). */
+export const CONFIDENTIAL_HOW = "send their email domains to your team with `pmx domains confidential add <domain>` (a pull request a teammate approves), or add them to confidentialDomains in pmx.config.json";
+
+/** F5: what doctor says about the team's confidential domains. Only domains, which are team settings. */
+export function confidentialNote(domains: string[]): string {
+  return domains.length
+    ? `meetings, emails and threads with someone from ${domains.join(", ")} are held from team work, and those companies' names never reach Linear`
+    : `your team lists no investors or other confidential contacts. PMX holds fundraising meetings by their title and what's said, but an investor's call about something else reads like a customer call. To list them, ${CONFIDENTIAL_HOW}`;
+}
+
 /** `pmx doctor --json`: what an install script (or Claude, following INSTALL.md) checks. */
+/** How to add the customer name list, in doctor's and the checklist's words (R5). */
+export const CRM_NAMES_HOW = "save your customers' contacts in a text file, one full name per line (an export from your CRM works), then set \"crmNamesFile\" to the file's full path in ~/.pmx/config.json";
+
+/**
+ * R5: the CRM name list (`crmNamesFile` in the personal config), as a suggestion. PMX swaps every person it finds in the
+ * sources for a placeholder; a contact it can't tell from an ordinary word ("Mark", "Will") is swapped everywhere only
+ * when the list names them. Counts only: the names are never shown.
+ */
+export async function crmNames(file: string | null | undefined): Promise<{ ok: boolean; detail: string }> {
+  if (!file) return { ok: false, detail: `no customer name list. PMX swaps the people it finds in your sources (speakers, attendees, names in the text) for placeholders like [PERSON-2, Globex] before a quote reaches your team's repo; a list of your customers' names also catches one it can't tell from an ordinary word. To add one, ${CRM_NAMES_HOW}` };
+  const text = await readFile(file, "utf8").catch(() => null);
+  if (text === null) return { ok: false, detail: `PMX can't read your customer name list at ${file}, so it swaps only the people it finds itself: check the path in ~/.pmx/config.json ("crmNamesFile"), which must be the file's full path` };
+  const n = new Set(text.split("\n").map((l) => l.trim()).filter((l) => l.length >= 3)).size;
+  return n ? { ok: true, detail: `customer name list: ${n} ${n === 1 ? "name" : "names"}, swapped for placeholders wherever they appear` }
+    : { ok: false, detail: `your customer name list at ${file} has no names yet: put one full name per line` };
+}
+
 export function doctorJson(checks: DoctorCheck[]) {
   const failed = checks.filter((c) => !c.ok && c.level === "fail").map((c) => c.id);
   const warnings = checks.filter((c) => !c.ok && c.level === "warn").map((c) => c.id);

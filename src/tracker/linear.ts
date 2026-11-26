@@ -3,6 +3,7 @@ import type { Fetch } from "../sources/slack.js";
 import { CANARY_REFUSAL, hasCanary } from "../core/canary.js";
 import { meetingDescription, meetingTitle, withWorkflow, type MeetingEntry, type NewTask, type Tracker } from "./types.js";
 import { inTarget, pickState, STATE_FOR, stateType, typeOf, type StateTarget, type WorkflowState } from "./states.js";
+import { plainMentions } from "./mentions.js";
 
 /**
  * Linear adapter (SCOPE-1). PMX fields are label groups, not custom fields, so no Linear admin
@@ -59,7 +60,8 @@ function labelTask(n: any): Task {
   const pick = (g: Group) => ls.find((l) => l.group === GROUPS[g])?.name ?? null;
   const status = pick("status");
   const size = pick("size");
-  const desc: string = n.description ?? "";
+  // R23: an identifier Linear made a mention reads as the identifier, in the description and in PMX's comments.
+  const desc: string = plainMentions(n.description ?? "");
   return {
     id: n.id,
     identifier: n.identifier,
@@ -72,7 +74,7 @@ function labelTask(n: any): Task {
     priority: n.priority ?? 0,
     agent: pick("agent"),
     sources: [...desc.matchAll(/^pmx:source (\S+)/gm)].map((m) => m[1]!),
-    prUrl: ((n.comments?.nodes ?? []) as any[]).map((c) => c.body?.match(/^pmx:pr (\S+)/m)?.[1]).filter(Boolean).at(-1) ?? null,
+    prUrl: ((n.comments?.nodes ?? []) as any[]).map((c) => plainMentions(c.body ?? "").match(/^pmx:pr (\S+)/m)?.[1]).filter(Boolean).at(-1) ?? null,
     createdAt: n.createdAt,
     theme: pick("theme"),
   };
@@ -309,7 +311,7 @@ export function linearTracker(o: LinearOpts): Tracker {
     async finishMeeting(id, f) {
       const issue = await inProject(id);
       if (kindOf(issue) !== "meeting") throw new Error(`Refusing to finish ${issue.identifier}: it is a task, not a lodged meeting.`);
-      const lines = f.tasks.filter((t) => !(issue.description ?? "").includes(`pmx:task ${t}`)).map((t) => `pmx:task ${t}`);
+      const lines = f.tasks.filter((t) => !plainMentions(issue.description ?? "").includes(`pmx:task ${t}`)).map((t) => `pmx:task ${t}`);
       const description = lines.length ? `${issue.description ?? ""}\n${lines.join("\n")}` : issue.description;
       const completed = f.status === "done" ? pickState(await teamStates(), "completed")?.id : null;
       await update(id, { description, ...(completed ? { stateId: completed } : {}) });

@@ -76,7 +76,8 @@ describe("topic rules read product talk as product talk (F1)", () => {
     ["What's the vesting schedule for new hires?", "compensation"],
     ["There's a one-year cliff.", "compensation"],
     ["The strike price is set by the board.", "compensation"],
-    ["The term sheet asks for a 10% option pool.", null],
+    // F5: and fundraising is held from team work by its own rule.
+    ["The term sheet asks for a 10% option pool.", "fundraising"],
     ["Export options are in the settings menu.", null],
     ["We need more options for the date picker.", null],
   ];

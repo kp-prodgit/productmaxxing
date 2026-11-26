@@ -90,7 +90,8 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
   out.push(`1. Found ${plural(r.sources.length, "conversation")} in ${where} from the last ${r.window.days} days`);
   for (const s of r.skippedSources) out.push(`   - skipped: ${s}`);
   out.push("", "2. Privacy rules decided what Claude may read");
-  if (r.rules.allowOneOnOne) out.push("   Your own to-dos: internal meetings and 1:1s are allowed, because the result stays on this Mac. Health, pay and performance passages are still cut.");
+  if (r.rules.allowOneOnOne) out.push("   Your own to-dos: internal meetings, 1:1s, fundraising and your team's confidential contacts are allowed, because the result stays on this Mac. Health, pay and performance passages are still cut.");
+  if (r.rules.confidentialDomains?.length) out.push(`   Held from team work: meetings with someone from your team's confidential domains (${r.rules.confidentialDomains.join(", ")}), and their names.`);
   if (r.rules.meetingSeries?.length) out.push(`   Internal meetings in your team's approved series are used for team work, with every other rule: ${r.rules.meetingSeries.join(", ")}.`);
   r.sources.forEach((s, i) => {
     const l = live[i];
@@ -121,6 +122,8 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
         out.push(`      left out of what Linear gets: ${t.leftOut}`);
         for (const q of (r.synth.quoted ?? []).filter((x) => x.task === t.title && x.part === "description" && !x.skipped)) out.push(`         "${q.words}", from ${quoteSource(q.source, r.sources)}`);
       }
+      // R6: a task the PM dropped, with the reason they gave (`pmx proposals drop … --reason`).
+      if (t.posted && "dropped" in t.posted) out.push(`      you dropped it${t.posted.reason ? `: ${t.posted.reason}` : ""}`);
     }
     for (const s of r.synth.skipped) out.push(`   skipped: ${s}`);
     // N4: what repeated a source word for word, with the words and which source. Your own sources' words, on this Mac.

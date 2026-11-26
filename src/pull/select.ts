@@ -65,7 +65,9 @@ export function selectTasks(i: SelectInput): Selection {
     const taken = i.taken?.get(t.id);
     if (taken) return no(taken);
     if (!t.category || !i.team.categories[t.category]) return no(`category "${t.category ?? "none"}" has no skill in team config`);
-    if (!takesCategory(i.personal, i.team, t.category)) return no(`you don't accept ${t.category}`);
+    // JOB-11: a kind this PM never chose about says so, and how to take it.
+    if (!takesCategory(i.personal, i.team, t.category))
+      return no(`you don't accept ${t.category}${(i.personal.categoriesOff ?? []).includes(t.category) ? ` (you turned it off; pmx categories add ${t.category} turns it on)` : `: you haven't chosen whether your agent takes it (pmx categories add ${t.category})`}`);
     const paused = i.pausedCategories.get(t.category);
     if (paused) return no(`${t.category} is paused: ${paused}`);
     if (!t.size) return no("no size label");

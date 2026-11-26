@@ -285,7 +285,8 @@ function taskCard(t, r) {
     s ? h("div", "small", "Rubric cell it matched: “" + (s.cell || "none given") + "”" + (s.expectedCell && s.cell !== s.expectedCell ? " (the rubric says “" + s.expectedCell + "”)" : "")) : h("div", "small muted", "No sizing reason recorded."),
     s && s.why ? h("div", "small", "Why: " + s.why) : null,
     s ? s.flags.map((f) => h("div", "flag", "Check the size: " + (flagText[f] || f) + ".")) : null,
-    t.leftOut ? h("div", "small", "Left out of what Linear gets: " + t.leftOut + "." + words.map((q) => " \u201c" + q.words + "\u201d, from " + quoteFrom(q.source, r.sources) + ".").join("")) : null);
+    t.leftOut ? h("div", "small", "Left out of what Linear gets: " + t.leftOut + "." + words.map((q) => " \u201c" + q.words + "\u201d, from " + quoteFrom(q.source, r.sources) + ".").join("")) : null,
+    t.posted && t.posted.dropped ? h("div", "small", "You dropped it" + (t.posted.reason ? ": " + t.posted.reason : "") + ".") : null);
 }
 
 // ---- Privacy rules ------------------------------------------------------------------------------
@@ -298,7 +299,7 @@ async function loadRules() {
       h("h3", null, t.label),
       h("p", "small muted", "Any passage that mentions one of these is cut, for example:"),
       h("div", null, t.examples.map((x) => chip(x))),
-      h("details", null, h("summary", null, "Exact patterns"), h("div", "mono small", t.patterns.join("  |  ")),
+      h("details", null, h("summary", null, "Exact patterns"), h("div", "mono small", [...t.patterns, ...(t.cased || [])].join("  |  ")),
         t.notWhen && t.notWhen.length ? h("p", "small muted", "Not cut where the words mean something else:") : null,
         t.notWhen && t.notWhen.length ? h("div", "mono small", t.notWhen.join("  |  ")) : null)));
     el.replaceChildren(
@@ -313,7 +314,9 @@ async function loadRules() {
           h("p", "small", "A call is used only if at least one participant has an email outside your company's domains. A file with no participant list is left out."),
           list(r.internalDomains, "No company domain set, so PMX holds every call: it can't tell a customer from a colleague. Run pmx init, or add yours to internalDomains in pmx.config.json."),
           h("p", "small", "Internal meetings your team approved as a series are used for team tasks too, when their title contains one of these and three or more people were in them. Every other rule still applies to them."),
-          list(r.meetingSeries || [], "No meeting series approved.")),
+          list(r.meetingSeries || [], "No meeting series approved."),
+          h("p", "small", "A meeting, email or thread with someone from one of your team's confidential domains (investors and other confidential contacts) is held from team tasks, evidence and agents, and their names never reach Linear. Your own to-dos may still come from it."),
+          list(r.confidentialDomains || [], "No confidential domains listed. Fundraising meetings are still held by their title and what's said. Add one: pmx domains confidential add <domain>.")),
         h("div", "card", h("h3", null, "3. Your do-not-read list"),
           h("p", "small", "Anything involving these people, meeting titles or channels is left out. Only you see this list; receipts record how many entries it has, not what they are."),
           h("p", "small muted", "People"), list(r.neverIngest.people, "None"),

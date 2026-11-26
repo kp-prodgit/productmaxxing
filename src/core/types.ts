@@ -106,6 +106,11 @@ export interface CandidateTask {
   sizing?: import("./receipt.js").Sizing;
   /** The open task or waiting proposal this is the same need as, by Claude's word (INPUT-2). */
   sameAs?: string | null;
+  /**
+   * R6: a recently done task this is new work after, by Claude's word. PMX suggests it as a follow-up that links that
+   * task only when it says something the done task's description doesn't; otherwise it's that task heard again.
+   */
+  follows?: string | null;
   /** A roadmap theme from the team's memory/engine/themes.json that the task serves (EQ-38). The PM can change it. */
   theme?: string;
   /**

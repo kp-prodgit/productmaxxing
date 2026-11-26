@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { DEFAULT_TEAM, PRODUCT_LEAD, savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { chooseKind, DEFAULT_TEAM, PRODUCT_LEAD, savePersonalConfig, type PersonalConfig, type TeamConfig } from "../core/config.js";
 import { checkKindDraft, GENERIC_SIZES, renderKindFixture, renderKindSkill, upsertRubricRow, type KindDraft } from "../core/kinds.js";
 import type { Ctx } from "../core/context.js";
-import { cleanDomain } from "../core/filter.js";
+import { cleanDomain, companyDomains, publicMail } from "../core/filter.js";
 import { writeFileIn } from "../core/git.js";
 import { outputHost } from "../core/host.js";
 import { paths, TEAM_CONFIG_FILE } from "../core/paths.js";
@@ -25,6 +25,8 @@ export type Change =
   | { kind: "budget"; value: number | null }
   | { kind: "category"; name: string; accepted: boolean }
   | { kind: "team-domain"; op: "add" | "remove"; value: string }
+  /** F5: an investor's or another confidential contact's email domain, held from team work. A team setting. */
+  | { kind: "confidential-domain"; op: "add" | "remove"; value: string }
   | { kind: "size"; size: Size; minutes?: number; usd?: number }
   | { kind: "rubric"; category: string; size: Size; text: string }
   | { kind: "review-cap"; value: number }
@@ -63,7 +65,7 @@ export type Change =
 const RANK = { off: 0, mine: 1, linear: 2 } as const;
 const own = (o: object, k: unknown) => typeof k === "string" && Object.prototype.hasOwnProperty.call(o, k);
 const FIELD = { title: "meetingTitles", person: "people", channel: "channels" } as const;
-export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "start-now" || c.kind === "team-input" || c.kind === "meeting-series" || c.kind === "synthesizer" || c.kind === "product-lead" || c.kind === "new-kind" || c.kind === "kind-required" || c.kind === "builtin-kind" || c.kind === "skill-update";
+export const isTeamChange = (c: Change) => c.kind === "team-domain" || c.kind === "confidential-domain" || c.kind === "size" || c.kind === "rubric" || c.kind === "review-cap" || c.kind === "start-now" || c.kind === "team-input" || c.kind === "meeting-series" || c.kind === "synthesizer" || c.kind === "product-lead" || c.kind === "new-kind" || c.kind === "kind-required" || c.kind === "builtin-kind" || c.kind === "skill-update";
 
 /** A change that lets more through: the board asks once more before it, and only the local page may send it. */
 export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolean {
@@ -85,7 +87,7 @@ export function loosens(c: Change, p: PersonalConfig, team?: TeamConfig): boolea
   }
   // Turning on "send my to-dos to Linear" lets the PM's own commitments leave this Mac.
   if (c.kind === "todos-linear") return c.value && !p.todosToLinear;
-  return (c.kind === "my-domain" || c.kind === "never" || c.kind === "team-domain") && c.op === "remove";
+  return (c.kind === "my-domain" || c.kind === "never" || c.kind === "team-domain" || c.kind === "confidential-domain") && c.op === "remove";
 }
 
 /** Checks one change's shape and values, from the page or a script. Throws a message a PM can act on. */
@@ -96,10 +98,15 @@ export function checkChange(c: any, team: TeamConfig): Change {
       if (typeof c.source !== "string" || !/^[a-z][a-z-]{1,30}$/.test(c.source)) fail("Unknown source.");
       if (!(c.value in RANK)) fail("A source can be off, mine or linear.");
       return { kind: "route", source: c.source, value: c.value };
-    case "my-domain": case "team-domain": {
+    case "my-domain": case "team-domain": case "confidential-domain": {
       const d = cleanDomain(String(c.value ?? ""));
       if (!d) fail(`"${c.value}" isn't an email domain like acme.com.`);
       if (c.op !== "add" && c.op !== "remove") fail("Add or remove a domain.");
+      // F5: a confidential contact is someone outside the company, on a domain that names one company.
+      if (c.kind === "confidential-domain" && c.op === "add") {
+        if (publicMail(d!)) fail(`${d} is a mail provider anyone can sign up with, so it can't stand for an investor or other confidential contact.`);
+        if (companyDomains(team.internalDomains).includes(d!)) fail(`${d} is one of your company's own domains, so it can't be a confidential contact's too.`);
+      }
       return { kind: c.kind, op: c.op, value: d! };
     }
     case "never": {
@@ -202,7 +209,8 @@ export async function applyPersonal(personal: PersonalConfig, changes: Change[])
       const cur = personal.companyDomains ?? [];
       personal.companyDomains = c.op === "add" ? [...new Set([...cur, c.value])] : cur.filter((d) => d !== c.value);
     } else if (c.kind === "budget") personal.budget = { ...personal.budget, dailyUsd: c.value };
-    else if (c.kind === "category") personal.categories = c.accepted ? [...new Set([...personal.categories, c.name])] : personal.categories.filter((x) => x !== c.name);
+    // JOB-11: an off is recorded too, so PMX never asks about that kind again.
+    else if (c.kind === "category") chooseKind(personal, c.name, c.accepted);
     else if (c.kind === "digest-day") personal.digest = { ...personal.digest, weekday: c.value };
     else if (c.kind === "digest-dm") personal.digest = { ...personal.digest, slackDmUserId: c.value };
     else if (c.kind === "todos-linear") personal.todosToLinear = c.value;
@@ -220,7 +228,7 @@ export async function applyPersonal(personal: PersonalConfig, changes: Change[])
 
 /** Switches kinds of work on for this PM (the author of a new one), ahead of the merge that adds them for the team. */
 export async function saveTakes(personal: PersonalConfig, categories: string[]): Promise<void> {
-  personal.categories = [...new Set([...personal.categories, ...categories])];
+  for (const c of categories) chooseKind(personal, c, true);
   await savePersonalConfig(personal);
 }
 
@@ -229,6 +237,7 @@ export function describe(c: Change): string {
     case "route": return `${c.source}: ${{ off: "off", mine: "my to-dos only", linear: "my to-dos and Linear tasks" }[c.value]}`;
     case "my-domain": return `${c.op === "add" ? "Add" : "Remove"} your company domain ${c.value}`;
     case "team-domain": return `${c.op === "add" ? "Add" : "Remove"} the team's company domain ${c.value}`;
+    case "confidential-domain": return c.op === "add" ? `Hold meetings with ${c.value} from team work: an investor or other confidential contact` : `Stop holding meetings with ${c.value} from team work`;
     case "never": return `${c.op === "add" ? "Never read" : "Read again"} ${c.list} "${c.value}"`;
     case "budget": return c.value === null ? "No daily cap of your own" : c.value === 0 ? "Pause PMX" : `Daily cap $${c.value}`;
     case "category": return `${c.accepted ? "Take on" : "Stop taking"} ${c.name}`;
@@ -251,6 +260,14 @@ export function describe(c: Change): string {
   }
 }
 
+/** One of PMX's own skill folders (its SKILL.md and fixtures) written into a worktree at `rel`, as `pmx init` copies it. */
+async function copySkill(from: string, cwd: string, rel: string): Promise<void> {
+  for (const e of await readdir(from, { withFileTypes: true })) {
+    if (e.isDirectory()) await copySkill(join(from, e.name), cwd, join(rel, e.name));
+    else if (e.isFile()) await writeFileIn(cwd, join(rel, e.name), await readFile(join(from, e.name), "utf8"));
+  }
+}
+
 /** One cell of the per-category table in the pmx-size skill, replaced. A missing row is added with general wording. */
 export function setRubricCell(skill: string, category: string, size: Size, text: string): string {
   const lines = skill.split("\n");
@@ -267,17 +284,40 @@ export function setRubricCell(skill: string, category: string, size: Size, text:
   return lines.join("\n");
 }
 
+/** A team settings branch PMX made: the time it was sent, to the second, and `-2`, `-3`… for a later one that second. */
+export const SETTINGS_BRANCH = /^pmx\/settings-\d{14}(?:-\d+)?$/;
+
+/**
+ * A settings branch no send has used yet (R9): named for the time to the second, with `-2`, `-3`… when that name is
+ * taken on this Mac, in the team repo or by a worktree. So a second send in the same second (`pmx skills update`, then
+ * `pmx jobs add`) never commits or pushes onto the first one's branch, and each gets a pull request of its own.
+ */
+async function freshSettingsBranch(git: Ctx["repo"], now: Date, remote: boolean): Promise<string> {
+  const stem = `pmx/settings-${now.toISOString().replace(/\D/g, "").slice(0, 14)}`;
+  const names = (s: string) => s.split("\n").map((l) => l.trim().replace(/^\S+\trefs\/heads\//, "")).filter(Boolean);
+  const taken = new Set([
+    ...names(await git.ok(["for-each-ref", "--format=%(refname:lstrip=2)", `refs/heads/${stem}*`])),
+    ...names(await git.ok(["for-each-ref", "--format=%(refname:lstrip=3)", `refs/remotes/origin/${stem}*`])),
+    ...(remote ? names((await git.raw(["ls-remote", "--heads", "origin", `refs/heads/${stem}*`])).stdout) : []),
+  ]);
+  for (let n = 1; ; n++) {
+    const branch = n === 1 ? stem : `${stem}-${n}`;
+    if (!taken.has(branch) && !(await stat(join(paths.worktrees(), branch.replace("/", "-"))).then(() => true, () => false))) return branch;
+  }
+}
+
 /**
  * Team settings as one pull request to the PMX repo (BOARD-3): a branch off the default branch in a worktree, so the
- * PM's own checkout is never touched. Nothing changes for anyone until a code owner merges it.
+ * PM's own checkout is never touched. Nothing changes for anyone until a code owner merges it. `from`: where the PM
+ * sent it, for the pull request's title when it holds more than kinds of work or skills.
  */
-export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{ id: string; url: string; branch: string }> {
+export async function proposeTeamChanges(ctx: Ctx, changes: Change[], o: { from?: "board" | "terminal" } = {}): Promise<{ id: string; url: string; branch: string }> {
   const team = changes.filter(isTeamChange);
   if (!team.length) throw new Error("No team changes to send.");
   const base = await ctx.repo.defaultBranch();
   const remote = await ctx.repo.hasRemote();
   if (remote) await ctx.repo.ok(["fetch", "--quiet", "origin", base]);
-  const branch = `pmx/settings-${ctx.now().toISOString().replace(/\D/g, "").slice(0, 14)}`;
+  const branch = await freshSettingsBranch(ctx.repo, ctx.now(), remote);
   const dir = join(paths.worktrees(), branch.replace("/", "-"));
   const wt = await ctx.repo.worktree(dir, branch, remote ? `origin/${base}` : base);
   try {
@@ -287,6 +327,7 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
     const kinds: Extract<Change, { kind: "new-kind" }>[] = [];
     for (const c of team) {
       if (c.kind === "team-domain") cfg.internalDomains = c.op === "add" ? [...new Set([...(cfg.internalDomains ?? []), c.value])] : (cfg.internalDomains ?? []).filter((d: string) => d !== c.value);
+      else if (c.kind === "confidential-domain") cfg.confidentialDomains = c.op === "add" ? [...new Set([...(cfg.confidentialDomains ?? []), c.value])] : (cfg.confidentialDomains ?? []).filter((d: string) => d !== c.value);
       else if (c.kind === "size") {
         cfg.sizes = { ...ctx.team.sizes, ...(cfg.sizes ?? {}) };
         cfg.sizes[c.size] = { ...cfg.sizes[c.size], ...(c.minutes !== undefined ? { minutes: c.minutes } : {}), ...(c.usd !== undefined ? { costUsd: c.usd } : {}) };
@@ -319,11 +360,16 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
           rubric = Object.entries(ours).reduce((t: string, [cat, cells]) => upsertRubricRow(t, cat, cells), fresh);
         } else await writeFileIn(wt.cwd, rel, fresh);
       } else if (c.kind === "builtin-kind") {
-        // A kind of work PMX added after this team's repo was set up (CAT-8): the skill is built in, so the team adds its
-        // line, and its size row where the team keeps its own copy of the rubric.
+        // A kind of work PMX added after this team's repo was set up (CAT-8): the team adds its line, its size row where
+        // the team keeps its own copy of the rubric, and PMX's skill for it (R8, NEUT-2). A new team's repo starts with a
+        // copy of every one of PMX's skills, so every Mac drafts from the same reviewed text whichever PMX version it runs; a kind
+        // added later arrives the same way. A copy the team already has stays: `pmx skills update` replaces it.
         cfg.categories = { ...(cfg.categories ?? DEFAULT_TEAM.categories) };
         if (own(cfg.categories, c.name)) throw new Error(`Your team already has ${c.name}.`);
         cfg.categories[c.name] = { ...DEFAULT_TEAM.categories[c.name]! };
+        const skill = DEFAULT_TEAM.categories[c.name]!.skill;
+        const dir = dirname(teamSkillPath("", skill).replace(/^\//, ""));
+        if (!(await readFile(join(wt.cwd, dir, "SKILL.md"), "utf8").then(() => true, () => false))) await copySkill(join(bundledSkillsDir(), skill), wt.cwd, dir);
         const current = rubric ?? (await loadSkill(wt.cwd, "pmx-size")).text;
         const row = parseRubric(await readFile(join(bundledSkillsDir(), "pmx-size", "SKILL.md"), "utf8")).cells[c.name];
         if (row && !parseRubric(current).cells[c.name]) rubric = upsertRubricRow(current, c.name, row);
@@ -352,7 +398,15 @@ export async function proposeTeamChanges(ctx: Ctx, changes: Change[]): Promise<{
     if (rubric !== null) await writeFileIn(wt.cwd, teamSkillPath("", "pmx-size").replace(/^\//, ""), rubric);
     const lines = team.map((c) => `- ${describe(c)}`);
     const updates = team.filter((c): c is Extract<Change, { kind: "skill-update" }> => c.kind === "skill-update");
-    const title = kinds.length === 1 && team.length === 1 ? `New kind of work: ${kinds[0]!.draft.name}` : kinds.length ? `New kinds of work and team settings from PMX` : updates.length === team.length ? `PMX's newer skills: ${updates.map((u) => u.name).join(", ")}` : "Team settings from the PMX board";
+    // R9: titled by what it does; "from the PMX board" only when it came from the board.
+    const named = team.flatMap((c) => (c.kind === "new-kind" ? [c.draft.name] : c.kind === "builtin-kind" ? [c.name] : []));
+    const confidential = team.filter((c): c is Extract<Change, { kind: "confidential-domain" }> => c.kind === "confidential-domain");
+    const title = named.length && named.length === team.length ? (named.length === 1 ? `New kind of work: ${named[0]}` : `New kinds of work: ${named.join(", ")}`)
+      : named.length ? "New kinds of work and team settings from PMX"
+      : updates.length === team.length ? `PMX's newer skills: ${updates.map((u) => u.name).join(", ")}`
+      // F5: a confidential domain is titled by what it does, as R9 titles the rest.
+      : confidential.length === team.length ? confidential.map((c) => `${c.op === "add" ? "Confidential domain" : "Remove confidential domain"}: ${c.value}`).join("; ")
+      : o.from === "board" ? "Team settings from the PMX board" : "Team settings from PMX";
     const sha = await wt.commitAll(`${title}\n\n${lines.join("\n")}`);
     if (!sha) throw new Error("Those team settings are already in place.");
     const host = await outputHost(ctx.repo, ctx.keychain, ctx.exec, ctx.fetch);

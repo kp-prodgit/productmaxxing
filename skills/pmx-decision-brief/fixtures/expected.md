@@ -24,8 +24,10 @@ Which one integration ships with the launch: the design-tool export or the email
 
 ## Recommendation
 
-The email builder first: it carries a paid commitment [T5] and has no partner paperwork in the way [T6]. The design-tool export follows once its paperwork is under way. If the agency seats turn out to be a signed order, the export wins instead. **PM decides**.
+The email builder first: it carries a paid commitment [T5] and has no partner paperwork in the way [T6]. The design-tool export follows once its paperwork is under way. If the agency seats turn out to be a signed order, the export wins instead.
+
+**PM decides:** which integration ships with the launch.
 
 ## Open questions
 
-- Is the 40-seat rollout a signed order or interest? It can be answered before Dec 2 [T4].
+- Is the 40-seat rollout a signed order or interest? — ask: the account lead. It can be answered before Dec 2 [T4].

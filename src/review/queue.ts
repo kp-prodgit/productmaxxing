@@ -4,8 +4,9 @@ import { RunLogStore } from "../core/runlog-store.js";
 import type { RunLogEntry } from "../core/runlog.js";
 import type { Services } from "../core/services.js";
 import type { Task } from "../core/types.js";
-import { markTask } from "../lease/marks.js";
+import { draftDecided, lookAt, markStore, markTask, type StoredMark } from "../lease/marks.js";
 import type { RunRecord } from "../run/record.js";
+import { removePackNow } from "../run/share.js";
 import { followUpsOnAccept, followUpText, type FollowUpResult } from "./followups.js";
 
 export interface ReviewItem {
@@ -33,12 +34,30 @@ export function citationsOf(t: Task): Record<string, string> {
   return out;
 }
 
-/** Drafts waiting for review. By default your own agent's; `all` for the whole team. */
-export async function loadQueue(ctx: Ctx, svc: Services, o: { all?: boolean } = {}): Promise<{ items: ReviewItem[]; host: OutputHost }> {
+/** A draft this Mac's copy of Linear shows waiting, though the team repo says it was decided (R13), and why. */
+export interface DecidedDraft {
+  /** The task's tracker id, as items are keyed, and its identifier, like PMX-12. */
+  id: string;
+  identifier: string;
+  text: string;
+}
+
+/**
+ * Drafts waiting for review. By default your own agent's; `all` for the whole team. `decided` (R13): drafts this Mac's
+ * copy of Linear still shows in review, though the task's mark in the team repo says a Mac accepted, rejected or
+ * dropped it since; they aren't items, so nothing decides them twice, until this Mac's next Linear sync catches up.
+ */
+export async function loadQueue(ctx: Ctx, svc: Services, o: { all?: boolean } = {}): Promise<{ items: ReviewItem[]; host: OutputHost; decided: DecidedDraft[] }> {
   const host = await outputHost(ctx.repo, ctx.keychain, ctx.exec, ctx.fetch);
   const inReview = (await svc.tracker.list({ status: ["review"] })).filter((t) => o.all || t.agent === ctx.agent);
+  // A team repo out of reach leaves the queue as this Mac's copy of Linear has it.
+  const marks = inReview.length ? await markStore(ctx.repo).list().catch(() => new Map<string, StoredMark>()) : new Map<string, StoredMark>();
+  const look = await lookAt(ctx, svc.tracker);
   const items: ReviewItem[] = [];
+  const decided: DecidedDraft[] = [];
   for (const t of inReview) {
+    const gone = draftDecided(t.identifier, marks.get(t.identifier), look);
+    if (gone) { decided.push({ id: t.id, identifier: t.identifier, text: gone }); continue; }
     const task = await svc.tracker.get(t.id);
     if (!task.prUrl) continue;
     const prId = prIdFromUrl(task.prUrl);
@@ -52,7 +71,7 @@ export async function loadQueue(ctx: Ctx, svc: Services, o: { all?: boolean } = 
       citations: citationsOf(task),
     });
   }
-  return { items, host };
+  return { items, host, decided };
 }
 
 /** What a decision did: the sentence every surface shows, and for an accept, the follow-ups it made (FOLLOW-1). */
@@ -62,10 +81,11 @@ export interface Decided {
 }
 
 /**
- * Records a human decision (REV-1, REV-2). Accept merges the PR and marks the task done. Reject closes
- * the PR and blocks the task with the reason. Redo closes the PR, adds the note to the task and puts
- * it back to ready, so the next pull drafts it again with the note. Every surface decides through here:
- * `pmx review` (in a terminal or with --accept, --redo, --reject), the review page, and PMX's page.
+ * Records a human decision (REV-1, REV-2). Accept merges the PR, marks the task done and removes its shared quotes
+ * from the team repo (RUN-5). Reject closes the PR and blocks the task with the reason. Redo closes the PR, adds the
+ * note to the task and puts it back to ready, so the next pull drafts it again with the note. Every surface decides
+ * through here: `pmx review` (in a terminal or with --accept, --redo, --reject), the review page, and PMX's page (in
+ * the browser or in the Claude app, through PMX's server).
  */
 export async function decide(
   ctx: Ctx, svc: Services, host: OutputHost, item: ReviewItem, verdict: Verdict, o: { note?: string; reviewMinutes?: number | null } = {},
@@ -81,9 +101,11 @@ export async function recordDecision(
   const who = ctx.personal.handle;
   let followUps: FollowUpResult | null = null;
   let followError: string | null = null;
+  let unpushed: string | null = null;
   if ((verdict === "rejected" || verdict === "redo") && !o.note?.trim()) throw new Error(`A ${verdict === "redo" ? "redo" : "reject"} needs a note.`);
   if (verdict === "accepted") {
-    await host.accept(item.prId);
+    // R24: on a team repo that isn't on GitHub, the accept is pushed to origin; when it can't be, the answer says so once.
+    unpushed = (await host.accept(item.prId))?.unpushed ?? null;
     await svc.tracker.comment(task.id, `Accepted by ${who}.`);
     await svc.tracker.setStatus(task.id, "done");
     // FOLLOW-1: the draft's calls and open work, made after the accept, which nothing here undoes.
@@ -105,12 +127,16 @@ export async function recordDecision(
   // PULL-14: every Mac knows at once, whatever its copy of Linear says: done or rejected isn't drafted again, and a redo
   // lets any Mac's agent take it again.
   await markTask(ctx, svc.tracker, task.identifier, verdict === "accepted" ? "done" : verdict === "rejected" ? "blocked" : "ready");
+  // RUN-5: an accepted task's shared quotes leave the team repo now, after its follow-ups read the pack, with the
+  // clean-up's tombstone in that mark. One the team repo doesn't take now goes at the next clean-up; the accept stands.
+  // A reject or a redo keeps them: the task may be drafted again.
+  if (verdict === "accepted") await removePackNow(ctx, svc.tracker, task.identifier, "done");
   await new RunLogStore(ctx).record({
     type: "verdict", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier,
     category: task.category ?? "unknown", size: task.size ?? "?", verdict, reviewMinutes: o.reviewMinutes ?? null, editSize: null,
   });
   const more = followError ? `PMX couldn't make its follow-ups: ${followError}.` : followUpText(followUps);
-  return { message: [`${task.identifier} ${verdict}.`, more].filter(Boolean).join(" "), followUps };
+  return { message: [`${task.identifier} ${verdict}.`, more, unpushed].filter(Boolean).join(" "), followUps };
 }
 
 export interface CategoryStats {

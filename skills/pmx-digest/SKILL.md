@@ -32,4 +32,5 @@ each with the source IDs that motivate it.
   citation are deleted automatically, so don't write them.
 - Use only what the sources say. If evidence is thin, say so in the theme line.
 - Placeholders like `[PERSON-2]`, `[EMAIL]` and `[PHONE]` are redactions. Keep them as they are; never guess who they are.
+- No people's names, in a theme, a bullet or a quote: an approved digest goes to your team's repo. Write each person as their role and company ("Globex's brand lead", "our head of product"), and pick quotes that name no one.
 - Never mention anything personal about a colleague (performance, pay, health, 1:1s), even if it slipped through.

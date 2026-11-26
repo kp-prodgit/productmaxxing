@@ -13,7 +13,8 @@ import { failStreaks } from "./failures.js";
 import { inlineSources, sourcesHere } from "../run/evidence.js";
 import { packSources } from "../run/packs.js";
 import { storeFor } from "../run/share.js";
-import { loadSkill } from "../core/skills.js";
+import { loadSkill, verifySkill } from "../core/skills.js";
+import { webOn } from "../core/config.js";
 import { skillMeta } from "../core/skillcheck.js";
 
 export interface PullResult {
@@ -29,32 +30,46 @@ export function isDryRunDefault(ctx: Ctx): boolean {
 }
 
 /**
+ * What a kind of work's drafts must cite (RUN-3, RUN-6): its skill's minimum number of citations, and whether its runs
+ * search the web, whose `[web: <url>, <date>]` citations count toward that minimum too. A web run gets the web only for
+ * a team or bundled skill, or an org skill the team pinned, as `runTask` decides.
+ */
+export async function citationNeed(ctx: Pick<Ctx, "team" | "personal">, category: string): Promise<{ min: number; web: boolean }> {
+  const name = ctx.team.categories[category]?.skill;
+  const skill = name ? await loadSkill(ctx.personal.repoPath, name).catch(() => null) : null;
+  let min = 0;
+  try { min = skill ? skillMeta(skill.text).minCitations ?? 0 : 0; } catch {}
+  const web = !!skill && webOn(ctx.team, category) && (skill.source !== "org" || verifySkill(ctx.team.skills, name!, skill).allowlisted);
+  return { min, web };
+}
+
+/** "a competitive-analysis draft must cite its sources 2 times" (RUN-3). */
+export const citeText = (category: string, min: number) => `a ${category} draft must cite its sources ${min === 1 ? "once" : `${min} times`}`;
+
+/**
  * Ready tasks this Mac can't draft (RUN-3): a kind of work that must cite sources, and none of the task's sources
  * quotable here. Their quotes are on the Mac that proposed them, which runs them; nobody spends a run to fail. A task
- * whose quotes the team has in the repo (RUN-5, an evidence pack) runs on any Mac.
+ * whose quotes the team has in the repo (RUN-5, an evidence pack) runs on any Mac. R16 (RUN-6): so does one of a kind
+ * whose runs search the web, since its draft's web citations count toward the minimum.
  */
 export async function citationGaps(ctx: Ctx, tasks: Task[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const store = storeFor(ctx);
   const packed = async (t: Task) => packSources(await store.read(t.identifier).catch(() => null), t.sources).length > 0;
-  const mins = new Map<string, number>();
-  const minFor = async (category: string) => {
-    if (!mins.has(category)) {
-      const skill = ctx.team.categories[category]?.skill;
-      const meta = skill ? await loadSkill(ctx.personal.repoPath, skill).then((s) => skillMeta(s.text), () => null) : null;
-      mins.set(category, meta?.minCitations ?? 0);
-    }
-    return mins.get(category)!;
+  const needs = new Map<string, Promise<{ min: number; web: boolean }>>();
+  const needFor = (category: string) => {
+    if (!needs.has(category)) needs.set(category, citationNeed(ctx, category));
+    return needs.get(category)!;
   };
   for (const t of tasks) {
     if (t.status !== "ready" || !t.category || !ctx.team.categories[t.category]) continue;
-    const min = await minFor(t.category);
-    if (!min) continue;
+    const { min, web } = await needFor(t.category);
+    if (!min || web) continue;
     const here = await sourcesHere(t);
     // The skill counts citations, not sources: one source cited twice is enough for a minimum of 2.
     if (inlineSources(t).length || here.ids.length) continue;
     if (!here.receipt && t.sources.length && (await packed(t))) continue;
-    const need = `a ${t.category} draft must cite its sources ${min === 1 ? "once" : `${min} times`}`;
+    const need = citeText(t.category, min);
     out.set(t.id, !t.sources.length ? `it names no sources, and ${need}`
       : !here.receipt ? `its sources are quoted only on the Mac that suggested it, and ${need}`
       : `none of its sources are in its synthesis run on this Mac, and ${need}`);

@@ -41,4 +41,4 @@ that deactivates a user in an Okta sandbox and checks they're removed from two w
 ## Open questions
 
 - Pilot price and length. **PM decides**.
-- Do we need a security questionnaire ready before the pilot?
+- Do we need a security questionnaire ready before the pilot? — ask: the customer's security owner

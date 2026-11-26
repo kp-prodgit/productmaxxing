@@ -37,7 +37,11 @@ Write `outputs/competitive-analysis/<task id>.md`:
    removed), what switching costs them (migration, retraining, a new vendor review), and whether we clear the bar.
    Cite source IDs; mark anything uncited as *Assumption:*.
 5. `## Implications`: 3–5 bullets, each with source IDs: what this means for our product or positioning. Decisions
-   are options marked **PM decides**.
+   are options marked **PM decides**. Questions the sources can't answer go after the bullets, under a line
+   `Open questions:`. Right after each question, say who or what answers it: `— ask: <role>` when one person can answer
+   it (`Who signs the order? — ask: the account lead`), or `— needs: <kind of work>` when it takes research or a
+   document (`— needs: research`, `— needs: a validation plan`). Name a role, never a person. When the draft is
+   accepted, each ask becomes the PM's to-do and each need a suggested task.
 
 Then reply with one line for the tracker comment.
 
@@ -50,6 +54,7 @@ Then reply with one line for the tracker comment.
 - Decisions (go or no-go, price, scope, kill) are options with a recommendation, marked **PM decides**. Never write them as settled.
 - No market figure, price or forecast without a source or a stated method. Use ranges.
 - End with the decision the draft supports or the questions blocking it.
+- No names other than redaction placeholders. Write each person as their role and company: "Globex's brand lead", "our head of product", "a Globex admin". Never a person's name, even one the task, a source or `memory/` gives. In your own sentences a role reads better than a placeholder like `[PERSON-2, Globex]`: keep placeholders for quotes, or for someone the sources give no role or company for.
 
 ## Quality checklist
 
@@ -60,3 +65,4 @@ Then reply with one line for the tracker comment.
 - [ ] The switching bar says plainly whether we clear it.
 - [ ] Follows the drafting rules.
 - [ ] Nothing external-facing: this is an internal draft (REV-1).
+- [ ] No names other than redaction placeholders: people appear as their role and company, never by name.

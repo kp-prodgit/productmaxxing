@@ -978,7 +978,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return true;
   }
   // Data refreshes never redraw under the PM's hands: not while they type in a field.
-  function refresh() { if (typing()) { renderLater = true; drawChrome(); return; } render(); }
+  // A read that lands after the page closed has nothing to draw into.
+  function refresh() { if (!document) return; if (typing()) { renderLater = true; drawChrome(); return; } render(); }
   document.addEventListener("focusout", () => setTimeout(() => { if (renderLater && !typing()) { renderLater = false; render(); } }, 0));
   function lostPairing(quiet) {
     setKey(null); D = null; conn = { state: "connect", msg: quiet ? "" : "This page was disconnected from PMX. Connect it again.", code: null };
@@ -1228,13 +1229,15 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const teamPrs = () => (D && D.pendingTeam) || [];
   // N1: a kind of work synthesis suggestions wait for; once its team change is sent, Team changes shows it instead.
   const kindsOff = () => ((D && D.kindsWaiting) || []).filter((k) => !k.pending && shown(`kd:${k.kind}`));
+  // JOB-11: a kind of work the team has that this PM never chose about; their agent skips its Ready tasks until they do.
+  const kindsChoose = () => ((D && D.kindsToChoose) || []).filter((k) => shown(`kc:${k.kind}`));
   // Needs you's card from the setup checklist: its next step, only when PMX can't do its job without it (SETUP-1).
   const setupNext = () => { const s = D && D.setup; return s && s.next && s.next.required !== false ? s.next : null; };
   // BOARD-11: PMX Engine, where PMX on this Mac finds it: read live as labels, at most once a minute, and kept nowhere.
   const engine = () => (D && D.engine) || null;
   const engineMine = () => ((engine() && engine().waiting) || []).filter((w) => w.who === "you");
   // Every card Needs you shows. The same rules as needsYou() in src/flow/needs.ts, so `pmx status` agrees with the badge.
-  const needsCount = () => (D ? drafts().length + stoppedList().length + props().length + waiting().length + fixes().length + (setupNext() ? 1 : 0) + teamPrs().length + kindsOff().length + engineMine().length : 0);
+  const needsCount = () => (D ? drafts().length + stoppedList().length + props().length + waiting().length + fixes().length + (setupNext() ? 1 : 0) + kindsChoose().length + teamPrs().length + kindsOff().length + engineMine().length : 0);
   // The review cap (PULL-4) counts this PM's own drafts; a board from before 0.36.0 doesn't say whose, so every draft counts.
   const capReached = () => { const c = D && D.rules && D.rules.reviewCap; return !!c && drafts().filter((d) => d.mine !== false).length >= c; };
   const isDueToday = (t) => !!t.due && diffDays(t.due) <= 0;
@@ -1327,10 +1330,12 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     return row({
       key: k, open: true, title: p.title,
       ck: ckBtn("prop", now ? `Start now: ${p.title}` : `Approve: ${p.title}`, () => approve([p], now)),
-      meta: [chip(`${catName(p.category)} · ${p.size}`, "k"), p.follows ? chip(`Follows ${p.follows}`) : null, p.theme ? chip(`Theme: ${p.theme}`) : null, h("span", null, p.from),
-        waitsFor("You", now ? "start it now, later or drop it" : "approve or drop it"), age(p.at),
+      meta: [chip(`${catName(p.category)} · ${p.size}`, "k"), p.follows ? chip(`Follows ${p.follows}`) : null, p.fills ? chip(`Gives ${p.fills} its sources`) : null, p.theme ? chip(`Theme: ${p.theme}`) : null, h("span", null, p.from),
+        waitsFor("You", p.held ? "drop it or keep it as your to-do" : now ? "start it now, later or drop it" : "approve or drop it"), age(p.at),
         h("button", { type: "button", class: "link", "aria-expanded": open ? "true" : "false", onclick: () => { open ? S.why.delete(k) : S.why.add(k); render(); } }, open ? "Hide why" : "Why?")],
-      extra: open ? h("div", { class: "why" }, h("b", null, "What Linear would get: "), p.description, themePick(p)) : null,
+      // R3: approving checks a task again; one that couldn't go says why, and stays here.
+      extra: [p.held ? h("p", { class: "small", id: `held-${p.id}` }, `Not sent: ${p.held}.`) : null,
+        open ? h("div", { class: "why" }, h("b", null, "What Linear would get: "), p.description, themePick(p)) : null],
       acts: now
         ? [btn("Start now", { cls: "sm pri", title: "Approve it and make it Ready for agents", on: () => approve([p], true) }), btn("Later", { cls: "sm", title: "Approve it to your team's backlog, for later", on: () => approve([p], false) }), btn("Drop", { cls: "sm sa", on: () => drop(p) })]
         : [btn("Approve", { cls: "sm pri", on: () => approve([p], false) }), btn("Drop", { cls: "sm sa", on: () => drop(p) })],
@@ -1356,6 +1361,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   // FOLLOW-1: a follow-up's details say which draft left it, how many more of its questions stayed there, and link to it.
   function followsPart(x) {
     const f = x.followUp || { path: "", draft: null, task: null, more: 0 };
+    // R6: synthesis's own follow-up to work the team finished: new work the sources raised since.
+    if (f.done) return h("div", { id: "follows" }, h("div", { class: "lbl" }, "Follows"),
+      h("p", null, `${x.follows} was done ${/^(?:Today|Yesterday)$/.test(dayLabel(f.done)) ? low(dayLabel(f.done)) : `on ${dayLabel(f.done)}`}. Your sources raised this since, as new work after it. Approve it to give it to the team; drop it if ${x.follows} already covers it.`),
+      f.task ? h("div", { class: "links" }, ext(f.task, `Open ${x.follows} in Linear`)) : null);
     const more = f.more ? ` ${f.more} more ${f.more === 1 ? "question stays" : "questions stay"} in the draft.` : "";
     return h("div", { id: "follows" }, h("div", { class: "lbl" }, "Follows"),
       h("p", null, `${x.follows}: a question its accepted draft left open.${more}${f.path ? ` The draft is in your team repo at ${f.path}.` : ""} Approve it to give it to the team; drop it if it doesn't need doing.`),
@@ -1414,8 +1423,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       run: () => act("stopped", { identifier: t.identifier, action }),
     });
   }
-  function drop(p) {
-    later([`p:${p.id}`], { msg: `Dropped "${p.title}". Nothing reaches Linear.`, label: "Couldn't drop it", next: true, run: () => act("proposals", { action: "drop", ids: [p.id] }) });
+  // R6: a reason, when the PM gave one in the task's details, goes with the drop on this Mac; pmx explain shows it.
+  function drop(p, reason) {
+    const why = (reason || "").trim().slice(0, 300);
+    later([`p:${p.id}`], { msg: `Dropped "${p.title}". Nothing reaches Linear.`, label: "Couldn't drop it", next: true, run: () => act("proposals", why ? { action: "drop", ids: [p.id], reason: why } : { action: "drop", ids: [p.id] }) });
   }
   function complete(t) {
     later([`t:${t.id}`], { msg: `Done: ${t.text}`, label: "Couldn't mark it done", next: true, run: () => act("todo", { id: t.id }), reopen: { id: t.id, due: t.due, when: t.when, reopen: true } });
@@ -1595,6 +1606,12 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
             extra: [h("p", { class: "small" }, su.page), stepFix(su), h("span", { class: "fixacts" }, btn("See every step", { cls: "sm", on: () => go("health", { tab: "setup" }) }))],
           }) : null,
         ].filter(Boolean)),
+        // JOB-11: the same personal change Settings → Kinds of work saves. Keep off is a choice too, so the card goes for good.
+        group("Kinds of work to choose", kindsChoose().map((k) => row({
+          key: `kc:${k.kind}`, title: k.text, ck: sysMark("bot"),
+          meta: [waitsFor("You", "turn it on for your agent, or keep it off; only your agent changes")],
+          acts: [btn("Turn on", { cls: "sm pri", fk: `kc-on-${k.kind}`, on: (ev) => chooseKind(k, true, ev.currentTarget) }), btn("Keep off", { cls: "sm", fk: `kc-off-${k.kind}`, on: (ev) => chooseKind(k, false, ev.currentTarget) })],
+        })), { note: "Your team has these kinds of work, and you haven't said whether your agent takes them, so it skips their tasks. Settings → Kinds of work changes this any time." }),
         // N1: the same team change `pmx jobs add <kind>` sends: a pull request a teammate approves, never applied here.
         group("Kinds of work to turn on", kindsOff().map((k) => row({
           key: `kd:${k.kind}`, title: k.text, ck: sysMark("pr"),
@@ -1804,17 +1821,21 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       parts = [top("New task · not in Linear yet"),
         h("div", { class: "sb" }, h("h3", { id: "sheet-h", tabindex: "-1" }, x.title),
           h("div", { class: "chips" }, chip(catName(x.category), "k"), chip(`Size ${x.size}`), x.follows ? chip(`Follows ${x.follows}`) : null),
+          x.held ? h("div", null, h("div", { class: "lbl" }, "Not sent"), h("p", null, `${x.held}. Drop it, or keep it as your to-do.`)) : null,
           h("div", null, h("div", { class: "lbl" }, "What Linear would get"), h("p", { class: "desc" }, x.description)),
           x.follows ? followsPart(x) : null,
+          // R16: approving it gives an open task with no sources this description, instead of making a second task.
+          x.fills ? h("div", { id: "fills" }, h("div", { class: "lbl" }, `Gives ${x.fills} its sources`), h("p", null, `${x.fills} is open in Linear but names no sources, so agents can't draft it. Approving this gives ${x.fills} this description and its sources in place of its own; its title, kind and size stay.`)) : null,
           h("div", null, h("div", { class: "lbl" }, "Heard in"), h("p", null, x.from)),
           x.changed ? h("div", null, h("div", { class: "lbl" }, "Changed since it was suggested"), h("p", null, x.changed)) : null,
           h("div", { class: "two" },
             h("div", null, h("div", { class: "lbl" }, "Linear gets"), h("ul", null, h("li", null, "This title and summary"), h("li", null, "Kind of work and size"), h("li", null, "How many sources, and their dates"))),
-            h("div", null, h("div", { class: "lbl" }, "Never gets"), h("ul", null, h("li", null, "Transcripts or quotes"), h("li", null, "Meeting titles"), h("li", null, "Who was in the meeting"))))),
+            h("div", null, h("div", { class: "lbl" }, "Never gets"), h("ul", null, h("li", null, "Transcripts or quotes"), h("li", null, "Meeting titles"), h("li", null, "Who was in the meeting")))),
+          h("label", { class: "swl" }, "Why drop it (optional)", h("input", { class: "in", type: "text", id: "drop-why", "data-fk": `dropwhy-${k}`, maxlength: 300, placeholder: "Like: done as PMX-5", value: notes[k] || "", oninput: (ev) => (notes[k] = ev.target.value) }))),
         h("div", { class: "foot" }, startOn()
           ? [btn("Start now", { cls: "pri", on: () => { closeSheet(); approve([x], true); } }), btn("Later", { on: () => { closeSheet(); approve([x], false); } })]
           : btn("Approve and send", { cls: "pri", on: () => { closeSheet(); approve([x], false); } }),
-          btn("Keep as my to-do", { on: () => { closeSheet(); moveTo(x.id, "private"); } }), btn("Drop", { on: () => { closeSheet(); drop(x); } }))];
+          btn("Keep as my to-do", { on: () => { closeSheet(); moveTo(x.id, "private"); } }), btn("Drop", { on: () => { closeSheet(); drop(x, notes[k]); } }))];
     } else {
       const ta = h("textarea", { class: "in", rows: 3, id: "sheet-note", "data-fk": `sheetnote-${k}`, maxlength: 2000, placeholder: "For a redo or reject: what should change, or why not", "aria-label": `Note for ${x.identifier}`, value: notes[k] || "", oninput: (ev) => (notes[k] = ev.target.value) });
       const need = (v) => { if (!(notes[k] || "").trim()) { ta.focus(); toast(v === "redo" ? "Add a note first, so the agent knows what to change." : "Add a note first, so the team knows why."); return; } closeSheet(); decide(x, v); };
@@ -2184,6 +2205,18 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   }
   // BOARD-9: team changes in a repo with no remote are a local branch ("branch:<name>"), applied from here.
   const localBranch = (u) => (u && u.startsWith("branch:") ? u.slice(7) : null);
+  // JOB-11: this PM's own choice for a kind of work their team has, as Settings → Kinds of work saves it.
+  async function chooseKind(k, on, el) {
+    if (el) busyBtn(el, "Saving…");
+    try {
+      await act("changes", { changes: [{ kind: "category", name: k.kind, accepted: on }], confirmLoosening: false });
+      held.add(`kc:${k.kind}`);
+      toast(on ? `Your agent takes ${k.words} from its next run.` : `Your agent won't take ${k.words}, and PMX won't ask again. Settings → Kinds of work changes this any time.`);
+      await load();
+      held.delete(`kc:${k.kind}`);
+      render();
+    } catch (e) { render(); toast(`It couldn't be saved: ${e.message}`, { error: true }); if (e.code === "not_paired") lostPairing(); }
+  }
   async function turnOnKind(k, el) {
     if (el) busyBtn(el, "Sending…");
     try {
@@ -2697,6 +2730,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       lead: "productLead" in r ? r.productLead : undefined,
       // F3: the team's approved internal meeting series; null from a PMX too old to have the setting, and then the page doesn't offer it.
       series: Array.isArray(r.meetingSeries) ? [...r.meetingSeries] : null,
+      // F5: the team's investors' and other confidential contacts' domains; null where the page doesn't offer the setting.
+      confDomains: Array.isArray(r.confidentialDomains) ? [...r.confidentialDomains] : null,
     };
     if (!original || JSON.stringify(original) === JSON.stringify(state)) { original = base; state = clone(base); }
     else original = base; // keep the PM's unsaved edits across refreshes
@@ -2709,6 +2744,10 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     for (const [key, kind, scope] of [["teamDomains", "team-domain", "team"], ["myDomains", "my-domain", "me"]]) {
       for (const d of state[key]) if (!original[key].includes(d)) add({ kind, op: "add", value: d }, `Count ${d} as ${scope === "team" ? "your company, for the team" : "your company"}`, scope);
       for (const d of original[key]) if (!state[key].includes(d)) add({ kind, op: "remove", value: d }, `Stop counting ${d} as ${scope === "team" ? "your company, for the team" : "your company"}`, scope, true);
+    }
+    if (state.confDomains && original.confDomains) {
+      for (const d of state.confDomains) if (!original.confDomains.includes(d)) add({ kind: "confidential-domain", op: "add", value: d }, `Hold meetings with ${d} from team work: an investor or other confidential contact`, "team");
+      for (const d of original.confDomains) if (!state.confDomains.includes(d)) add({ kind: "confidential-domain", op: "remove", value: d }, `Stop holding meetings with ${d} from team work`, "team", true);
     }
     for (const [key, lst] of [["people", "person"], ["titles", "title"], ["channels", "channel"]]) {
       for (const v of state[key]) if (!original[key].includes(v)) add({ kind: "never", list: lst, op: "add", value: v }, `Never read ${lst} "${v}"`, "me");
@@ -2756,7 +2795,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     const togg = (key) => { state[key] = c.op === "add" ? state[key].filter((x) => x !== c.value) : [...state[key], c.value]; };
     const back = (key) => { const o = original[key].find((x) => cid(x.connector) === cid(c.connector)); state[key] = state[key].filter((x) => cid(x.connector) !== cid(c.connector)); if (o) state[key].push(clone(o)); };
     ({
-      route: () => (state.routes[c.source] = original.routes[c.source]), "team-domain": () => togg("teamDomains"), "my-domain": () => togg("myDomains"),
+      route: () => (state.routes[c.source] = original.routes[c.source]), "team-domain": () => togg("teamDomains"), "my-domain": () => togg("myDomains"), "confidential-domain": () => togg("confDomains"),
       never: () => togg({ person: "people", title: "titles", channel: "channels" }[c.list]),
       size: () => { state.minutes[c.size] = original.minutes[c.size]; state.usd[c.size] = original.usd[c.size]; for (const k of [`min-${c.size}`, `usd-${c.size}`]) delete invalid[k]; },
       rubric: () => { state.rubric[c.category][c.size] = original.rubric[c.category][c.size]; delete invalid[`rub-${c.category}-${c.size}`]; },
@@ -3055,7 +3094,16 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       }, { label: key === "teamDomains" ? "Add a company domain for the team" : "Add one of your own domains", btn: "Add domain" });
       return [teamWaiting(),
         card("Your company", "People from these domains count as teammates, for everyone on the team.", h("div", { class: "sr" }, h("div", { class: "wide" }, chipList("teamDomains")), dom("teamDomains")), { badge: scopeChip("team") }),
-        card("Your extra domains", "Just you, on this Mac: other domains that count as your company.", h("div", { class: "sr" }, h("div", { class: "wide" }, chipList("myDomains")), dom("myDomains")), { badge: scopeChip("me") })];
+        card("Your extra domains", "Just you, on this Mac: other domains that count as your company.", h("div", { class: "sr" }, h("div", { class: "wide" }, chipList("myDomains")), dom("myDomains")), { badge: scopeChip("me") }),
+        // F5: investors and other confidential contacts. Their meetings never feed team tasks; your own to-dos may still use them.
+        state.confDomains ? card("Investors and other confidential contacts", "Meetings, emails and threads with someone from these domains never reach team tasks, shared quotes or agents, and their names never reach Linear. Fundraising meetings are held anyway, by their title and what's said.",
+          h("div", { class: "sr" }, h("div", { class: "wide" }, chipList("confDomains")), addBox("add-confDomains", "Add a domain, like initech-ventures.example", (v) => {
+            const d = v.toLowerCase().replace(/^.*@/, "");
+            if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) return "That isn't a domain like initech-ventures.example.";
+            if (state.confDomains.includes(d)) return "Already listed.";
+            if (state.teamDomains.includes(d)) return "That's one of your company's own domains.";
+            state.confDomains.push(d); return null;
+          }, { label: "Add an investor's or other confidential contact's domain", btn: "Add domain" })), { badge: scopeChip("team") }) : null];
     }],
     dnr: ["Do-not-read list", "Meetings, people and channels PMX skips before Claude sees anything. Only you see this list, and only on this Mac.", () => {
       const box = (key, kind, title, sub, ph) => card(title, sub, h("div", { class: "sr" }, h("div", { class: "wide" }, chipList(key)),
@@ -3076,6 +3124,8 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         ["no-external-participant", "Internal-only meetings", "Nobody from outside your company's domains, unless your team approved the meeting's series under Sources"], ["no-company-domain", "Company domain not set", "PMX can't tell colleagues from customers, so it keeps everything private"],
         ["unknown-participants", "No participant list", "PMX can't tell who was there"], ["performance", "Performance and HR", "In the title or mentioned twice; a single mention is cut from the text"],
         ["compensation", "Pay and compensation", "In the title or mentioned twice; a single mention is cut from the text"], ["health", "Health and leave", "In the title or mentioned twice; a single mention is cut from the text"],
+        ["fundraising", "Fundraising and investors", "A round, investors, a term sheet or a data room in the title, or mentioned twice; a single mention is cut from the text"],
+        ["confidential", "Investors and other confidential contacts", "Someone from a domain your team listed under Who counts as a customer"],
         ["never-ingest", "Your do-not-read list", "A person, title or channel you listed"], ["source-off", "Sources you turned off", "A source set to Off, or to My to-dos only for team tasks"]];
       const total = (D.held || []).reduce((a, x) => a + x.n, 0);
       return card("Kept private", `${plural(total, "meeting")} kept private ${winText()}. These can't be edited or turned off.`, FIXED.map(([rule, name, how]) => h("div", { class: "sr locked" }, ic("lock"),
@@ -3121,7 +3171,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
         const c = cats.find((x) => x.id === k), req = !!state.required[k], on = req || !!state.accept[k];
         const rate = c && c.reviews.rate != null ? `Accepted ${Math.round(c.reviews.rate * 100)}%` : "No reviews yet";
         const broken = c && c.envProblems && c.envProblems.length ? c.envProblems : null;
-        const status = broken ? pill("Won't run", "bad") : c && c.paused ? pill(pauseLabel(c.paused), "bad") : pill(on ? "Taking work" : "Skipping", on ? "" : "off");
+        // JOB-11: a kind this PM never chose about says so, until they turn it on or off.
+        const unchosen = !on && ((D.rules && D.rules.categories) || []).some((x) => x.name === k && x.toChoose);
+        const status = broken ? pill("Won't run", "bad") : c && c.paused ? pill(pauseLabel(c.paused), "bad") : unchosen ? pill("Not chosen yet", "warn") : pill(on ? "Taking work" : "Skipping", on ? "" : "off");
         const pend = req !== original.required[k] ? chip("Not saved yet", "new") : on !== (original.required[k] || original.accept[k]) ? chip("Not saved yet", "new") : null;
         const ctlOn = req
           ? h("span", { class: "swl", "data-fk": `kind-req-${k}` }, ic("lock"), "Required by your team")
@@ -3348,7 +3400,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       h("div", { class: "mf" }, btn(ch.length ? "Keep editing" : "Done", { cls: "ghost", on: () => closeModal() }), ch.length ? save : null));
   }
   const PERSONAL = ["routes", "myDomains", "people", "titles", "channels", "budget", "accept", "digestDay", "digestDm", "calls", "todosLinear"];
-  const TEAMKEYS = ["teamDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth", "required", "startNow", "lead"];
+  const TEAMKEYS = ["teamDomains", "confDomains", "minutes", "usd", "rubric", "reviewCap", "inputs", "synth", "required", "startNow", "lead"];
   async function apply() {
     if (applying) return;
     const ch = diff(), loose = ch.some((c) => c.loosens), before = clone(original);

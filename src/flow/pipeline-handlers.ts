@@ -1,10 +1,10 @@
 import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { decide, loadQueue, type Verdict } from "../review/queue.js";
-import { approvedText, approveProposals, dropProposals, setProposalTheme } from "../synth/proposals.js";
+import { approvedText, approveProposals, dropProposals, heldText, setProposalTheme } from "../synth/proposals.js";
 import { startsNow } from "../core/config.js";
 import { dropStopped, retryStopped } from "../pull/stopped.js";
-import { applyPersonal, checkChange, describe, isTeamChange, loosens, proposeTeamChanges, saveTakes } from "./actions.js";
+import { applyPersonal, checkChange, describe, isTeamChange, loosens, proposeTeamChanges, saveTakes, SETTINGS_BRANCH } from "./actions.js";
 import { checkNeverIngest, whatIf } from "./edit.js";
 import { loadPipeline } from "./pipeline-load.js";
 import { forgetTeamPr, rememberTeamPr } from "./team-prs.js";
@@ -71,15 +71,17 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
   };
   return {
     data: (hours: number) => loadPipeline(ctx, { level: "local", hours, keychain: ctx.keychain, engine: deps.engine }),
-    async proposals(action: "approve" | "start" | "drop", ids: string[]) {
+    async proposals(action: "approve" | "start" | "drop", ids: string[], reason?: string) {
       if (action === "drop") {
-        const r = await dropProposals(ids, ctx.now());
-        return r.dropped.length ? `Dropped ${r.dropped.map((p) => `"${p.title}"`).join(", ")}.` : "Nothing to drop.";
+        // R6: the PM's reason, when the page's Drop gave one, goes with the drop in its run's receipt.
+        const r = await dropProposals(ids, ctx.now(), reason);
+        return r.dropped.length ? `Dropped ${r.dropped.map((p) => `"${p.title}"`).join(", ")}${reason?.trim() ? `: ${reason.trim()}` : ""}.` : "Nothing to drop.";
       }
       // APPROVE-3: Start now is the PM's approval plus Ready; Later (approve) sends the task to the pool, as before.
       const start = action === "start";
       const r = await approveProposals(ctx, await services(ctx), ids, { start });
-      return [approvedText(r.posted, { start, startNow: startsNow(ctx.team) }), ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.unthemed.map((u) => `${u}.`), ...r.notShared].filter(Boolean).join(" ") || "Nothing to approve.";
+      // R16: a task that gave an open task its sources is said in `checked`; that task stays where it is.
+      return [approvedText(r.posted.filter((p) => !p.filled), { start, startNow: startsNow(ctx.team) }), ...r.checked.map((c) => `${c}.`), ...r.duplicates.map((d) => `Not sent: ${d}.`), ...r.held.map((h) => `Not sent: ${heldText(h)}.`), ...r.unthemed.map((u) => `${u}.`), ...r.notShared].filter(Boolean).join(" ") || "Nothing to approve.";
     },
     async proposalTheme(id: string, theme: string | null) {
       try {
@@ -101,7 +103,7 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
       let pr: { url: string } | null = null, prError: string | null = null;
       if (team.length) {
         try {
-          const r = await proposeTeamChanges(ctx, team);
+          const r = await proposeTeamChanges(ctx, team, { from: "board" });
           await rememberTeamPr({ id: r.id, url: r.url, at: ctx.now().toISOString(), changes: team.map(describe) });
           pr = { url: r.url };
           // Whoever proposes a kind of work wants their own agent to take it once it merges (JOB-8).
@@ -117,7 +119,7 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
      * branch. Applying it merges it into the PM's checkout, as accepting a pull request would.
      */
     async teamApply(branch: string) {
-      if (!/^pmx\/settings-\d{14}$/.test(branch)) return { status: 400, body: { error: "That isn't a team settings branch from PMX." } };
+      if (!SETTINGS_BRANCH.test(branch)) return { status: 400, body: { error: "That isn't a team settings branch from PMX." } };
       if (await ctx.repo.hasRemote()) return { status: 409, body: { error: "Your team repo has a remote, so this is a pull request: a teammate approves and merges it there." } };
       try {
         await localHost(ctx.repo).accept(branch);
@@ -130,9 +132,10 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
       if (!["accepted", "rejected", "redo"].includes(verdict)) return { status: 400, body: { error: "verdict is accepted, rejected or redo" } };
       const svc = await services(ctx);
       // Any teammate's draft can be decided here, as `pmx review --all` can: the board lists every task in review.
-      const { items, host } = await loadQueue(ctx, svc, { all: true });
+      const { items, host, decided } = await loadQueue(ctx, svc, { all: true });
       const item = items.find((x) => x.task.identifier === identifier);
-      if (!item) return { status: 404, body: { error: `${identifier} isn't waiting for review any more.` } };
+      // R13: decided on another Mac since this Mac's last Linear sync: it says so, and nothing is decided twice.
+      if (!item) return { status: 404, body: { error: decided.find((d) => d.identifier === identifier)?.text ?? `${identifier} isn't waiting for review any more.` } };
       try { return { status: 200, body: { message: await decide(ctx, svc, host, item, verdict as Verdict, { note }) } }; }
       catch (e: any) { return { status: 400, body: { error: e.message } }; }
     },

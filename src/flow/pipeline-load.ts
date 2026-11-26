@@ -12,12 +12,12 @@ import { parseRubric } from "../core/skillcheck.js";
 import { loadSkill, skillInventory } from "../core/skills.js";
 import { loadState } from "../core/state.js";
 import { SIZES, type Size } from "../core/types.js";
-import { followUpsOn, isProductLead, startsNow } from "../core/config.js";
+import { followUpsOn, isProductLead, kindsToChoose, startsNow } from "../core/config.js";
 import { privacyRules } from "../digest/gather.js";
 import { meetingSeries } from "../inputs/inputs.js";
 import { linearAccess } from "../linear/access.js";
 import { readProposals } from "../synth/proposals.js";
-import { heldOverCount, kindLine, kindsWaiting, kindWords } from "../synth/held-over.js";
+import { choiceLine, heldOverCount, kindLine, kindsWaiting, kindWords } from "../synth/held-over.js";
 import { openThemes } from "../synth/themes.js";
 import { loadTodos } from "../todo/todo.js";
 import { kindOf, toTask } from "../tracker/linear.js";
@@ -165,6 +165,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
 
   const rubric = parseRubric((await loadSkill(ctx.personal.repoPath, "pmx-size")).text);
   const cats = Object.keys(ctx.team.categories);
+  const toChoose = kindsToChoose(ctx.personal, ctx.team);
   const ni = ctx.personal.neverIngest;
   const todos = (await loadTodos()).items;
   const local = o.level === "local";
@@ -203,6 +204,11 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     kindsWaiting: local ? (await kindsWaiting(ctx.team).catch(() => [])).map((k) => ({
       ...k, words: kindWords(k.kind), text: kindLine(k), pending: pendingTeam.some((p) => p.changes.some((c) => c.startsWith(`Add PMX's kind of work ${k.kind};`))),
     })) : [],
+    // JOB-11: a kind of work the team has that this PM never chose about, with the Ready tasks its agent skips for it.
+    kindsToChoose: local ? toChoose.map((kind) => {
+      const ready = tasksNow.filter((x) => x.status === "ready" && x.category === kind).length;
+      return { kind, words: kindWords(kind), ready, text: choiceLine({ kind, ready }) };
+    }) : [],
     logbook: local ? buildLogbook({ now, agent: ctx.agent, todos, receipts, runlog: log }) : [],
     boardUrl: ctx.team.board?.url ?? ctx.personal.board?.url ?? null,
     roadmapUrl: ctx.team.roadmap?.url ?? null,
@@ -229,12 +235,14 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
       productLead: ctx.team.productLead ?? null,
       productLeadIsYou: isProductLead(ctx.team, ctx.personal),
       // `accepted` is the PM's own choice; a required kind is taken either way, and stays the PM's choice if the team stops requiring it.
-      categories: cats.map((c) => ({ name: c, accepted: ctx.personal.categories.includes(c), required: !!ctx.team.categories[c]?.required })),
+      categories: cats.map((c) => ({ name: c, accepted: ctx.personal.categories.includes(c), required: !!ctx.team.categories[c]?.required, ...(toChoose.includes(c) ? { toChoose: true } : {}) })),
       reviewCap: ctx.team.reviewQueueCap,
       sizes: Object.fromEntries(SIZES.map((z) => [z, { minutes: ctx.team.sizes[z].minutes, usd: ctx.team.sizes[z].costUsd }])) as Record<Size, { minutes: number; usd: number }>,
       rubric: rubricFor(rubric, cats),
       slackChannels: ctx.team.slackChannels, allowedSources: ctx.team.allowedSources,
       meetingSeries: meetingSeries(ctx.team),
+      // F5: the team's confidential contacts, on this Mac's own page, where team settings are sent from.
+      ...(local ? { confidentialDomains: rules0.confidentialDomains } : {}),
     },
   });
 }

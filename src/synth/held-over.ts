@@ -114,6 +114,24 @@ export async function kindsWaiting(team: { categories: Record<string, unknown> }
   return [...out].map(([kind, n]) => ({ kind, n })).sort((a, b) => b.n - a.n || a.kind.localeCompare(b.kind));
 }
 
+/**
+ * JOB-11: a kind of work the team has that this PM's agent doesn't take and the PM never chose about. "Your team has
+ * decision briefs. Your agent doesn't take them yet; 2 Ready tasks are waiting for that kind of work"
+ */
+export function choiceLine(k: { kind: string; ready: number }): string {
+  const { words, them } = kindsWords([k.kind]);
+  const ready = k.ready ? `; ${k.ready === 1 ? "1 Ready task is" : `${k.ready} Ready tasks are`} waiting for that kind of work` : "";
+  return `Your team has ${words}. Your agent doesn't take ${them} yet${ready}`;
+}
+
+/** Kinds of work in a PM's words, "decision briefs or launch notes", and the pronoun for them ("tracking hygiene" is "it"). */
+export function kindsWords(kinds: string[]): { words: string; them: "it" | "them" } {
+  const all = kinds.map((k) => kindWords(k));
+  const words = all.length > 2 ? `${all.slice(0, -1).join(", ")} or ${all.at(-1)}` : all.join(" or ");
+  const several = kinds.length > 1 || (!!kinds[0] && all[0] !== kindWords(kinds[0], 1).replace(/^an? /, ""));
+  return { words, them: several ? "them" : "it" };
+}
+
 /** "Turn on decision briefs: 3 suggestions are waiting for that kind of work." */
 export function kindLine(k: { kind: string; n: number }): string {
   return `Turn on ${kindWords(k.kind)}: ${k.n === 1 ? "1 suggestion is" : `${k.n} suggestions are`} waiting for that kind of work`;

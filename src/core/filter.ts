@@ -21,21 +21,53 @@ export type HoldReason =
   | "source-off"
   | "unknown-participants"
   | "place-not-approved"
-  | "not-attended";
+  | "not-attended"
+  | "fundraising"
+  | "confidential";
 
-type Topic = "performance" | "compensation" | "health" | "hiring" | "one-on-one";
+type Topic = "performance" | "compensation" | "health" | "hiring" | "one-on-one" | "fundraising";
 
 /**
  * One fixed topic rule. A passage is cut when it matches a pattern, unless that match sits inside one of the
  * rule's `notWhen` contexts: ordinary product talk that happens to use the same words (F1, 2026-11-25). An
- * exception is always narrower than the pattern it spares, so when in doubt the passage is still cut.
+ * exception is always narrower than the pattern it spares, so when in doubt the passage is still cut. `cased`:
+ * patterns matched in their own case only ("Series B", "VCs"), where the case tells them apart.
  */
 export interface TopicRule {
   label: string;
   examples: string[];
   patterns: string[];
+  cased?: string[];
   notWhen?: string[];
 }
+
+/**
+ * Fundraising (F14, F5): investors, a round, Series A/B/…, valuation, a term sheet, dilution, the cap table, the option
+ * pool, a raise, a data room, an investor update, due diligence for a raise. Business-confidential even when no number
+ * goes with them. One list for the privacy filter (a meeting about it is held from team work, a passage is cut) and the
+ * tracker guard (`src/core/tracker-text.ts`: no sentence about it reaches Linear). "Investment" on its own is ordinary
+ * talk ("a big investment for the team"), so it isn't on it.
+ */
+export const FUNDRAISING_WORDS: string[] = [
+  "\\binvestors?('s|s')?\\b", "\\bventure (capital(ists?)?|firms?|funds?|partners?|backed)\\b", "\\bangel (investors?|rounds?|checks?)\\b",
+  "\\b(seed|pre-seed|bridge|funding|fundraising|financing|investment|equity|priced|extension|growth) rounds?\\b", "\\bnext round\\b(?! of)",
+  "\\brounds? of (funding|financing|investment)\\b",
+  "\\bseries[- ][a-h][- ]?(round|funding|raise|deck|extension|lead|investors?|term)",
+  "\\bfund-?rais\\w*", "\\bfund rais\\w*",
+  "\\bvaluations?\\b", "\\bpre-money\\b", "\\bpost-money\\b",
+  "\\bterm ?sheets?\\b", "(?<!brand )\\bdilution\\b", "\\bdilutive\\b", "\\banti-dilution\\b",
+  "\\bcap tables?\\b", "\\boption pools?\\b",
+  "\\b(raise|raises|raising|raised) (a |an |our |the |their |its |new |more |another )?(round|capital|funds|funding|money|series)\\b",
+  "\\b(raise|raises|raising|raised) (us)?[$€£]\\s?\\d[\\d.,]*\\s?(k|m|mm|bn|b|million|billion)?\\b",
+  "\\b(our|the|this|next|upcoming|last) raise\\b",
+  "\\blead investors?\\b",
+  // F5 (end-to-end test 2026-11-26): what a raise is run with.
+  "\\bdata ?rooms?\\b", "\\binvestor (updates?|letters?|relations|meetings?|calls?|decks?)\\b",
+  "\\b(investor|investors'|vc|funding|financing|fundraising) (due )?diligence\\b",
+  "\\bdue diligence (for|on|ahead of|before) (the |our |a |an |this |next |their )?(round|raise|series [a-h]|investment|financing|funding)\\b",
+];
+/** Fundraising words whose case tells them apart: "Series B" (not a series of tests), "VCs", an "IPO". */
+export const FUNDRAISING_CASED: string[] = ["\\bSeries [A-H]\\b", "\\bVCs?\\b", "\\bIPOs?\\b"];
 
 /** Things, not people, that "underperform": a model, a page, a campaign. Used only right before the verb. */
 const THINGS =
@@ -116,6 +148,24 @@ export const TOPIC_RULES: Record<Topic, TopicRule> = {
       "\\b1[:-]1\\s*(,|/|and|or|to|vs\\.?|&)\\s*\\d+\\s*[:x]\\s*\\d+",
     ],
   },
+  // F5: team work never reads the company's fundraising. Weighed like hiring and pay: a title about it, or two or more
+  // passages, hold the whole meeting from team work; one passage is cut and the rest of the call is used. It isn't about
+  // a person, so only its sentence goes (and a next one that gives the figures), never the turns after it. The PM's
+  // own to-dos may read it (TODO-2): they never leave the Mac.
+  fundraising: {
+    label: "Fundraising and investors",
+    examples: ["investors", "Series B", "funding round", "term sheet", "valuation", "cap table", "data room", "investor update", "due diligence for the round"],
+    patterns: FUNDRAISING_WORDS,
+    cased: FUNDRAISING_CASED,
+    notWhen: [
+      // What a product values, not what the company is worth: "the asset valuation report", "a valuation API".
+      "\\b(asset|assets|property|properties|home|house|real estate|inventory|vehicle|car|land|collateral|portfolio|stock|bond|automated|instant)\\s+valuations?\\b",
+      "\\bvaluations?\\s+(report|feature|api|engine|tool|model|module|page|screen|dashboard|workflow|service|widget|export|field|column)s?\\b",
+      // A product's own investors, for a team whose customers serve them: "the investor portal", "retail investors".
+      "\\binvestors?('s)?\\s+(portal|dashboard|app|onboarding|reporting|report|statement|account|profile|login|document|kyc|accreditation|view|tab|page|screen|feature)s?\\b",
+      "\\b(retail|individual|accredited|end)\\s+investors?\\b",
+    ],
+  },
 };
 
 /** A compiled topic rule. `all` lists its matches that no `notWhen` context spares. */
@@ -132,15 +182,17 @@ const straight = (s: string) => s.replace(/[‘’]/g, "'");
 
 function compile(r: TopicRule): TopicMatcher {
   const re = new RegExp(`\\b(${r.patterns.join("|")})\\b`, "gi");
+  const cased = r.cased?.length ? new RegExp(`(${r.cased.join("|")})`, "g") : null;
   const nots = (r.notWhen ?? []).map((p) => new RegExp(p, "gi"));
   const all = (raw: string) => {
     const text = straight(raw);
-    const found = [...text.matchAll(re)];
+    const found = [...text.matchAll(re), ...(cased ? text.matchAll(cased) : [])].sort((a, b) => a.index! - b.index!);
     if (!found.length || !nots.length) return found;
     const spared = nots.flatMap((n) => [...text.matchAll(n)].map((x) => [x.index!, x.index! + x[0].length] as const));
     return found.filter((m) => !spared.some(([a, b]) => a < m.index! + m[0].length && b > m.index!));
   };
-  return { source: [re.source, ...nots.map((n) => `-${n.source}`)].join(" "), all, exec: (t) => all(t)[0] ?? null, test: (t) => all(t).length > 0 };
+  const source = [re.source, ...(cased ? [`=${cased.source}`] : []), ...nots.map((n) => `-${n.source}`)].join(" ");
+  return { source, all, exec: (t) => all(t)[0] ?? null, test: (t) => all(t).length > 0 };
 }
 
 export const TOPICS = Object.fromEntries(Object.entries(TOPIC_RULES).map(([k, r]) => [k, compile(r)])) as Record<Topic, TopicMatcher>;
@@ -159,6 +211,8 @@ export const HOLD_LABELS: Record<HoldReason | "all-passages-held", string> = {
   "unknown-participants": "No participant list",
   "place-not-approved": "A channel your team hasn't approved",
   "not-attended": "A meeting you weren't in",
+  fundraising: "Fundraising and investors",
+  confidential: "An investor or other confidential contact",
   "all-passages-held": "Every passage was cut",
 };
 
@@ -197,6 +251,16 @@ export interface FilterRules {
    * and every other rule still applies to it: a held title, a 1:1, the do-not-read list and the topic screen win.
    */
   meetingSeries?: string[];
+  /**
+   * F5: the team's `confidentialDomains`: investors, an acquirer, outside counsel. A meeting, email or thread with
+   * someone from one, or whose title names one, is held from team work like a 1:1, and a passage that names one is cut.
+   */
+  confidentialDomains?: string[];
+  /**
+   * Individual scope only (TODO-2): fundraising and the team's confidential contacts may be read for the PM's own
+   * to-dos, which never leave their Mac. Team work holds them (F5).
+   */
+  allowConfidential?: boolean;
 }
 
 /** A title or a series pattern as the series rule compares them: lower case, accents and punctuation gone. */
@@ -214,6 +278,8 @@ export const sourceOf = (item: Pick<SignalItem, "kind" | "origin">) => (item.kin
 
 /** Mail providers anyone can sign up with: never a company's own domain. */
 const PUBLIC_MAIL = new Set(["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "me.com", "mac.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "fastmail.com"]);
+/** Whether a domain is a mail provider anyone can sign up with, so it can name no one company. */
+export const publicMail = (domain: string): boolean => PUBLIC_MAIL.has(domain.toLowerCase());
 
 /** Turns "@Acme.com", "https://acme.com" or "pm@acme.com" into "acme.com". Null for anything else. */
 export function cleanDomain(s: string): string | null {
@@ -245,6 +311,101 @@ export function domainLabel(domain: string): string {
 export function companyDomains(teamDomains: string[], own: { companyDomains?: string[] | null; emails?: string[] | null } = {}): string[] {
   const fromEmails = (own.emails ?? []).filter((e) => e.includes("@")).map(cleanDomain).filter((d): d is string => !!d && !PUBLIC_MAIL.has(d));
   return [...new Set([...teamDomains, ...(own.companyDomains ?? [])].map(cleanDomain).filter((d): d is string => !!d).concat(fromEmails))];
+}
+
+/**
+ * F5: the team's confidential domains as PMX compares them: clean email domains ("@Initech-Ventures.example" is
+ * "initech-ventures.example"), never a mail provider anyone can sign up with.
+ */
+export function confidentialDomains(domains: readonly unknown[] | null | undefined): string[] {
+  return [...new Set((domains ?? []).map((d) => (typeof d === "string" ? cleanDomain(d) : null)).filter((d): d is string => !!d && !PUBLIC_MAIL.has(d)))];
+}
+
+/** Whether a domain is this one or under it: "mail.initech-ventures.example" is initech-ventures.example's. */
+const under = (d: string, of: string) => d === of || d.endsWith(`.${of}`);
+
+/** Words a fund's name ends with, so "Initech Ventures" is also "Initech". */
+const FUND_WORDS = new Set("ventures venture capital partners partner fund funds vc vcs investments invest equity holdings group management advisors advisers angels associates growth".split(" "));
+
+/**
+ * F5: a matcher for confidential companies' names, by their domains' names ("initech-ventures" for
+ * initech-ventures.example): "Initech Ventures", "initech-ventures" or "InitechVentures" in any case, and the name
+ * before a fund's word on its own ("Initech"). A one-word name matches only as a name is written, capitalized or in
+ * capitals ("Initech", "INITECH"), so a fund named like an ordinary word doesn't take that word everywhere; one with a
+ * digit in it matches in any case. For the passage screen here and the tracker guard (src/core/tracker-text.ts).
+ */
+export function confidentialMatcher(labels: readonly string[]): TopicMatcher | null {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const anyCase: string[] = [];
+  const cased: string[] = [];
+  const one = (w: string, min: number) => {
+    if (w.length < min) return;
+    if (/\d/.test(w)) anyCase.push(esc(w));
+    else cased.push(esc(w.charAt(0).toUpperCase() + w.slice(1)), esc(w.toUpperCase()));
+  };
+  const many = (ws: string[]) => anyCase.push(ws.map(esc).join("[\\s_-]*"));
+  for (const l of new Set(labels.map((x) => x.toLowerCase().trim()).filter(Boolean))) {
+    const words = l.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    if (!words.length) continue;
+    if (words.length === 1) one(words[0]!, 3);
+    else many(words);
+    let i = words.length;
+    while (i > 1 && FUND_WORDS.has(words[i - 1]!)) i--;
+    if (i < words.length && i > 0) { if (i === 1) one(words[0]!, 4); else many(words.slice(0, i)); }
+  }
+  if (!anyCase.length && !cased.length) return null;
+  const wrap = (alts: string[], flags: string) => (alts.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${[...new Set(alts)].join("|")})(?![\\p{L}\\p{N}])`, flags) : null);
+  const res = [wrap(anyCase, "giu"), wrap(cased, "gu")].filter((x): x is RegExp => !!x);
+  const all = (raw: string) => res.flatMap((re) => [...straight(raw).matchAll(re)]).sort((a, b) => a.index! - b.index!);
+  return { source: res.map((r) => r.source).join(" "), all, exec: (t) => all(t)[0] ?? null, test: (t) => all(t).length > 0 };
+}
+
+/**
+ * F5: why an item is a confidential contact's, or null: someone in it is from one of the team's confidential domains
+ * (or a domain under one), or its title names one ("Initech Ventures: Series B follow-up"). It names only the team's
+ * domain, never the person.
+ */
+function confidentialIn(item: Pick<SignalItem, "participants" | "title">, domains: string[]): string | null {
+  for (const p of item.participants) {
+    const d = domainOf(p);
+    const of = d ? domains.find((c) => under(d, c)) : undefined;
+    if (of) return `someone in it is from ${of}, one of your team's confidential domains`;
+  }
+  const named = domains.find((c) => confidentialMatcher([domainLabel(c)])?.test(item.title));
+  return named ? `its title names ${named}, one of your team's confidential domains` : null;
+}
+
+/**
+ * F5: the confidential companies a batch of sources shows, by their domains' names ("initech-ventures"), for the
+ * tracker guard: the team's confidential domains, and the outside companies of every meeting or thread these rules
+ * held as fundraising or as a confidential contact's. A company that was also in a meeting these rules used is a
+ * customer or a partner, so it isn't one unless the team listed it.
+ */
+export function confidentialCompanies(decisions: Pick<ItemDecision, "item" | "decision" | "rule">[], r: Pick<FilterRules, "internalDomains" | "confidentialDomains">): string[] {
+  const internal = r.internalDomains.map(lc);
+  const orgs = (d: { item: Pick<SignalItem, "participants"> }) => (d.item.participants ?? []).map(domainOf)
+    .filter((x): x is string => !!x && !internal.some((i) => under(x, i)) && !PUBLIC_MAIL.has(x)).map(domainLabel);
+  const used = new Set(decisions.filter((d) => d.decision === "kept").flatMap(orgs));
+  const held = decisions.filter((d) => d.decision === "held" && (d.rule === "fundraising" || d.rule === "confidential")).flatMap(orgs).filter((l) => !used.has(l));
+  return [...new Set([...confidentialDomains(r.confidentialDomains).map(domainLabel), ...held])].filter((l) => l.length >= 3);
+}
+
+/** F5b: the version of how passages are counted and weighed into a hold; part of `holdRulesKey`. 2: F5a. */
+export const HOLD_RULES = 2;
+
+/**
+ * F5 (RUN-5): a key for the rules that decide what team work may read: the topic rules, the company's and the
+ * confidential domains, the do-not-read list, the sources turned off and the approved series. A pack shared under
+ * another key is checked again (src/run/share.ts). Only a hash, so the do-not-read list isn't kept in it.
+ * `HOLD_RULES` covers what the hash can't see, how passages are counted and weighed (`wholeHold`): raise it with any
+ * change there, so every Mac checks its packs again.
+ */
+export function holdRulesKey(r: FilterRules): string {
+  const sorted = (xs?: readonly string[]) => [...(xs ?? [])].map(lc).sort();
+  return createHash("sha256").update(JSON.stringify([
+    HOLD_RULES, Object.values(TOPICS).map((t) => t.source), sorted(r.internalDomains), sorted(confidentialDomains(r.confidentialDomains)),
+    sorted(r.neverIngest.people), sorted(r.neverIngest.channels), sorted(r.neverIngest.meetingTitles), sorted(r.blockedSources), sorted(r.meetingSeries),
+  ])).digest("hex").slice(0, 16);
 }
 
 /**
@@ -280,6 +441,7 @@ export interface FilterResult {
 const emptyCounts = (): Record<HoldReason, number> => ({
   "one-on-one": 0, performance: 0, compensation: 0, health: 0, hiring: 0, "never-ingest": 0,
   "no-external-participant": 0, "no-company-domain": 0, "source-off": 0, "unknown-participants": 0, "place-not-approved": 0, "not-attended": 0,
+  fundraising: 0, confidential: 0,
 });
 
 /** "Sam / Priya", "Ana <> Raj", "Lee & Kim": two people's names, the shape of a 1:1's calendar title. */
@@ -287,16 +449,27 @@ export const NAME_PAIR = /^\s*\p{Lu}[\p{L}'.-]+(\s\p{Lu}[\p{L}'.-]+)?\s*(\/|<>|&
 /** A title about an interview that isn't user research ("Customer interview" is research; "Video Interview - …" is hiring). */
 const HIRING_TITLE = /\binterview/i;
 const RESEARCH_INTERVIEW = /\b(customer|user|discovery|research|usability|client|buyer|partner|expert|stakeholder)s?\s+interview/i;
-const TITLE_TOPIC_DETAIL: Record<Topic, string> = {
+const TITLE_TOPIC_DETAIL: Record<Screen, string> = {
   "one-on-one": "the title looks like a 1:1 or career talk",
   performance: "the title is about performance or HR",
   compensation: "the title is about pay or compensation",
   health: "the title is about health or leave",
   hiring: "the title is about hiring or an interview",
+  fundraising: "the title is about fundraising",
+  confidential: "the title names one of your team's confidential contacts",
 };
 
 const lc = (s: string) => s.toLowerCase();
-const domainOf = (p: string) => (p.includes("@") ? lc(p.split("@").pop()!) : null);
+/**
+ * A participant's email domain, lower-cased: of the address in angle brackets ("Dana Ruiz <dana@globex.example>",
+ * "\"Ruiz, Dana\" <dana@globex.example>"), else of a bare address ("dana@globex.example"). Null without one. Not the
+ * text after the last "@", which kept the ">" and made a colleague written "Sam <sam@us.com>" look external.
+ */
+export function domainOf(p: string): string | null {
+  const address = p.match(/<([^<>]*@[^<>]*)>/)?.[1] ?? p;
+  const d = address.match(/[^\s<>"'(),;@]+@([^\s<>"'(),;@]+)/)?.[1];
+  return d ? lc(d) : null;
+}
 
 function mentions(text: string, needle: string): boolean {
   if (!needle.trim()) return false;
@@ -362,6 +535,9 @@ export function itemDecision(item: SignalItem, r: FilterRules): { reason: HoldRe
   if (absent) return { reason: "not-attended", detail: absent };
   if (item.kind === "thread" && !(item.place && !/^D(?=[A-Z0-9]*\d)[A-Z0-9]{8,10}$/.test(item.place) && r.approvedPlace?.(sourceOf(item), item.place)))
     return { reason: "place-not-approved", detail: "it was posted in a place your team hasn't approved, or no longer approves" };
+  // F5: an investor's or another confidential contact's meeting, email or thread is held from team work like a 1:1.
+  const conf = !r.allowConfidential && r.confidentialDomains?.length ? confidentialIn(item, confidentialDomains(r.confidentialDomains)) : null;
+  if (conf) return { reason: "confidential", detail: conf };
   // A meeting's title names what it's about: any sensitive topic there holds the whole meeting.
   for (const [topic, re] of activeTopics(r)) if (re.test(item.title)) return { reason: topic, detail: TITLE_TOPIC_DETAIL[topic] };
   if (HIRING_TITLE.test(item.title) && !RESEARCH_INTERVIEW.test(item.title)) return { reason: "hiring", detail: TITLE_TOPIC_DETAIL.hiring };
@@ -405,9 +581,19 @@ export const passageHash = (seg: string) => createHash("sha256").update(seg.trim
 /** What stands where sentences were cut from a turn that is otherwise used, styled like the redaction placeholders. */
 export const HELD_MARKER = "[HELD]";
 
-/** The topic rules a run applies, in order: the 1:1 rule is off where 1:1s may be read (TODO-2). */
-function activeTopics(r: FilterRules): [Topic, TopicMatcher][] {
-  return (Object.entries(TOPICS) as [Topic, TopicMatcher][]).filter(([t]) => !(t === "one-on-one" && r.allowOneOnOne));
+/** What the passage screen cuts for: a fixed topic, or (F5) a name of one of the team's confidential contacts. */
+type Screen = Topic | "confidential";
+
+/**
+ * The topic rules a run applies, in order: the 1:1 rule is off where 1:1s may be read (TODO-2), and fundraising where
+ * the PM's own to-dos may read it. F5: at team scope, a passage that names one of the team's confidential contacts is
+ * cut too, weighed like the topics (two or more hold the meeting).
+ */
+function activeTopics(r: FilterRules): [Screen, TopicMatcher][] {
+  const fixed = (Object.entries(TOPICS) as [Topic, TopicMatcher][])
+    .filter(([t]) => !(t === "one-on-one" && r.allowOneOnOne) && !(t === "fundraising" && r.allowConfidential));
+  const named = !r.allowConfidential && r.confidentialDomains?.length ? confidentialMatcher(confidentialDomains(r.confidentialDomains).map(domainLabel)) : null;
+  return named ? [...fixed, ["confidential", named]] : fixed;
 }
 
 /** Abbreviations whose full stop doesn't end a sentence. */
@@ -467,7 +653,10 @@ export function outsideSpeaker(item: Pick<SignalItem, "participants">, r: Pick<F
   };
 }
 /** Whether these matches are about a person: their review, pay, health, 1:1 or candidacy. Those cut more around them. */
-const aboutAPerson = (topic: Topic, found: RegExpMatchArray[]) => topic !== "hiring" || found.some((m) => !PLAN_TALK.test(m[0]));
+const aboutAPerson = (topic: Screen, found: RegExpMatchArray[]) =>
+  topic !== "fundraising" && topic !== "confidential" && (topic !== "hiring" || found.some((m) => !PLAN_TALK.test(m[0])));
+/** F5: a sentence that gives a raise's figures: an amount, a multiple or a share ("Targeting $40M", "2x", "15%"). */
+const FUNDS_DETAIL = /[$€£]\s?\d|\b\d+(?:[.,]\d+)?\s?(?:k|m|mm|bn|million|billion)\b|\b\d+(?:\.\d+)?\s?(?:%|x\b)/i;
 
 interface TurnCut {
   rule: HoldReason;
@@ -488,10 +677,10 @@ const aboutThem = (text: string) => ONE_PERSON.test(text) || (THEY.test(text) &&
  * whole turn goes, as before, when that would be more than half of it (by sentences or by length), when its
  * speaker label matches, or when it names someone on the do-not-read list.
  */
-function judgeTurn(seg: string, topics: [Topic, TopicMatcher][], r: FilterRules, outside: (label: string) => boolean): TurnCut | null {
+function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules, outside: (label: string) => boolean): TurnCut | null {
   const { lead, label, body } = parts(seg);
   const theirs = !!label && outside(label);
-  const matches = (t: Topic, m: TopicMatcher, text: string) => (theirs && t === "hiring" ? m.all(text).filter((x) => !PLAN_TALK.test(x[0])) : m.all(text));
+  const matches = (t: Screen, m: TopicMatcher, text: string) => (theirs && t === "hiring" ? m.all(text).filter((x) => !PLAN_TALK.test(x[0])) : m.all(text));
   const hits = topics.filter(([t, m]) => matches(t, m, seg).length);
   const listed = r.neverIngest.people.some((p) => mentions(seg, p));
   if (!hits.length) return listed ? { rule: "never-ingest", kept: null, personal: false } : null;
@@ -505,8 +694,10 @@ function judgeTurn(seg: string, topics: [Topic, TopicMatcher][], r: FilterRules,
       if (!found.length) continue;
       cut[i] = true;
       if (!aboutAPerson(topic, found)) {
-        // A plan's details: "I want to ask for headcount. Two backend engineers in Q1."
-        if (i + 1 < s.length && PLAN_DETAIL.test(s[i + 1]!.text)) cut[i + 1] = true;
+        // A plan's details: "I want to ask for headcount. Two backend engineers in Q1." F5: a raise's figures: "We're
+        // raising a Series B. Targeting $40M."
+        const detail = topic === "hiring" ? PLAN_DETAIL : topic === "fundraising" ? FUNDS_DETAIL : null;
+        if (detail && i + 1 < s.length && detail.test(s[i + 1]!.text)) cut[i + 1] = true;
         continue;
       }
       if (i > 0) cut[i - 1] = true;
@@ -609,6 +800,52 @@ export function screenText(
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/**
+ * Whether the passage screen would cut anything from this text under these rules: a passage screened under older
+ * rules (an evidence pack's, RUN-5) that today's rules would cut (F5).
+ */
+export function screensOut(text: string, r: FilterRules): boolean {
+  const passages: PassageCut[] = [];
+  screenText(text, r, emptyCounts(), passages);
+  return passages.length > 0;
+}
+
+/** That text as the passage screen leaves it under these rules, with nothing counted. */
+export const screened = (text: string, r: FilterRules): string => screenText(text, r, emptyCounts());
+
+/** Topics in a hold that several reached together: "2 passages are about health and pay". */
+const SHORT: Record<HoldReason, string> = {
+  "one-on-one": "1:1s", performance: "performance", compensation: "pay", health: "health", hiring: "hiring", fundraising: "fundraising",
+  confidential: "your team's confidential contacts", "never-ingest": "your do-not-read list", "no-external-participant": "internal meetings",
+  "no-company-domain": "your company", "source-off": "a source you turned off", "unknown-participants": "who was there",
+  "place-not-approved": "unapproved places", "not-attended": "meetings you weren't in",
+};
+/** F5a: passages that count toward a whole-meeting hold only with their own kind: fundraising, and confidential names. */
+const OWN_COUNT: HoldReason[] = ["fundraising", "confidential"];
+
+/**
+ * When a meeting's cut passages hold all of it (B2), and why. Each cut turn counts once, under the one rule it was cut
+ * for (its first topic), and a reply cut with the passage before it is part of that passage, so neither counts twice.
+ * The personal topics (1:1s, performance, pay, health, hiring) hold it at two passages together, as they always have;
+ * F5a: fundraising and a confidential contact's name are business, not a person's, so each holds it only at two of its
+ * own and never tips the personal count over. The reason names the topics that reached two, and the rule is the one
+ * with the most passages among them (the first, on a tie).
+ */
+function wholeHold(passages: PassageCut[]): { rule: HoldReason; detail: string } | null {
+  const counted = passages.filter((p) => p.rule !== "never-ingest" && !p.followUp);
+  const groups = [counted.filter((p) => !OWN_COUNT.includes(p.rule)), ...OWN_COUNT.map((k) => counted.filter((p) => p.rule === k))];
+  const cuts = groups.filter((g) => g.length >= 2).flat();
+  if (!cuts.length) return null;
+  const n = new Map<HoldReason, number>();
+  for (const p of counted) if (cuts.includes(p)) n.set(p.rule, (n.get(p.rule) ?? 0) + 1);
+  const rules = [...n.keys()];
+  const rule = rules.reduce((a, b) => (n.get(b)! > n.get(a)! ? b : a));
+  const about = rules.length > 1
+    ? `are about ${rules.slice(0, -1).map((x) => SHORT[x]).join(", ")} and ${SHORT[rules.at(-1)!]}`
+    : rule === "confidential" ? "name one of your team's confidential contacts" : `are about ${HOLD_LABELS[rule].toLowerCase()}`;
+  return { rule, detail: `${cuts.length} passages ${about}, so PMX holds the whole meeting` };
+}
+
 export function filterItems(items: SignalItem[], r: FilterRules): FilterResult {
   const held = emptyCounts();
   const kept: SignalItem[] = [];
@@ -624,14 +861,12 @@ export function filterItems(items: SignalItem[], r: FilterRules): FilterResult {
     }
     const passages: ItemDecision["passages"] = [];
     const text = screenText(item.text, r, held, passages, outsideSpeaker(item, r));
-    // Two or more sensitive passages: the meeting is about that topic, so none of it goes to the team. A reply cut
-    // with the passage before it is part of that passage, so it isn't counted again.
-    const topics = passages.filter((p) => p.rule !== "never-ingest" && !p.followUp);
-    if (r.wholeMeeting && topics.length >= 2) {
-      const rule = topics[0]!.rule;
-      held[rule]++;
+    // Two or more sensitive passages: the meeting is about that topic, so none of it goes to the team.
+    const whole = r.wholeMeeting ? wholeHold(passages) : null;
+    if (whole) {
+      held[whole.rule]++;
       heldItems++;
-      decisions.push({ item, decision: "held", rule, detail: `${topics.length} passages are about ${HOLD_LABELS[rule].toLowerCase()}, so PMX holds the whole meeting`, passages, passagesKept: 0 });
+      decisions.push({ item, decision: "held", rule: whole.rule, detail: whole.detail, passages, passagesKept: 0 });
       continue;
     }
     const passagesKept = text ? segments(text).filter((s) => s.trim()).length : 0;

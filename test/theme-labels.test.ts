@@ -13,7 +13,7 @@ import { services } from "../src/core/services.js";
 import { pipelineAct } from "../src/flow/pipeline-act.js";
 import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
 import { mockRuntime } from "../src/runtime/mock.js";
-import { approveProposals, formatProposals, readProposals, setProposalTheme, stageProposals } from "../src/synth/proposals.js";
+import { approveProposals, CHECKED, formatProposals, readProposals, setProposalTheme, stageProposals } from "../src/synth/proposals.js";
 import { parseCandidates, synthesize } from "../src/synth/synthesize.js";
 import { readThemes, themeBlock, themeNamed } from "../src/synth/themes.js";
 import { relayDir, readOutbox, relayTracker } from "../src/tracker/relay.js";
@@ -28,7 +28,7 @@ async function withThemes(repo: string, file: unknown = THEMES): Promise<void> {
 }
 
 const proposal = (title: string, theme?: string) => ({
-  at: "2026-11-18T09:00:00Z", receipt: "synthesize-none", title, description: "d", category: "spec", size: "S" as const, sources: ["T1"], from: [], ...(theme ? { theme } : {}),
+  at: "2026-11-18T09:00:00Z", receipt: "synthesize-none", title, description: "d", category: "spec", size: "S" as const, sources: ["T1"], from: [], checked: CHECKED, ...(theme ? { theme } : {}),
 });
 
 describe("roadmap themes from the team's repo (EQ-38)", () => {

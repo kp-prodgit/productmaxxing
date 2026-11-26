@@ -56,7 +56,8 @@ describe("team settings without a remote, and approval wording (BOARD-9, #11)", 
     const { repo } = await pmxRepo();
     const ctx = await testCtx({ repo, team: { approve: { startNow: false } } });
     const { stageProposals } = await import("../src/synth/proposals.js");
-    const [p] = await stageProposals([{ title: "Spec SCIM", category: "spec", size: "S", description: "Why.\n\npmx:source T1", sources: ["T1"], from: null } as any]);
+    // No sources, so approving has nothing to read again (R3) and the answer is only the wording.
+    const [p] = await stageProposals([{ title: "Spec SCIM", category: "spec", size: "S", description: "Why.", sources: [], from: null } as any]);
     const msg = await pipelineHandlers(ctx).proposals?.("approve", [p!.id]);
     expect(msg).toMatch(/^Approved PMX-\d+: it goes to your team's backlog in Linear\. An agent takes it only after a teammate moves it to Todo in Linear\.$/);
   });
@@ -65,7 +66,7 @@ describe("team settings without a remote, and approval wording (BOARD-9, #11)", 
     const { repo } = await pmxRepo();
     const ctx = await testCtx({ repo });
     const { stageProposals } = await import("../src/synth/proposals.js");
-    const [a, b] = await stageProposals([{ title: "Spec SCIM", category: "spec", size: "S", description: "Why.", sources: ["T1"], from: null } as any, { title: "Spec audit logs", category: "spec", size: "S", description: "Why.", sources: ["T2"], from: null } as any]);
+    const [a, b] = await stageProposals([{ title: "Spec SCIM", category: "spec", size: "S", description: "Why.", sources: [], from: null } as any, { title: "Spec audit logs", category: "spec", size: "S", description: "Why.", sources: [], from: null } as any]);
     expect(await pipelineHandlers(ctx).proposals?.("start", [a!.id])).toMatch(/^Started PMX-\d+: it becomes Ready for agents now, and an agent takes it from there\.$/);
     expect(await pipelineHandlers(ctx).proposals?.("approve", [b!.id])).toMatch(/^Approved PMX-\d+ for later: it waits in your team's backlog in Linear\. When you want an agent on it, move it to Todo in Linear\.$/);
   });

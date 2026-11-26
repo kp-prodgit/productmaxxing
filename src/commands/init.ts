@@ -17,7 +17,7 @@ import { plist, stableNode, type Launchd } from "../core/launchd.js";
 import { paths, pmxHome } from "../core/paths.js";
 import { writeProfile } from "../core/profile.js";
 import { scaffoldRepo } from "../core/scaffold.js";
-import { VENDORED_CLI, vendorCli } from "../core/vendor.js";
+import { vendoredFiles, vendorCli } from "../core/vendor.js";
 import type { Out } from "../core/context.js";
 import { desktopAppPresent, installMcp, mcpInstalled } from "../mcp/server.js";
 import { cleanDomain, companyDomains } from "../core/filter.js";
@@ -198,6 +198,8 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     installedAt: existing?.installedAt ?? d.now().toISOString(),
     plan,
     categories,
+    // JOB-11: the kinds offered here and left out are a choice, so PMX doesn't ask about them again.
+    categoriesOff: [...new Set([...(existing?.categoriesOff ?? []).filter((c) => !cats.includes(c)), ...cats.filter((c) => !categories.includes(c))])],
     workingHours: ALWAYS,
     budget: { dailyUsd, resetHour: existing?.budget.resetHour ?? 0, overrideUsd: null },
     companyDomains: domains,
@@ -238,7 +240,7 @@ export async function runInit(d: InitDeps): Promise<PersonalConfig> {
     const created = await scaffoldRepo(repoPath, { ...newRepo, internalDomains: domains, synthesizer: handle });
     // Teammates and CI install the CLI from the repo, so they don't need npm access to it.
     await vendorCli(repoPath, d.exec).then(
-      () => created.push(VENDORED_CLI),
+      () => created.push(...vendoredFiles()),
       (e) => out.warn(`Couldn't add the CLI package to the repo (${e.message}). Run \`pmx vendor\` later.`),
     );
     out.info(`Created ${created.length} files in ${repoPath}.`);

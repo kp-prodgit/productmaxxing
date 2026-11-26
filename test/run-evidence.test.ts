@@ -98,7 +98,9 @@ describe("evidence for agent runs (RUN-3)", () => {
     const data = shown.slice(shown.indexOf("<task_data>"), shown.indexOf("</task_data>"));
     expect(data).toContain("## Sources you can cite");
     expect(data).toContain("### [T1] A meeting on");
-    expect(data).toContain("> Jane: About two hours. SCIM provisioning would fix it");
+    // R5: the same placeholders as the team's pack, so a draft written here can't name anyone either.
+    expect(data).toContain("> [PERSON-1, Acme]: About two hours. SCIM provisioning would fix it");
+    expect(data).not.toMatch(/Jane|\bKp\b/);
     // The passages most about the task come first in importance, but in the order they were said.
     expect(data.indexOf("Every Friday")).toBeLessThan(data.indexOf("About two hours"));
     expect(idsIn(shown)).toEqual(new Set(["T1"]));

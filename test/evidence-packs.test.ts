@@ -6,11 +6,15 @@ import { exec, execOk, type Exec } from "../src/core/exec.js";
 import { Git } from "../src/core/git.js";
 import { RunLogStore } from "../src/core/runlog-store.js";
 import { services } from "../src/core/services.js";
+import { commands } from "../src/commands/index.js";
+import { paths } from "../src/core/paths.js";
 import { plan, pull } from "../src/pull/pull.js";
+import { loadQueue, recordDecision } from "../src/review/queue.js";
+import { taskEvidence } from "../src/run/evidence.js";
 import { evidenceStore, packSources, type EvidencePack } from "../src/run/packs.js";
 import { shareEvidence, tidyEvidence } from "../src/run/share.js";
 import { mockRuntime } from "../src/runtime/mock.js";
-import { approveProposals } from "../src/synth/proposals.js";
+import { approveProposals, readProposals } from "../src/synth/proposals.js";
 import { synthesize } from "../src/synth/synthesize.js";
 import { relayDir } from "../src/tracker/relay.js";
 import { memoryTracker, type Tracker } from "../src/tracker/types.js";
@@ -130,8 +134,10 @@ describe("evidence packs: an approved task's quotes in the team repo (RUN-5)", (
     // One file per task, in a commit of its own.
     expect(await git(origin!, "ls-tree", "--name-only", "refs/pmx/evidence/PMX-1")).toBe("PMX-1.json");
     const task = [...(await svc.tracker.list())][0]!;
-    // Keyed by the task's own source IDs, with each source's kind and date, and nothing more.
-    expect(Object.keys(pack).sort()).toEqual(["at", "sources", "task", "v"]);
+    // Keyed by the task's own source IDs, with each source's kind and date; R5: names swapped, and the sources' outside
+    // companies as their domains name them. Nothing more.
+    expect(Object.keys(pack).sort()).toEqual(["at", "companies", "nameSwap", "sources", "task", "v"]);
+    expect(pack).toMatchObject({ nameSwap: 2, companies: ["acme"] });
     expect(pack.sources.map((s: any) => s.id)).toEqual(task.sources);
     for (const s of pack.sources) expect(Object.keys(s).sort()).toEqual(["at", "id", "kind", "passages"]);
     expect(pack.sources[0]).toMatchObject({ kind: "meeting", at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
@@ -141,6 +147,9 @@ describe("evidence packs: an approved task's quotes in the team repo (RUN-5)", (
     expect(text).not.toMatch(/salary/i);
     expect(text).not.toMatch(/Globex|pricing tiers|per-seat/);
     expect(text).not.toMatch(/Acme weekly|jane@acme\.com|kp@us\.com|synthesize-\d/);
+    // R5: and no one's name: the customer's contact and the PM are placeholders, each with their company.
+    expect(text).not.toMatch(/Jane|\bKp\b/);
+    expect(text).toContain("[PERSON-1, Acme]: About two hours. SCIM provisioning would fix it");
     // Not on the team's main branch, which stays as it was; the PM's checkout isn't touched.
     expect(await git(repo, "rev-parse", "main")).toBe(mainBefore);
     expect(await git(repo, "status", "--porcelain")).toBe("");
@@ -169,7 +178,7 @@ describe("evidence packs: an approved task's quotes in the team repo (RUN-5)", (
     const shown = rt.seen.at(-1)!;
     const data = shown.slice(shown.indexOf("<task_data>"), shown.indexOf("</task_data>"));
     expect(data).toContain("## Sources you can cite");
-    expect(data).toContain("> Jane: About two hours. SCIM provisioning would fix it");
+    expect(data).toContain("> [PERSON-1, Acme]: About two hours. SCIM provisioning would fix it");
     expect(data).not.toMatch(/salary/i);
     expect(tracker.tasks.get([...tracker.tasks.keys()][0]!)!.status).toBe("review");
   });
@@ -292,6 +301,59 @@ describe("evidence packs: an approved task's quotes in the team repo (RUN-5)", (
     await store.write({ put: [{ v: 1, task: "PMX-3", at: at(0), sources: [] }] }, "test: old pack");
     expect(await tidyEvidence(await testCtx({ repo, team, now: new Date(at(29)) }), { tracker: stale })).toEqual([]);
     expect(await tidyEvidence(await testCtx({ repo, team, now: new Date(at(31)) }), { tracker: stale })).toEqual([{ id: "PMX-3", why: "dropped" }]);
+  });
+
+  it("a follow-up approved after its original's accept gets its own pack, from the quotes kept with it on the accepting Mac", async () => {
+    const { origin, ctx, svc, tracker, rt } = await suggestingMac();
+    await approveProposals(ctx, svc, ["1"], { start: true });
+    const original = await packIn(origin!, "PMX-1");
+
+    // Ben's Mac has none of the call's files: its agent drafts from the pack, and Ben accepts the draft.
+    await freshHome();
+    const other = await testCtx({ repo: await clone(origin!, "mac-b"), runtime: rt, team, personal: { handle: "ben", machineId: "m2" } });
+    const svcB = await services(other, { tracker });
+    expect((await pull(other, svcB, { dryRun: false })).ran).toMatchObject({ outcome: "ok" });
+    const { items, host } = await loadQueue(other, svcB);
+    const d = await recordDecision(other, svcB, host, items[0]!, "accepted");
+    expect(d.followUps?.proposals.map((x) => x.title)).toEqual(["Which identity providers first?"]);
+    // The original's quotes left the team repo; the follow-up waiting on Ben's Mac keeps a copy of them there.
+    expect(await packsIn(origin!)).toEqual([]);
+    expect((await readProposals()).map((x) => x.quotes)).toEqual([original.sources]);
+    // The copy is for the follow-up's pack only: the proposals listing shows no quote.
+    const logs: string[] = [];
+    const log = console.log;
+    console.log = (...a: unknown[]) => logs.push(a.join(" "));
+    try {
+      expect(await commands.find((c) => c.name === "proposals")!.run({ positionals: [], values: { json: true }, ctx: async () => other, ask: null as any } as any)).toBe(0);
+    } finally { console.log = log; }
+    expect(logs.join("\n")).toContain("Which identity providers first?");
+    expect(logs.join("\n")).not.toMatch(/SCIM provisioning would fix it|"quotes"/);
+
+    // Approving the follow-up writes its own pack from that copy, so any PM's agent can draft it.
+    const r = await approveProposals(other, svcB, ["1"]);
+    expect(r.notShared).toEqual([]);
+    const id = r.posted[0]!.identifier;
+    expect(id).toBe("PMX-2");
+    expect(await packsIn(origin!)).toEqual(["PMX-2"]);
+    expect(await packIn(origin!, "PMX-2")).toEqual({ v: 1, task: "PMX-2", at: other.now().toISOString(), nameSwap: 2, sources: original.sources });
+    expect(JSON.stringify(await packIn(origin!, "PMX-2"))).not.toMatch(/salary|Globex|Acme weekly|jane@acme\.com/);
+    // The copy went with the proposal, and nothing waits to be shared.
+    expect(await readProposals()).toEqual([]);
+    expect(JSON.parse(await readFile(join(paths.staging(), "evidence-share.json"), "utf8")).tasks).toEqual([]);
+  });
+
+  it("the Mac that suggested the task keeps no copy for a follow-up: it quotes its own files when the follow-up is approved", async () => {
+    const { origin, ctx, svc } = await suggestingMac();
+    await approveProposals(ctx, svc, ["1"], { start: true });
+    expect((await pull(ctx, svc, { dryRun: false })).ran).toMatchObject({ outcome: "ok" });
+    const { items, host } = await loadQueue(ctx, svc);
+    await recordDecision(ctx, svc, host, items[0]!, "accepted");
+    expect(await packsIn(origin!)).toEqual([]);
+    const waiting = await readProposals();
+    expect(waiting.map((x) => x.title)).toEqual(["Which identity providers first?"]);
+    expect(waiting[0]).not.toHaveProperty("quotes");
+    expect((await approveProposals(ctx, svc, ["1"])).posted.map((x) => x.identifier)).toEqual(["PMX-2"]);
+    expect((await packIn(origin!, "PMX-2")).sources).toEqual((await taskEvidence(ctx, [...(await svc.tracker.list())].find((t) => t.identifier === "PMX-2")!)).sources);
   });
 
   it("reads a pack as data: only the task's own sources, within bounds, with IDs and the data block's end neutralized", () => {

@@ -22,8 +22,13 @@ Write `outputs/tracking-hygiene/<task id>.md`:
 
 Then reply with one line for the tracker comment.
 
+## Drafting rules
+
+- No names other than redaction placeholders. Write each person as their role and team: "the issue's assignee", "our head of product", "the billing team's lead". Never a person's name, even one an issue's assignee, reporter or text gives. A role reads better than a placeholder like `[PERSON-2]`.
+
 ## Quality checklist
 
 - [ ] Duplicates name both issues.
 - [ ] "Stale" means no update in 30+ days, and the date is shown.
 - [ ] No fix closes an issue without saying why.
+- [ ] No names other than redaction placeholders: people appear as their role, never by name.

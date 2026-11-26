@@ -1,4 +1,4 @@
-import { DEFAULT_TEAM, takesCategory } from "../core/config.js";
+import { DEFAULT_TEAM, kindsToChoose } from "../core/config.js";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { readJson, writeJson } from "../core/fsutil.js";
@@ -9,6 +9,7 @@ import { STAGES, type Stage } from "../core/types.js";
 import type { Command } from "./index.js";
 import { checkKindDraft, kindTemplate, parseKindForm } from "../core/kinds.js";
 import { checkChange, describe, proposeTeamChanges, saveTakes } from "../flow/actions.js";
+import { takeWords } from "./settings.js";
 import { rememberTeamPr } from "../flow/team-prs.js";
 
 const present = (p: string) => stat(p).then(() => true, () => false);
@@ -52,7 +53,7 @@ pmx: ${pmx}
 export const jobsCommands: Command[] = [
   {
     name: "jobs",
-    summary: "The jobs (kinds of work) your org has defined, and scaffold a new one with its environment",
+    summary: "Your team's kinds of work and which your agent takes (pmx categories add or remove changes that), send one of PMX's to your team, or define your own",
     usage: "pmx jobs [list] | pmx jobs add <PMX kind of work, like decision-brief> | pmx jobs template | pmx jobs new --from <filled-in template> | pmx jobs new <slug> [--stage identify|build|validate|productionize|operate]",
     options: { stage: { type: "string" }, from: { type: "string" } },
     async run(a) {
@@ -77,7 +78,8 @@ export const jobsCommands: Command[] = [
         console.log([
           `Sent ${slug} to your team for approval: ${pr.url}`,
           "",
-          "When a code owner merges it, synthesis can suggest it and your agent takes it. Each teammate chooses in Settings → Kinds of work.",
+          `PMX's skill for it (${DEFAULT_TEAM.categories[slug]!.skill}) goes with it into your team's .claude/skills, unless your team has a copy already, so every Mac drafts it from the same reviewed text.`,
+          `When a code owner merges it, synthesis can suggest it and your agent takes it. Each teammate's Needs you and pmx status then ask whether their agent takes it (pmx categories add ${slug}, or Settings → Kinds of work).`,
           old.length ? `Your team keeps its own copy of ${old.join(" and ")}, which differs from this PMX's; this PMX's says when to suggest each kind of work. To send it to your team: pmx skills update ${old.join(" ")}` : null,
         ].filter((l) => l !== null).join("\n"));
         return 0;
@@ -95,7 +97,7 @@ export const jobsCommands: Command[] = [
           `Sent "${draft.name}" (${made}) to your team for approval: ${pr.url}`,
           "",
           "When a code owner merges it, every PM on the team has it, and synthesis can suggest it.",
-          draft.required ? "It's required, so every PM's agent takes it." : "Your agent takes it once it merges; each teammate chooses in Settings → Kinds of work.",
+          draft.required ? "It's required, so every PM's agent takes it." : `Your agent takes it once it merges. Each teammate's Needs you and pmx status then ask whether their agent takes it (pmx categories add ${made}, or Settings → Kinds of work).`,
         ].join("\n"));
         return 0;
       }
@@ -135,7 +137,7 @@ export const jobsCommands: Command[] = [
         return 0;
       }
 
-      if (op && op !== "list") throw new Error(`Unknown subcommand "${op}". Use list, add, template or new.`);
+      if (op && op !== "list") throw new Error(`Unknown subcommand "${op}". Use list, add, template or new.${["on", "off", "take", "skip"].includes(op) ? ` To turn a kind of work on or off for your agent: pmx categories ${op === "off" || op === "skip" ? "remove" : "add"} ${slug ?? "<kind>"}` : ""}`);
 
       const inv = await skillInventory(ctx.personal.repoPath, ctx.team.categories);
       const jobs = Object.keys(ctx.team.categories).map((cat) => ({ cat, info: inv.find((s) => s.category === cat) }));
@@ -143,9 +145,9 @@ export const jobsCommands: Command[] = [
         console.log("No jobs defined. Add one: pmx jobs new <slug>");
         return 0;
       }
-      console.log("Your team's kinds of work. Define a new one: pmx jobs template > kind.md, fill it in, then pmx jobs new --from kind.md\n");
+      console.log("Your team's kinds of work, and whether your agent takes each. Turn one on or off for your agent: pmx categories add <kind>, pmx categories remove <kind> (the same as Settings → Kinds of work on PMX's page). Define a new one: pmx jobs template > kind.md, fill it in, then pmx jobs new --from kind.md\n");
       for (const { cat, info } of jobs) {
-        const taken = ctx.team.categories[cat]?.required ? "✔ required by your team" : takesCategory(ctx.personal, ctx.team, cat) ? "✔ you take" : "· you skip";
+        const taken = takeWords(ctx.personal, ctx.team, cat);
         if (!info) {
           console.log(`${cat}  ·  ⚠️ no skill found (set categories.${cat}.skill and add the SKILL.md)`);
           continue;
@@ -155,6 +157,9 @@ export const jobsCommands: Command[] = [
         console.log(`   env: ${env.kind} · tools ${env.tools.join(", ")} · output ${env.output.kind}`);
         if (info.envProblems.length) console.log(`   ⚠️ ${info.envProblems.join("; ")}`);
       }
+      // JOB-11: kinds this PM never chose about; the agent skips their Ready tasks until the PM does.
+      const choose = kindsToChoose(ctx.personal, ctx.team);
+      if (choose.length) console.log(`\nYou haven't chosen about ${choose.join(", ")}, so your agent skips ${choose.length === 1 ? "it" : "them"}. Turn one on: pmx categories add ${choose[0]}, or keep it off: pmx categories remove ${choose[0]}`);
       // CAT-8: PMX's own kinds of work that came after this team's repo was set up are off until the team adds them.
       const more = Object.keys(DEFAULT_TEAM.categories).filter((c) => !ctx.team.categories[c]);
       if (more.length) console.log(`\nPMX also has ${more.join(", ")}, not on your team yet. Send one to your team: pmx jobs add ${more[0]}`);

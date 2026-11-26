@@ -62,6 +62,14 @@ export interface State {
    * background run looks again (an update asks for it, and so does a look that stopped at its limit or had a failure).
    */
   evidenceBackfill?: { at: string | null; due: boolean } | null;
+  /**
+   * F5 (RUN-5): the privacy rules (`holdRulesKey`, a hash) this Mac last checked its shared packs against. When they
+   * change (an update, a merged confidentialDomains, the do-not-read list), the next background run drops from those
+   * packs what the rules now hold.
+   */
+  evidenceRulesKey?: string | null;
+  /** R5e: the name swap (NAME_SWAP) whose rewrite this Mac last asked its backfill for. */
+  evidenceNameSwap?: number | null;
   /** When this Mac's pmx started tracking task runs. Older runs left no record, so "never ran" counts from here. */
   taskRunsSince: string | null;
 }

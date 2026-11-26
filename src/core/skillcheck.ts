@@ -129,19 +129,21 @@ export interface OutputCheck {
 /**
  * Checks a draft against the skill's machine-readable checklist: required headings, a minimum
  * number of citations, and no citation to a source the task didn't provide. Used by the smoke
- * test (SKILL-6), the neutrality test (B6) and every run before its PR opens.
+ * test (SKILL-6), the neutrality test (B6) and every run before its PR opens. `web`: how many
+ * web citations a web run's draft has (RUN-6, `webCitations`); they count toward the minimum.
  */
-export function checkOutput(meta: SkillMeta, output: string, validIds?: Set<string>): OutputCheck {
+export function checkOutput(meta: SkillMeta, output: string, validIds?: Set<string>, o: { web?: number } = {}): OutputCheck {
   const problems: string[] = [];
   const headings = new Set([...output.matchAll(/^#{1,3}\s+(.+?)\s*$/gm)].map((m) => m[1]!.toLowerCase()));
   for (const h of meta.requiredHeadings ?? []) if (!headings.has(h.toLowerCase())) problems.push(`missing heading "${h}"`);
   const ids = output.split("\n").flatMap(citedIds);
-  if (ids.length < (meta.minCitations ?? 0)) problems.push(`only ${ids.length} citations, need ${meta.minCitations}`);
+  const n = ids.length + (o.web ?? 0);
+  if (n < (meta.minCitations ?? 0)) problems.push(`only ${n} citations, need ${meta.minCitations}`);
   if (validIds) {
     const bad = [...new Set(ids.filter((i) => !validIds.has(i)))];
     if (bad.length) problems.push(`cites unknown sources: ${bad.join(", ")}`);
   }
-  return { ok: problems.length === 0, problems, citations: ids.length };
+  return { ok: problems.length === 0, problems, citations: n };
 }
 
 /** Source IDs present in a task snapshot or fixture, e.g. `[T1]`, `id="S4"`. */

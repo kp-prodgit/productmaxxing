@@ -35,8 +35,9 @@ export interface RunRecord {
   webBlocked?: number;
 }
 
+/** `repoPath`: the run's checkout, with its project settings as the repo has them (R17: a web run's are put back first). */
 export async function profileSummary(repoPath: string, team: TeamConfig, o: { web?: boolean } = {}): Promise<RunRecord["profile"]> {
-  const checks = await profileChecks(team, o);
+  const checks = await profileChecks(team, { ...o, repo: repoPath });
   return {
     checksPassed: checks.filter((c) => c.ok).map((c) => c.id),
     checksFailed: checks.filter((c) => !c.ok).map((c) => c.id),

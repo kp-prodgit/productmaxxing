@@ -8,6 +8,7 @@ import { CANARY_REFUSAL, hasCanary } from "../core/canary.js";
 import { SIZES, STATUSES, type Size, type Status, type Task } from "../core/types.js";
 import { GROUPS, kindOf, labelStatus, recordedState, toMeeting, toTask } from "./linear.js";
 import { inTarget, STATE_FOR, STATE_TYPES, typeOf, type StateTarget } from "./states.js";
+import { plainMentions } from "./mentions.js";
 import { nextCronTime } from "../core/cron.js";
 import { meetingDescription, meetingTitle, type MeetingEntry, type NewMeeting, type NewTask, type Tracker } from "./types.js";
 
@@ -125,6 +126,66 @@ export async function enqueueSkillDoc(name: string, body: string, now: () => Dat
 
 const ref = (opId: string) => `ref:${opId}`;
 const pendingIdentifier = (opId: string) => `PENDING-${opId.slice(0, 6).toUpperCase()}`;
+
+/** A queued op, as a PM reads it: what it does and to which task. Never its text. */
+export function opWords(op: RelayOp): string {
+  const on = "target" in op ? ` on ${op.target.startsWith("ref:") ? pendingIdentifier(op.target.slice(4)) : op.target}` : "";
+  const what: Record<RelayOp["kind"], string> = {
+    "create-task": `create ${pendingIdentifier(op.id)}`, "set-label": "a label change", "set-status": "a status change", "set-agent": "an assignment",
+    "follow-state": "following a move", "align-state": "a status change", "set-priority": "a priority change", comment: "a comment",
+    "append-description": "a line in the description", "lodge-meeting": "a processed-meeting marker", "finish-meeting": "finishing a processed-meeting marker",
+    rewrite: "cancel" in op && op.cancel ? "canceling it" : "a rewrite", "upsert-skill-doc": "a shared skill document",
+  };
+  return `${what[op.kind]}${on}`;
+}
+
+/**
+ * R16b: removes queued ops before a sync applies them: the ones `pick` chooses, and every op that acts on an issue one of
+ * them would create (its `ref:` or PENDING-… target), so nothing waits on an issue that will never exist. Returns them.
+ */
+export async function dropQueued(pick: (op: RelayOp) => boolean): Promise<RelayOp[]> {
+  const outbox = await readOutbox();
+  const gone = new Set(outbox.ops.filter(pick).map((op) => op.id));
+  const made = outbox.ops.filter((op) => gone.has(op.id) && (op.kind === "create-task" || op.kind === "lodge-meeting"));
+  const on = new Set(made.flatMap((op) => [ref(op.id), pendingIdentifier(op.id)]));
+  for (const op of outbox.ops) if ("target" in op && on.has(op.target)) gone.add(op.id);
+  if (!gone.size) return [];
+  const dropped = outbox.ops.filter((op) => gone.has(op.id));
+  await saveOutbox({ v: 1, ops: outbox.ops.filter((op) => !gone.has(op.id)) });
+  return dropped;
+}
+
+/**
+ * R16b: `pmx linear outbox drop <id>`: the ops the PM names, by the first 6 or more characters of their ID as `pmx linear
+ * outbox` shows them, or a PENDING-… task, which drops its creation and every change to it. Nothing reaches Linear.
+ */
+export async function dropOps(refs: string[]): Promise<{ dropped: RelayOp[]; missing: string[] }> {
+  const ops = (await readOutbox()).ops;
+  const wanted = new Set<string>();
+  const missing: string[] = [];
+  for (const raw of refs) {
+    const r = raw.trim().toLowerCase();
+    const hit = /^pending-[0-9a-f]{6}$/.test(r)
+      ? ops.filter((op) => op.kind === "create-task" && pendingIdentifier(op.id).toLowerCase() === r)
+      : r.length >= 6 ? ops.filter((op) => op.id.startsWith(r)) : [];
+    if (hit.length !== 1) { missing.push(raw); continue; }
+    wanted.add(hit[0]!.id);
+  }
+  return { dropped: wanted.size ? await dropQueued((op) => wanted.has(op.id)) : [], missing };
+}
+
+/** `pmx linear outbox`: what waits for the next sync, and what Linear refused, each with the ID that drops it (R16b). */
+export async function formatOutbox(): Promise<string> {
+  const ops = (await readOutbox()).ops;
+  if (!ops.length) return "Nothing is waiting for Linear.";
+  const refused = ops.filter((op) => (op.failures ?? 0) > 0);
+  return [
+    `${ops.length} change(s) wait for the next "PMX: sync Linear through Claude" run${refused.length ? `; Linear refused ${refused.length} of them` : ""}:`,
+    ...ops.map((op) => `  ${op.id.slice(0, 8)}  ${opWords(op)}${op.failures ? `  (Linear refused it ${op.failures === 1 ? "once" : `${op.failures} times`}: ${op.lastError ?? "no reason given"})` : ""}`),
+    "",
+    "Drop one before it reaches Linear: pmx linear outbox drop <ID> (a PENDING-… task drops with every change to it). PMX gives up on a change Linear refuses 3 times.",
+  ].join("\n");
+}
 
 function label(n: any, group: string, value: string | null) {
   n.labels.nodes = n.labels.nodes.filter((l: any) => l.parent?.name !== group);
@@ -280,10 +341,16 @@ export function relayTracker(team: TeamConfig, warn: (m: string) => void = () =>
       const n = await nodeFor(id);
       await enqueue({ kind: "rewrite", target: target(n), ...o });
     },
+    async unqueue(id) {
+      const n = await nodeFor(id);
+      if (!n.pending) return false;
+      const opId = String(n.id).slice(4);
+      return (await dropQueued((op) => op.id === opId)).length > 0;
+    },
     async finishMeeting(id, f) {
       const n = await nodeFor(id);
       if (kindOf(n) !== "meeting") throw new Error(`Refusing to finish ${n.identifier}: it is a task, not a lodged meeting.`);
-      const lines = f.tasks.filter((t) => !(n.description ?? "").includes(`pmx:task ${t}`)).map((t) => `pmx:task ${t}`);
+      const lines = f.tasks.filter((t) => !plainMentions(n.description ?? "").includes(`pmx:task ${t}`)).map((t) => `pmx:task ${t}`);
       await enqueue({ kind: "finish-meeting", target: target(n), status: f.status, lines, comment: f.note });
     },
   };
@@ -364,7 +431,8 @@ export async function relayHealth(team: TeamConfig, now = new Date(), o: { cron?
   const snap = await readSnapshot();
   const ops = (await readOutbox()).ops;
   const failing = ops.filter((o) => (o.failures ?? 0) > 0).length;
-  const queue = `${ops.length} change(s) waiting${failing ? `, ${failing} failed at least once` : ""}`;
+  // R16b: a change Linear refused says how to see it and drop it.
+  const queue = `${ops.length} change(s) waiting${failing ? `, ${failing} refused by Linear at least once (\`pmx linear outbox\` lists them; \`pmx linear outbox drop <ID>\` drops one)` : ""}`;
   const how = "run the \"PMX: sync Linear through Claude\" task in the Claude app (`pmx schedule` says whether it exists)";
   if (!snap) return { ok: false, detail: `Linear through Claude: not synced yet on this Mac. PMX's Linear sync in the Claude app runs at the top of each hour, and this Mac's first one hasn't run yet; if it doesn't by then, ${how}` };
   if (team.tracker.kind === "linear" && linearRef("project", snap.projectId) !== team.tracker.projectId)
@@ -392,7 +460,9 @@ function reconcile(applied: RelayOp[], results: Map<string, RelayResult>, issues
     if (!id) continue;
     const w = want.get(id) ?? {};
     if ((op.kind === "create-task" || op.kind === "set-status") && op.state) w.state = op.state;
-    else if (op.kind === "set-agent" && op.value) w.assigned = true;
+    // R11: the batch's last say on the assignee counts. Clearing the agent (a redo, a reject) unassigns on purpose, so
+    // an earlier assign in the same batch no longer asks for one. It leaves anyone else assigned, so nothing is checked.
+    else if (op.kind === "set-agent") { if (op.value) w.assigned = true; else delete w.assigned; }
     else if (op.kind === "set-priority") w.priority = op.priority;
     want.set(id, w);
   }
@@ -422,7 +492,9 @@ export async function checkRelay(team: TeamConfig, now = new Date()): Promise<st
     if (r?.ok) { applied++; continue; }
     if (r && !r.ok) {
       const failures = (op.failures ?? 0) + 1;
-      if (failures >= 3) { out.push(`  ✘ gave up on ${op.kind} after 3 failures: ${r.error ?? "unknown error"}`); continue; }
+      if (failures >= 3) { out.push(`  ✘ gave up on ${opWords(op)} after Linear refused it 3 times: ${r.error ?? "unknown error"}. It's dropped; nothing more of it goes to Linear.`); continue; }
+      // R16b: said once, the first time, with the way to drop it; `pmx linear outbox` and `pmx status` keep showing it.
+      if (failures === 1) out.push(`  ✘ Linear refused ${opWords(op)}: ${r.error ?? "unknown error"}. PMX tries again at the next sync, up to 3 times. To drop it now: pmx linear outbox drop ${op.id.slice(0, 8)}`);
       remaining.push({ ...op, failures, lastError: r.error ?? "unknown error" });
       continue;
     }
@@ -450,7 +522,8 @@ export async function checkRelay(team: TeamConfig, now = new Date()): Promise<st
     for (const [op, r] of made) resolved[pendingIdentifier(op.id)] = { identifier: r!.identifier!, at: now.toISOString() };
     await writeJson(files.resolved(), resolved, 0o600);
   }
-  out.unshift(`Applied ${applied} change(s) in Linear; ${remaining.length} still waiting.`);
+  const refused = remaining.filter((op) => (op.failures ?? 0) > 0).length;
+  out.unshift(`Applied ${applied} change(s) in Linear; ${remaining.length} still waiting${refused ? ` (Linear refused ${refused}; \`pmx linear outbox\` lists them)` : ""}.`);
 
   const snap = await readSnapshot();
   const problems: string[] = [];

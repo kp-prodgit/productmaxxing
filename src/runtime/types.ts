@@ -25,7 +25,10 @@ export interface ProbeResult {
  */
 export interface AgentRuntime {
   readonly name: string;
-  /** `web` (RUN-6): the run about to start is a web run, so its own settings are checked. */
-  probe(team: TeamConfig, o?: { web?: boolean }): Promise<ProbeResult>;
+  /**
+   * `web` (RUN-6): the run about to start is a web run, so its own settings are checked. `repo` (R17): the checkout it
+   * starts in, so the checks judge its project settings merged with the run's.
+   */
+  probe(team: TeamConfig, o?: { web?: boolean; repo?: string }): Promise<ProbeResult>;
   run(o: InvocationOpts): Promise<RunResult>;
 }

@@ -18,4 +18,4 @@ SSO setup is the main onboarding friction for multi-workspace customers. Three s
 
 ## Open questions
 
-- How many accounts have more than one workspace? Ask the data team.
+- How many accounts have more than one workspace? — ask: the data team

@@ -28,7 +28,11 @@ Write `outputs/problem-brief/<task id>.md`:
    each one tells us about the problem; don't adopt any of them.
 7. `## Signals they'd pay`: budget mentioned, something they already pay for to work around it, urgency, who would
    sign. Interest alone isn't a signal; if there are none, say so.
-8. `## Open questions`: what we still need to learn, and whether to pursue it, marked **PM decides**.
+8. `## Open questions`: what we still need to learn, and whether to pursue it, marked **PM decides**. Right after
+   each question, say who or what answers it: `— ask: <role>` when one person can answer it
+   (`Who signs the order? — ask: the account lead`), or `— needs: <kind of work>` when it takes research or a document
+   (`— needs: research`, `— needs: a validation plan`). Name a role, never a person. When the draft is accepted, each
+   ask becomes the PM's to-do and each need a suggested task. A call marked **PM decides** needs no mark.
 
 Then reply with one line for the tracker comment.
 
@@ -41,6 +45,7 @@ Then reply with one line for the tracker comment.
 - Decisions (go or no-go, price, scope, kill) are options with a recommendation, marked **PM decides**. Never write them as settled.
 - No market figure, price or forecast without a source or a stated method. Use ranges.
 - End with the decision the draft supports or the questions blocking it.
+- No names other than redaction placeholders. Write each person as their role and company: "Globex's brand lead", "our head of product", "a Globex admin". Never a person's name, even one the task, a source or `memory/` gives. In your own sentences a role reads better than a placeholder like `[PERSON-2, Globex]`: keep placeholders for quotes, or for someone the sources give no role or company for.
 
 ## Quality checklist
 
@@ -49,4 +54,4 @@ Then reply with one line for the tracker comment.
 - [ ] Every severity and frequency claim cites a source ID or is marked as an assumption.
 - [ ] "Signals they'd pay" separates money and commitments from interest.
 - [ ] Follows the drafting rules.
-- [ ] No names other than redaction placeholders.
+- [ ] No names other than redaction placeholders: people appear as their role and company, never by name.

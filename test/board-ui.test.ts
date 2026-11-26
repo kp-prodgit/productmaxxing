@@ -3,7 +3,7 @@
 // leaving with unsaved changes; and the to-do buttons. A save is checked where it lands: the PM's settings on disk.
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_TEAM, loadPersonalConfig } from "../src/core/config.js";
-import { readProposals, stageProposals } from "../src/synth/proposals.js";
+import { CHECKED, readProposals, stageProposals } from "../src/synth/proposals.js";
 import { openBoard, type Ui } from "./ui-helpers.js";
 
 let ui: Ui | null = null;
@@ -418,8 +418,8 @@ describe("Needs you: new tasks to approve (old #inbox links land there)", () => 
   const seed = async () => {
     const at = new Date().toISOString(), day = at.slice(0, 10);
     await stageProposals([
-      { at, receipt: "r0", title: "Export approval history to CSV", description: "Admins need a record of who approved each request.", category: "spec", size: "M", sources: ["T1"], from: [{ id: "T1", title: "Beta call", at: day, why: "asked twice" }] },
-      { at, receipt: "r0", title: "Fix the wrong project name in emails", description: "Emails show the first project's name.", category: "spec", size: "S", sources: ["T2"], from: [{ id: "T2", title: "Pilot call", at: day, why: "a bug report" }] },
+      { at, receipt: "r0", title: "Export approval history to CSV", description: "Admins need a record of who approved each request.", category: "spec", size: "M", sources: ["T1"], from: [{ id: "T1", title: "Beta call", at: day, why: "asked twice" }], checked: CHECKED },
+      { at, receipt: "r0", title: "Fix the wrong project name in emails", description: "Emails show the first project's name.", category: "spec", size: "S", sources: ["T2"], from: [{ id: "T2", title: "Pilot call", at: day, why: "a bug report" }], checked: CHECKED },
     ]);
   };
   const row = (u: Ui, title: string) => u.all("main [role=listitem]").find((x) => x.textContent?.includes(title));

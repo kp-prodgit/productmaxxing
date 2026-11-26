@@ -37,6 +37,8 @@ export interface RunReceipt {
     folders: string[];
     /** F3: the team's approved internal meeting series this run read (team runs only). Team-approved names, not titles. */
     meetingSeries?: string[];
+    /** F5: the team's confidential domains this run held from team work (team runs only). Team settings, not people. */
+    confidentialDomains?: string[];
   };
   /** Sources that couldn't be read at all, e.g. "Slack: no token in the keychain". */
   skippedSources: string[];
@@ -68,6 +70,12 @@ export interface RunReceipt {
      * `into`. Only "done" and "overtaken" drop one.
      */
     batches?: number; reconciled?: { text: string; how: "done" | "overtaken" | "replaced" | "merged" | "same-ask"; by?: string; why?: string; into?: string }[];
+    /**
+     * R16 (TODO-5): to-dos from this run the PM moved to the team as product tasks, with the sources each carried (this
+     * run's IDs). The task's description names this receipt, so its agent finds those sources here (RUN-3), and the
+     * receipt is kept as long as a synthesis run behind a task.
+     */
+    moved?: { identifier: string; sources: string[]; at: string }[];
   };
   /** Fake confidential items run through this run's own rules in memory (FLOW-3). Each must be held. */
   canaries?: { total: number; held: number; failed: string[] };
@@ -127,7 +135,11 @@ export interface TaskReceipt {
   /** `staged`: waiting for the PM's approval as that proposal (APPROVE-1); `dropped`: the PM said no. */
   /** `mergedInto`: the same need as a proposal already waiting, so its sources were added to that one (INPUT-2). */
   /** `todo`: the PM kept it as their own to-do, with that ID, instead of sending it (TODO-5). */
-  posted?: { identifier: string } | { duplicateOf: string } | { dryRun: true } | { staged: string } | { dropped: true } | { mergedInto: string } | { todo: string };
+  /**
+   * R6: `duplicateOf` with `done` (the day, YYYY-MM-DD): work the team finished recently, heard again, so not suggested.
+   * `dropped` with `reason`: why the PM dropped it, in their words (`pmx proposals drop … --reason`), on this Mac only.
+   */
+  posted?: { identifier: string } | { duplicateOf: string; done?: string } | { dryRun: true } | { staged: string } | { dropped: true; reason?: string } | { mergedInto: string } | { todo: string };
 }
 
 export type SizeFlag = "no-reason" | "cell-mismatch" | "count-below" | "count-above";
@@ -203,10 +215,13 @@ async function pruneReceipts(now: Date): Promise<void> {
   const evidence = at(KEEP_EVIDENCE_DAYS);
   for (const [i, id] of ids.entries()) {
     if (i < KEEP_MAX && stamp(id) >= cutoff) continue;
-    if (id.startsWith("synthesize-") && stamp(id) >= evidence && (await feedsTasks(id))) continue;
+    if ((id.startsWith("synthesize-") || id.startsWith("todo-")) && stamp(id) >= evidence && (await feedsTasks(id))) continue;
     await rm(join(paths.receipts(), `${id}.json`), { force: true });
   }
 }
 
-const feedsTasks = async (id: string) =>
-  !!(await readJson<RunReceipt>(join(paths.receipts(), `${id}.json`)))?.synth?.tasks.some((t) => t.posted && "identifier" in t.posted);
+const feedsTasks = async (id: string) => {
+  const r = await readJson<RunReceipt>(join(paths.receipts(), `${id}.json`));
+  // R16: a to-do run whose to-do became a team task holds that task's evidence too.
+  return !!r?.synth?.tasks.some((t) => t.posted && "identifier" in t.posted) || !!r?.todo?.moved?.length;
+};

@@ -8,7 +8,7 @@ export function claudeCode(exec: Exec = defaultExec): AgentRuntime {
   return {
     name: "claude-code",
 
-    async probe(team: TeamConfig, o: { web?: boolean } = {}): Promise<ProbeResult> {
+    async probe(team: TeamConfig, o: { web?: boolean; repo?: string } = {}): Promise<ProbeResult> {
       const problems: string[] = [];
       const v = await resolveClaude(exec);
       if (!v) problems.push("Claude Code is not installed (https://code.claude.com).");

@@ -36,6 +36,8 @@ interface Waiting {
   follows?: string | null;
   /** FOLLOW-1: the follow-up's copy of the original's quotes, kept at the accept, for when the original's pack is gone. */
   quotes?: PackQuotes;
+  /** R5: the name swap that copy went through (`keptQuotes`), as a pack's `nameSwap`. */
+  quotesSwap?: number;
   /** The PM was told it failed (once per task). */
   told?: boolean;
 }
@@ -56,13 +58,15 @@ const TIDY_EVERY_MS = 3 * 3600000;
 export const storeFor = (ctx: Pick<Ctx, "repo" | "personal">) => evidenceStore(ctx.repo, { email: `${ctx.personal.handle}@pmx.local` });
 
 /** Stages approved tasks that cite sources, for their packs (RUN-5). A team without a tracker has no tasks to share. */
-export async function stageShares(ctx: Pick<Ctx, "team" | "now">, tasks: { identifier: string; title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null }[]): Promise<void> {
+export async function stageShares(ctx: Pick<Ctx, "team" | "now">, tasks: { identifier: string; title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null; quotesSwap?: number | null }[]): Promise<void> {
   const want = tasks.filter((t) => t.sources.length);
   if (ctx.team.tracker.kind === "none" || !want.length) return;
   await withLock(file(), async () => {
     const all = await read();
     const seen = new Set(all.map((w) => w.identifier));
-    for (const { quotes, ...t } of want) if (!seen.has(t.identifier)) all.push({ ...t, follows: t.follows ?? null, ...(quotes?.length ? { quotes } : {}), at: ctx.now().toISOString() });
+    for (const { quotes, quotesSwap, ...t } of want) {
+      if (!seen.has(t.identifier)) all.push({ ...t, follows: t.follows ?? null, ...(quotes?.length ? { quotes, ...(quotesSwap ? { quotesSwap } : {}) } : {}), at: ctx.now().toISOString() });
+    }
     await save(all);
   });
 }
@@ -82,6 +86,17 @@ export function followUpQuotes(e: { sources: PackQuotes; from?: string | null })
   return e.sources.map((s) => ({ id: s.id, kind: s.kind, at: s.at, passages: [...s.passages] }));
 }
 
+/**
+ * R5 (RUN-5): the copy a follow-up keeps (`followUpQuotes`), with the name swap it went through (`quotesSwap`): read
+ * from the team's pack, its passages went through today's swap (`runEvidence`: a pack from before it is swapped as it's
+ * read). Approval then reads no people out of it, as from a swapped pack (`recheckProposal`), and its own pack is
+ * written from it as it is. A copy kept before this has no record of it, so it's read and swapped again.
+ */
+export function keptQuotes(e: { sources: PackQuotes; from?: string | null; swapped?: boolean }): { quotes?: PackQuotes; quotesSwap?: number } {
+  const quotes = followUpQuotes(e);
+  return quotes ? { quotes, ...(e.swapped ? { quotesSwap: NAME_SWAP } : {}) } : {};
+}
+
 export interface ShareResult {
   shared: string[];
   /** "PMX couldn't share PMX-12's quotes with your team: …", once per task. */
@@ -99,7 +114,7 @@ const list = (ids: string[]) => (ids.length <= 2 ? ids.join(" and ") : `${ids.sl
  * checked like a pack and swapped the same way. The one builder for an approval, the backfill and a rewrite (`at`: the pack's first write); the
  * store refuses a pack that carries a canary (FLOW-3).
  */
-async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null }, id: string, now: Date, at?: string): Promise<EvidencePack | null> {
+async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null; quotesSwap?: number | null }, id: string, now: Date, at?: string): Promise<EvidencePack | null> {
   const e: Evidence = await taskEvidence(ctx, { title: t.title, description: t.description, sources: t.sources }).catch(() => ({ sources: [], missing: [] }));
   let sources = e.sources;
   let companies = e.companies ?? [];
@@ -110,8 +125,9 @@ async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; descr
     if (sources.length && !swappedPack(o)) sources = swapPassages(sources, [...companies, ...sourceCompanies(t.description, t.title)], await swapLists(ctx)).sources;
   }
   if (!sources.length && t.quotes?.length) {
-    sources = packSources({ v: 1, task: id, at: now.toISOString(), sources: t.quotes }, t.sources);
-    if (sources.length) sources = swapPassages(sources, sourceCompanies(t.description, t.title), await swapLists(ctx)).sources;
+    const kept: EvidencePack = { v: 1, task: id, at: now.toISOString(), ...(t.quotesSwap ? { nameSwap: t.quotesSwap } : {}), sources: t.quotes };
+    sources = packSources(kept, t.sources);
+    if (sources.length && !swappedPack(kept)) sources = swapPassages(sources, sourceCompanies(t.description, t.title), await swapLists(ctx)).sources;
   }
   return sources.length ? { v: 1, task: id, at: at ?? now.toISOString(), nameSwap: NAME_SWAP, ...(companies.length ? { companies } : {}), sources } : null;
 }

@@ -20,7 +20,8 @@ import { evidenceBlock, runEvidence, type Evidence } from "./evidence.js";
 import { webOn } from "../core/config.js";
 import { openCheckoutToWeb, WEB_TOOLS } from "../core/profile.js";
 import { failStreak, FAILS_TO_BLOCK } from "../pull/failures.js";
-import { draftComment, draftSummary, sourceCompanies, sourcePeople } from "./comment.js";
+import { draftComment, draftSummary, sourceCompanies, sourcePeople, sourceThings } from "./comment.js";
+import { knownThings } from "./known-people.js";
 import { buildGuard, clearGuard, guardBlocked, writeGuard } from "./web-guard.js";
 
 export function slug(s: string): string {
@@ -225,6 +226,9 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     // the names in their text), never a company the task's own text names, nor (R5) one its evidence lists: the
     // sources' outside companies, which an evidence pack carries since it has no participants.
     const people = sourcePeople(evidence, [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])], [...sourceCompanies(task.description, task.title), ...(evidence.companies ?? [])]);
+    // D2-1: and the companies the sources show, so "Ask Globex for…" may stay while "Ask Dana for…" never does.
+    const things = sourceThings(evidence, [...team.internalDomains, ...(ctx.personal.companyDomains ?? [])], task.description);
+    const known = await knownThings(ctx).catch(() => [] as string[]);
     await rm(join(wt.cwd, ".pmx", "tmp"), { recursive: true, force: true });
     await writeFileIn(wt.cwd, `.pmx/runs/${task.identifier}.json`, JSON.stringify(record, null, 2) + "\n");
     await wt.ok(["add", ...stagePaths(env)]);
@@ -234,7 +238,7 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
     const noun = env.kind === "prototype" ? "Prototype" : "Draft";
     const checkLabel = env.kind === "prototype" ? "Build check" : "Checklist";
     const host = await outputHost(wt, ctx.keychain, ctx.exec, ctx.fetch);
-    const summary = draft ? draftSummary(draft, names, undefined, { people, confidential: confidentialDomains(ctx.team.confidentialDomains) }) : "";
+    const summary = draft ? draftSummary(draft, names, undefined, { people, things, known, confidential: confidentialDomains(ctx.team.confidentialDomains) }) : "";
     const pr = await host.openPr({
       branch,
       base,
@@ -261,7 +265,7 @@ async function runLeased(ctx: Ctx, svc: Services, task: Task, lease: LeaseInfo):
       labels: ["pmx", `pmx-${category}`, ...(check.ok ? [] : ["pmx-checklist-failed"])],
     });
     keepBranch = true;
-    const said = draftComment({ title: task.title, markdown: draft, prUrl: pr.url, path: check.ref, agent: ctx.agent, names, people, noun });
+    const said = draftComment({ title: task.title, markdown: draft, prUrl: pr.url, path: check.ref, agent: ctx.agent, names, people, things, known, noun });
     await tracker.comment(task.id, `pmx:pr ${pr.url}\n${said}`);
     await tracker.setStatus(task.id, "review");
     // PULL-14: in the team repo before the lease goes, so a Mac whose copy of Linear still says Ready doesn't draft it again.

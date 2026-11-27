@@ -223,7 +223,7 @@ describe("a to-do moved to the team (R16, R15, TODO-5)", () => {
     const { ctx, tr, move } = await setup();
     await refreshTodos(ctx, { since: startOfDay(NOW, 2) });
     const named = (await loadTodos()).items.find((t) => t.text.startsWith("Send Jane"))!;
-    await expect(move(named.id, "product", { kind: "spec" })).rejects.toThrow("PMX didn't send it: its words name a person, which Linear never gets. Reword the to-do and move it again.");
+    await expect(move(named.id, "product", { kind: "spec" })).rejects.toThrow(`PMX didn't send it: its words name a person, which Linear never gets. Reword it with \`pmx todo edit ${named.id} "<new words>"\`, which keeps its meetings and due date, and move it again.`);
     // Nothing reached Linear, and the to-do is still the PM's.
     expect(tr.tasks.size).toBe(0);
     expect((await loadTodos()).items.map((t) => t.id)).toContain(named.id);
@@ -235,7 +235,7 @@ describe("a to-do moved to the team (R16, R15, TODO-5)", () => {
   it("a to-do naming someone on the CRM list isn't sent; one that doesn't moves", async () => {
     const { tr, move } = await setup({ crm: ["Dana Ruiz"] });
     const named = await addTodo({ text: "Ask Dana Ruiz for the signed order form" }, NOW);
-    await expect(move(named.id, "product", { kind: "spec" })).rejects.toThrow("PMX didn't send it: its words name a person, which Linear never gets. Reword the to-do and move it again.");
+    await expect(move(named.id, "product", { kind: "spec" })).rejects.toThrow(`PMX didn't send it: its words name a person, which Linear never gets. Reword it with \`pmx todo edit ${named.id} "<new words>"\`, which keeps its meetings and due date, and move it again.`);
     expect(tr.tasks.size).toBe(0);
     const clean = await addTodo({ text: "Spec the signed order form upload" }, NOW);
     expect(await move(clean.id, "product", { kind: "spec" })).toMatchObject({ to: "product", identifier: "PMX-1" });

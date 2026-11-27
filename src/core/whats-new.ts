@@ -19,6 +19,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.39.0", date: "2026-11-27", headline: "Names stay out of Linear, accepts reach your team, and clearer follow-ups",
+    items: [
+      { what: "A to-do's own words are checked before they reach Linear, whether you move it to the team or send it as your own: 'Ask <name>…' is held with the reason. Reword it and keep its meetings and due date.", try: "pmx todo edit <id> \"<new words>\"" },
+      { what: "On a team repo that isn't on GitHub, an accept reaches your team's repo even when it has newer work, and older unshared accepts follow. When PMX can't push, status and doctor give the exact command; your own commits are never pushed for you.", try: "pmx status" },
+      { what: "A customer's data room isn't fundraising, and one investor line no longer keeps a whole thread out of team work." },
+      { what: "A fact said again in other words goes once, clause by clause, keeping the fuller sentence; SSO and SCIM, or server-side and client-side, stay separate facts." },
+      { what: "Decisions, asks and follow-up tasks read clearly: 'Decide whether the price is…', 'Ask legal: …', and titles that keep their subject." },
+    ],
+  },
+  {
     version: "0.38.0", date: "2026-11-26", headline: "No names in your team's repo, follow-ups that fit, and web research that works",
     items: [
       { what: "Your team's repo names no one: shared quotes swap people for placeholders, drafts write roles, and investors and fundraising stay out of team work. List your investors' domains once, in a change a teammate approves.", try: "pmx domains confidential add <domain>" },

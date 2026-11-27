@@ -272,7 +272,7 @@ describe("sorting a draft's questions: to ask or to work on (FOLLOW-1, R2)", () 
     ]);
   });
 
-  it("an unmarked statement isn't a question, and a label the question points back to stays in its title (R2c)", () => {
+  it("an unmarked statement isn't a question, and a question that points back to its label says what it means (R2c)", () => {
     const md = [
       "# T", "", "## Open questions", "",
       "- The sources mention a second partner answer due Dec 15.",
@@ -282,7 +282,7 @@ describe("sorting a draft's questions: to ask or to work on (FOLLOW-1, R2)", () 
       "- Pilot length for Globex — needs: a validation plan",
     ].join("\n");
     expect(read(md).map((q) => q.title)).toEqual([
-      "Initech partner terms: when do they close, and what are the co-marketing specifics?",
+      "When do the Initech partner terms close, and what are the co-marketing specifics?",
       "Find out how long imports take",
       // Marked by the skill as a question, so it is one.
       "Pilot length for Globex",
@@ -349,7 +349,7 @@ describe("a call marked PM decides is the PM's, an explicit mark beats the words
     expect(calls(md)).toEqual([
       // Unmarked, the words decide: "Should <something> …?" is whether it should.
       ["Decide whether training runs should have their own limit for design partners (PMX-40)", "", null],
-      ["Decide: Is the monthly allowance pooled across workspaces? (PMX-40)", "Ask the pricing owner.", null],
+      ["Decide whether the monthly allowance is pooled across workspaces (PMX-40)", "Ask the pricing owner.", null],
       // The PM is no one to ask: a question for the PM is the PM's call.
       ["Decide who owns the overage invoice (PMX-40)", "", null],
     ]);
@@ -437,8 +437,8 @@ describe("accepting a draft: questions to ask become to-dos, work becomes tasks 
     expect((await loadTodos()).items.map((t) => [t.text, t.due, t.why])).toEqual([
       // Blocking first; due on the date the draft gives.
       ["Ask the account lead: Who signs the contract at Globex, and who is the procurement contact? (PMX-21)", "2026-12-12", "Needed before Dec 12."],
-      ["Ask the design lead: Can a designer be freed for the plugin UI in December? (PMX-21)", null, "The draft leaves it open."],
-      ["Ask the finance lead: Who funds the $10,000, and what is our share? (PMX-21)", null, "The draft leaves it open."],
+      ["Ask the design lead: Can a designer be freed for the plugin UI in December? (PMX-21)", null, "PMX-21's accepted draft lists this as an open question."],
+      ["Ask the finance lead: Who funds the $10,000, and what is our share? (PMX-21)", null, "PMX-21's accepted draft lists this as an open question."],
     ]);
     const ps = await readProposals();
     expect(ps.map((p) => [p.title, p.category, p.follows?.where])).toEqual([
@@ -493,9 +493,9 @@ describe("accepting a draft: questions to ask become to-dos, work becomes tasks 
     expect(r).toMatchObject({ leftOut: 0, proposals: [] });
     expect(followUpText(r)).toBe("3 questions to ask added to your to-dos.");
     expect((await loadTodos()).items.map((t) => [t.text, t.why])).toEqual([
-      ["Ask the account lead: Will the admins keep exporting a spreadsheet every single Friday afternoon by hand? (PMX-21)", "The draft leaves it open."],
+      ["Ask the account lead: Will the admins keep exporting a spreadsheet every single Friday afternoon by hand? (PMX-21)", "PMX-21's accepted draft lists this as an open question."],
       ["Ask the account lead: Who signs the order at Globex? (PMX-21)", "Admins keep exporting a spreadsheet every single Friday afternoon by hand. Recommend asking this week."],
-      ["Ask the account lead: Is \"good enough\" what the buyer approved? (PMX-21)", "The draft leaves it open."],
+      ["Ask the account lead: Is \"good enough\" what the buyer approved? (PMX-21)", "PMX-21's accepted draft lists this as an open question."],
     ]);
   });
 

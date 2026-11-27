@@ -1,9 +1,11 @@
-import { stat } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Fetch } from "../sources/slack.js";
 import type { Exec } from "./exec.js";
 import type { Git } from "./git.js";
 import type { Keychain } from "./keychain.js";
+import { updateState } from "./state.js";
 
 /**
  * Where outputs land as pull requests (OUT-2). GitHub when the PMX repo has a GitHub remote,
@@ -97,18 +99,206 @@ function draftWords(branch: string): { name: string; verb: string; it: string } 
 const fileList = (xs: string[]) => (xs.length <= 3 ? xs.join(xs.length === 2 ? " and " : ", ").replace(/, ([^,]*)$/, ", and $1") : `${xs.slice(0, 2).join(", ")} and ${xs.length - 2} more files`);
 
 /**
- * R24: a team repo that isn't on GitHub shares its base branch through origin, so an accept made here goes there too:
- * a plain push, fast-forward only, never forced. When origin has newer work or can't be reached, the accept stands on
- * this Mac and the sentence says so, once. A repo with no origin has nowhere to push.
+ * How PMX's own commits on a team repo's base are told from a PM's (D2-2). An accept, or a settings apply, is one commit
+ * with one parent whose whole message is `Accept pmx/<branch>`: every PMX since the first wrote it so, through
+ * `commit-tree` or `merge --squash` and `commit`. Its author is the PM's own git name, so the author can't tell. The
+ * merge PMX makes when accepts don't rebase cleanly has two parents and its own message. Anything else is the PM's.
  */
-async function pushBase(git: Git, base: string, what: string): Promise<{ unpushed?: string }> {
-  if (!(await git.hasRemote())) return {};
-  const r = await git.raw(["push", "--quiet", "origin", `refs/heads/${base}:refs/heads/${base}`]);
-  if (r.code === 0) return {};
-  const why = /rejected|non-fast-forward|fetch first|stale info/i.test(r.stderr)
-    ? "your team's repo has newer work, so PMX didn't push over it"
-    : "PMX couldn't reach your team's repo";
-  return { unpushed: `The ${what} is only on this Mac until you run git push in your team repo: ${why}.` };
+const PMX_ACCEPT = /^Accept pmx\/\S+$/;
+const PMX_MERGE = /^Merge your team's \S+ under accepted drafts \(PMX\)$/;
+const mergeMessage = (base: string) => `Merge your team's ${base} under accepted drafts (PMX)`;
+const NET_MS = 60000;
+const lastLine = (t: string) => t.trim().split("\n").filter(Boolean).pop() || "git failed";
+
+/** Why work on this Mac's base isn't in the team's repo (D2-2). */
+export type Unshared = "unreachable" | "busy" | "clash" | "own" | "failed";
+
+/** What a share left on this Mac only: PMX's accepts, the PM's own commits (short hash and subject), and why. */
+export interface LeftHere {
+  why: Unshared;
+  accepts: number;
+  own: string[];
+  detail?: string;
+}
+
+export interface Shared {
+  /** PMX's accepts that reached the team's repo now. */
+  pushed: number;
+  /** This Mac's base took the team's newer work with them. */
+  pulled: boolean;
+  left: LeftHere | null;
+}
+
+/** The commits this Mac's base has that origin's doesn't, as of the last fetch, leaving out any whose change origin already has. */
+async function aheadOf(git: Git, base: string): Promise<{ accepts: number; own: string[]; commits: number } | null> {
+  const range = [`refs/remotes/origin/${base}...refs/heads/${base}`];
+  const all = await git.raw(["rev-list", "--count", `refs/remotes/origin/${base}..refs/heads/${base}`]);
+  if (all.code !== 0) return null;
+  const r = await git.raw(["log", "--right-only", "--cherry-pick", "--format=%H%x1f%P%x1f%B%x1e", ...range]);
+  if (r.code !== 0) return null;
+  let accepts = 0;
+  const own: string[] = [];
+  for (const rec of r.stdout.split("\x1e").map((x) => x.trim()).filter(Boolean)) {
+    const [sha = "", parents = "", msg = ""] = rec.split("\x1f");
+    const n = parents.split(" ").filter(Boolean).length, text = msg.trim();
+    if (n === 1 && PMX_ACCEPT.test(text)) accepts++;
+    else if (!(n === 2 && PMX_MERGE.test(text))) own.push(`${sha.slice(0, 7)} "${(text.split("\n")[0] ?? "").slice(0, 60)}"`);
+  }
+  return { accepts, own, commits: Number(all.stdout.trim()) || 0 };
+}
+
+/**
+ * The team's newer work with this Mac's accepts on top, built in a worktree of its own so the PM's checkout isn't
+ * touched: a rebase, or a merge when the accepts don't replay cleanly one by one. A clash aborts either, so nothing
+ * changes anywhere.
+ */
+async function onTop(git: Git, old: string, theirs: string, base: string): Promise<{ sha: string } | { clash: true } | { failed: string }> {
+  const dir = await mkdtemp(join(tmpdir(), "pmx-share-"));
+  const wt = join(dir, base.replace(/\W+/g, "-"));
+  const ident = (await git.raw(["var", "GIT_COMMITTER_IDENT"])).code === 0 ? [] : ["-c", "user.name=pmx", "-c", "user.email=pmx@localhost"];
+  try {
+    const add = await git.raw(["worktree", "add", "--quiet", "--detach", wt, old]);
+    if (add.code !== 0) return { failed: lastLine(add.stderr) };
+    const tip = async () => ({ sha: await git.ok(["rev-parse", "HEAD"], { cwd: wt }) });
+    const rb = await git.raw([...ident, "-c", "core.editor=true", "rebase", "--quiet", theirs], { cwd: wt });
+    if (rb.code === 0) return tip();
+    const clashed = (await git.raw(["diff", "--name-only", "--diff-filter=U"], { cwd: wt })).stdout.trim() !== "";
+    await git.raw(["rebase", "--abort"], { cwd: wt });
+    if (!clashed) return { failed: lastLine(rb.stderr || rb.stdout) };
+    await git.raw(["checkout", "--quiet", "--detach", old], { cwd: wt });
+    const mg = await git.raw([...ident, "merge", "--quiet", "--no-ff", "--no-edit", "-m", mergeMessage(base), theirs], { cwd: wt });
+    if (mg.code === 0) return tip();
+    await git.raw(["merge", "--abort"], { cwd: wt });
+    return { clash: true };
+  } finally {
+    await git.raw(["worktree", "remove", "--force", wt]);
+    await rm(dir, { recursive: true, force: true });
+    await git.raw(["worktree", "prune"]);
+  }
+}
+
+/**
+ * Moves this Mac's base from `old` to `next`. Where it's checked out, `reset --keep` brings only the files that differ
+ * up to date and refuses, changing nothing, when the PM has edits to one of them or a file of theirs is in the way.
+ */
+async function moveBase(git: Git, base: string, old: string, next: string): Promise<boolean> {
+  const where = await checkedOutAt(git, base);
+  if (where === null) return (await git.raw(["update-ref", "-m", "pmx: accepted drafts on top of the team's work", `refs/heads/${base}`, next, old])).code === 0;
+  if ((await git.raw(["rev-parse", "--verify", `refs/heads/${base}`])).stdout.trim() !== old) return false;
+  return (await git.raw(["reset", "--quiet", "--keep", next], { cwd: where })).code === 0;
+}
+
+/**
+ * D2-2: puts this Mac's accepts in the team's repo when it isn't on GitHub. It fetches origin's base, and when origin
+ * moved, rebases the accepts onto it (or merges, when a rebase isn't clean), then pushes: fast-forward only, never
+ * forced. Only PMX's own commits go automatically (see PMX_ACCEPT): with a commit of the PM's on the base, nothing is
+ * pushed, since a push sends every commit the base has. This Mac's base then takes the team's newer work, unless
+ * `takeTheirs` is false (its config doesn't load, JOB-10) or the PM has edits in the way. A clash, an origin out of
+ * reach or a git that fails leaves everything as it was, and `left` says why.
+ */
+export async function shareBase(git: Git, base: string, o: { fetched?: boolean; takeTheirs?: boolean } = {}): Promise<Shared> {
+  const none: Shared = { pushed: 0, pulled: false, left: null };
+  if (!(await git.hasRemote())) return none;
+  const theirs = `refs/remotes/origin/${base}`, mine = `refs/heads/${base}`;
+  const leave = async (why: Unshared, detail?: string): Promise<Shared> => {
+    const a = await aheadOf(git, base);
+    return a && (a.accepts || a.own.length) ? { ...none, left: { why, accepts: a.accepts, own: a.own, ...(detail ? { detail } : {}) } } : none;
+  };
+  for (let attempt = 0; ; attempt++) {
+    if (!o.fetched || attempt > 0) {
+      const f = await git.raw(["fetch", "--quiet", "origin", `+refs/heads/${base}:${theirs}`], { timeoutMs: NET_MS });
+      if (f.code !== 0) return leave("unreachable", lastLine(f.stderr));
+    }
+    const ahead = await aheadOf(git, base);
+    if (!ahead || !ahead.commits) return none;
+    if (ahead.own.length) return { ...none, left: { why: "own", accepts: ahead.accepts, own: ahead.own } };
+    const old = await git.ok(["rev-parse", "--verify", mine]);
+    const at = await git.ok(["rev-parse", "--verify", theirs]);
+    let next = old;
+    if ((await git.raw(["merge-base", "--is-ancestor", theirs, mine])).code !== 0) {
+      const built = await onTop(git, old, theirs, base);
+      if ("clash" in built) return leave("clash");
+      if ("failed" in built) return leave("failed", built.failed);
+      next = built.sha;
+    }
+    if (next !== at) {
+      const p = await git.raw(["push", "--quiet", "origin", `${next}:refs/heads/${base}`], { timeoutMs: NET_MS });
+      if (p.code !== 0) {
+        const newer = /rejected|non-fast-forward|fetch first|stale info/i.test(p.stderr);
+        // Origin moved again since the fetch: once more from the top.
+        if (newer && attempt === 0) continue;
+        return leave(newer ? "busy" : "unreachable", lastLine(p.stderr));
+      }
+      await git.raw(["update-ref", theirs, next]);
+    }
+    const pulled = next !== old && o.takeTheirs !== false && (await moveBase(git, base, old, next));
+    return { pushed: ahead.accepts, pulled, left: null };
+  }
+}
+
+/** Saves how the last share went, for `pmx status`, Needs you and `pmx doctor` (D2-2). Never throws. */
+export async function noteShared(git: Git, s: Shared, at = new Date().toISOString()): Promise<void> {
+  if (!(await git.hasRemote())) return;
+  await updateState((st) => { st.teamPush = { at, why: s.left?.why ?? null, detail: s.left?.detail ?? null }; }).catch(() => {});
+}
+
+const accepted = (n: number) => `${n} accepted draft${n === 1 ? "" : "s"}`;
+const quote = (p: string) => `'${p.replace(/'/g, `'\\''`)}'`;
+
+/** The commands that share this Mac's base with the team's repo by hand, every commit it has. */
+async function byHand(git: Git, base: string): Promise<{ pull: string; push: string; both: string }> {
+  const q = quote(git.cwd);
+  const on = (await git.raw(["branch", "--show-current"])).stdout.trim() === base;
+  const pull = `${on ? "" : `git -C ${q} switch ${base} && `}git -C ${q} pull --rebase origin ${base}`;
+  const push = `git -C ${q} push origin ${base}`;
+  return { pull, push, both: `${pull} && ${push}` };
+}
+
+/** The sentence an accept answers with when it stays on this Mac (R24, D2-2). */
+async function leftNote(git: Git, base: string, what: string, left: LeftHere): Promise<string> {
+  const cmd = await byHand(git, base);
+  const only = `The ${what} is only on this Mac`;
+  switch (left.why) {
+    case "unreachable": return `${only} for now: PMX couldn't reach your team's repo. PMX's next background run tries again.`;
+    case "busy": return `${only} for now: your team's repo kept changing while PMX pushed. PMX's next background run tries again.`;
+    case "clash": return `${only}: it clashes with newer work in your team's repo, so PMX left both as they were. To share it, run ${cmd.pull} in Terminal, settle the clash as git says, then run ${cmd.push}.`;
+    case "own": return `${only}: your ${base} there also has commits of your own (${left.own.slice(0, 2).join(", ")}${left.own.length > 2 ? ` and ${left.own.length - 2} more` : ""}), and PMX never pushes those for you. To push everything ${base} has, run ${cmd.both} in Terminal.`;
+    default: return `${only}: PMX couldn't put it on top of your team's newer work (${left.detail ?? "git failed"}). To share it, run ${cmd.both} in Terminal.`;
+  }
+}
+
+/**
+ * D2-2: what this Mac's base has that the team's repo doesn't (not on GitHub), in words with exactly what to run, for
+ * `pmx status`, Needs you and `pmx doctor`. `needsYou` when PMX can't do it itself. Null when there's nothing.
+ */
+export async function unsharedWork(git: Git, last: { why: Unshared | null; detail?: string | null } | null | undefined): Promise<{ text: string; needsYou: boolean } | null> {
+  const url = await git.remoteUrl();
+  if (!url || parseGitHubRemote(url)) return null;
+  const base = await git.defaultBranch();
+  const a = await aheadOf(git, base);
+  if (!a || (!a.accepts && !a.own.length)) return null;
+  const cmd = await byHand(git, base);
+  const one = a.accepts === 1, n = accepted(a.accepts), are = one ? "is" : "are", them = one ? "it" : "them";
+  if (a.own.length) {
+    const mine = `${a.own.length} commit${a.own.length === 1 ? "" : "s"} of your own (${a.own.slice(0, 2).join(", ")}${a.own.length > 2 ? ` and ${a.own.length - 2} more` : ""})`;
+    return { needsYou: true, text: `Your ${base} on this Mac has ${mine}${a.accepts ? ` and ${n}` : ""} that your team's repo doesn't, and PMX never pushes your own commits for you: a push sends every commit ${base} has. To push them all, run: ${cmd.both}` };
+  }
+  const why = last?.why ?? null;
+  const detail = last?.detail ? ` (${last.detail})` : "";
+  if (why === "clash") return { needsYou: true, text: `${n} ${are} only on this Mac: ${one ? "it clashes" : "they clash"} with newer work in your team's repo, so PMX left ${them} as ${one ? "it was" : "they were"}. Run ${cmd.pull}, settle the clash as git says, then run ${cmd.push}` };
+  if (why === "unreachable") return { needsYou: true, text: `${n} ${are} only on this Mac: PMX couldn't reach your team's repo${detail}. PMX tries again on each background run; to push ${them} yourself, run: ${cmd.both}` };
+  if (why === "failed") return { needsYou: true, text: `${n} ${are} only on this Mac: PMX couldn't put ${them} on top of your team's newer work${detail}. Run: ${cmd.both}` };
+  return { needsYou: false, text: `${n} ${are} only on this Mac until PMX's next background run pushes ${them} to your team's repo (or run: ${cmd.both})` };
+}
+
+/**
+ * R24, D2-2: an accept on a team repo that isn't on GitHub goes to the team's repo at once, on top of any newer work
+ * there; when it can't, the accept stands on this Mac and one sentence says why and what to run. No origin: nothing.
+ */
+async function share(git: Git, base: string, what: string): Promise<{ unpushed?: string }> {
+  const s = await shareBase(git, base);
+  await noteShared(git, s);
+  return s.left ? { unpushed: await leftNote(git, base, what, s.left) } : {};
 }
 
 /** The folder where `branch` is checked out, in the PM's checkout or any other worktree; null when nowhere. */
@@ -168,7 +358,7 @@ export function localHost(git: Git): OutputHost {
           await git.ok(["merge", "--squash", branch], { cwd: where });
           await git.ok(["commit", "-q", "-m", `Accept ${branch}`], { cwd: where });
           await git.raw(["branch", "-D", branch]);
-          return pushBase(git, base, what);
+          return share(git, base, what);
         }
         throw new Error(`PMX can't ${d.verb} ${d.name} on this Mac while other work is open: its developer tools are too old. Update them (in Terminal: xcode-select --install), then ${d.verb} again.`);
       }
@@ -197,7 +387,7 @@ export function localHost(git: Git): OutputHost {
         }
       }
       await git.raw(["branch", "-D", branch]);
-      return files.length ? pushBase(git, base, what) : {};
+      return files.length ? share(git, base, what) : {};
     },
     async reject(branch) {
       await git.raw(["branch", "-D", branch]);

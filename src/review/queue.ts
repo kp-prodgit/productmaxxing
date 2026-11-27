@@ -104,9 +104,10 @@ export async function recordDecision(
   let unpushed: string | null = null;
   if ((verdict === "rejected" || verdict === "redo") && !o.note?.trim()) throw new Error(`A ${verdict === "redo" ? "redo" : "reject"} needs a note.`);
   if (verdict === "accepted") {
-    // R24: on a team repo that isn't on GitHub, the accept is pushed to origin; when it can't be, the answer says so once.
+    // R24, D2-2: on a team repo that isn't on GitHub, the accept goes to origin on top of its newer work; when it can't,
+    // the answer says so once, and Linear doesn't point teammates at a team repo that hasn't got it.
     unpushed = (await host.accept(item.prId))?.unpushed ?? null;
-    await svc.tracker.comment(task.id, `Accepted by ${who}.`);
+    await svc.tracker.comment(task.id, `Accepted by ${who}.${unpushed ? ` The accepted draft is on ${who}'s Mac until it's pushed to the team repo.` : ""}`);
     await svc.tracker.setStatus(task.id, "done");
     // FOLLOW-1: the draft's calls and open work, made after the accept, which nothing here undoes.
     try { followUps = await followUpsOnAccept(ctx, svc, item); }

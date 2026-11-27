@@ -14,7 +14,7 @@ import { sentencesIn } from "../core/tracker-text.js";
 import { fillable, groupsLine, mergeGroups, type SourceGroup } from "./synthesize.js";
 import { doneDay, recentlyDone } from "./done.js";
 import { recheckProposal } from "./recheck.js";
-import { anchorsOf, differs, sameFact, stem } from "./repeats.js";
+import { addsNothing, anchorsIn, anchorsOf, asks, differs, newWords, piecesOf, sameFact, saysMore, sharedCompanies, stem, swapsTerm, tellsApart, withoutDates } from "./repeats.js";
 
 /**
  * Proposed tasks waiting for the PM (APPROVE-1). Synthesis stages what it would write to the tracker here, exactly
@@ -39,6 +39,8 @@ export interface Proposal {
     receipt: string; at: string; n: number;
     /** N2: the IDs the added sources have in this proposal's own run, and the sentences its description gained. */
     ids?: string[]; added?: string[];
+    /** R12a: the sentences of the run that said one of the description's more fully, each now in that one's place. */
+    fuller?: string[];
   }[];
   /** N2: the sources line's parts, so a later run's sources join it. Proposals staged before 0.37.0 have none. */
   sourceGroups?: SourceGroup[];
@@ -66,6 +68,11 @@ export interface Proposal {
    */
   quotes?: PackQuotes;
   /**
+   * R5: the name swap that copy's passages went through, as a pack's `nameSwap` (`keptQuotes`): approval reads no
+   * people out of a swapped copy, as out of a swapped pack.
+   */
+  quotesSwap?: number;
+  /**
    * R3: the version of the tracker rules (`CHECKED`) that checked this text, against the sources it had, when it was
    * staged. Approval checks it again; when its sources can't be read by then, it still goes only if this says those
    * rules were the ones in force now. Proposals staged before this have none, so theirs count as older rules.
@@ -82,8 +89,10 @@ export interface Proposal {
  * The tracker rules' version for `Proposal.checked`. Raise it whenever a change to the guard in src/core/tracker-text.ts
  * (or what synthesis passes it) would catch more in a source than before, so a task staged under the older rules is
  * checked again before it can go without its sources.
+ * 2 (D2-1): a name the sources use as someone's ("Dana knows…", "Dana on our side…"), and one after a cue in the text
+ * itself ("Ask Dana…").
  */
-export const CHECKED = 1;
+export const CHECKED = 2;
 
 interface Staged {
   v: 1;
@@ -158,49 +167,169 @@ export async function addEvidence(id: string, e: MoreEvidence): Promise<boolean>
 const ADD_MAX = 3;
 const SUMMARY_MAX = 1500;
 const STOP = new Set("about after again also because been before being both could does from have into just more most much must only other over same should some such than that their them then there these they this those through very want were what when where which while will with would your the and for are was".split(" "));
-const factWords = (s: string) => new Set((s.toLowerCase().match(/[\p{L}\p{N}$][\p{L}\p{N}$'’.%-]*/gu) ?? []).map((w) => w.replace(/[.'’-]+$/, "")).filter((w) => /\d/.test(w) || (w.length >= 4 && !STOP.has(w))));
+const factWords = (s: string) => new Set((withoutDates(s).toLowerCase().match(/[\p{L}\p{N}$][\p{L}\p{N}$'’.%-]*/gu) ?? []).map((w) => w.replace(/[.'’-]+$/, "")).filter((w) => /\d/.test(w) || (w.length >= 4 && !STOP.has(w))));
 
 /** A sentence's content words, figures aside, stemmed ("internally" and "internal" alike): what it's about rather than what it adds. */
 const contentWords = (s: string) => new Set([...factWords(s)].filter((w) => !/\d|\$/.test(w)).map(stem));
 
 /**
  * The same sentence said again in other words, like two "The brief should frame…": most content words of the larger
- * of the two (60%) are in both, compared stemmed. A figure or date it adds doesn't make it new; one that differs from
- * the other's ("its close moved to Feb 12" after "… to Jan 29") does (R12a).
+ * of the two (60%) are in both, compared stemmed, and at least three of them unless they're all the same. A figure or
+ * date it adds doesn't make it new; one that differs from the other's ("its close moved to Feb 12" after "… to Jan 29")
+ * does (R12a). Short sentences share two words by chance: "Acme's renewal moved" and "Acme's pilot moved" are two facts.
+ * So are two that differ by a distinctive term (`swapsTerm`): "lists SSO" and "lists SCIM", "server-side" and
+ * "client-side rendering".
  */
 export function nearDuplicate(a: string, b: string): boolean {
-  if (differs(anchorsOf(a), anchorsOf(b))) return false;
+  if (differs(anchorsOf(a), anchorsOf(b)) || swapsTerm(a, b)) return false;
   const x = contentWords(a), y = contentWords(b);
   if (!x.size || !y.size) return false;
   const shared = [...x].filter((w) => y.has(w)).length;
-  return shared / Math.max(x.size, y.size) >= 0.6;
+  const most = Math.max(x.size, y.size);
+  return shared / most >= 0.6 && (shared >= 3 || shared === most);
+}
+
+/** What a later run's sentences do to a description's summary (INPUT-2, R12a). */
+export interface FactMerge {
+  /** The summary's sentences after the merge, each fact once (the fuller of two in the other's place), then the new ones. */
+  sentences: string[];
+  /** The later run's sentences that say something new, in order. */
+  added: string[];
+  /** The summary's sentences a later one said more fully (`saysMore`), and the sentence now in each one's place. */
+  fuller: { was: string; now: string }[];
 }
 
 /**
  * The later run's sentences that say something the description doesn't (INPUT-2): fewer than 60% of their words are
- * in it, not a near-duplicate of one of its sentences (or of one added before it), and not the same fact in other words
- * (`sameFact`, R12a: the same company and date or figure, or the same question). `companies`: the companies the task's
- * sources name. A date or figure that differs from the description's is always a new fact.
+ * in it (or fewer than three, and not all), not a near-duplicate of one of its sentences (or of one added before it),
+ * and not the same fact in other words (`sameFact`, R12a). `companies`: the companies the task's sources name. A date
+ * or figure that differs from the description's is always a new fact, and so is a claim turned around, another company
+ * or another question (`tellsApart`). Dates are compared as dates, not as words. A sentence that says one of the
+ * description's more fully isn't a new fact either: `mergeFacts` puts it in that one's place.
  */
 export function newFacts(description: string, rationale: string, max = SUMMARY_MAX, companies: string[] = []): string[] {
+  return mergeFacts(description, rationale, max, companies).added;
+}
+
+/** `newFacts`, with what the merge makes of the summary: a later sentence that says one of its facts more fully takes that one's place. */
+export function mergeFacts(description: string, rationale: string, max = SUMMARY_MAX, companies: string[] = []): FactMerge {
   const summary = description.split(/\n\n/)[0] ?? "";
-  const have = factWords(summary);
-  const said = sentencesIn(summary.replace(/\s+/g, " ").trim());
+  return mergeSentences(sentencesIn(summary.replace(/\s+/g, " ").trim()), sentencesIn(rationale.replace(/\s+/g, " ").trim()), max, companies);
+}
+
+/**
+ * The same merge, of sentences already split (R12a). Each later sentence:
+ *
+ * - takes the place of a sentence there that it says more fully (`saysMore`), so the fuller of the two stays;
+ * - is compared clause by clause (`byClause`): clauses said again are left out, the rest joins as a sentence of its own,
+ *   and a first clause that says a first clause there more fully takes that one's place in its sentence;
+ * - else is left out when it says a sentence there again (`nearDuplicate`, `sameFact`) and states no date or figure that
+ *   one doesn't, or when most of its words are in the sentences it could repeat; a date or figure only it states is
+ *   never left out;
+ * - else joins `base` (up to three of them, the summary under `max` characters).
+ */
+export function mergeSentences(base: string[], later: string[], max = SUMMARY_MAX, companies: string[] = []): FactMerge {
+  const said = [...base];
   const out: string[] = [];
-  let len = summary.length;
-  for (const s of sentencesIn(rationale.replace(/\s+/g, " ").trim())) {
-    if (out.length >= ADD_MAX) break;
-    const w = [...factWords(s)];
-    if (!w.length) continue;
-    if (!differs(anchorsOf(said.join(" ")), anchorsOf(s)) && w.filter((x) => have.has(x)).length / w.length >= 0.6) continue;
-    if (said.some((x) => nearDuplicate(x, s) || sameFact(x, s, companies))) continue;
-    if (len + s.length + 1 > max) continue;
-    out.push(s);
-    said.push(s);
-    len += s.length + 1;
-    for (const x of w) have.add(x);
+  const fuller: FactMerge["fuller"] = [];
+  let len = said.join(" ").length;
+  const fits = (at: number, now: string) => len + now.length - said[at]!.length <= max;
+  const replace = (at: number, now: string) => {
+    const was = said[at]!;
+    said[at] = now;
+    len += now.length - was.length;
+    if (at >= base.length) out[at - base.length] = now;
+    else {
+      const f = fuller.find((r) => r.now === was);
+      if (f) f.now = now;
+      else fuller.push({ was, now });
+    }
+  };
+  const add = (t: string) => {
+    if (out.length >= ADD_MAX || len + t.length + 1 > max) return;
+    out.push(t);
+    said.push(t);
+    len += t.length + 1;
+  };
+  // Most of its words (and three, or all) are in the sentences it could repeat, and it states no date or figure they don't.
+  const spread = (t: string) => {
+    const w = [...factWords(t)];
+    const have = factWords(said.filter((x) => !tellsApart(x, t, companies)).join(" "));
+    const inIt = w.filter((x) => have.has(x)).length;
+    return !w.length || (anchorsIn(said.join(" "), t) && inIt / w.length >= 0.6 && (inIt >= 3 || inIt === w.length));
+  };
+  for (const s of later) {
+    if (!factWords(s).size) continue;
+    // The sentences it could say again: a different date or figure, a claim turned around, another company, another
+    // question or another distinctive term makes it a new fact beside that one, however many words they share.
+    const i = said.findIndex((x) => !tellsApart(x, s, companies) && (nearDuplicate(x, s) || sameFact(x, s, companies)));
+    const twin = i >= 0 ? said[i]! : null;
+    if (twin && saysMore(twin, s)) {
+      if (fits(i, s)) replace(i, s);
+      continue;
+    }
+    const c = byClause(said, s, companies, twin);
+    if (c.settled && (!c.place || fits(c.place.at, c.place.now))) {
+      if (c.place) replace(c.place.at, c.place.now);
+      if (c.add && !spread(c.add)) add(c.add);
+      continue;
+    }
+    // Said again as a whole, it still joins when a clause of it says what nothing there does.
+    if (twin ? anchorsIn(twin, s) && !c.unmatched : spread(s)) continue;
+    add(s);
   }
-  return out;
+  return { sentences: said, added: out, fuller };
+}
+
+/**
+ * What `byClause` makes of a later sentence: whether its clauses settle it, what of it then joins (null: nothing) and a
+ * sentence there it changes, and whether a clause of it matches nothing there and brings two words or more none says.
+ */
+interface ByClause { settled: boolean; add: string | null; place: { at: number; now: string } | null; unmatched: boolean }
+
+/**
+ * A later sentence compared clause by clause with the sentences already there (R12a), since a summary's sentence often
+ * carries two facts ("Acme will not sign before it has an answer, and its close date moved to Jan 29"). A clause is
+ * said again when a clause there says the same fact (`sameFact`, with the companies both sentences name, or
+ * `nearDuplicate`) and holds every word of it (`addsNothing`), or, when the whole sentence says one there again
+ * (`twin`), when it adds no date or figure and at most one word to that one. Its first clause, when it says a first
+ * clause there more fully, takes that one's place ("Vandelay, a $360k pilot, will use the beta…, so the spec…"). What's
+ * left joins as a sentence of its own when it can stand as one: the clauses before the first one said again, when all
+ * after it are, or the clauses after the last one said again, from one that stands on its own ("; …", ", and its …",
+ * ", so the …"). Not settled when none is said again, or what's left can't stand alone: the sentence is then judged
+ * whole. A question is always judged whole.
+ */
+function byClause(said: string[], s: string, companies: string[], twin: string | null): ByClause {
+  const whole: ByClause = { settled: false, add: null, place: null, unmatched: false };
+  if (asks(s)) return whole;
+  const mine = piecesOf(s);
+  if (!mine.length) return whole;
+  const theirs = said.flatMap((x, at) => (asks(x) ? [] : piecesOf(x).map((p, k) => ({ ...p, at, k, x }))));
+  const same = (t: (typeof theirs)[number], c: string) =>
+    !tellsApart(t.text, c, companies) && (nearDuplicate(t.text, c) || sameFact(t.text, c, companies, sharedCompanies(t.x, s, companies)));
+  const done = mine.map((c) =>
+    (!!twin && !tellsApart(twin, c.text, companies) && anchorsIn(twin, c.text) && newWords(twin, c.text) <= 1)
+    || theirs.some((t) => same(t, c.text) && addsNothing(t.text, c.text)));
+  whole.unmatched = mine.some((c, k) => !done[k] && !theirs.some((t) => same(t, c.text)) && newWords(said.join(" "), c.text) >= 2);
+  let place: ByClause["place"] = null;
+  const first = mine[0]!;
+  const lead = done[0] ? undefined : theirs.find((t) => t.k === 0 && same(t, first.text) && saysMore(t.text, first.text));
+  if (lead) {
+    place = { at: lead.at, now: `${s.slice(0, first.to)}${lead.x.slice(lead.to)}` };
+    done[0] = true;
+  }
+  if (!done.some(Boolean)) return whole;
+  if (done.every(Boolean)) return { ...whole, settled: true, place };
+  const k = done.indexOf(false);
+  if (k === 0) {
+    const j = done.indexOf(true);
+    return done.slice(j).every(Boolean) ? { ...whole, settled: true, add: `${s.slice(0, mine[j]!.join).trimEnd().replace(/[,;:]$/, "")}.` } : whole;
+  }
+  if (!done.slice(k).some(Boolean) && mine[k]!.free) {
+    const rest = s.slice(mine[k]!.from).trim();
+    return { ...whole, settled: true, add: `${rest.charAt(0).toUpperCase()}${rest.slice(1)}`, place };
+  }
+  return whole;
 }
 
 const SOURCES_LINE_PARTS = /^\*\*Sources:\*\* (.*?)\. They stay on the PM's Mac(.*)$/m;
@@ -253,14 +382,19 @@ async function evidenceLocked(id: string, e: MoreEvidence): Promise<boolean> {
   const newIds = [...new Set(fresh.map((f) => ids.get(f.id)).filter((x): x is string => !!x && !p.sources.includes(x)))];
   p.sources = [...p.sources, ...newIds];
 
-  const added = full && e.rationale ? newFacts(p.description, e.rationale, SUMMARY_MAX, companiesOf(p, parts)) : [];
+  const m = full && e.rationale ? mergeFacts(p.description, e.rationale, SUMMARY_MAX, companiesOf(p, parts)) : null;
+  const added = m?.added ?? [];
+  const fuller = m?.fuller ?? [];
   if (full && line) {
     // N2: Linear gets the later call's facts and its source, not only that it was heard again.
     const merged = p.sourceGroups ? mergeGroups(p.sourceGroups, parts) : null;
     const said = merged ? groupsLine(merged) : `${line[1]}; ${groupsLine(mergeGroups([], parts))}`;
     if (merged) p.sourceGroups = merged;
     const [summary, ...rest] = p.description.split("\n\n");
-    let d = [added.length ? `${summary} ${added.join(" ")}` : summary, ...rest].join("\n\n");
+    // R12a: a sentence this run said more fully is in the other's place, in an earlier run's added sentences too.
+    const lead = fuller.length ? m!.sentences.join(" ") : added.length ? `${summary} ${added.join(" ")}` : summary;
+    for (const f of fuller) for (const a of p.again ?? []) if (a.added) a.added = a.added.map((x) => (x === f.was ? f.now : x));
+    let d = [lead, ...rest].join("\n\n");
     d = d.replace(SOURCES_LINE_PARTS, (_m, _old: string, tail: string) => `**Sources:** ${said}. They stay on the PM's Mac${tail}`);
     const lines = newIds.map((x) => {
       const from = [...ids].find(([, v]) => v === x)?.[0];
@@ -276,7 +410,7 @@ async function evidenceLocked(id: string, e: MoreEvidence): Promise<boolean> {
       ? p.description.replace(/^\*\*Heard again\*\*.*$/m, heard)
       : p.description.replace(/^(\*\*(?:Sources:|Based on)\*\*.*)$/m, `$1\n${heard}`);
   }
-  p.again = [...(p.again ?? []), { receipt: e.receipt, at: e.at ?? new Date().toISOString(), n: fresh.length, ...(newIds.length ? { ids: newIds } : {}), ...(added.length ? { added } : {}) }];
+  p.again = [...(p.again ?? []), { receipt: e.receipt, at: e.at ?? new Date().toISOString(), n: fresh.length, ...(newIds.length ? { ids: newIds } : {}), ...(added.length ? { added } : {}), ...(fuller.length ? { fuller: fuller.map((f) => f.now) } : {}) }];
   if (hasCanary(JSON.stringify(p))) throw new Error(CANARY_REFUSAL);
   await save(all);
   return true;
@@ -284,12 +418,15 @@ async function evidenceLocked(id: string, e: MoreEvidence): Promise<boolean> {
 
 /** N2: what later runs changed in a proposal, for the PM: "Nov 26: 1 more source (T7), and 2 sentences in the description". */
 export function changedText(p: Pick<Proposal, "again">): string | null {
-  const ch = (p.again ?? []).filter((a) => a.ids?.length || a.added?.length);
+  const ch = (p.again ?? []).filter((a) => a.ids?.length || a.added?.length || a.fuller?.length);
   if (!ch.length) return null;
   const day = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const sentences = (n: number) => (n === 1 ? "1 sentence" : `${n} sentences`);
   return ch.map((a) => {
-    const what = [a.ids?.length ? `${a.ids.length === 1 ? "1 more source" : `${a.ids.length} more sources`} (${a.ids.join(", ")})` : "", a.added?.length ? `${a.added.length === 1 ? "1 sentence" : `${a.added.length} sentences`} in the description: ${a.added.join(" ")}` : ""].filter(Boolean).join(", and ");
-    return `${day(a.at)}, a later run added ${what}`;
+    const what = [a.ids?.length ? `${a.ids.length === 1 ? "1 more source" : `${a.ids.length} more sources`} (${a.ids.join(", ")})` : "", a.added?.length ? `${sentences(a.added.length)} in the description: ${a.added.join(" ")}` : ""].filter(Boolean).join(", and ");
+    const fuller = a.fuller?.length ? `said ${sentences(a.fuller.length)} of the description more fully: ${a.fuller.join(" ")}` : "";
+    if (!what) return `${day(a.at)}, a later run ${fuller}`;
+    return `${day(a.at)}, a later run added ${what}${fuller ? `${/[.!?]$/.test(what) ? "" : "."} It ${fuller}` : ""}`;
   }).join(" · ");
 }
 
@@ -445,7 +582,7 @@ export async function approveProposals(ctx: Ctx, svc: Services, refs: string[], 
       await markReceipt(p, { identifier: t.identifier }, ctx.now());
       // RUN-5: the quotes this task cites go to the team repo once it has its identifier, so any PM's agent can draft it.
       // A draft's follow-up may reuse its task's quotes (FOLLOW-1); R6: one to finished work has its own sources.
-      await stageShares(ctx, [{ identifier: t.identifier, title: c.title, description: c.description, sources: p.sources, follows: p.follows && p.follows.where !== "done" ? p.follows.identifier : null, quotes: p.quotes ?? null }]);
+      await stageShares(ctx, [{ identifier: t.identifier, title: c.title, description: c.description, sources: p.sources, follows: p.follows && p.follows.where !== "done" ? p.follows.identifier : null, quotes: p.quotes ?? null, quotesSwap: p.quotesSwap ?? null }]);
     }
     done.add(p.id);
     // Saved after each one, so a failure halfway never posts the same task twice.

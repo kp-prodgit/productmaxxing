@@ -1,4 +1,4 @@
-import { confidentialMatcher, domainLabel, FUNDRAISING_CASED as CASED_WORDS, FUNDRAISING_WORDS } from "./filter.js";
+import { confidentialMatcher, domainLabel, FUNDRAISING_CASED as CASED_WORDS, FUNDRAISING_WORDS, OTHERS_DATA_ROOM } from "./filter.js";
 import { makeRedactor } from "./redact.js";
 
 /**
@@ -43,6 +43,23 @@ export interface TrackerRules {
    * fundraising: "Initech Ventures", "initech-ventures", and "Initech" on its own as a name is written.
    */
   confidential?: string[];
+  /**
+   * D2-1: the companies and products the sources show (their participants' email domains' names, the words they write
+   * as a company: "the Globex team", "at Globex") and the ones the task's Sources line names (`sourceThings` in
+   * src/run/comment.ts). A capitalized word right after a cue only a person gets ("Ask Dana", "thanks Sam", "per Lee",
+   * "@Dana") is a person's name in the text itself, whatever the sources say, unless it's one of these: "Ask Globex for
+   * the list" may go. Given only when the sources were read: then "with" is a cue too ("Confirm with Dana"). A company
+   * of more than one word may follow as the sources write it ("Initech Partners", "Hart & Stone") or as its email
+   * domain names it ("initechpartners", "hartstone"; "Initech" for initechpartners.example, R6).
+   */
+  things?: string[];
+  /**
+   * R6 (D2-1, rig test of #122): companies this Mac knows from elsewhere, also never a person after a cue: the CRM
+   * list's companies, and those every meeting and thread it collected show (`knownThings` in src/run/known-people.ts).
+   * So a to-do typed with no meeting behind it ("Ask Hart & Stone for the order form") still goes. They don't make
+   * "with" a cue: only the task's own sources tell a company there from a person.
+   */
+  known?: string[];
 }
 
 /** "Microphone:", "System audio:", "Speaker 2:", "[00:12:03]": transcript markup. */
@@ -62,7 +79,13 @@ const FUNDRAISING_ANY_CASE = new RegExp(FUNDRAISING_WORDS.join("|"), "i");
 /** Words whose case tells them apart: "Series B" (not a series of tests), "VCs", an "IPO". */
 const FUNDRAISING_CASED = new RegExp(CASED_WORDS.join("|"));
 
-export const isFundraising = (s: string): boolean => FUNDRAISING_ANY_CASE.test(s) || FUNDRAISING_CASED.test(s);
+/** D2-3: someone else's data room (a customer's security review, procurement's) isn't the company's raise. */
+const OTHERS_ROOM = new RegExp(OTHERS_DATA_ROOM.join("|"), "gi");
+
+export const isFundraising = (s: string): boolean => {
+  const t = s.replace(OTHERS_ROOM, " ");
+  return FUNDRAISING_ANY_CASE.test(t) || FUNDRAISING_CASED.test(t);
+};
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -135,7 +158,7 @@ const COMMON = new Set((
   "query queue quick quota quote quotes rate rating record records refund region regional release releases remote renewal report reporting " +
   "reports requests research reset review reviews reward rewards roadmap role roles rollout room rule rules sandbox save scan schedule schema " +
   "score scorecard screen script search seat seats secure segment segments self send server service services session sessions settings " +
-  "setting setup share shared sheet shop sign signup single site sites smart solution space spaces spec specs sprint stack stage standard " +
+  "setting setup share shared sheet shop sign signup single site sites slides smart solution space spaces spec specs sprint stack stage standard " +
   "standup starter storage store story strategy stream studio style subscription subscriptions suite survey sync system systems table tables " +
   "tag tags task tasks template templates tenant terminal tests theme themes thread threads ticket tickets tier tiers token tokens tool tools " +
   "total tour tracker trail training trial unified universal unlimited upgrade upload usage users vault vendor version video view views " +
@@ -145,6 +168,11 @@ const COMMON = new Set((
   "talk tell thank thanks try use want yeah yes yep nope okay ok sure right well cool nice awesome perfect great sorry totally exactly " +
   "basically honestly anyway anyways alright hopefully obviously apparently unfortunately luckily ideally currently initially finally " +
   "personally separately similarly definitely absolutely probably maybe um uh hmm oh wow true fair fine good bad " +
+  // D2-9: greetings and sign-offs ("Happy Thanksgiving", "Merry Christmas", "Kind Regards"), and words for someone or a
+  // group that are no one's name ("Someone knows", "Leadership thinks").
+  "happy merry congrats congratulations cheers regards greetings wishes wishing someone somebody anyone anybody everybody nobody " +
+  "feliz felices joyeux joyeuses bonne bon buon buona frohe frohes frohliche gelukkig prettige shubh " +
+  "everything something nothing anything people leadership procurement purchasing accounting partnerships exec execs " +
   // Roles, organizations and the calendar.
   "analyst architect associate ceo cfo champion chief cio ciso consultant coo coordinator cpo cto designer developer director engineer " +
   "engineers evp executive founder founders intern lead leads manager managers officer owners president principal rep reps senior specialist " +
@@ -164,6 +192,19 @@ const PLACES = new Set((
   "california florida ohio oregon york jersey francisco angeles diego santa san los las vegas kong tel aviv sao buenos aires kuala lumpur " +
   "dhabi rica puerto lanka sri palo alto saudi arabia states kingdom island islands river lake valley bay beach coast county state town " +
   "street avenue road"
+).split(" "));
+
+/**
+ * D2-9: holidays, and the words of holidays of two words ("Labor Day", "Lunar New Year", "Yom Kippur"): never a
+ * person's name, so "Happy Thanksgiving to the three of us" stays as written. Months and days are `MONTH_DAY`'s.
+ */
+const HOLIDAYS = new Set((
+  "thanksgiving christmas xmas easter halloween hanukkah chanukah diwali deepavali holi ramadan eid passover purim kwanzaa juneteenth " +
+  "valentines holidays lunar hogmanay mardi gras yom kippur rosh hashanah lent advent pentecost solstice equinox labor labour memorial " +
+  "veterans presidents independence boxing groundhog oktoberfest carnival nowruz songkran vesak onam pongal navratri dussehra " +
+  // R6: in other languages ("Feliz Navidad", "Feliz Año Nuevo", "Bonne Année", "Frohe Weihnachten", "Chinese New Year").
+  // Not Noël or Natale, which are people's names too; "Joyeux" and "Buon" before them are greetings.
+  "navidad nochebuena nuevo ano annee weihnachten neues jahr natal novo nieuwjaar kerstmis fiestas sameach chag chinese"
 ).split(" "));
 
 /** Ordinary words that are also surnames ("Lee Park", "Dana Brown"): a name's last word may be one. */
@@ -198,13 +239,24 @@ const PRODUCT_AFTER = new Set(("add on|add ons|addon|addons|plugin|plugins|plug 
  * departments, its deal and what it uses. Nouns only, so a person's verb ("Dana wants", "Sam owns") never counts.
  */
 const ORG_AFTER = new Set([...PRODUCT_AFTER, ...("team teams account deal contract pilot license console admin customers employees staff people " +
-  "support legal security sales finance procurement marketing engineering product design it ops hr leadership launch org side folks").split(" ")]);
+  "support legal security sales finance procurement marketing engineering product design it ops hr leadership launch org side folks " +
+  "clients client partners vendors").split(" ")]);
 const ORG_BEFORE = new Set("at customer client partner prospect vendor competitor".split(" "));
+
+/**
+ * D2-1: what only a person does right after their name, as a sentence's subject ("Dana knows which is which", "Lee
+ * thinks it slips"): knowing, thinking, feeling, remembering, and a few things no company does (texted, volunteered).
+ * A company asks, says, wants and needs as often as a person ("Globex wants SSO"), so those never count.
+ */
+const PERSON_VERBS = new Set(("knows knew thinks thought feels felt believes believed remembers remembered recalls recalled texted pinged " +
+  "volunteered admitted").split(" "));
+/** D2-1: "Dana on our side", "Lee on my team", "Sam on their team": someone on a side or a team. */
+const SIDE = /^(?:our|my) (?:side|team|end)$|^their team$/;
 
 /** Words that are never a name's: function words, cues, dates, headings, mailboxes, places. Built when first needed. */
 let NEVER: Set<string> | null = null;
 const never = (): Set<string> => NEVER ??= new Set([
-  ...FUNCTION, ...MONTH_DAY, ...PERSON_CUES, ...OTHER_CUES, ...GENERIC, ...LABEL_WORDS, ...PLACES,
+  ...FUNCTION, ...MONTH_DAY, ...PERSON_CUES, ...OTHER_CUES, ...GENERIC, ...LABEL_WORDS, ...PLACES, ...HOLIDAYS,
   "may", "march", "tue", "tues", "thu", "thur", "thurs", "fri", "sat", "mon", "wed",
   ...["the", "and", "for", "you", "all", "new", "one", "two", "our", "team"],
 ]);
@@ -248,6 +300,28 @@ function roleNamed(l: Line, i: number): boolean {
     return own >= 0 && back.slice(own + 1).some((y) => ROLES.has(y.w));
   }
   return false;
+}
+
+/** A word's separator from the one before it: at most a comma or colon between spaces, never nothing. */
+const sepOk = (s: string) => /^[ \t]*[,:]?[ \t]*$/.test(s) && s.length > 0;
+
+/**
+ * R4, D2-1: whether the word at `i` comes right after a cue only a person gets: "ask Dana", "Thanks, Sam", "thank you
+ * Lee", "@Dana", "Cc: Robin" (a line `cued` by its header), "w/ Sean", a role's name ("Her VP (Robin)", "Robin, my
+ * VP"), or one spoken to ("Okay Mina, can you send it?"). The same rules for the sources (`namesIn`) and for the
+ * words going to the tracker (`trackerGuard`).
+ */
+function strongCue(l: Line, i: number): boolean {
+  const x = l.words[i]!, p = l.words[i - 1], pp = l.words[i - 2];
+  return /@[ \t]*$/.test(x.sep)
+    || (i === 0 && l.cued)
+    || (!!p && PERSON_CUES.has(p.w) && sepOk(x.sep))
+    // R5a: "w/ Sean", a note's "with" that's only ever a person's.
+    || (!!p && p.w === "w" && /^\/[ \t]*$/.test(x.sep))
+    // R5a: a role's name: "Her VP (Robin)", "the publisher (Inez)", "Robin, my VP", "our head of product, Inez".
+    || roleNamed(l, i)
+    || (!!p && !!pp && ["you", "to"].includes(p.w) && ["thank", "thanks"].includes(pp.w) && /^[ \t]+$/.test(p.sep) && sepOk(x.sep))
+    || (!!p && VOCATIVE.has(p.w) && /^[ \t]*,?[ \t]+$/.test(x.sep) && /^[ \t]*[,!?]/.test(l.body.slice(x.end)));
 }
 
 /**
@@ -319,7 +393,9 @@ function runsOf(words: Word[]): number[][] {
  * - **speaker:** the labels at a line's start ("Lee Park:", "Sam:"), not headings ("Next steps:", "Brand Kit:");
  * - **text:** a name in what was said or written: a full name ("questionnaire in from Dana Ruiz"), one word after a
  *   cue only a person gets ("ask Dana", "thanks Sam", "told Lee", "cc Robin", "per Dana", "@Dana", "@sam.ortiz"),
- *   a single name in a list with a known one ("Dana Ruiz and Sam"), and an email address's name.
+ *   one word written as someone, a sentence's first word too (D2-1: "Dana knows which is which", "Dana on our side
+ *   has it", "Lee from Globex"), a single name in a list with a known one ("Dana Ruiz and Sam"), and an email
+ *   address's name.
  *
  * Each word of a full name is a name too, as long as it's long enough and not an ordinary word ("Dana" and "Ruiz" for
  * "Dana Ruiz"), so "Ask Dana for the questionnaire." is caught. Never a name: a company (`exclude`, and any domain an
@@ -327,8 +403,8 @@ function runsOf(words: Word[]): number[][] {
  * role or heading ("Brand Kit", "Audit Log", "Single Sign-On", "Q4 Planning", "Product Lead"), words before a product
  * word anywhere in the sources ("the Globex Slides add-on"), the longer items of a list of products ("Pagecraft, Globex
  * Slides, Mailbloom": three or more, with one-word items no source shows as people), a word that's capitalized only
- * because it starts a sentence ("Pricing came up"), a word the sources also write in lower case, a month or a day, a
- * place, or an acronym. Kept in memory for one run, never written.
+ * because it starts a sentence ("Pricing came up"), a word the sources also write in lower case, a month, a day or a
+ * holiday, a greeting ("Happy Thanksgiving", D2-9), a place, or an acronym. Kept in memory for one run, never written.
  */
 export function namesIn(items: { participants?: string[]; text?: string }[], exclude: Iterable<string> = [], o: { things?: Set<string> } = {}): FoundName[] {
   const skip = new Set<string>();
@@ -369,6 +445,8 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
   const org = new Set<string>();
   // Words the text writes right after a cue only a person gets ("thanks Sam", "@Avery"): a person, wherever else they are.
   const cuedWords = new Set<string>();
+  // D2-1: words the text writes after an article ("the Globex export", "a Fieldbook seat"): a thing's, not a person's.
+  const articled = new Set<string>();
   const bump = (m: Map<string, number>, w: string) => m.set(w, (m.get(w) ?? 0) + 1);
   for (const it of items) {
     for (const rawLine of (it.text ?? "").split(/\r?\n/)) {
@@ -405,6 +483,7 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
         const alone = x.shaped && !x.poss && !(prev?.shaped && /^[ \t]+$/.test(x.sep) && !soft(prev.w)) && !(next?.shaped && /^[ \t]+$/.test(next.sep) && !orgNext);
         if (alone && (orgNext || (prev && ORG_BEFORE.has(prev.w) && /^[ \t]+$/.test(x.sep)))) org.add(x.w);
         if (x.shaped && (/@[ \t]*$/.test(x.sep) || (prev && PERSON_CUES.has(prev.w) && /^[ \t]*[,:]?[ \t]*$/.test(x.sep)))) cuedWords.add(x.w);
+        if (x.shaped && prev && ["the", "a", "an"].includes(prev.w) && /^[ \t]+$/.test(x.sep)) articled.add(x.w);
         // R4a: "the Globex Slides add-on": the capitalized words before a product word are a product or its company.
         if (PRODUCT_AFTER.has(x.w) && /^[ \t]+$/.test(x.sep)) {
           for (let k = i - 1, n = 0; k >= 0 && n < 3; k--, n++) {
@@ -466,7 +545,6 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
   // Each line's lists: capitalized runs joined by commas, "and" or "&", each without its leading ordinary words
   // ("Thanks Dana Ruiz" is "Dana Ruiz", after a cue).
   const LIST_SEP = /^(?:[ \t]*,[ \t]*(?:(?:and|&)[ \t]+)?|[ \t]+(?:and|&)[ \t]+)$/i;
-  const sepOk = (s: string) => /^[ \t]*[,:]?[ \t]*$/.test(s) && s.length > 0;
   const lists = new Map<Line, { items: Word[][]; things: boolean }[]>();
   const inThings = new Set<Word>();
   for (const l of lines) {
@@ -524,17 +602,26 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
   for (const l of lines) {
     l.words.forEach((x, i) => {
       if (taken.has(x) || !single(x)) return;
-      const p = l.words[i - 1], pp = l.words[i - 2];
-      const cued = /@[ \t]*$/.test(x.sep)
-        || (i === 0 && l.cued)
-        || (!!p && PERSON_CUES.has(p.w) && sepOk(x.sep))
-        // R5a: "w/ Sean", a note's "with" that's only ever a person's.
-        || (!!p && p.w === "w" && /^\/[ \t]*$/.test(x.sep))
-        // R5a: a role's name: "Her VP (Robin)", "the publisher (Inez)", "Robin, my VP", "our head of product, Inez".
-        || roleNamed(l, i)
-        || (!!p && !!pp && ["you", "to"].includes(p.w) && ["thank", "thanks"].includes(pp.w) && /^[ \t]+$/.test(p.sep) && sepOk(x.sep))
-        || (!!p && VOCATIVE.has(p.w) && /^[ \t]*,?[ \t]+$/.test(x.sep) && /^[ \t]*[,!?]/.test(l.body.slice(x.end)));
-      if (cued && !isCompany(x.w)) put(x.raw, "text");
+      if (strongCue(l, i) && !isCompany(x.w)) put(x.raw, "text");
+    });
+  }
+
+  // D2-1: one word written as a person, as what a sentence says someone does: "Dana knows which is which", "Dana on our
+  // side has the export", "Lee from Globex", "Sam at Initech". At a sentence's start too, where a capital says nothing.
+  // Never a word the sources also write as a company or a product ("the Globex team", "at Globex", "the Globex
+  // export"), in lower case, or on the lists above; nor one inside a run of capitalized words ("Globex Fieldbook").
+  for (const l of lines) {
+    l.words.forEach((x, i) => {
+      if (taken.has(x) || x.poss || x.quoted || !single(x) || isCompany(x.w) || articled.has(x.w)) return;
+      const prev = l.words[i - 1], [a, b, c] = l.words.slice(i + 1, i + 4);
+      if (prev?.shaped && /^[ \t]+$/.test(x.sep) && !soft(prev.w)) return;
+      if (!a || a.shaped || !/^[ \t]+$/.test(a.sep)) return;
+      const near = (y: Word | undefined) => !!y && /^[ \t]+$/.test(y.sep);
+      const company = (y: Word | undefined) => near(y) && y!.shaped && (skip.has(y!.w) || org.has(y!.w) || isCompany(y!.w));
+      const subject = PERSON_VERBS.has(a.w)
+        || (a.w === "on" && near(b) && near(c) && SIDE.test(`${b!.w} ${c!.w}`))
+        || ((a.w === "from" || a.w === "at") && company(b));
+      if (subject) put(x.raw, "text");
     });
   }
 
@@ -643,6 +730,88 @@ export interface TrackerGuard {
   clean(text: string): { text: string; cut: TextProblem[] };
 }
 
+/** D2-1: tools a task does something "with" ("Sync with Linear", "SSO with Okta"): never someone to reach. */
+const TOOLS = new Set(("linear github gitlab jira notion figma confluence asana trello salesforce hubspot zendesk intercom okta google microsoft " +
+  "excel gmail outlook chrome safari firefox stripe snowflake looker tableau aws azure gcp").split(" "));
+/** D2-1: a sentence that opens with one of these reaches someone "with" later on: "Confirm the billing list with Dana". */
+const WITH_OPENERS = new Set(("confirm check align review discuss share agree verify clarify raise schedule book set walk go follow sync meet talk " +
+  "speak chat catch validate revisit finalize settle sort").split(" "));
+
+/**
+ * R6: what a company's name ends with after its first word, in its email domain's name: "initechpartners" is Initech's,
+ * "acmecorp" Acme's. Never a surname: "danaruiz" names no company Dana.
+ */
+const COMPANY_TAIL = new Set(("inc corp co llc ltd gmbh plc ag group partners labs lab hq holdings solutions systems tech technologies software " +
+  "health hotels bank studio studios media global digital consulting analytics networks industries app apps ai io").split(" "));
+
+/** The companies and products the guard knows (D2-1, R6): their words, and each name's words as one ("hartstone"). */
+interface Things { words: Set<string>; joined: Set<string> }
+
+/**
+ * R6: a company list as the guard reads it. A one-word name is its word; a longer one gives its first word ("Initech"
+ * of "Initech Partners", "acme" of "acme-corp"), unless "&" or "and" joins it ("Hart & Stone": a Hart may be someone),
+ * and all its words as one ("initechpartners", "hartstone"), as an email domain writes them.
+ */
+function thingsOf(list: string[]): Things {
+  const words = new Set<string>(), joined = new Set<string>();
+  for (const t of list) {
+    const ws = norm(t.includes(".") && !/\s/.test(t) ? domainLabel(t) : t).split(" ").filter(Boolean);
+    if (!ws.length) continue;
+    if (ws.length === 1 || !(t.includes("&") || ws.includes("and"))) words.add(ws[0]!);
+    joined.add(ws.filter((w) => w !== "and").join(""));
+  }
+  return { words, joined };
+}
+
+/**
+ * R6 (rig test of #122): whether the capitalized words from `i` name a company the guard knows: their first word
+ * ("Globex"), their words as one, joined by spaces, "&" or "and" ("Initech Partners" and "Hart & Stone" for
+ * initechpartners and hartstone, or as the sources write them), or the start of a domain's name before a company's
+ * ending ("Initech" for initechpartners).
+ */
+function companyAt(l: Line, i: number, k: Things): boolean {
+  const x = l.words[i]!;
+  if (k.words.has(x.w)) return true;
+  const first = x.w.replace(/ /g, "");
+  let key = first;
+  for (let j = i + 1, n = 1; j < l.words.length && n < 4; j++) {
+    const y = l.words[j]!, after = l.words[j + 1];
+    if (l.words[j - 1]!.poss) break;
+    // "Hart and Stone": the "and" joins the name.
+    if (y.w === "and" && /^[ \t]+$/.test(y.sep) && after?.shaped && /^[ \t]+$/.test(after.sep)) continue;
+    if (!y.shaped || !y.sep || !/^[ \t]*&?[ \t]*$/.test(y.sep)) break;
+    key += y.w.replace(/ /g, "");
+    n++;
+    if (k.joined.has(key)) return true;
+  }
+  return first.length >= 3 && [...k.joined].some((d) => d.length > first.length && d.startsWith(first) && COMPANY_TAIL.has(d.slice(first.length)));
+}
+
+/**
+ * D2-1 (F14): whether the words going to the tracker name someone themselves, whoever the sources name: a capitalized
+ * word (or a handle) right after a cue only a person gets, as `namesIn` reads the sources ("Ask Dana which…", "Thanks,
+ * Sam", "per Lee", "@dana", "cc Robin", "w/ Sean"). With what the sources show known (`withKnown`), "with" too, after
+ * a word that reaches someone or in a sentence that opens with one ("Follow up with Dana", "Confirm the list with
+ * Dana"). Never a word on the lists above (a product, a role, a team, a month, a place: "Ask Legal", "per Brand Kit"),
+ * a company or product the guard knows (`things`, `known`: "Ask Globex for the list", "Ask Initech Partners for…",
+ * "Ask Hart & Stone for…"), a tool ("Sync with Linear"), nor a word before a company's noun or a number ("Ask Globex
+ * Legal", "per Article 28").
+ */
+function namesSomeone(s: string, k: Things, withKnown: boolean): boolean {
+  const body = s.replace(EMAIL_IN, " ; ").replace(URL_IN, " ; ");
+  const l: Line = { body, words: lineWords(body), cued: false };
+  return l.words.some((x, i) => {
+    const handle = /@[ \t]*$/.test(x.sep);
+    if ((!x.shaped && !handle) || x.quoted || x.raw.length < 2 || soft(x.w) || TOOLS.has(x.w)) return false;
+    const next = l.words[i + 1];
+    if (next && /^[ \t]+$/.test(next.sep) && (ORG_AFTER.has(next.w) || /^\d/.test(next.raw))) return false;
+    const p = l.words[i - 1], pp = l.words[i - 2];
+    const cued = strongCue(l, i)
+      || (withKnown && !!p && p.w === "with" && /^[ \t]+$/.test(x.sep) && ((!!pp && REACH_WITH.has(pp.w)) || WITH_OPENERS.has(l.words[0]!.w)));
+    return cued && !companyAt(l, i, k);
+  });
+}
+
 /** Sentences, split only after . ! or ? followed by a capital, a digit or an opening bracket. */
 export const sentencesIn = (text: string): string[] => text.split(/(?<=[.!?])\s+(?=[A-Z0-9(])/).map((x) => x.trim()).filter(Boolean);
 
@@ -660,6 +829,8 @@ export function trackerGuard(r: TrackerRules = {}): TrackerGuard {
   const redactor = makeRedactor();
   // F5: an investor's or another confidential contact's name, as fundraising is: "Send Initech Ventures the cost model".
   const confidential = confidentialMatcher((r.confidential ?? []).map((c) => (c.includes(".") ? domainLabel(c) : c)));
+  // D2-1, R6: the companies and products the sources show, and those this Mac knows from elsewhere.
+  const things = thingsOf([...(r.things ?? []), ...(r.known ?? [])]);
   const problem = (s: string): TextProblem | null => {
     if (TRANSCRIPT_MARKS.test(s)) return "transcript";
     if (QUOTE.test(s)) return "quote";
@@ -667,6 +838,7 @@ export function trackerGuard(r: TrackerRules = {}): TrackerGuard {
     if (isFundraising(s)) return "fundraising";
     if (confidential?.test(s)) return "confidential";
     if (listed.some((re) => re.test(s)) || found.some((re) => re.test(s))) return "name";
+    if (namesSomeone(s, things, r.things !== undefined)) return "name";
     if (titles.length) {
       const n = ` ${norm(s)} `;
       if (titles.some((t) => n.includes(` ${t} `))) return "title";

@@ -3,14 +3,15 @@ import type { Ctx } from "../core/context.js";
 import { confidentialCompanies, domainLabel, filterItems, outsideDomains } from "../core/filter.js";
 import { paths } from "../core/paths.js";
 import { readReceipt, refHash, type RunReceipt, type SourceReceipt } from "../core/receipt.js";
-import { cutText, meaningful, peopleIn, quoteGuard, sentencesIn, trackerGuard, type QuoteSource, type TextProblem } from "../core/tracker-text.js";
+import { cutText, meaningful, namesIn, quoteGuard, sentencesIn, trackerGuard, type QuoteSource, type TextProblem } from "../core/tracker-text.js";
 import type { SignalItem } from "../core/types.js";
 import { privacyRules } from "../digest/gather.js";
 import { channelInputs, meetingSeries } from "../inputs/inputs.js";
-import { sourceCompanies, sourcePeople } from "../run/comment.js";
+import { linedCompanies, sourceCompanies, sourcePeople, sourceThings } from "../run/comment.js";
+import { knownThings } from "../run/known-people.js";
 import { evidenceStore, packCompanies, packSources, swappedPack } from "../run/packs.js";
 import { readThreads, readTranscripts } from "../sources/transcripts.js";
-import { CHECKED, companiesOf, newFacts, type Proposal } from "./proposals.js";
+import { CHECKED, companiesOf, mergeSentences, type Proposal } from "./proposals.js";
 import { leadWithTitle, PROBLEM_WORDS, STRATEGY_SOURCE, strategyFiles } from "./synthesize.js";
 
 /**
@@ -47,6 +48,13 @@ interface Against {
   cutBefore: boolean;
   /** F5: confidential companies: the team's confidential domains, and those of its sources held as fundraising. */
   confidential: string[];
+  /**
+   * D2-1: the companies and products its sources show, and those its Sources line names: never a person after a cue
+   * ("Ask Globex for the list"). Undefined when no source of it could be read.
+   */
+  things?: string[];
+  /** R6: the companies this Mac knows from elsewhere (the CRM list's, every source it collected): never a person either. */
+  known: string[];
 }
 
 /** Files read once per approval, however many tasks it checks. */
@@ -94,7 +102,9 @@ async function against(ctx: Ctx, p: Proposal, reads: Reads): Promise<Against> {
   const receipts = [own, ...later].filter((r): r is RunReceipt => !!r);
   const cutBefore = !!own?.synth?.tasks.find((t) => t.posted && "staged" in t.posted && t.posted.staged === p.id)?.leftOut;
   for (const r of receipts) for (const s of r.sources) if (s.decision === "used" && s.kind === "transcript" && s.title) titles.add(s.title);
-  const base = { listed, series, strategy, cutBefore, titles: [...titles], confidential: confidentialCompanies([], rules) };
+  // R6: a to-do typed with no meeting behind it still knows the companies this Mac has met ("Ask Hart & Stone for…").
+  const known = await knownThings(ctx).catch(() => [] as string[]);
+  const base = { listed, series, strategy, cutBefore, titles: [...titles], confidential: confidentialCompanies([], rules), known };
 
   if (!own) {
     // FOLLOW-1: a follow-up accepted on a Mac without the original's synthesis run reads its team's copy of the quotes,
@@ -103,15 +113,18 @@ async function against(ctx: Ctx, p: Proposal, reads: Reads): Promise<Against> {
     const draftFollowUp = !!p.follows && p.follows.where !== "done";
     const pack = draftFollowUp && p.sources.length ? await evidenceStore(ctx.repo).read(p.follows!.identifier).catch(() => null) : null;
     // RUN-5: an accept removes the original's pack, so a follow-up keeps its own copy of those quotes; check against it.
-    const kept = !pack && draftFollowUp && p.quotes?.length ? { v: 1 as const, task: p.follows?.identifier ?? "", at: p.at, sources: p.quotes } : null;
+    // R5: with the name swap the copy went through, as a pack has its own.
+    const kept = !pack && draftFollowUp && p.quotes?.length ? { v: 1 as const, task: p.follows?.identifier ?? "", at: p.at, ...(p.quotesSwap ? { nameSwap: p.quotesSwap } : {}), sources: p.quotes } : null;
     const quoted = pack ? packSources(pack, p.sources) : kept ? packSources(kept, p.sources) : [];
     const missing = p.sources.filter((id) => !quoted.some((s) => s.id === id));
     return {
       ...base,
       // R4: the task's own customer and products are never people, as `run.ts` and `followups.ts` pass them; R5: nor
       // the sources' outside companies its pack lists.
-      // R5c: a pack through today's name swap names no one, so its passages aren't read for people.
-      people: sourcePeople({ sources: quoted, swapped: swappedPack(pack) }, internal, [...sourceCompanies(p.description, p.title), ...packCompanies(pack)]),
+      // R5c: a pack (or the copy a follow-up kept of one) through today's name swap names no one, so its passages aren't
+      // read for people.
+      people: sourcePeople({ sources: quoted, swapped: swappedPack(pack ?? kept) }, internal, [...sourceCompanies(p.description, p.title), ...packCompanies(pack)]),
+      things: sourceThings({ sources: quoted, companies: packCompanies(pack) }, internal, p.description),
       meetings: quoted.map((s) => ({ id: s.id, text: s.passages.join("\n") })),
       unread: !missing.length ? null : draftFollowUp ? `${p.follows!.identifier}'s synthesis run isn't on this Mac, and your team's copy of its quotes doesn't have ${quoted.length ? "all of them" : "them"}` : "its synthesis run is no longer on this Mac",
     };
@@ -123,12 +136,16 @@ async function against(ctx: Ctx, p: Proposal, reads: Reads): Promise<Against> {
   const found = receipts.flatMap((r) => r.sources.map((s) => ({ s, i: files.get(s.refHash) }))).filter((x): x is { s: SourceReceipt; i: SignalItem } => !!x.i);
   const raw = [...new Map(found.map((x) => [x.s.refHash, x.i])).values()];
   const companies = [...new Set([...raw.flatMap((i) => outsideDomains(i.participants ?? [], internal)), ...internal].map(domainLabel).filter(Boolean))];
+  // D2-1: and the words they write as a company or product ("the Globex team", "at Globex"), read in the same pass.
+  const orgs = new Set<string>();
+  const people = namesIn(raw, companies, { things: orgs }).map((n) => n.name);
   const meetings = found.filter((x) => x.s.decision === "used").map((x) => ({ id: x.s.id ?? "a source", text: x.i.text }));
   const usedHere = new Set(found.filter((x) => x.s.decision === "used" && x.s.id && own.sources.includes(x.s)).map((x) => x.s.id!));
   const missing = p.sources.filter((id) => !usedHere.has(id));
   return {
     ...base,
-    people: peopleIn(raw, companies),
+    people,
+    ...(raw.length ? { things: [...companies, ...orgs, ...linedCompanies(p.description)] } : {}),
     // F5: the meetings the run read that team work holds as fundraising or a confidential contact's (an investor's
     // call a to-do came from, say): their companies' names never reach Linear.
     confidential: confidentialCompanies(filterItems(raw, rules).decisions, rules),
@@ -156,7 +173,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  */
 export async function recheckProposal(ctx: Ctx, p: Proposal, o: { titleOnly?: boolean; reads?: Reads } = {}): Promise<Recheck> {
   const a = await against(ctx, p, o.reads ?? new Map());
-  const guard = trackerGuard({ names: a.listed, people: a.people, titles: a.titles, series: a.series, confidential: a.confidential });
+  const guard = trackerGuard({ names: a.listed, people: a.people, titles: a.titles, series: a.series, confidential: a.confidential, things: a.things, known: a.known });
   const meetings = quoteGuard(a.meetings);
   const released = quoteGuard(a.strategy);
   const out: Recheck = { title: p.title, description: p.description, held: null, leftOut: null, unread: a.unread };
@@ -199,9 +216,10 @@ export async function recheckProposal(ctx: Ctx, p: Proposal, o: { titleOnly?: bo
     let at = 0;
     for (const g of groups) {
       const passed = said.slice(own.length + at, own.length + (at += g.length)).filter(ok);
-      const fresh = passed.length ? newFacts(kept.join(" "), passed.join(" "), undefined, companiesOf(p)) : [];
-      repeats += passed.length - fresh.length;
-      kept.push(...fresh);
+      // R12a: a fact said again goes once, the fuller of the two sentences in the other's place.
+      const m = passed.length ? mergeSentences(kept, passed, undefined, companiesOf(p)) : null;
+      repeats += passed.length - (m?.added.length ?? 0);
+      if (m) kept.splice(0, kept.length, ...m.sentences);
     }
   }
   // Nothing left out keeps the summary exactly as staged; otherwise what's left must still be a description.

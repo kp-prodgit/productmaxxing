@@ -11,8 +11,8 @@ import { forgetTeamPr, rememberTeamPr } from "./team-prs.js";
 import { localHost } from "../core/host.js";
 import { digestAction } from "./digests.js";
 import { startJob } from "./jobs.js";
-import { addTodo, completeTodo, placeTodo, sendTodoToLinear } from "../todo/todo.js";
-import { moveWork, PLACES, type Place } from "../todo/move.js";
+import { addTodo, completeTodo, placeTodo } from "../todo/todo.js";
+import { moveWork, PLACES, sendCommitment, type Place } from "../todo/move.js";
 import { openWebServer, stopWebServer, webServerStatus } from "./web-server.js";
 import type { PipelineActions } from "./pipeline-act.js";
 import { macConfirm, type Confirm } from "../mcp/pair.js";
@@ -168,7 +168,8 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
     async todoLinear(id: string) {
       if (typeof id !== "string" || !/^[\w-]{3,64}$/.test(id)) return { status: 400, body: { error: "Unknown to-do." } };
       try {
-        const r = await sendTodoToLinear(ctx, (await services(ctx)).tracker, id);
+        // R7 (SIG-7): checked like every other Linear text before it goes; a refusal is the action's answer.
+        const r = await sendCommitment(ctx, (await services(ctx)).tracker, id);
         return { status: 200, body: { message: r.already ? `Already in Linear as ${r.identifier}.` : `Sent to Linear as ${r.identifier}: ${r.text}` } };
       } catch (e: any) { return { status: 400, body: { error: e.message.replace(/`([^`]+)`/g, "$1") } }; }
     },

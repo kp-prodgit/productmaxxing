@@ -355,8 +355,8 @@ describe("a later call merged into a waiting task changes what Linear would get 
       "Acme needs a quote by Dec 9 to sign before Dec 18.",
       "A rival's quote is near $14k per imprint.",
     ].join(" "))).toEqual(["Acme needs a quote by Dec 9 to sign before Dec 18.", "A rival's quote is near $14k per imprint."]);
-    // Two new sentences that say the same thing: only the first.
-    expect(newFacts("Acme picks a pricing model.\n\n**Sources:** a call.", "The brief should weigh hybrid against per-seat pricing for Beta Corp. The brief should weigh hybrid and per-seat pricing for Beta Corp by Friday.")).toEqual(["The brief should weigh hybrid against per-seat pricing for Beta Corp."]);
+    // Two new sentences that say the same thing: only once, the fuller one, which says by when (R12a).
+    expect(newFacts("Acme picks a pricing model.\n\n**Sources:** a call.", "The brief should weigh hybrid against per-seat pricing for Beta Corp. The brief should weigh hybrid and per-seat pricing for Beta Corp by Friday.")).toEqual(["The brief should weigh hybrid and per-seat pricing for Beta Corp by Friday."]);
   });
 });
 

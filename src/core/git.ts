@@ -5,8 +5,8 @@ import { exec as defaultExec, type Exec } from "./exec.js";
 export class Git {
   constructor(readonly cwd: string, private readonly run: Exec = defaultExec) {}
 
-  async raw(args: string[], opts: { input?: string; cwd?: string } = {}) {
-    return this.run("git", args, { cwd: opts.cwd ?? this.cwd, input: opts.input });
+  async raw(args: string[], opts: { input?: string; cwd?: string; timeoutMs?: number } = {}) {
+    return this.run("git", args, { cwd: opts.cwd ?? this.cwd, input: opts.input, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}) });
   }
 
   async ok(args: string[], opts: { input?: string; cwd?: string } = {}): Promise<string> {

@@ -24,6 +24,11 @@ export interface State {
   autoUpdate: { checkedAt: string; result: string; version: string | null; notifiedFor: string | null } | null;
   /** The last time the background job fast-forwarded the team's PMX repo, and how it went (JOB-10). */
   teamSync?: { checkedAt: string; result: string; okAt?: string | null } | null;
+  /**
+   * D2-2: the last time PMX put this Mac's accepts in a team repo that isn't on GitHub, and why some stayed here (null:
+   * none did). What's left is counted from git each time; this only says why.
+   */
+  teamPush?: { at: string; why: import("./host.js").Unshared | null; detail?: string | null } | null;
   /** The background job's last pass: which steps failed, and how many passes in a row had a failure. */
   lastTick: { at: string; failed: string[]; failStreak: number } | null;
   /** OBS-4: stretches with no background pass (the Mac asleep or off), newest last, 14 days. */

@@ -159,8 +159,11 @@ export const STRATEGY_SOURCE = (name: string) => `your team's released strategy 
 
 /** What the tracker guard needs to know about one run's sources (F14): who they name, their titles, the team's series. */
 export interface TrackerContext {
-  /** Names found in the sources and names listed on purpose (the CRM list, the do-not-read people). */
-  people?: { found: string[]; listed: string[] };
+  /**
+   * Names found in the sources and names listed on purpose (the CRM list, the do-not-read people). D2-1: and the
+   * companies and products the sources show (`things`), never a person after a cue.
+   */
+  people?: { found: string[]; listed: string[]; things?: string[] };
   /** The batch's meetings' titles: never repeated in the tracker. */
   titles?: string[];
   /** The team's approved meeting series (F3): their names are titles too. */
@@ -200,7 +203,9 @@ export function checkCompany(raw: unknown, item: Pick<SignalItem, "title" | "tex
 
 /** The tracker guard for one run (F14): the names its sources hold, its meetings' titles and the team's series. */
 export function runGuard(t: TrackerContext = {}): TrackerGuard {
-  const rules: TrackerRules = { names: t.people?.listed ?? [], people: t.people?.found ?? [], titles: t.titles ?? [], series: t.series ?? [], confidential: t.confidential ?? [] };
+  // D2-1: the companies the sources show: their own words for them, and the batch's outside domains.
+  const things = t.people?.things || t.items ? [...(t.people?.things ?? []), ...(t.items ?? []).flatMap((i) => i.orgs ?? []).map(domainLabel)] : undefined;
+  const rules: TrackerRules = { names: t.people?.listed ?? [], people: t.people?.found ?? [], titles: t.titles ?? [], series: t.series ?? [], confidential: t.confidential ?? [], ...(things ? { things } : {}) };
   return trackerGuard(rules);
 }
 
@@ -630,7 +635,7 @@ export async function synthesize(
   const { tasks, skipped, heldOver, waiting, quoted } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), {
     guarded: await strategyFiles(ctx.personal.repoPath), themes, maxTasks: maxTasks(ctx.team), offKinds,
     // F14: who the sources name, what the meetings are called and the team's series never reach the tracker.
-    people: { found: [...g.people.found, ...back.people.found], listed: g.people.listed }, titles: work.filter((i) => i.kind === "transcript").map((i) => i.title), series: meetingSeries(ctx.team), items: work,
+    people: { found: [...g.people.found, ...back.people.found], listed: g.people.listed, things: [...(g.people.things ?? []), ...(back.people.things ?? [])] }, titles: work.filter((i) => i.kind === "transcript").map((i) => i.title), series: meetingSeries(ctx.team), items: work,
     // F5: nor do investors' and other confidential contacts' names.
     confidential: g.confidential,
   });
@@ -757,10 +762,11 @@ export function fillable(t: Pick<Task, "sources" | "category" | "status" | "agen
  * reading window. When the last run read further back (a first run reads a week), those files are read again with the
  * same privacy rules and redaction, and given IDs after this batch's own, with a line in the receipt like any source.
  */
-async function heldSources(ctx: Ctx, g: Awaited<ReturnType<typeof gather>> & { all?: SignalItem[] }, file: Awaited<ReturnType<typeof readHeldOver>>, days: number, receipt: RunReceipt): Promise<{ items: SignalItem[]; offered: { need: HeldNeed; ids: string[] }[]; readSince: string; people: { found: string[] } }> {
+async function heldSources(ctx: Ctx, g: Awaited<ReturnType<typeof gather>> & { all?: SignalItem[] }, file: Awaited<ReturnType<typeof readHeldOver>>, days: number, receipt: RunReceipt): Promise<{ items: SignalItem[]; offered: { need: HeldNeed; ids: string[] }[]; readSince: string; people: { found: string[]; things?: string[] } }> {
   const since = g.receipt.window.since;
   if (!file?.needs.length) return { items: [], offered: [], readSince: since, people: { found: [] } };
   const people: string[] = [];
+  const things: string[] = [];
   const pool = [...g.items];
   const found = heldSourcesIn(file.needs, pool);
   const short = file.needs.some((n) => found.get(n)!.length < n.sources.length);
@@ -771,6 +777,7 @@ async function heldSources(ctx: Ctx, g: Awaited<ReturnType<typeof gather>> & { a
     const wider = await gather(ctx, { days: Math.min(15, Math.max(days, Math.ceil((ctx.now().getTime() - back) / 86400000) + 1)), scope: "team" });
     readSince = wider.receipt.window.since;
     people.push(...wider.people.found);
+    things.push(...(wider.people.things ?? []));
     const top: Record<string, number> = {};
     // IDs after every ID this batch gave out, the busy meetings' too, so none is used twice.
     const all = [...pool, ...(g.all ?? [])];
@@ -788,5 +795,5 @@ async function heldSources(ctx: Ctx, g: Awaited<ReturnType<typeof gather>> & { a
   }
   const matched = heldSourcesIn(file.needs, pool);
   const items = [...new Set([...matched.values()].flat())];
-  return { items, offered: file.needs.map((need) => ({ need, ids: matched.get(need)!.map((i) => i.id) })), readSince, people: { found: people } };
+  return { items, offered: file.needs.map((need) => ({ need, ids: matched.get(need)!.map((i) => i.id) })), readSince, people: { found: people, things } };
 }

@@ -6,8 +6,8 @@ import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { loadState, markTaskRun } from "../core/state.js";
 import { localDay, REACH } from "../meetings/ledger.js";
-import { moveWork, type Place } from "../todo/move.js";
-import { completeTodo, formatTodos, loadTodos, refreshTodos, sendTodoToLinear, TODO_BATCH, TODO_DAYS, TODO_MAX_DAYS, todoPeriod, todosInPeriod } from "../todo/todo.js";
+import { moveWork, sendCommitment, type Place } from "../todo/move.js";
+import { completeTodo, editTodo, formatTodos, loadTodos, refreshTodos, TODO_BATCH, TODO_DAYS, TODO_MAX_DAYS, todoPeriod, todosInPeriod } from "../todo/todo.js";
 import type { Command } from "./index.js";
 import type { TickStep } from "./tick.js";
 
@@ -54,7 +54,7 @@ export const meetingCommands: Command[] = [
   {
     name: "todo",
     summary: "Your own to-dos from your meetings, including 1:1s; stays on this Mac. Shows and reads the last 7 days unless you pick a period",
-    usage: "pmx todo [--days N|all | --since today|Nd|YYYY-MM-DD] [--all] [--json] | pmx todo --refresh [--days N | --since …] [--dry-run] | pmx todo done <id> | pmx todo --me <name or email> | pmx todo --linear on|off | pmx todo linear <id> (or pmx move <id> todo)",
+    usage: "pmx todo [--days N|all | --since today|Nd|YYYY-MM-DD] [--all] [--json] | pmx todo --refresh [--days N | --since …] [--dry-run] | pmx todo done <id> | pmx todo edit <id> \"<new words>\" | pmx todo --me <name or email> | pmx todo --linear on|off | pmx todo linear <id> (or pmx move <id> todo)",
     options: {
       refresh: { type: "boolean" }, since: { type: "string" }, days: { type: "string" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, json: { type: "boolean" },
       me: { type: "string", multiple: true }, linear: { type: "string" },
@@ -80,8 +80,15 @@ export const meetingCommands: Command[] = [
         return 0;
       }
       if (a.positionals[0] === "linear") {
-        const r = await sendTodoToLinear(ctx, (await services(ctx)).tracker, a.positionals[1] ?? "");
+        // R7 (SIG-7): checked like every other Linear text before it goes.
+        const r = await sendCommitment(ctx, (await services(ctx)).tracker, a.positionals[1] ?? "");
         console.log(r.already ? `Already in Linear as ${r.identifier}.` : `Sent to Linear as ${r.identifier}: ${r.text}`);
+        return 0;
+      }
+      // R6: new words for a to-do, keeping its meetings and due date (as when a move wasn't sent).
+      if (a.positionals[0] === "edit") {
+        const t = await editTodo(a.positionals[1] ?? "", a.positionals.slice(2).join(" "));
+        console.log(`✔ Now: ${t.text}`);
         return 0;
       }
       if (a.positionals[0] === "done") {

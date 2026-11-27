@@ -5,7 +5,7 @@ import type { Ctx } from "../core/context.js";
 import { privateDir, readJson, withLock, writeJson } from "../core/fsutil.js";
 import { paths } from "../core/paths.js";
 import { DATA_RULES, dataBlock } from "../core/prompt.js";
-import { newReceiptId, writeReceipt, type RunReceipt } from "../core/receipt.js";
+import { newReceiptId, readReceipt, writeReceipt, type RunReceipt } from "../core/receipt.js";
 import { loadSkill, skillBody } from "../core/skills.js";
 import { updateState } from "../core/state.js";
 import { assertSchema } from "../core/version.js";
@@ -543,6 +543,33 @@ export async function keepTodo(input: { text: string; due?: string | null; why?:
     };
     s.items.push(todo);
     return todo;
+  });
+}
+
+/**
+ * R6 (TODO-5, rig test of #122): new words for an open to-do, as when PMX didn't send it to the team ("its words name a
+ * person"): `pmx todo edit <id> "<new words>"`. Everything else stays: the run that found it, its meetings, its due date
+ * and where it sits. A to-do whose run gives its meetings only by its words (`todo.added`, from before R16) keeps them by
+ * their IDs, so new words never lose them. Not one in Linear as the PM's own: its words are its title there.
+ */
+export async function editTodo(id: string, words: unknown): Promise<Todo> {
+  const text = typeof words === "string" ? words.replace(/\s+/g, " ").trim() : "";
+  const cur = await getTodo(id);
+  if (!text) throw new Error(`Give the to-do its new words: pmx todo edit ${cur.id} "<new words>".`);
+  if (text.length > 200) throw new Error("Keep a to-do under 200 characters.");
+  if (cur.status !== "open") throw new Error(`"${cur.text}" is done. Only open to-dos are reworded.`);
+  if (cur.linear) throw new Error(`"${cur.text}" is in Linear as ${cur.linear}, your own to-do, where its words are its title. Move it back first (\`pmx move ${cur.id} private\`), then reword it.`);
+  let sources = cur.sources;
+  if (!sources?.length && cur.receiptId) {
+    const added = (await readReceipt(cur.receiptId).catch(() => null))?.todo?.added.find((a) => norm(a.text) === norm(cur.text));
+    if (added) sources = [added.source, ...(added.also ?? [])];
+  }
+  return mutateTodos((s) => {
+    if (s.items.some((x) => x.id !== cur.id && x.status === "open" && norm(x.text) === norm(text))) throw new Error(`You already have the to-do "${text}".`);
+    const t = find(s, cur.id);
+    t.text = text;
+    if (sources?.length) t.sources = [...sources];
+    return t;
   });
 }
 

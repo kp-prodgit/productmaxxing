@@ -6,7 +6,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { confidentialCompanies, confidentialMatcher, filterItems, HOLD_RULES, holdRulesKey, type FilterRules } from "../src/core/filter.js";
+import { confidentialCompanies, confidentialMatcher, filterItems, FUNDRAISING_SHARE, HOLD_RULES, holdRulesKey, TOPICS, type FilterRules } from "../src/core/filter.js";
 import { DEFAULT_TEAM, validateTeamConfig, type TeamConfig } from "../src/core/config.js";
 import { exec, execOk } from "../src/core/exec.js";
 import { Git } from "../src/core/git.js";
@@ -258,9 +258,10 @@ describe("one fundraising passage never tips a meeting into a whole hold (F5a)",
     ].join("\n") });
     const f = filterItems([call], r);
     expect(f.decisions[0]).toMatchObject({ decision: "kept" });
-    expect(f.decisions[0]!.passages.map((p) => p.rule)).toEqual(["fundraising", "compensation"]);
-    expect(f.kept[0]!.text).not.toMatch(/data room|bonus/);
-    for (const s of ["Which reports matter first?", "The cost per seat by team, and the audit log export for finance.", "SSO first, then the export."]) expect(f.kept[0]!.text).toContain(s);
+    // D2-3: the customer's own data room isn't fundraising, so only the bonus line goes.
+    expect(f.decisions[0]!.passages.map((p) => p.rule)).toEqual(["compensation"]);
+    expect(f.kept[0]!.text).not.toMatch(/bonus/);
+    for (const s of ["Our board wants a data room for the acquisition by March.", "Which reports matter first?", "The cost per seat by team, and the audit log export for finance.", "SSO first, then the export."]) expect(f.kept[0]!.text).toContain(s);
   });
 
   it("a hold names the topics that reached it, and counts a passage once", () => {
@@ -282,6 +283,99 @@ describe("one fundraising passage never tips a meeting into a whole hold (F5a)",
     // A confidential contact's name counts only with its own kind too.
     const named = team({ confidentialDomains: [INVESTOR] });
     expect(decide(turns(pay, "Ana: Initech Ventures asked for the deck.", "Kim: The SSO plan for Q1 is set."), named)).toMatchObject({ decision: "kept" });
+  });
+});
+
+// D2-3 (end-to-end test 2026-11-26): one investor line and a customer's data room held a whole Slack thread as "2 passages
+// are about fundraising", so its pricing decision and a GPU cost update never reached team work, and a new task went to
+// Linear with the stale figure. A data room is fundraising now only in context, and a thread is held for fundraising only
+// when it's mostly about it.
+describe("a customer's data room isn't fundraising, and a thread is held only when it's mostly about it (D2-3)", () => {
+  const thread = (text: string, over: Partial<SignalItem> = {}): SignalItem => ({ id: "C1", kind: "thread", ref: "/x/c1.md", title: "#launch-pricing", at: "2026-11-25", participants: [], text, place: "#launch-pricing", ...over });
+  const r = team({ approvedPlace: () => true });
+  const turns = (...ls: string[]) => ls.join("\n\n");
+  const pricing = "Sam: Decision: the public pricing page goes live on Dec 4.";
+  const gpu = "Lee: GPU cost update: inference is now 22% of revenue, up from 18% last month.";
+  const investorLine = "Ana: Initech Ventures wants the cost model in the data room by Friday.";
+  const securityReview = "Kim: Globex's procurement set up a data room for our security docs.";
+  const upload = "Sam: I'll upload the SOC 2 report there today.";
+
+  it("the end-to-end thread is kept: only the investor line is cut, and the pricing decision and the 22% update reach team work", () => {
+    for (const rules of [r, team({ approvedPlace: () => true, confidentialDomains: [INVESTOR] })]) {
+      const f = filterItems([thread(turns(pricing, gpu, investorLine, securityReview, upload))], rules);
+      expect(f.decisions[0]).toMatchObject({ decision: "kept", passages: [expect.objectContaining({ rule: "fundraising" })] });
+      expect(f.decisions[0]!.passages).toHaveLength(1);
+      const kept = f.kept[0]!.text;
+      expect(kept).not.toMatch(/Initech|cost model/);
+      expect(kept).toBe(turns(pricing, gpu, securityReview, upload));
+      expect(kept).toContain("22% of revenue");
+    }
+    // Without the investor line, nothing in it is cut.
+    expect(decide(thread(turns(pricing, gpu, securityReview, upload)), r)).toMatchObject({ decision: "kept", passages: [] });
+  });
+
+  it("a customer's, partner's or procurement's data room alone isn't cut, nor one with nothing about a raise near it", () => {
+    for (const text of [
+      securityReview,
+      "Kim: Their data room has the vendor questionnaire.",
+      "Kim: The customer's data room for the acquisition opens Monday.",
+      "Kim: Procurement wants our SOC 2 report in a data room.",
+      "Kim: Globex set up a data room for the security review.",
+      "Kim: The partner's data room has the integration specs.",
+      "Kim: Put the onboarding deck in the data room.",
+    ]) expect(decide(thread(text), r), text).toMatchObject({ decision: "kept", passages: [] });
+    // Fundraising next to it doesn't make someone else's data room ours: only the term sheet's sentence goes.
+    const f = filterItems([thread("Ana: The SSO fix for every admin ships on Friday morning. The term sheet is in. Globex's procurement set up a data room for the security review.")], r);
+    expect(f.kept[0]!.text).toBe("Ana: The SSO fix for every admin ships on Friday morning. [HELD] Globex's procurement set up a data room for the security review.");
+    // A customer's own words (consistent with their headcount, F1): their "our data room" is theirs, even after a line
+    // about our investors. From one of the company's own people, the same line is cut.
+    const call = (who: string) => item({ text: turns("Ana: Our investors asked how the Globex rollout is going.", `${who}: Our data room opens Monday for the merger.`, "Jane: SSO first, then the export.") });
+    expect(decide(call("Jane"), r)).toMatchObject({ decision: "kept", passages: [expect.objectContaining({ rule: "fundraising" })] });
+    expect(decide(call("Jane"), r).passages).toHaveLength(1);
+    expect(decide(call("Ana"), r).passages.map((p) => p.rule)).toEqual(["fundraising", "fundraising"]);
+    // A title, an approved series and `pmx explain` still count a data room on its own (when in doubt).
+    expect(TOPICS.fundraising.test("Put the onboarding deck in the data room.")).toBe(true);
+    expect(TOPICS.fundraising.all("Put the onboarding deck in the data room.", {})).toEqual([]);
+  });
+
+  it("our data room for the Series B is cut, and so is a data room beside a round, a fund or a raise the sentence before", () => {
+    const cut = (text: string) => decide(thread(text), r).passages.map((p) => p.rule);
+    expect(cut("Ana: Our data room for the Series B opens Monday.")).toEqual(["fundraising"]);
+    expect(cut("Ana: The data room for this round needs the cost model.")).toEqual(["fundraising"]);
+    expect(cut(investorLine)).toEqual(["fundraising"]);
+    // The sentence before has the raise: both go, and the rest of the turn is used.
+    const f = filterItems([thread("Ana: The SSO fix for every admin ships on Friday morning. The audit log export for finance comes right after that. We're closing the Series B in January. Our data room opens Monday.")], r);
+    expect(f.kept[0]!.text).toBe("Ana: The SSO fix for every admin ships on Friday morning. The audit log export for finance comes right after that. [HELD]");
+    // The end of the turn before counts as the sentence before.
+    expect(cut(turns("Dana: The Series B lead wants the cost model.", "Ana: I'll put it in a data room tonight."))).toEqual(["fundraising", "fundraising"]);
+  });
+
+  it("a thread mostly about the round is held; two fundraising passages in a longer one are cut and the rest is kept", () => {
+    expect(FUNDRAISING_SHARE).toBe(1 / 3);
+    // 3 of 5 passages.
+    const round = thread(turns(
+      "Dana: The Series B lead wants the cost model before the partner meeting.", "Ana: Understood.", "Sam: The SSO rollout is set for Q1.",
+      "Ana: I'll put the cost model in the data room tonight.", "Kim: The term sheet should land next week.",
+    ));
+    expect(decide(round, r)).toMatchObject({ decision: "held", rule: "fundraising", detail: "3 passages are about fundraising and investors, so PMX holds the whole meeting" });
+    // 2 of 7: each is cut, with its figures, and the thread's other news is used.
+    const seven = [pricing, "Dana: The Series B lead wants the cost model.", "Lee: The SSO rollout is set for Q1.", "Kim: The audit log export ships next sprint.", "Ana: I'll put it in our data room tonight.", "Sam: Globex wants a team tier under 20 seats.", gpu];
+    const f = filterItems([thread(turns(...seven))], r);
+    expect(f.decisions[0]).toMatchObject({ decision: "kept" });
+    expect(f.decisions[0]!.passages.map((p) => p.rule)).toEqual(["fundraising", "fundraising"]);
+    expect(f.kept[0]!.text).toBe(turns(pricing, seven[2]!, seven[3]!, seven[5]!, gpu));
+    // At a third exactly (2 of 6), it's held.
+    expect(decide(thread(turns(...seven.slice(0, 6))), r)).toMatchObject({ decision: "held", rule: "fundraising", detail: "2 passages are about fundraising and investors, so PMX holds the whole meeting" });
+  });
+
+  it("an investor's thread is still held by its domain or title, and the hold rules' version is 3", () => {
+    const named = team({ approvedPlace: () => true, confidentialDomains: [INVESTOR] });
+    const text = turns(pricing, gpu, securityReview);
+    expect(decide(thread(text, { participants: [`Dana Wu <dana@${INVESTOR}>`, "ana@us.example"] }), named)).toMatchObject({ decision: "held", rule: "confidential", detail: `someone in it is from ${INVESTOR}, one of your team's confidential domains` });
+    expect(decide(thread(text, { title: "Initech Ventures diligence" }), named)).toMatchObject({ decision: "held", rule: "confidential", detail: `its title names ${INVESTOR}, one of your team's confidential domains` });
+    for (const title of ["Series B data room", "Data room review"]) expect(decide(thread(text, { title }), r), title).toMatchObject({ decision: "held", rule: "fundraising", detail: "the title is about fundraising" });
+    // Raised with this change, so every Mac checks its shared packs again (F5b).
+    expect(HOLD_RULES).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -390,7 +484,7 @@ describe("a to-do moved from an investor's call (F5, TODO-5)", () => {
     const tracker = memoryTracker();
     const move = (id: string) => moveWork(ctx, async () => ({ tracker }) as any, id, "product", { kind: "spec" });
     // Its words reach Linear only through the guard approval uses (R3): the investor's name never does.
-    await expect(move(named!.id)).rejects.toThrow("PMX didn't send it: its words name an investor or other confidential contact, which Linear never gets. Reword the to-do and move it again.");
+    await expect(move(named!.id)).rejects.toThrow(`PMX didn't send it: its words name an investor or other confidential contact, which Linear never gets. Reword it with \`pmx todo edit ${named!.id} "<new words>"\`, which keeps its meetings and due date, and move it again.`);
     expect(tracker.tasks.size).toBe(0);
     expect((await loadTodos()).items.map((t) => t.id)).toContain(named!.id);
     // Worded without it, it goes, with no source and so no quotes for the team repo.
@@ -398,5 +492,15 @@ describe("a to-do moved from an investor's call (F5, TODO-5)", () => {
     expect(moved).toMatchObject({ from: "private", to: "product", identifier: "PMX-1" });
     expect([...tracker.tasks.values()][0]).toMatchObject({ title: "Write the beta success criteria", sources: [] });
     expect(JSON.stringify([...tracker.tasks.values()])).not.toMatch(/Initech|moat/);
+  });
+});
+
+describe("Linear text spares someone else's data room too (D2-3)", () => {
+  it("leaves in a customer's security-review data room and still cuts the company's raise", () => {
+    expect(isFundraising("Globex's procurement set up a data room for our security docs.")).toBe(false);
+    expect(isFundraising("Their data room needs our security questionnaire by Dec 3.")).toBe(false);
+    expect(isFundraising("Initech Ventures wants the cost model in the data room by Friday.")).toBe(true);
+    expect(isFundraising("Our data room for the Series B opens Monday.")).toBe(true);
+    expect(isFundraising("Put the deck in the data room.")).toBe(true);
   });
 });

@@ -39,14 +39,27 @@ export interface TopicRule {
   patterns: string[];
   cased?: string[];
   notWhen?: string[];
+  /**
+   * D2-3: words among `patterns` that are the rule's only in its context. In the passage screen, a match of one of
+   * `patterns` counts only when its sentence, or the one before (the end of the turn before, for a turn's first), has
+   * another of the rule's words or one of `context` (`cased`: in their own case), or one of the team's confidential
+   * contacts' names; or, when the words right before it match `ours`, in a meeting or thread that has the rule's words
+   * elsewhere. Said by someone from outside the company, their "our" or "my" one is theirs and never counts. A title,
+   * an approved series and `pmx explain` count them like any other word.
+   */
+  inContext?: { patterns: string[]; context: string[]; cased?: string[]; ours: string };
 }
+
+/** D2-3: a data room. Fundraising only in context (`TopicRule.inContext`): a customer's is a security review. */
+const DATA_ROOM = "\\bdata ?rooms?\\b";
 
 /**
  * Fundraising (F14, F5): investors, a round, Series A/B/…, valuation, a term sheet, dilution, the cap table, the option
  * pool, a raise, a data room, an investor update, due diligence for a raise. Business-confidential even when no number
  * goes with them. One list for the privacy filter (a meeting about it is held from team work, a passage is cut) and the
  * tracker guard (`src/core/tracker-text.ts`: no sentence about it reaches Linear). "Investment" on its own is ordinary
- * talk ("a big investment for the team"), so it isn't on it.
+ * talk ("a big investment for the team"), so it isn't on it. D2-3: the passage screen counts a data room only in
+ * context (see the fundraising rule's `inContext`); the tracker guard still leaves out every sentence with one.
  */
 export const FUNDRAISING_WORDS: string[] = [
   "\\binvestors?('s|s')?\\b", "\\bventure (capital(ists?)?|firms?|funds?|partners?|backed)\\b", "\\bangel (investors?|rounds?|checks?)\\b",
@@ -62,7 +75,7 @@ export const FUNDRAISING_WORDS: string[] = [
   "\\b(our|the|this|next|upcoming|last) raise\\b",
   "\\blead investors?\\b",
   // F5 (end-to-end test 2026-11-26): what a raise is run with.
-  "\\bdata ?rooms?\\b", "\\binvestor (updates?|letters?|relations|meetings?|calls?|decks?)\\b",
+  DATA_ROOM, "\\binvestor (updates?|letters?|relations|meetings?|calls?|decks?)\\b",
   "\\b(investor|investors'|vc|funding|financing|fundraising) (due )?diligence\\b",
   "\\bdue diligence (for|on|ahead of|before) (the |our |a |an |this |next |their )?(round|raise|series [a-h]|investment|financing|funding)\\b",
 ];
@@ -74,6 +87,34 @@ const THINGS =
   "(model|feature|page|variant|campaign|ad|endpoint|channel|segment|cohort|sku|product|version|build|experiment|metric|benchmark|algorithm|baseline|ranker|classifier|prompt|checkpoint|release|funnel|template|market|stock|portfolio|fund|region|tier|integration|app|site|email|flow|server|database|font|layout|headline|banner|keyword)s?|quer(y|ies)|search|retrieval|onboarding|cache|index";
 /** Words that may sit between such a thing and the verb: "the model still underperforms", "variant B has been underperforming". */
 const AUX = "(still|really|slightly|consistently|badly|clearly|significantly|noticeably|also|often|usually|always|now|currently|again|is|are|was|were|has|have|had|been|being|will|would|could|might|may|can|keeps|kept|tends|seems|appears|continues|did|does|do|not|to)";
+
+/**
+ * D2-3: who else may own a data room: a customer, a partner, a vendor, procurement, or a named company ("Globex's"), but
+ * not a contraction ("that's"), the company itself or a day ("Friday's").
+ */
+const DR_OWNER =
+  "their|its|customers?'?|customer's|clients?'?|client's|partners?'?|partner's|vendors?'?|vendor's|suppliers?'?|supplier's|buyers?'?|buyer's|prospects?'?|prospect's|procurement's|" +
+  "(?!(?:it|that|what|there|here|let|who|he|she|where|how|everyone|everything|nothing|something|company|startup|team|today|tomorrow|yesterday|tonight|week|month|quarter|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)'s)[\\w&.-]+'s";
+/** Words between an owner and its data room: "Globex's virtual data room", "the customer's acquisition data room". */
+const DR_KIND = "own|new|virtual|shared|secure|online|vendor|security|procurement|compliance|deal|acquisition|m&a|due|diligence|audit|legal";
+/** The owner's team that set one up: "Globex's procurement set up a data room". */
+const DR_TEAM = "procurement|purchasing|sourcing|security|infosec|legal|compliance|it team|risk|audit|vendor management|vendor risk|m&a|corp ?dev|corporate development|deal team|finance";
+/** What a data room is for when the company is the vendor: a security review, vendor docs, due diligence on us. */
+const DR_REVIEW =
+  "procurement|purchasing|sourcing|infosec|security (reviews?|questionnaires?|assessments?|audits?|docs?|documents?|documentation|packages?|team)|" +
+  "vendor (reviews?|assessments?|onboarding|risk|due diligence|diligence|management|docs?|documents?|questionnaires?|security|evaluations?|approvals?)|" +
+  "third-party risk|trust center|rfps?|rfis?|rfqs?|(due )?diligence on us";
+
+/**
+ * D2-3: someone else's data room, never the company's raise: a customer's, a partner's or procurement's, for a security
+ * review, vendor docs or due diligence on us. The passage screen's `notWhen` and the tracker guard both spare it.
+ */
+export const OTHERS_DATA_ROOM: string[] = [
+  `(?<=\\b(${DR_OWNER})\\s+((${DR_KIND})\\s+){0,2})${DATA_ROOM}`,
+  `(?<=\\b(${DR_OWNER})\\s+(${DR_TEAM})\\b[^.!?;,\\n]{0,40})${DATA_ROOM}`,
+  `(?<=\\b(${DR_REVIEW})\\b[^.!?;,\\n]{0,40})${DATA_ROOM}`,
+  `${DATA_ROOM}(?=[^.!?;,\\n]{0,40}\\b(${DR_REVIEW})\\b)`,
+];
 
 /** The fixed topic rules, with plain-language labels and examples for `pmx explain`. */
 export const TOPIC_RULES: Record<Topic, TopicRule> = {
@@ -149,9 +190,9 @@ export const TOPIC_RULES: Record<Topic, TopicRule> = {
     ],
   },
   // F5: team work never reads the company's fundraising. Weighed like hiring and pay: a title about it, or two or more
-  // passages, hold the whole meeting from team work; one passage is cut and the rest of the call is used. It isn't about
-  // a person, so only its sentence goes (and a next one that gives the figures), never the turns after it. The PM's
-  // own to-dos may read it (TODO-2): they never leave the Mac.
+  // passages that are at least a third of the meeting or thread (D2-3), hold all of it from team work; otherwise each
+  // passage is cut and the rest is used. It isn't about a person, so only its sentence goes (and a next one that gives
+  // the figures), never the turns after it. The PM's own to-dos may read it (TODO-2): they never leave the Mac.
   fundraising: {
     label: "Fundraising and investors",
     examples: ["investors", "Series B", "funding round", "term sheet", "valuation", "cap table", "data room", "investor update", "due diligence for the round"],
@@ -164,35 +205,103 @@ export const TOPIC_RULES: Record<Topic, TopicRule> = {
       // A product's own investors, for a team whose customers serve them: "the investor portal", "retail investors".
       "\\binvestors?('s)?\\s+(portal|dashboard|app|onboarding|reporting|report|statement|account|profile|login|document|kyc|accreditation|view|tab|page|screen|feature)s?\\b",
       "\\b(retail|individual|accredited|end)\\s+investors?\\b",
+      // D2-3: someone else's data room is never the company's raise: a customer's, a partner's or procurement's, for a
+      // security review, vendor docs, an acquisition by a customer or due diligence on us as a vendor. Only the data
+      // room itself is spared, so an investor named beside it is still cut.
+      ...OTHERS_DATA_ROOM,
     ],
+    // D2-3: a data room is fundraising only beside it: another fundraising word, a round, a fund ("Initech Ventures") or
+    // a confidential contact's name in its sentence or the one before, or "our" or "the" data room in a meeting or
+    // thread with fundraising elsewhere. "Globex's procurement set up a data room for our security docs" is none of them.
+    inContext: {
+      patterns: [DATA_ROOM],
+      context: ["\\b(the|this|our|next|a|new|current|last|that) rounds?\\b(?!\\s+(of|trip|trips|robin|table|tables|up|number|numbers)\\b)(?!-)"],
+      cased: ["\\b[A-Z][A-Za-z0-9&-]*\\s+Ventures\\b"],
+      ours: "\\b(our|the)\\s+((own|new|virtual|online|main)\\s+)?",
+    },
   },
 };
+
+/**
+ * D2-3: what is around a text the passage screen judges, for a rule's words that count only in context
+ * (`TopicRule.inContext`).
+ */
+export interface Around {
+  /** The sentence before the text's first one: the end of the turn before. */
+  before?: string;
+  /** The meeting or thread has the rule's words elsewhere. */
+  inTopic?: boolean;
+  /** Said by someone from outside the company, so their "our" is theirs. */
+  theirs?: boolean;
+  /** F5: the team's confidential contacts' names, which count as context too. */
+  also?: TopicMatcher | null;
+}
 
 /** A compiled topic rule. `all` lists its matches that no `notWhen` context spares. */
 export interface TopicMatcher {
   /** Patterns and exceptions, for the receipt's rules hash. */
   readonly source: string;
-  all(text: string): RegExpMatchArray[];
+  /** With `around` (the passage screen), a word that counts only in context counts only there; without it, always. */
+  all(text: string, around?: Around): RegExpMatchArray[];
   exec(text: string): RegExpMatchArray | null;
   test(text: string): boolean;
+  /** D2-3: some of its words count only in context, so the passage screen tells it what's around them. */
+  readonly inContext?: true;
 }
 
 // Curly apostrophes become straight ones before matching ("I’ll", "doctor’s note"); the length stays the same.
 const straight = (s: string) => s.replace(/[‘’]/g, "'");
 
+/** Where each of a text's sentences starts and ends. */
+function spans(text: string): { start: number; end: number; text: string }[] {
+  let at = 0;
+  return sentences(text).map((s) => {
+    const start = Math.max(text.indexOf(s.text, at), at);
+    at = start + s.text.length;
+    return { start, end: at, text: s.text };
+  });
+}
+
 function compile(r: TopicRule): TopicMatcher {
   const re = new RegExp(`\\b(${r.patterns.join("|")})\\b`, "gi");
   const cased = r.cased?.length ? new RegExp(`(${r.cased.join("|")})`, "g") : null;
   const nots = (r.notWhen ?? []).map((p) => new RegExp(p, "gi"));
-  const all = (raw: string) => {
+  const found = (raw: string) => {
     const text = straight(raw);
-    const found = [...text.matchAll(re), ...(cased ? text.matchAll(cased) : [])].sort((a, b) => a.index! - b.index!);
-    if (!found.length || !nots.length) return found;
+    const hits = [...text.matchAll(re), ...(cased ? text.matchAll(cased) : [])].sort((a, b) => a.index! - b.index!);
+    if (!hits.length || !nots.length) return hits;
     const spared = nots.flatMap((n) => [...text.matchAll(n)].map((x) => [x.index!, x.index! + x[0].length] as const));
-    return found.filter((m) => !spared.some(([a, b]) => a < m.index! + m[0].length && b > m.index!));
+    return hits.filter((m) => !spared.some(([a, b]) => a < m.index! + m[0].length && b > m.index!));
   };
-  const source = [re.source, ...(cased ? [`=${cased.source}`] : []), ...nots.map((n) => `-${n.source}`)].join(" ");
-  return { source, all, exec: (t) => all(t)[0] ?? null, test: (t) => all(t).length > 0 };
+  // D2-3: the words that count only in context, and what that context is.
+  const c = r.inContext;
+  const bound = c ? new RegExp(`^(?:${c.patterns.join("|")})$`, "i") : null;
+  const near = c ? [...c.context.map((p) => new RegExp(p, "i")), ...(c.cased ?? []).map((p) => new RegExp(p))] : [];
+  const ours = c ? new RegExp(`(?:${c.ours})$`, "i") : null;
+  const isBound = (m: RegExpMatchArray) => !!bound?.test(m[0]);
+  const all = (raw: string, around?: Around) => {
+    const hits = found(raw);
+    if (!around || !hits.some(isBound)) return hits;
+    const text = straight(raw);
+    // Another of the rule's words, a context word, or (F5) one of the team's confidential contacts' names.
+    const has = (s?: string) => !!s && (found(s).some((m) => !isBound(m)) || near.some((n) => n.test(straight(s))) || !!around.also?.test(s));
+    const ss = spans(text);
+    return hits.filter((m) => {
+      if (!isBound(m)) return true;
+      const i = ss.findIndex((x) => m.index! < x.end);
+      if (i < 0) return true;
+      const lead = text.slice(ss[i]!.start, m.index);
+      // A customer's own words: their "our data room" is theirs.
+      if (around.theirs && /\b(our|my)\s+(\S+\s+)?$/i.test(lead)) return false;
+      if (has(ss[i]!.text) || has(i > 0 ? ss[i - 1]!.text : around.before)) return true;
+      return !!around.inTopic && ours!.test(lead);
+    });
+  };
+  const source = [
+    re.source, ...(cased ? [`=${cased.source}`] : []), ...nots.map((n) => `-${n.source}`),
+    ...(bound ? [`~${bound.source}`, ...near.map((n) => `+${n.source}`), `@${ours!.source}`] : []),
+  ].join(" ");
+  return { source, all, exec: (t) => all(t)[0] ?? null, test: (t) => all(t).length > 0, ...(bound ? { inContext: true as const } : {}) };
 }
 
 export const TOPICS = Object.fromEntries(Object.entries(TOPIC_RULES).map(([k, r]) => [k, compile(r)])) as Record<Topic, TopicMatcher>;
@@ -390,8 +499,11 @@ export function confidentialCompanies(decisions: Pick<ItemDecision, "item" | "de
   return [...new Set([...confidentialDomains(r.confidentialDomains).map(domainLabel), ...held])].filter((l) => l.length >= 3);
 }
 
-/** F5b: the version of how passages are counted and weighed into a hold; part of `holdRulesKey`. 2: F5a. */
-export const HOLD_RULES = 2;
+/**
+ * F5b: the version of how passages are counted and weighed into a hold; part of `holdRulesKey`. 2: F5a. 3: D2-3, a
+ * data room counts only in context, and fundraising holds a whole meeting or thread only at a third of its passages.
+ */
+export const HOLD_RULES = 3;
 
 /**
  * F5 (RUN-5): a key for the rules that decide what team work may read: the topic rules, the company's and the
@@ -658,6 +770,13 @@ const aboutAPerson = (topic: Screen, found: RegExpMatchArray[]) =>
 /** F5: a sentence that gives a raise's figures: an amount, a multiple or a share ("Targeting $40M", "2x", "15%"). */
 const FUNDS_DETAIL = /[$€£]\s?\d|\b\d+(?:[.,]\d+)?\s?(?:k|m|mm|bn|million|billion)\b|\b\d+(?:\.\d+)?\s?(?:%|x\b)/i;
 
+/** D2-3: what's around a turn: the last sentence of the turn before, the topics its text has, the confidential names. */
+interface TurnContext {
+  before?: string;
+  about: Set<Screen>;
+  also: TopicMatcher | null;
+}
+
 interface TurnCut {
   rule: HoldReason;
   /** The turn with its cut sentences replaced by the marker, or null when the whole turn goes. */
@@ -675,12 +794,16 @@ const aboutThem = (text: string) => ONE_PERSON.test(text) || (THEY.test(text) &&
  * When the rule is about a person, the sentence before and after go too, and the ones after that while they
  * still talk about that person; after hiring plan talk, a next sentence that spells out who it would hire. The
  * whole turn goes, as before, when that would be more than half of it (by sentences or by length), when its
- * speaker label matches, or when it names someone on the do-not-read list.
+ * speaker label matches, or when it names someone on the do-not-read list. D2-3: `near` is what's around the turn, for
+ * words that count only in context: the sentence before it, the topics the whole text has, and the confidential names.
  */
-function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules, outside: (label: string) => boolean): TurnCut | null {
+function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules, outside: (label: string) => boolean, near: TurnContext): TurnCut | null {
   const { lead, label, body } = parts(seg);
   const theirs = !!label && outside(label);
-  const matches = (t: Screen, m: TopicMatcher, text: string) => (theirs && t === "hiring" ? m.all(text).filter((x) => !PLAN_TALK.test(x[0])) : m.all(text));
+  const matches = (t: Screen, m: TopicMatcher, text: string, before = near.before) => {
+    const found = m.all(text, { before, inTopic: near.about.has(t), theirs, also: near.also });
+    return theirs && t === "hiring" ? found.filter((x) => !PLAN_TALK.test(x[0])) : found;
+  };
   const hits = topics.filter(([t, m]) => matches(t, m, seg).length);
   const listed = r.neverIngest.people.some((p) => mentions(seg, p));
   if (!hits.length) return listed ? { rule: "never-ingest", kept: null, personal: false } : null;
@@ -690,7 +813,7 @@ function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules
   const cut = s.map(() => false);
   s.forEach((x, i) => {
     for (const [topic, m] of hits) {
-      const found = matches(topic, m, x.text);
+      const found = matches(topic, m, x.text, i > 0 ? s[i - 1]!.text : near.before);
       if (!found.length) continue;
       cut[i] = true;
       if (!aboutAPerson(topic, found)) {
@@ -773,14 +896,20 @@ export function screenText(
   text: string, r: FilterRules, counts: Record<HoldReason, number>, passages?: ItemDecision["passages"], outside: (label: string) => boolean = () => false,
 ): string {
   const topics = activeTopics(r);
+  // D2-3: for words that count only in context, the confidential names, and the topics the text has by its own words
+  // ("the data room" is fundraising in a thread that has fundraising elsewhere).
+  const also = topics.find(([t]) => t === "confidential")?.[1] ?? null;
+  const about = new Set(topics.filter(([, m]) => m.inContext && m.all(text, { also }).length).map(([t]) => t));
   const kept: string[] = [];
   let after: { rule: HoldReason; left: number } | null = null;
+  let before: string | undefined;
   for (const seg of segments(text)) {
     if (!seg.trim()) {
       kept.push(seg);
       continue;
     }
-    const cut = judgeTurn(seg, topics, r, outside);
+    const cut = judgeTurn(seg, topics, r, outside, { before, about, also });
+    before = sentences(parts(seg).body).at(-1)?.text ?? before;
     if (cut) {
       counts[cut.rule]++;
       passages?.push({ rule: cut.rule, hash: passageHash(seg), ...(cut.part ? { part: cut.part } : {}) });
@@ -822,19 +951,23 @@ const SHORT: Record<HoldReason, string> = {
 };
 /** F5a: passages that count toward a whole-meeting hold only with their own kind: fundraising, and confidential names. */
 const OWN_COUNT: HoldReason[] = ["fundraising", "confidential"];
+/** D2-3: the share of a meeting's or thread's passages that fundraising passages must make up to hold all of it. */
+export const FUNDRAISING_SHARE = 1 / 3;
 
 /**
  * When a meeting's cut passages hold all of it (B2), and why. Each cut turn counts once, under the one rule it was cut
  * for (its first topic), and a reply cut with the passage before it is part of that passage, so neither counts twice.
  * The personal topics (1:1s, performance, pay, health, hiring) hold it at two passages together, as they always have;
  * F5a: fundraising and a confidential contact's name are business, not a person's, so each holds it only at two of its
- * own and never tips the personal count over. The reason names the topics that reached two, and the rule is the one
- * with the most passages among them (the first, on a tie).
+ * own and never tips the personal count over. D2-3: and fundraising only when the meeting or thread is mostly about it,
+ * its passages at least `FUNDRAISING_SHARE` of the `of` passages there are; otherwise each is cut and the rest is used.
+ * The reason names the topics that reached a hold, and the rule is the one with the most passages among them (the
+ * first, on a tie).
  */
-function wholeHold(passages: PassageCut[]): { rule: HoldReason; detail: string } | null {
+function wholeHold(passages: PassageCut[], of: number): { rule: HoldReason; detail: string } | null {
   const counted = passages.filter((p) => p.rule !== "never-ingest" && !p.followUp);
   const groups = [counted.filter((p) => !OWN_COUNT.includes(p.rule)), ...OWN_COUNT.map((k) => counted.filter((p) => p.rule === k))];
-  const cuts = groups.filter((g) => g.length >= 2).flat();
+  const cuts = groups.filter((g) => g.length >= 2 && (g[0]!.rule !== "fundraising" || g.length / of >= FUNDRAISING_SHARE)).flat();
   if (!cuts.length) return null;
   const n = new Map<HoldReason, number>();
   for (const p of counted) if (cuts.includes(p)) n.set(p.rule, (n.get(p.rule) ?? 0) + 1);
@@ -861,8 +994,9 @@ export function filterItems(items: SignalItem[], r: FilterRules): FilterResult {
     }
     const passages: ItemDecision["passages"] = [];
     const text = screenText(item.text, r, held, passages, outsideSpeaker(item, r));
-    // Two or more sensitive passages: the meeting is about that topic, so none of it goes to the team.
-    const whole = r.wholeMeeting ? wholeHold(passages) : null;
+    // Two or more sensitive passages: the meeting is about that topic, so none of it goes to the team. D2-3: for
+    // fundraising, only when they're at least a third of its passages.
+    const whole = r.wholeMeeting ? wholeHold(passages, segments(item.text).filter((s) => s.trim()).length) : null;
     if (whole) {
       held[whole.rule]++;
       heldItems++;

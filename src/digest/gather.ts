@@ -6,7 +6,8 @@ import { sourceReceipts, topicRulesHash, type RunReceipt } from "../core/receipt
 import type { SignalItem } from "../core/types.js";
 import { readThreads, readTranscripts } from "../sources/transcripts.js";
 import { channelInputs, meetingSeries, placeApproved } from "../inputs/inputs.js";
-import { peopleIn } from "../core/tracker-text.js";
+import { namesIn } from "../core/tracker-text.js";
+import { crmCompanies } from "../run/web-guard.js";
 import { paths } from "../core/paths.js";
 import { collapseTwins, meetingKeys, teamSalt } from "../meetings/ledger.js";
 import { runCanaries } from "../core/canary.js";
@@ -45,9 +46,10 @@ export interface Gathered {
   /**
    * F14: who the sources name (attendees, speaker labels, names in their text) and the names listed on purpose (the
    * CRM list, the do-not-read people), so text for the tracker never names them. In memory for this run only, never
-   * written.
+   * written. D2-1: and the companies and products they show (participants' domains, the words they write as a
+   * company), which a word after a cue only a person gets may still be ("Ask Globex for the list").
    */
-  people: { found: string[]; listed: string[] };
+  people: { found: string[]; listed: string[]; things?: string[] };
   /**
    * F5: the confidential companies this batch shows, by their domains' names: the team's confidential domains, and the
    * outside companies of the meetings held as fundraising or a confidential contact's. Text for the tracker never names
@@ -103,7 +105,9 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
   });
   // A company's own name (an outside domain's, or the team's) never counts as a person's, even on a shared mailbox.
   const companies = [...new Set([...raw.flatMap(orgsOf), ...rules.internalDomains].map(domainLabel).filter(Boolean))];
-  const people = { found: peopleIn(raw, companies), listed: [...names, ...personal.neverIngest.people].map((n) => n.trim()).filter((n) => n.length >= 3) };
+  const orgs = new Set<string>();
+  const found = namesIn(raw, companies, { things: orgs }).map((n) => n.name);
+  const people = { found, listed: [...names, ...personal.neverIngest.people].map((n) => n.trim()).filter((n) => n.length >= 3), things: [...companies, ...orgs, ...crmCompanies(names)] };
   // Titles of used sources are redacted with a separate redactor, so the masking counts cover only what the model saw.
   const titles = makeRedactor(names);
   return {

@@ -62,6 +62,11 @@ export interface PeopleSwap {
 export interface KnownPeople {
   people: { key: string; emails: string[]; ours?: boolean }[];
   strong: string[];
+  /**
+   * R6 (D2-1): the companies and products the same sources show: their email domains' names and the words they write
+   * as a company ("the Globex team", "at Globex"), for the tracker guard's `known`. Never a person.
+   */
+  things?: string[];
 }
 
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
@@ -122,7 +127,7 @@ export function buildKnown(o: { items: { participants?: string[]; text: string }
   for (const t of team) person(t, true);
   for (const n of o.listed ?? []) { const k = nameKey(n); if (k.length >= 3) add(k); }
   for (const f of found) add(nameKey(f.name));
-  return { people: [...people.values()], strong: [...new Set(found.map((f) => nameKey(f.name)).filter((k) => k && !k.includes(" ")))] };
+  return { people: [...people.values()], strong: [...new Set(found.map((f) => nameKey(f.name)).filter((k) => k && !k.includes(" ")))], things: [...new Set([...domains, ...things])] };
 }
 
 type Kind = "listed" | "full" | "strong" | "weak";

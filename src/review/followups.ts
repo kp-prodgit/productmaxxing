@@ -8,12 +8,13 @@ import { readReceipt } from "../core/receipt.js";
 import type { Services } from "../core/services.js";
 import { skillInventory } from "../core/skills.js";
 import { STAGES, type Task } from "../core/types.js";
-import { sourceCompanies, sourcePeople } from "../run/comment.js";
+import { sourceCompanies, sourcePeople, sourceThings } from "../run/comment.js";
 import { quoteGuard, trackerGuard } from "../core/tracker-text.js";
 import { meetingSeries } from "../inputs/inputs.js";
 import { receiptOf, runEvidence, sourcesHere, type Evidence } from "../run/evidence.js";
+import { knownThings } from "../run/known-people.js";
 import { evidenceStore } from "../run/packs.js";
-import { followUpQuotes } from "../run/share.js";
+import { keptQuotes } from "../run/share.js";
 import { privateNames } from "../run/run.js";
 import { CHECKED, stageProposals, readProposals, type Proposal } from "../synth/proposals.js";
 import { STRATEGY_SOURCE, SOURCES_LINE, strategyFiles } from "../synth/synthesize.js";
@@ -161,16 +162,30 @@ export interface FollowUpResult {
 
 const EMPTY = (skipped: FollowUpResult["skipped"], draft: string | null = null): FollowUpResult => ({ skipped, todos: [], asks: [], proposals: [], repeated: 0, duplicates: 0, leftOut: 0, moreQuestions: 0, moreDecisions: 0, draft });
 
+/** Words that add nothing to a question: "what exactly will …" asks what will. Not before a number ("exactly 30 days"). */
+const FILLER = /\s+(?:exactly|precisely|actually|really|basically)\b(?!\s+(?:\d|(?:one|two|three|four|five|six|seven|eight|nine|ten|half|once|twice|the same)\b))/gi;
+
 /**
  * An ask to-do's words (R2): "Ask the finance lead: Who funds the pilot? (PMX-12)", "Find out: …" when the draft names
- * no role, and "Ask legal whether …" ("Find out whether …") for a question the draft wrote as a clause. At most 200
- * characters, like any to-do.
+ * no role, and "Ask legal whether …" ("Find out whether …") for a question the draft wrote as a clause. The question in
+ * its own words and order, starting with a capital and ending with its "?", without filler like "exactly"; one whose
+ * title starts with what it's about (`about`) is asked about it: "Ask legal about the Globex integration: Does the
+ * integration need this …?". At most 200 characters, like any to-do.
  */
-export function askText(role: string | null, title: string, identifier: string): string {
+export function askText(role: string | null, title: string, identifier: string, about: string | null = null): string {
   const id = identifier ? ` (${identifier})` : "";
-  const clause = title.match(/^Find out (.+)$/)?.[1];
-  const head = clause ? (role ? `Ask ${role} ` : "Find out ") : (role ? `Ask ${role}: ` : "Find out: ");
-  return `${head}${cut(clause ?? title, 200 - head.length - id.length)}${id}`;
+  const words = title.replace(FILLER, "");
+  const clause = words.match(/^Find out (.+)$/)?.[1];
+  if (clause) {
+    const head = role ? `Ask ${role} ` : "Find out ";
+    return `${head}${cut(clause, 200 - head.length - id.length)}${id}`;
+  }
+  const leaned = about ? words.match(/^[^:?]{1,80}:\s+(.+)$/)?.[1] : undefined;
+  const q = (leaned ?? words).replace(/^\p{Ll}/u, (c) => c.toUpperCase());
+  const head = `${role ? `Ask ${role}` : "Find out"}${leaned ? ` about ${about}` : ""}: `;
+  const room = 200 - head.length - id.length;
+  // Cut short, a question still ends with its "?".
+  return `${head}${q.length > room && q.endsWith("?") ? `${cut(q, room - 1)}?` : cut(q, room)}${id}`;
 }
 
 /** The draft a review item carries: the run's output, else the first Markdown file under outputs/. */
@@ -209,7 +224,7 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
   if (!draft) return EMPTY("no-draft");
   const { task } = item;
   const now = ctx.now();
-  const found = readFollowUps(draft.content, task.identifier, now);
+  const found = readFollowUps(draft.content, task.identifier, now, { title: task.title });
   const out = EMPTY(null, draft.path);
   const draftKey = `${task.identifier} ${draft.path}`;
   const ledger = (await readJson<Ledger>(followUpsFile())) ?? { v: 1, drafts: {} };
@@ -270,6 +285,9 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
       // names in their text. The companies the task's Sources line names are companies, never people.
       // R5: and the sources' outside companies the evidence (a pack too) lists.
       people: sourcePeople(evidence, [...ctx.team.internalDomains, ...(ctx.personal.companyDomains ?? [])], [...sourceCompanies(task.description, task.title), ...(evidence.companies ?? [])]),
+      // D2-1: the companies the sources show, so "Ask Globex for…" may go while "Ask Dana for…" never does.
+      things: sourceThings(evidence, [...ctx.team.internalDomains, ...(ctx.personal.companyDomains ?? [])], task.description),
+      known: await knownThings(ctx).catch(() => [] as string[]),
       titles: (r?.sources ?? []).filter((s) => s.decision === "used" && s.kind === "transcript" && s.title).map((s) => s.title!),
       series: meetingSeries(ctx.team),
       // F5: nor do the team's investors' and other confidential contacts' names.
@@ -284,9 +302,10 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
       if (out.asks.length >= FOLLOW_ASKS) { out.moreQuestions++; stay.push(q.key); continue; }
       // A role, never a person: one the tracker rules would cut (a name, a placeholder) is left out.
       const role = q.ask!.role && !tracker.problem(q.ask!.role) ? q.ask!.role : null;
-      const text = askText(role, q.title, task.identifier);
+      const text = askText(role, q.title, task.identifier, q.about);
       if (open.has(norm(text))) { out.duplicates++; done.push(q.key); continue; }
-      const why = cut(q.rest.join(" "), 400) || (q.where === "blocking" ? "The draft lists it as blocking." : "The draft leaves it open.");
+      // A whole sentence that says where the question comes from, when the draft says nothing more about it.
+      const why = cut(q.rest.join(" "), 400) || `${task.identifier}'s accepted draft lists this as ${q.where === "blocking" ? "a blocking" : "an open"} question.`;
       const t = await keepTodo({ text, due: deadlineIn([q.question, ...q.rest].join(" "), now), why, source: provenance }, now);
       open.add(norm(t.text));
       out.asks.push({ id: t.id, text: t.text });
@@ -315,7 +334,7 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
         staged.push({
           q, p: {
             at: now.toISOString(), receipt: receipt ?? "", title, description: describeFollowUp({ ...q, rest }, task, draft.path), category: kind, size: "S",
-            sources: task.sources, from, quotes: followUpQuotes(evidence),
+            sources: task.sources, from, ...keptQuotes(evidence),
             follows: { identifier: task.identifier, path: draft.path, url: task.url || null, where: q.where, ...(item.prUrl && /^https?:\/\//.test(item.prUrl) ? { draft: item.prUrl } : {}) },
             // R3: checked by this PMX's tracker rules, which approval relies on if it can't read the sources again.
             checked: CHECKED,

@@ -3,6 +3,7 @@ import type { Ctx } from "../core/context.js";
 import { killSwitchOn } from "../core/killswitch.js";
 import { RunLogStore } from "../core/runlog-store.js";
 import { loadState } from "../core/state.js";
+import { unsharedWork } from "../core/host.js";
 import { tickHealth } from "./tick.js";
 import { budget, usageLine } from "../budget/provider.js";
 import { linearAccess } from "../linear/access.js";
@@ -39,6 +40,9 @@ export async function runStatus(ctx: Ctx, extra: string[] = [], o: { engine?: En
   }
   lines.push(`Team ${team.team} · agent ${ctx.agent} · model ${team.model}`);
   lines.push(`PMX repo: ${personal.repoPath}`);
+  // D2-2: accepted drafts on this Mac that the team's repo hasn't got, and exactly what to run when PMX can't share them.
+  const unshared = await unsharedWork(ctx.repo, (await loadState()).teamPush).catch(() => null);
+  if (unshared) lines.push(`Team repo: ${unshared.needsYou ? "✘ " : ""}${unshared.text}`);
   // INPUT-3, COLLECT-4: where team tasks come from, and whether anything reads the team's channels.
   const synth = synthesisLine(team, personal, ctx.agent);
   if (synth) lines.push(synth);

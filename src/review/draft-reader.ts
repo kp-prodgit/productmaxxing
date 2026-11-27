@@ -71,9 +71,13 @@ export interface DraftQuestion {
   /**
    * The question whole, for a task's title or a to-do: the item's sentence through its "?", without a label before it
    * ("Pricing: would …?" is "Would …?"). An item that isn't a question gets the fewest words added to make it a task:
-   * "what Initech asked for, since no cited source shows it" is "Find out what Initech asked for". Never a fragment.
+   * "what Initech asked for, since no cited source shows it" is "Find out what Initech asked for". Never a fragment, and
+   * never a word like "it" or "this" with nothing to say what it is: "When do the Initech partner terms close?", or the
+   * item's label or task's subject before it ("Globex integration: does the integration need this …?").
    */
   title: string;
+  /** What the title starts with, when it starts with what it's about: "the Globex integration", for "Ask legal about …". */
+  about: string | null;
   /** The rest of the item: context, the PM decides note, the recommendation. Sentence by sentence. */
   rest: string[];
   where: "blocking" | "open";
@@ -194,14 +198,98 @@ const SHOULD_IT = new RegExp(`^(?:should|shall)\\s+((?:it|they)|(?:the|this|that
 
 /**
  * "Should we offer X?" is the decision whether to offer X; "Should the price be set as an add-on?" whether the price
- * should be set as an add-on. Anything else is left as written.
+ * should be set as an add-on; any other yes/no question too (`yesNo`): "Is the allowance pooled …?" is whether the
+ * allowance is pooled. Anything else is left as written.
  */
 function whetherOf(s: string): string {
   // "Should we …?", "Shall we …?", and "Do we give Globex numbers …?" (not "Do we know …?", which asks a fact).
   const we = s.match(/^(?:should|shall) we\s+(.+?)\??$/i) ?? s.match(/^do we\s+(?!know|have|need|understand|see)(.+?)\??$/i);
   if (we) return `whether to ${we[1]}`;
   const it = s.match(SHOULD_IT);
-  return it ? `whether ${it[1]} should ${it[2]!.toLowerCase()}${it[3]}` : s;
+  return it ? `whether ${it[1]} should ${it[2]!.toLowerCase()}${it[3]}` : yesNo(s) ?? s;
+}
+
+/**
+ * Plain verbs, for where a question's subject ends: "Does the integration | need …?", "Can a designer | be freed …?".
+ * Nouns that are verbs too end it only when no verb follows them: "Does the price cap | apply …?".
+ */
+const VERBS = new RegExp(`^(?:${SHOULD_VERB}|accept|add|adopt|approve|build|buy|cancel|choose|commit|counter|cut|decline|defer|delay|drop|expand|extend|fund|hire|hold|invest|kill|lower|match|partner|pause|pick|pursue|raise|reject|remove|renew|retire|scale|sell|sign|stop|switch|walk|want|require|expect|allow|pay|agree|mean|matter|affect|block|depend|share|own|prefer|work|fit|help|make|know|see|give|let|ask|tell|show|handle|integrate|sync|migrate|upgrade|happen|become|belong|differ|vary|grow|fall|rise|return|leave|send|receive|meet|exceed|beat|pass|fail|win|lose|reach|hit|sit)$`, "i");
+const NOUN_TOO = /^(?:cap|limit|plan|price|cost|change|test|use|work|run|support|offer|lead|end|open|close|count|charge|share|block|hold|cut|drop|match|scale|return|fund|partner|ship|launch|land|move|start|wait|stay|need)$/i;
+const PRONOUN = /^(?:it|they|we|you|i|he|she|there)$/i;
+const DET = /^(?:the|a|an|our|their|its|your|this|that|these|those|another|any|each|every|some|no|all|both|either|neither)$/i;
+const PREP = /^(?:of|for|from|with|to|at|by|in|on|per|across|within|under|over|between|about|after|before|during|without|into|via|than|as|like)$/i;
+/** Words that start what a question says of its subject: "Is the plan | ready …?", "Is SSO | part of …?". */
+const PREDICATE = /^(?:part|worth|enough|ready|available|possible|feasible|necessary|required|needed|likely|unlikely|viable|acceptable|safe|fine|ok|okay|true|clear|open|live|final|firm|flexible|negotiable|separate|optional|mandatory|free|still|already|also|really|actually|even|too|more|less|same|different|better|worse|cheaper|right|wrong|due|late|early)$/i;
+/** A predicate that starts with a preposition: "Is the allowance | per seat?", "Is the DPA | in the contract?". */
+const PREDICATE_PREP = /^(?:per|in|on|at|within|under|over|inside|outside|out|up|behind|ahead|across|beyond)$/i;
+const IRREGULAR = /^(?:been|built|sold|paid|held|kept|made|done|known|shown|given|taken|met|sent|spent|bought|brought|chosen|frozen|written|seen|gone|found|told|won|lost|got|gotten|begun|broken|driven|drawn|grown|thrown)$/i;
+/** Past participles that are nouns too ("the feature set"): one only when a preposition or the end follows. */
+const IRREGULAR_IF = /^(?:set|cut|put|run|split|shut|hit|let|led|left|read)$/i;
+const NOT_PARTICIPLE = /^(?:need|feed|seed|speed|shed|bred|hundred|embed|exceed|proceed|succeed)$/i;
+const bareWord = (w: string) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+const participle = (w: string, next: string) => IRREGULAR.test(w) || (IRREGULAR_IF.test(w) && (!next || PREP.test(next) || /^(?:up|yet|or|and)$/i.test(next))) || (/^\p{Ll}{2,}ed$/u.test(w) && !NOT_PARTICIPLE.test(w));
+/** A plural noun phrase, by its head (the word before any preposition): "the partner terms", not "the price of seats". */
+const pluralOf = (np: string) => {
+  const ws = np.split(/\s+/).map(bareWord);
+  const at = ws.findIndex((w, i) => i > 0 && PREP.test(w));
+  const head = (at > 0 ? ws[at - 1] : ws.at(-1)) ?? "";
+  return /^(?:these|those)$/i.test(ws[0] ?? "") || (/\p{Ll}s$/u.test(head) && !/(?:ss|us|is)$/i.test(head));
+};
+/** A verb with -s, after a subject like "the integration": "needs", "has", "goes", "carries". */
+const third = (v: string) => (/^have$/i.test(v) ? "has" : /^be$/i.test(v) ? "is" : /(?:s|sh|ch|x|z|o)$/i.test(v) ? `${v}es` : /[^aeiou]y$/i.test(v) ? `${v.slice(0, -1)}ies` : `${v}s`);
+
+/**
+ * Where a yes/no question's subject ends: at the first of its words that `starts` the rest, after the subject's first
+ * word, or its first two after a determiner ("the monthly allowance | pooled"). -1 when none does, or when the words
+ * before it read as more than a subject (a second determiner, a comma): the question is then left as written.
+ */
+function subjectEnd(words: string[], starts: (w: string, prev: string, next: string) => boolean): number {
+  const w0 = bareWord(words[0] ?? "");
+  if (PRONOUN.test(w0)) return words.length > 1 ? 1 : -1;
+  // "this" or "that" is the subject itself when what follows starts the rest ("Is this enough?").
+  if (/^(?:this|that|these|those)$/i.test(w0) && words.length > 1 && starts(bareWord(words[1]!), "", bareWord(words[2] ?? ""))) return 1;
+  const min = DET.test(w0) || /['’]s$/.test(words[0] ?? "") ? 2 : 1;
+  for (let i = min; i < Math.min(words.length, 9); i++) {
+    if (!starts(bareWord(words[i]!), bareWord(words[i - 1]!), bareWord(words[i + 1] ?? ""))) continue;
+    const subject = words.slice(0, i);
+    const ok = subject.every((x, j) => !/[,;:()]/.test(x) && !AUX.test(x) && (j === 0 || !DET.test(bareWord(x)) || PREP.test(bareWord(subject[j - 1]!))));
+    return ok ? i : -1;
+  }
+  return -1;
+}
+
+/**
+ * A yes/no question as the clause after "Decide whether" (FOLLOW-1): "Is the allowance pooled or per seat?" is "the
+ * allowance is pooled or per seat", "Does the integration need X?" "the integration needs X", "Can a designer be
+ * freed?" "a designer can be freed", and "Do we have another integration planned?" "another integration is planned".
+ * The question's own words in its own order otherwise; null when where its subject ends isn't clear.
+ */
+function yesNo(s: string): string | null {
+  const m = s.match(/^(is|are|was|were|has|have|does|do|can|could|will|would|should|shall|must|may|might)\s+(.+?)\s*\?$/i);
+  if (!m) return null;
+  const aux = m[1]!.toLowerCase();
+  const words = m[2]!.split(/\s+/);
+  const notDet = (prev: string) => !DET.test(prev) && !/['’]s$/.test(prev);
+  if (aux === "do" && /^we$/i.test(words[0]!) && /^have$/i.test(words[1] ?? "") && DET.test(words[2] ?? "")) {
+    const np = words.slice(2);
+    const at = subjectEnd(np, (w, prev, next) => participle(w, next) && notDet(prev));
+    if (at > 1) return `whether ${np.slice(0, at).join(" ")} ${pluralOf(np.slice(0, at).join(" ")) ? "are" : "is"} ${np.slice(at).join(" ")}`;
+  }
+  let at = -1;
+  if (/^(?:is|are|was|were)$/.test(aux)) {
+    at = subjectEnd(words, (w, prev, next) => (/^(?:a|an|the)$/i.test(w) && !PREP.test(prev)) || ((PREDICATE.test(w) || participle(w, next)) && notDet(prev)));
+    if (at < 0) at = subjectEnd(words, (w) => PREDICATE_PREP.test(w));
+  } else if (/^(?:has|have)$/.test(aux)) {
+    at = subjectEnd(words, (w, prev, next) => (participle(w, next) || /^(?:already|still|also|ever|yet|now|just|not|never)$/i.test(w)) && notDet(prev));
+  } else {
+    at = subjectEnd(words, (w, prev, next) => VERBS.test(w) && !(NOUN_TOO.test(w) && VERBS.test(next)) && notDet(prev));
+  }
+  if (at < 1) return null;
+  const subject = words.slice(0, at).join(" ");
+  const [verb = "", ...rest] = words.slice(at);
+  if (aux === "does") return [`whether ${subject}`, verb.replace(/^[\p{L}-]+/u, (v) => third(v.toLowerCase())), ...rest].join(" ");
+  if (aux === "do") return [`whether ${subject}`, verb, ...rest].join(" ");
+  return [`whether ${subject}`, aux, verb, ...rest].join(" ");
 }
 
 /** Nouns that make a verb the first word of a compound noun: "kill date", "launch plan", "ship date". */
@@ -211,26 +299,40 @@ const CHOSEN = /^(?:(?:whether|if|how|which|what|who|when|where|to|between)\b|on
 const AUX = /\b(?:is|are|was|were|be|been|has|have|had|do|does|did|can|could|will|would|should|must|may|might|shall)\b/i;
 /** A noun phrase, not a sentence or a question: "Deletion window", "kill date and price floor". */
 const nounPhrase = (c: string) => c.split(/\s+/).length <= 8 && !AUX.test(c) && !/[?:;]/.test(c);
-/** "the deletion window" for "Deletion window"; a phrase with its own determiner keeps it. */
-const theOf = (c: string) => (DETERMINER.test(c) ? lowerFirst(c) : `the ${/^\p{Lu}{2}/u.test(c) ? c : lowerFirst(c)}`);
+/**
+ * "the deletion window" for "Deletion window"; a phrase with its own determiner keeps it, and so does a company's
+ * possessive or a name alone: "Globex's renewal terms", "Globex". Only a common word loses its capital (`commonFirst`):
+ * "Globex renewal terms" is "the Globex renewal terms".
+ */
+function theOf(c: string, r: Reading, known = false): string {
+  const lc = /^\p{Lu}{2}/u.test(c) ? c : commonFirst(c, r, known);
+  if (DETERMINER.test(lc) || /^\p{Lu}[\p{L}\p{N}&-]*['’]s\s/u.test(lc) || /^\p{Lu}\p{Ll}+$/u.test(lc)) return lc;
+  return `the ${lc}`;
+}
 
 /**
  * A choice worded as the decision to make: "accept, counter or decline …" is whether to; "Should we …?" and "Should the
- * price …?" too. Only a verb gets "whether to": "kill date and price floor" is a noun phrase, the decision on it.
+ * price …?" too, and any yes/no question ("Is the allowance pooled …?"). Only a verb gets "whether to": "kill date and
+ * price floor" is a noun phrase, the decision on it.
  */
-function asChoice(core: string): string {
+function asChoice(core: string, r: Reading): string {
   const second = core.replace(/^to\s+/i, "").split(/\s+/)[1]?.replace(/[^\w]/g, "") ?? "";
   let c = DO.test(core) && !COMPOUND.test(second) ? `whether to ${core.replace(/^to\s+/i, "").replace(/^./, (x) => x.toLowerCase())}` : core;
   c = whetherOf(c).replace(/^((?:whether|if|how|which|what|who|when|where)\b.+?)\?$/i, "$1");
-  return !CHOSEN.test(c) && nounPhrase(c) ? `on ${theOf(c)}` : c;
+  return !CHOSEN.test(c) && nounPhrase(c) ? `on ${theOf(c, r)}` : c;
 }
 
-/** The to-do's words: "Decide whether to … (PMX-12)", or "Decide: <the item's lead> (PMX-12)". At most 200 characters. */
-function worded(core: string, identifier: string): string {
+/**
+ * The to-do's words: "Decide whether to … (PMX-12)", or "Decide: <the item's lead> (PMX-12)". A call that leans on a
+ * word nothing in it explains starts with what its item is about (`about`): "Price floor: decide whether to commission
+ * that test … (PMX-33)". At most 200 characters.
+ */
+function worded(core: string, identifier: string, about: string | null = null): string {
   const id = ` (${identifier})`;
   const verb = /^(?:(?:whether|if|how|which|what|who|when|where|to|between)\b|on\s)/i.test(core) ? "Decide " : "Decide: ";
-  const body = cut(core.replace(/^./, (c) => (verb === "Decide " ? c.toLowerCase() : c)), 200 - verb.length - id.length);
-  return `${verb}${body}${id}`;
+  const head = about && verb === "Decide " ? `${about}: decide ` : verb;
+  const body = cut(core.replace(/^./, (c) => (verb === "Decide " ? c.toLowerCase() : c)), 200 - head.length - id.length);
+  return `${head}${body}${id}`;
 }
 
 /**
@@ -248,13 +350,187 @@ const labelish = (s: string) => !!s && s.split(/\s+/).length <= 4 && !VERB.test(
 const NOTE = /^(?:assumptions?|unknowns?|notes?|context|evidence|sources?|why|risks?|caveats?)\s*:/i;
 /** A mark that only qualifies a label: "Price options (all PM decides): …", "Options (PM decides):". */
 const MARK_IN_LABEL = /\([^()]*\bPM decides\b[^()]*\)\s*:/i;
-const lowerFirst = (s: string) => s.replace(/^\p{Lu}(?=\p{Ll})/u, (c) => c.toLowerCase());
+
+/**
+ * What reading one draft knows beyond an item: the words it writes as names and the words it writes in lowercase
+ * (`properWords`), and the subject of the task it drafts ("Globex email integration"), for a question that leans on it.
+ */
+interface Reading { proper: ReadonlySet<string>; common: ReadonlySet<string>; subject: string | null }
+
+/**
+ * The words a draft (and its task's title) writes capitalized inside a sentence and never in lowercase: a company, a
+ * product, a plan ("Globex", "Business"). A word capitalized only at the start of a sentence, a label or after a colon,
+ * or in a heading in title case, is a common word.
+ */
+function properWords(md: string, title?: string | null): { proper: Set<string>; common: Set<string> } {
+  const doc = sections(md);
+  const caps = new Set<string>();
+  const lower = new Set<string>();
+  const titleCase = (s: string) => !s.split(/\s+/).slice(1).some((w) => /^\p{Ll}[\p{L}-]{3,}/u.test(w));
+  const lines = [...[title, doc.title].filter((t): t is string => !!t && !titleCase(t)), ...doc.intro, ...doc.sections.flatMap((s) => s.lines)];
+  for (const raw of lines) {
+    if (/^\s*\|/.test(raw)) continue;
+    const heading = raw.match(/^\s*#{3,6}\s+(.+)$/)?.[1];
+    if (heading && titleCase(heading)) continue;
+    for (const s of sentencesOf(plain((heading ?? raw).replace(/^\s*(?:[-*+•>]|\d+[.)])\s+/, "")))) {
+      const words = s.split(" ");
+      words.forEach((w, i) => {
+        const word = bareWord(w).replace(/['’]s$/, "").split("-")[0]!;
+        if (/^\p{Ll}/u.test(word)) lower.add(word.toLowerCase());
+        // A capital inside a sentence, or a possessive anywhere ("Initech's terms"), says it's a name.
+        else if (/^\p{Lu}\p{Ll}+$/u.test(word) && ((i > 0 && !/^[("“‘'[]/u.test(w) && !/[:;—–("“‘]$/u.test(words[i - 1]!) && words[i - 1] !== "-") || /\p{L}['’]s\W*$/u.test(w))) caps.add(word.toLowerCase());
+      });
+    }
+  }
+  return { proper: new Set([...caps].filter((w) => !lower.has(w))), common: lower };
+}
+
+/**
+ * A phrase with its first word in lowercase when that's a common word, not a name the draft capitalizes (R2,
+ * FOLLOW-1). `known`: only a word the draft also writes in lowercase, for a label moved inside a sentence, where an
+ * unknown name ("Initech partner terms") had better keep its capital.
+ */
+const commonFirst = (s: string, r: Reading, known = false) => {
+  const w = s.match(/^\p{Lu}\p{Ll}+(?![\p{L}\p{N}])/u)?.[0]?.toLowerCase();
+  return w && !r.proper.has(w) && (!known || r.common.has(w)) ? `${s[0]!.toLowerCase()}${s.slice(1)}` : s;
+};
+const capFirst = (s: string) => s.replace(/^\p{Ll}/u, (c) => c.toUpperCase());
+
+/**
+ * The subject of a task's title, to say what a question from its draft is about: "Spec the Globex email integration"
+ * is "Globex email integration", "Draft a one-pager for SCIM sync" "SCIM sync". Null when it isn't a short phrase.
+ */
+function subjectOfTitle(title: string | null | undefined): string | null {
+  if (!title) return null;
+  const t = plain(title).replace(/^[A-Z][A-Z0-9]*-\d+\s*[:—–-]\s*/, "").replace(/[\s.!?]+$/, "")
+    .replace(/^(?:spec(?: out)?|draft|write(?: up)?|research|validate|plan|decide(?: on)?|build|prototype|analy[sz]e|compare|scope|size|design|explore|investigate|define|evaluate|assess|review|test|map|audit|prepare|price|outline|propose|document|summari[sz]e|synthesi[sz]e|understand|clarify)\s+/i, "")
+    .replace(/^(?:a|an|the)\s+/i, "")
+    .replace(/^(?:one-pager|brief|plan|spec|analysis|case|proposal|readout|(?:validation|decision|problem|build) (?:plan|readout|brief)|competitive analysis|research synthesis|pilot plan)\s+(?:for|on|of|about)\s+(?:the\s+)?/i, "");
+  return t && t.split(/\s+/).length <= 6 && !/[?:;]/.test(t) && !AUX.test(t) ? t : null;
+}
+
+/** What an item's label names, when it names what the item is about: "Dedicated-capacity price"; not "Call 1" or a note. */
+function topicOf(s: string | null | undefined): string | null {
+  const t = (s ?? "").replace(/[\s.:;,]+$/, "").trim();
+  if (!t || t.split(/\s+/).length > 5 || /[?;,()\d]/.test(t) || AUX.test(t) || NOTE.test(`${t}:`)) return null;
+  if (/^(?:options?|recommend\w*|open|blocking|pm decides|call|step|questions?|item|q)\b/i.test(t)) return null;
+  return /\b(?:needs?|gives?|makes?|takes?|keeps?|wants?|asks?|pays?|goes|gets?|waits?|says?|uses?|runs?|costs?)\b/i.test(t) ? null : t;
+}
+
+/** An item's label: its bold lead ("**Dedicated-capacity price.** …"), "<label>: …", or a short first sentence before more. */
+function labelOf(raw: string, ss: string[], at: number): string | null {
+  const bold = raw.replace(LIST, "").match(/^\s*\*\*([^*]{1,60}?)[\s.:]*\*\*/)?.[1];
+  if (bold) return topicOf(plain(bold));
+  const colon = ss[0]?.match(/^([^:?]{1,40}):\s/)?.[1];
+  return topicOf(colon ?? (at > 0 && !PM_DECIDES.test(ss[0] ?? "") ? ss[0] : null));
+}
+
+/** Verbs that end a sentence's subject: "The dedicated-capacity price | isn't in any source." */
+const FINITE = /^(?:is|isn['’]t|was|wasn['’]t|has|hasn['’]t|are|aren['’]t|were|weren['’]t|have|haven['’]t|will|won['’]t|would|can|can['’]t|could|should|must|may|might|does|doesn['’]t|do|don['’]t|(?:need|cost|come|go|include|cover|run|ship|take|make|give|lack|depend|matter|stay|remain|look|seem|sit|start|end|require|carr|appl|count|work|mean|help|block|affect|hold|keep|var|want|ask|pay|get|offer|support|replace|add|exceed|sell|settle|close|renew|expire)(?:s|es|ies)?)$/i;
+/** Words a pronoun never stands for: what the draft rests on, and its own parts. */
+const META = /^(?:sources?|drafts?|evidence|data|transcripts?|calls?|meetings?|threads?|notes?|quotes?|recommendations?|questions?|options?|answers?|pm|team)$/i;
+
+/** A sentence's subject when it's a definite noun phrase ("The dedicated-capacity price isn't set"), and its number. */
+function subjectOf(s: string): { np: string; plural: boolean } | null {
+  const words = s.replace(/[\s.!?]+$/, "").split(/\s+/);
+  if (!/^(?:the|our)$/i.test(words[0] ?? "")) return null;
+  for (let i = 2; i < Math.min(words.length, 8); i++) {
+    // "The run cost isn't set": "cost" is the noun before the verb.
+    if (!FINITE.test(bareWord(words[i]!)) || FINITE.test(bareWord(words[i + 1] ?? ""))) continue;
+    const np = words.slice(0, i);
+    if (np.some((w) => /[,;:()]/.test(w) || PRONOUN.test(bareWord(w)) || DEMONSTRATIVE.test(bareWord(w)))) return null;
+    const head = np.map(bareWord).find((_w, j, all) => j > 0 && (j === all.length - 1 || PREP.test(all[j + 1]!))) ?? "";
+    if (META.test(head)) return null;
+    const v = bareWord(words[i]!).toLowerCase();
+    const plural = /^(?:are|aren|were|weren|have|haven|do|don)/.test(v) ? true : /^(?:is|isn|was|wasn|has|hasn|does|doesn)/.test(v) || /s$/.test(v) ? false : pluralOf(np.join(" "));
+    return { np: np.join(" "), plural };
+  }
+  return null;
+}
+
+/**
+ * A word a decision or a question leans on with nothing in it to say what it is (FOLLOW-1): "whether it is a separate
+ * line …", "whether to commission that test …", "Does it need …?", "… need this for the contract?". `personal` for
+ * it, they or them; `noun` for a demonstrative before one ("that test"); neither for a demonstrative alone ("this").
+ * `weak`: a "that" before a word, which may only join two clauses, so it counts only when it can be resolved.
+ */
+interface Lean { from: number; to: number; word: string; personal: boolean; noun: string | null; weak: boolean }
+const DEMONSTRATIVE = /^(?:this|that|these|those)$/i;
+const TIME = /^(?:week|month|quarter|year|sprint|cycle|time|morning|afternoon|evening|weekend|release|round|day)s?$/i;
+/** "it" that stands for nothing: "whether it is worth …", "whether it makes sense to …", "Is it worth …?". */
+const DUMMY_IT = /^it\s+(?:(?:is|['’]s|was|would be|will be)\s+)?(?:worth|time|too|possible|feasible|realistic|better|best|ok|okay|fine|safe|enough|necessary|wise|likely|unclear|clear|true)\b|^it\s+(?:makes?|made)\s+sense\b|^it\s+pays?\b/i;
+const CONJ = /^(?:and|or|but|nor|so|yet|if|whether|than)$/i;
+
+function leanAt(text: string, from: number, word: string, next: string | undefined): Lean | null {
+  const to = from + word.length;
+  if (/^(?:it|they|them)$/i.test(word)) return /^it$/i.test(word) && DUMMY_IT.test(text.slice(from)) ? null : { from, to, word, personal: true, noun: null, weak: false };
+  const n = next ? bareWord(next) : "";
+  // A demonstrative alone: before a preposition, a verb like "is", a conjunction or nothing.
+  if (!n || PREP.test(n) || AUX.test(n) || CONJ.test(n)) return { from, to, word, personal: false, noun: null, weak: false };
+  // "that the …", "that we …", "this quarter", "that Globex …": no word to resolve.
+  if (DET.test(n) || PRONOUN.test(n) || TIME.test(n) || /^\p{Lu}/u.test(n)) return null;
+  return { from, to: from + word.length + 1 + next!.length, word, personal: false, noun: n, weak: /^that$/i.test(word) };
+}
+
+/** The word a decision's clause leans on, right after "whether", "whether to <verb>", "on" or at its start. */
+const DECISION_LEAN = /^((?:(?:whether|if|how|when|where|which|why)\s+(?:(?:not\s+)?to\s+[\p{L}-]+\s+)?)|to\s+[\p{L}-]+\s+|on\s+|between\s+)?(it|they|them|this|that|these|those)\b(?:\s+([\p{L}][\p{L}\p{N}'’-]*))?/iu;
+function decisionLean(core: string): Lean | null {
+  const m = core.match(DECISION_LEAN);
+  return m ? leanAt(core, m[1]?.length ?? 0, m[2]!, m[3]) : null;
+}
+
+/** The word a question leans on: "it" or "they" as its subject ("When do they close?"), or a demonstrative anywhere. */
+const QUESTION_LEAN = /^((?:(?:what|which|who|whom|how|when|where|why)(?:\s+(?:much|many|long|often|soon|far|else|exactly|really|actually))?\s+)?(?:is|are|was|were|do|does|did|can|could|will|would|should|shall|has|have|must|may|might)\s+)(it|they)\b/i;
+function questionLean(q: string): Lean | null {
+  const m = q.match(QUESTION_LEAN);
+  if (m) {
+    const l = leanAt(q, m[1]!.length, m[2]!, undefined);
+    if (l) return l;
+  }
+  for (const d of q.matchAll(/\b(this|that|these|those)\b(?:\s+([\p{L}][\p{L}\p{N}'’-]*))?/giu)) {
+    const l = leanAt(q, d.index!, d[1]!, d[2]);
+    if (l) return l;
+  }
+  return null;
+}
+
+/** What the item says around a word that leans on something: its label, the sentence before, and the ones before that. */
+interface Around { label: string | null; before: string | null; also: string[] }
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * What a leaning word stands for, when the item says so safely (FOLLOW-1): "it" is the item's label, or the subject of
+ * the sentence before when that's a definite noun phrase of the same number ("The dedicated-capacity price isn't set.");
+ * "that test" is a test the label or a sentence before names with its own words ("A pricing test …" is "the pricing
+ * test"). A demonstrative alone ("this") stands for what the sentence before says, which no phrase can safely replace:
+ * null, as for anything else unsure. Nothing is added that the draft doesn't say.
+ */
+function referent(l: Lean, a: Around, r: Reading): string | null {
+  if (l.personal) {
+    const plural = /^(?:they|them)$/i.test(l.word);
+    if (a.label && pluralOf(a.label) === plural) return theOf(a.label, r, true);
+    const s = a.before ? subjectOf(a.before) : null;
+    return s && s.plural === plural ? commonFirst(s.np, r) : null;
+  }
+  if (!l.noun) return null;
+  const stem = l.noun.toLowerCase().replace(/(?:es|s)$/, "");
+  if (stem.length < 3) return null;
+  const last = (a.label ?? "").split(/\s+/).at(-1)?.toLowerCase() ?? "";
+  if (a.label && a.label.split(/\s+/).length > 1 && last.replace(/(?:es|s)$/, "") === stem) return theOf(a.label, r, true);
+  const re = new RegExp(`(?:^|\\s)(?:[Aa]n?|[Tt]he|[Oo]ne|[Oo]ur)\\s+((?:[\\p{L}\\p{N}][\\p{L}\\p{N}'’-]*\\s+){1,3}?)${escapeRe(stem)}(?:s|es)?\\b`, "u");
+  for (const s of [a.before, ...a.also]) {
+    const mods = s?.match(re)?.[1]?.trim();
+    if (!mods || mods.split(/\s+/).some((w) => PREP.test(w) || DET.test(w) || AUX.test(w) || PRONOUN.test(w) || CONJ.test(w) || DEMONSTRATIVE.test(w))) continue;
+    return `the ${commonFirst(mods, r)} ${l.noun}`;
+  }
+  return null;
+}
 
 /** The PM who accepts, as a role: a question "— ask: the PM" is the PM's own call (R2). */
 export const isPm = (role: string) => /^(?:the\s+)?(?:pm|product manager|accepting pm|you)$/i.test(role.trim());
 
 /** The decision a "PM decides" item or line asks for, worded as the decision to make, and what the draft says about it. */
-function decisionOf(text: string, identifier: string, now: Date): Call | null {
+function decisionOf(text: string, identifier: string, now: Date, r: Reading): Call | null {
   const { text: p, mark } = unmark(plain(text));
   // R2b: a mark inside a label ("Price options (all PM decides): …") has no decision of its own.
   if (MARK_IN_LABEL.test(p)) return null;
@@ -270,18 +546,21 @@ function decisionOf(text: string, identifier: string, now: Date): Call | null {
   let core = clause.core || afterLabel(p, LABELLED);
   let how: Call["how"] = clause.core ? "clause" : "worded";
   let why: string | null = null;
+  // Where the call is, for what it leans on: the sentence with its mark, and the one before it.
+  const at = Math.max(ss.findIndex((x) => PM_DECIDES.test(x)), 0);
   if (clause.core || clause.go) {
-    const at = ss.findIndex((x) => PM_DECIDES.test(x));
-    why = [...ss.slice(0, Math.max(at, 0)).filter((x) => /^(?:options?\s*:|recommend)/i.test(x)), ...clause.rest].join(" ");
+    why = [...ss.slice(0, at).filter((x) => /^(?:options?\s*:|recommend)/i.test(x)), ...clause.rest].join(" ");
   }
   if (core) {
     // "PM decides: Length: 60 or 90 days" is the decision on the length.
     const labelled = core.match(/^([^:]{1,40}):\s+(.+)$/);
-    core = labelled && labelish(labelled[1]!) ? `on ${theOf(labelled[1]!)}: ${labelled[2]}` : asChoice(core);
+    core = labelled && labelish(labelled[1]!) ? `on ${theOf(labelled[1]!, r)}: ${labelled[2]}` : asChoice(core, r);
   }
   // 3. The item's lead, its first sentence, with the options the draft gives when they fit.
   const options = ss.find((s) => /^options?\s*:/i.test(s));
   let withOptions = false;
+  let leadLabel: string | null = null;
+  const fromLead = !core;
   if (!core) {
     how = "lead";
     // "**PM decides:** Deletion window." leaves ": Deletion window": the colon or dash the mark had goes with it, and so
@@ -294,21 +573,22 @@ function decisionOf(text: string, identifier: string, now: Date): Call | null {
     // that reads as one; a note ("Assumption: …"), another label or nothing is no decision at all.
     const colon = lead.match(/^([^:]{1,40}):\s*(.*)$/);
     const label = colon && labelish(colon[1]!) ? colon[1]! : !colon && labelish(lead) && next ? lead : null;
+    leadLabel = label;
     // "Price: PM decides." names the decision by its label: "Decide on the price".
     const named = marked.match(/^(.{1,40}?):\s*\(?PM decides\W*$/i)?.[1];
     if (clause.go && lead) {
       // "How long does an import take? PM decides: pursue." is the decision whether to pursue the question.
-      core = lead.endsWith("?") ? `whether to pursue: ${lead}` : `whether to pursue ${lowerFirst(lead)}`;
+      core = lead.endsWith("?") ? `whether to pursue: ${lead}` : `whether to pursue ${commonFirst(lead, r)}`;
       how = "worded";
-    } else if (named && labelish(named)) core = `on ${theOf(named)}`;
+    } else if (named && labelish(named)) core = `on ${theOf(named, r)}`;
     else if (label) {
       const body = (colon && label === colon[1] ? colon[2]! : "") || next;
       if (!body || NOTE.test(body) || /^[^:]{1,30}:\s/.test(body) && !/^options?\s*:/i.test(body)) return null;
-      if (/^(?:whether|should|shall|which|do we|is it worth|between)\b/i.test(body) || DO.test(body)) { core = asChoice(body); how = "worded"; }
-      else core = `on ${theOf(label)}: ${body.replace(/^options?\s*:\s*/i, "")}`;
+      if (/^(?:whether|should|shall|which|do we|is it worth|between)\b/i.test(body) || DO.test(body)) { core = asChoice(body, r); how = "worded"; }
+      else core = `on ${theOf(label, r)}: ${body.replace(/^options?\s*:\s*/i, "")}`;
     } else if (lead.endsWith("?")) {
       // R2e: a call asked as a question is worded as a choice ("Ship …, or raise it?" is whether to ship …).
-      core = asChoice(lead);
+      core = asChoice(lead, r);
       how = "worded";
     } else {
       core = lead;
@@ -317,14 +597,27 @@ function decisionOf(text: string, identifier: string, now: Date): Call | null {
       // "Should we offer X?" is the decision whether to offer X; "Pilot price" the decision on the pilot price.
       const asked = whetherOf(core).replace(/^(whether\b.+?)\?$/i, "$1");
       if (asked !== core && /^whether\b/i.test(asked)) how = "worded";
-      core = !CHOSEN.test(asked) && !DO.test(asked) && nounPhrase(asked) ? `on ${theOf(asked)}` : asked;
+      core = !CHOSEN.test(asked) && !DO.test(asked) && nounPhrase(asked) ? `on ${theOf(asked, r)}` : asked;
     }
     // Never "Decide: Options: …" or "Decide: Length: …": a stray label is no decision.
     if (!CHOSEN.test(core) && /^[^:()]{1,40}:(?:\s|$)/.test(core)) return null;
   }
   if (!core) return null;
+  // A call that leans on "it", "they" or "that test" says what it stands for, from the item's label or the sentence
+  // before the mark ("Decide whether the dedicated-capacity price is …"); when that isn't safe, the to-do starts with the
+  // item's label ("Price floor: decide whether to commission that test …"). A call read from the lead has only its label.
+  const topic = (leadLabel && topicOf(leadLabel)) || labelOf(text, ss, fromLead ? 0 : at);
+  let about: string | null = null;
+  const l = decisionLean(core);
+  if (l) {
+    const pre = fromLead ? "" : (ss[at] ?? "").split(/\s*\(?\bPM decides\b/i)[0]!;
+    const before = fromLead ? null : pre.split(/\s+/).length >= 3 ? pre : at >= 1 && !(at === 1 && topic) ? ss[at - 1]! : null;
+    const ref = referent(l, { label: topic, before, also: ss.slice(topic ? 1 : 0, Math.max(at - 1, 0)) }, r);
+    if (ref) core = `${core.slice(0, l.from)}${ref}${core.slice(l.to)}`;
+    else about = topic ? capFirst(topic) : null;
+  }
   const said = [why ?? ownWhy(ss, withOptions), also].filter(Boolean).join(" ");
-  return { text: worded(core, identifier), why: cut(said, 400), due: deadlineIn(p, now), key: keyOf("d", core), how };
+  return { text: worded(core, identifier, about), why: cut(said, 400), due: deadlineIn(p, now), key: keyOf("d", core), how };
 }
 
 /** What an item says about its own call: its options (unless they're in the to-do already) and its recommendation. */
@@ -358,7 +651,7 @@ interface Part { heading: string; blocks: Block[] }
  * section, no call marked in them, or nothing to word the decision with: then each call is read on its own, as in any
  * draft.
  */
-function oneDecision(parts: Part[], identifier: string, now: Date): DraftDecision | null {
+function oneDecision(parts: Part[], identifier: string, now: Date, r: Reading): DraftDecision | null {
   const decision = parts.find((p) => DECISION_HEADING.test(plain(p.heading)));
   if (!decision) return null;
   const around = parts.filter((p) => AROUND_HEADING.test(plain(p.heading)));
@@ -383,7 +676,7 @@ function oneDecision(parts: Part[], identifier: string, now: Date): DraftDecisio
     if (named) core = `between ${named.slice(0, -1).join(", ")} and ${named.at(-1)}`;
   }
   if (!core) return null;
-  core = asChoice(core);
+  core = asChoice(core, r);
   const rec = parts.find((p) => RECOMMENDATION_HEADING.test(plain(p.heading)));
   const why = (rec ? inShort(rec.blocks.filter((b) => !b.sub).map((b) => b.text)) : "")
     || inShort(decision.blocks.filter((b) => /\brecommend(?:s|ed|ation)?\b/i.test(b.text) && !/^\W*PM decides\W*$/i.test(b.text)).map((b) => b.text))
@@ -416,7 +709,7 @@ const TEAM = /^(?:legal|finance|sales|support|marketing|procurement|security|eng
 /** A team known by its letters: "Ask IT". Other letters are a role: "the CFO". */
 const TEAM_LETTERS = /^(?:IT|HR|QA|PR|BD)$/;
 /** Words that make a phrase a role: "the account lead", "Globex's procurement contact", "the data team". */
-const ROLE_WORD = /\b(?:leads?|owners?|managers?|head|director|vp|chief|officer|contact|engineers?|engineering|designers?|design|counsel|lawyer|champion|sponsor|buyer|admin|administrator|team|finance|legal|sales|support|security|procurement|marketing|analysts?|architect|partner|rep|representative|executive|exec|founder|desk|office|department|committee|board|pm)\b/i;
+const ROLE_WORD = /\b(?:leads?|owners?|managers?|head|director|vp|chief|officer|cfo|ceo|cto|cio|ciso|coo|cro|cmo|cpo|dpo|contact|engineers?|engineering|designers?|design|counsel|lawyer|champion|sponsor|buyer|admin|administrator|team|finance|legal|sales|support|security|procurement|marketing|analysts?|architect|partner|rep|representative|executive|exec|founder|desk|office|department|committee|board|pm)\b/i;
 /** Who isn't one person to ask: several people, customers in general, a pronoun, or no one. */
 const NOT_ONE = /^(?:\d|one|two|three|four|five|six|seven|eight|nine|ten|a few|few|some|several|many|more|most|all|any|them|him|her|us|we|i|you|they|it|this|that|everyone|anyone|nobody|no one|around|customers?|users?|admins|accounts?|buyers|prospects?|people|interviewees?|in|at|on|during|after|before|for|about|whether|if)\b/i;
 const capWord = (w: string) => /^\p{Lu}\p{Ll}/u.test(w) && !/['’]s$/.test(w);
@@ -482,7 +775,40 @@ function askIn(title: string, rest: string[]): DraftQuestion["ask"] {
     const role = c ? roleOf(c[1]!, true) : null;
     if (role) return { role, by: "words" };
   }
-  return ASK_SHAPES.some((re) => re.test(title)) && !RESEARCH_WORDS.test(title) ? { role: null, by: "words" } : null;
+  return ASK_SHAPES.some((re) => re.test(title)) && !RESEARCH_WORDS.test(title) ? { role: roleIn(title), by: "words" } : null;
+}
+
+const GROUP = "legal|finance|procurement|security|compliance|sales|support|marketing|engineering|data|design|product|platform|identity|partnerships|accounting|operations|ops|leadership|infosec|privacy|risk|purchasing|IT|HR";
+const GROUP_HEAD = "team|department|org|function|desk|office|group|lead|owner|contact|counsel|manager|head|director|committee|board|officer|champion|sponsor|buyer";
+const OWNER = "(?:the|their|our|its|\\p{Lu}[\\p{L}\\p{N}&-]*['’]s)";
+const AT_COMPANY = "(?:\\s+at\\s+\\p{Lu}[\\p{L}\\p{N}&-]*)?";
+/** The groups a question can name as the ones who know: a team or role, an executive, or a team by its name alone. */
+const GROUPS_IN = [
+  // "the security team", "Globex's procurement contact", "the platform engineering lead", "the risk committee at Globex".
+  new RegExp(`(?:\\b${OWNER}\\s+(?:\\p{Ll}[\\p{L}-]*\\s+)?)?\\b(?:${GROUP})\\s+(?:${GROUP_HEAD})s?\\b${AT_COMPANY}`, "gu"),
+  // "their CFO", "the CISO at Globex".
+  new RegExp(`(?:\\b${OWNER}\\s+)?\\b(?:CFO|CEO|CTO|CIO|CISO|COO|CRO|CMO|CPO|DPO)\\b${AT_COMPANY}`, "gu"),
+  // A team by its name, doing what's asked: "Has legal signed …?", "approved by finance", "When will procurement at Globex …?".
+  new RegExp(`(?<=\\b(?:[Dd]oes|[Dd]o|[Dd]id|[Hh]as|[Hh]ave|[Hh]ad|[Ww]ill|[Ww]ould|[Cc]an|[Cc]ould|[Ss]hould|[Mm]ust|by|from|with)\\s+)(?:\\p{Lu}[\\p{L}\\p{N}&-]*['’]s\\s+)?(?:legal|finance|procurement|compliance|security|sales|infosec|purchasing|IT|HR)\\b(?!\\s+(?:${GROUP_HEAD}|reviews?|questionnaires?|teams?)\\b)${AT_COMPANY}`, "gu"),
+];
+
+/**
+ * FOLLOW-1: who to ask, when an unmarked question names a group that can answer it: "the security team", "their CFO",
+ * "legal", "procurement at Globex" (asked as "Globex's procurement"). Not the role a question asks for ("who is the
+ * procurement contact?"), not two different groups, and never a person: `roleOf` says what reads as a role.
+ */
+function roleIn(question: string): string | null {
+  // The role a question asks for isn't who knows it: "… and who is the procurement contact?", "Which team owns …?".
+  const q = question.replace(/\b(?:[Ww]ho|[Ww]hom)(?:['’]s|\s+is|\s+are|\s+will\s+be|\s+would\s+be)\s+[^,?;]*/gu, " ").replace(/\b[Ww]hich\s+[^,?;]*/gu, " ");
+  const roles = GROUPS_IN.flatMap((re) => [...q.matchAll(re)].map((m) => {
+    // "procurement at Globex" is Globex's procurement.
+    const at = m[0].match(/^(?:(?:the|their|our|its)\s+)?(.+?)\s+at\s+(\p{Lu}[\p{L}\p{N}&-]*)$/u);
+    return at ? `${at[2]}'s ${at[1]}` : m[0];
+  }));
+  // One group, however often it's named: "the security team" holds "security".
+  const key = (x: string) => x.toLowerCase().replace(/^(?:the|their|our|its)\s+/, "");
+  const groups = [...new Set(roles.map(key))].filter((k, _i, all) => !all.some((o) => o !== k && o.includes(k)));
+  return groups.length === 1 ? roleOf(roles.find((x) => key(x) === groups[0])!, true) : null;
 }
 
 const QWORD = "(?:what|which|who|whom|whose|how|whether|if|when|where|why)";
@@ -517,7 +843,36 @@ function titleOf(ss: string[]): string {
  * A question item: the question first (through its "?"), then the rest of what the draft says about it; its whole
  * title; and who answers it (R2): the draft's mark, else its words.
  */
-function questionOf(text: string, where: DraftQuestion["where"]): DraftQuestion | null {
+/**
+ * A title that leans on a word with nothing in it to say what it is (FOLLOW-1): "Does the integration need this for the
+ * contract?". The word is replaced by what it stands for when the item says so safely (`referent`): "Initech partner
+ * terms: when do they close?" is "When do the Initech partner terms close?". Else the title starts with the item's
+ * label or, without one, the subject of the task the draft is for ("Globex integration: does the integration need this
+ * …?"), and `about` names it for an ask. A "Find out …" title is a statement and stays as it is.
+ */
+function leaned(title: string, raw: string, ss: string[], r: Reading): { title: string; about: string | null } {
+  if (title.startsWith("Find out ")) return { title, about: null };
+  const at = Math.max(ss.findIndex((s) => s.endsWith("?")), 0);
+  // A label `titleOf` kept, since the question points back to it.
+  const head = title.match(LEAD)?.[0];
+  const kept = head ? head.replace(/:\s*$/, "") : null;
+  const asked = head ? title.slice(head.length) : title;
+  const label = kept ? topicOf(kept) : labelOf(raw, ss, at);
+  const l = questionLean(asked);
+  if (!l) return { title, about: kept ? theOf(kept, r, true) : null };
+  const before = at >= 1 && !(at === 1 && label && !kept) ? ss[at - 1]! : null;
+  const ref = referent(l, { label, before, also: ss.slice(label && !kept ? 1 : 0, Math.max(at - 1, 0)) }, r);
+  if (ref) return { title: capFirst(`${asked.slice(0, l.from)}${ref}${asked.slice(l.to)}`), about: null };
+  if (kept) return { title, about: theOf(kept, r, true) };
+  const prefix = l.weak ? null : label ?? r.subject;
+  return prefix ? { title: `${capFirst(prefix)}: ${commonFirst(asked, r)}`, about: theOf(prefix, r, true) } : { title, about: null };
+}
+
+/**
+ * A question item: the question first (through its "?"), then the rest of what the draft says about it; its whole
+ * title, with what it leans on said (`leaned`); and who answers it (R2): the draft's mark, else its words.
+ */
+function questionOf(text: string, where: DraftQuestion["where"], r: Reading): DraftQuestion | null {
   const { text: p, mark } = unmark(plain(text).replace(/^(?:Q\d+|blocking|open)\s*[:.)-]\s*/i, ""));
   const ss = sentencesOf(p);
   if (!ss.length) return null;
@@ -525,12 +880,14 @@ function questionOf(text: string, where: DraftQuestion["where"]): DraftQuestion 
   const upto = q >= 0 && q <= 1 ? q : 0;
   const question = ss.slice(0, upto + 1).join(" ");
   const rest = ss.slice(upto + 1);
-  const title = titleOf(ss);
+  const whole = titleOf(ss);
   // R2c: without a mark, only a question is one: an item with a "?", or worded as one ("what …", "whether …", "It's
   // unclear how …"). A statement ("The sources mention a second answer due Dec 15.") stays in the draft.
-  if (!mark && !p.includes("?") && !title.startsWith("Find out ")) return null;
-  const ask = mark ? (mark.ask ? { role: roleOf(mark.value), by: "mark" as const } : null) : askIn(title, rest);
-  return { question, title, rest, where, ask, needs: mark && !mark.ask ? mark.value || null : null, key: keyOf("q", question) };
+  if (!mark && !p.includes("?") && !whole.startsWith("Find out ")) return null;
+  // Who answers it goes by the question as the draft words it, before its title says what it leans on.
+  const ask = mark ? (mark.ask ? { role: roleOf(mark.value), by: "mark" as const } : null) : askIn(whole, rest);
+  const { title, about } = leaned(whole, text, ss, r);
+  return { question, title, about, rest, where, ask, needs: mark && !mark.ask ? mark.value || null : null, key: keyOf("q", question) };
 }
 
 /**
@@ -541,19 +898,20 @@ function questionOf(text: string, where: DraftQuestion["where"]): DraftQuestion 
  * blocking ones, or listed under a "Blocking:" line. R2e, R2f: an item there marked PM decides is a call whatever its
  * "?" ("…? PM decides: pursue." is whether to pursue it), and a "— needs:" or "— ask:" mark beats its words.
  */
-export function readFollowUps(markdown: string, identifier: string, now: Date): { decisions: DraftDecision[]; questions: DraftQuestion[] } {
+export function readFollowUps(markdown: string, identifier: string, now: Date, task: { title?: string | null } = {}): { decisions: DraftDecision[]; questions: DraftQuestion[] } {
   const doc = sections(markdown);
+  const r: Reading = { ...properWords(markdown, task.title), subject: subjectOfTitle(task.title ?? doc.title) };
   const decisions: Call[] = [];
   const questions: DraftQuestion[] = [];
   const seen = new Set<string>();
   const add = <T extends { key: string }>(list: T[], x: T | null) => { if (x && !seen.has(x.key)) { seen.add(x.key); list.push(x); } };
   const all: Part[] = [{ heading: "", blocks: blocksOf({ heading: "", lines: doc.intro }) }, ...doc.sections.map((s) => ({ heading: s.heading, blocks: blocksOf(s) }))];
-  const brief = oneDecision(all, identifier, now);
+  const brief = oneDecision(all, identifier, now, r);
   const one: Call | null = brief ? { ...brief, how: "clause" } : null;
   for (const s of all) {
     const areaOf = (h: string): DraftQuestion["where"] | null => (QUESTIONS.test(h) ? (/blocking/i.test(h) ? "blocking" : "open") : null);
     // A call in the Decision, Options or Recommendation section of a draft built around one decision is that decision.
-    const call = (text: string) => (one && AROUND_HEADING.test(plain(s.heading)) ? one : decisionOf(text, identifier, now));
+    const call = (text: string) => (one && AROUND_HEADING.test(plain(s.heading)) ? one : decisionOf(text, identifier, now, r));
     // Where list items are questions: the section's heading says so, or a `###` sub-heading under it does.
     let area = areaOf(plain(s.heading));
     let label: DraftQuestion["where"] | null = null;
@@ -573,11 +931,11 @@ export function readFollowUps(markdown: string, identifier: string, now: Date): 
         // an item marked "— ask: the PM" is the PM's own call. Only an unmarked item goes by its words.
         const { text: q, mark } = unmark(plain(b.text));
         const decided = PM_DECIDES.test(q) || (mark?.ask && isPm(mark.value)) || (!mark && CHOICE.test(q.replace(/^(?:Q\d+|blocking|open)\s*[:.)-]\s*/i, "")));
-        const found = decided ? null : questionOf(b.text, where);
-        const d = decided || (found?.ask?.role && isPm(found.ask.role)) ? decisionOf(b.text, identifier, now) : null;
+        const found = decided ? null : questionOf(b.text, where, r);
+        const d = decided || (found?.ask?.role && isPm(found.ask.role)) ? decisionOf(b.text, identifier, now, r) : null;
         // A call the reader can't word stays a question rather than being lost.
         if (d) add(decisions, d);
-        else add(questions, found ?? questionOf(b.text, where));
+        else add(questions, found ?? questionOf(b.text, where, r));
       } else if (PM_DECIDES.test(b.text)) add(decisions, call(b.text));
     }
   }

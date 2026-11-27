@@ -95,7 +95,7 @@ export const teamCommands: Command[] = [
           return 0;
         }
         // A follow-up's kept quotes (RUN-5) are for its pack only: the listing shows what Linear would get, never a quote.
-        console.log(a.values.json ? JSON.stringify(list.map(({ quotes: _q, ...p }) => p), null, 2) : formatProposals(list, !a.values.brief, startsNow((await a.ctx()).team)));
+        console.log(a.values.json ? JSON.stringify(list.map(({ quotes: _q, quotesSwap: _s, ...p }) => p), null, 2) : formatProposals(list, !a.values.brief, startsNow((await a.ctx()).team)));
         return 0;
       }
       if (sub === "theme") {

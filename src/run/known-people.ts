@@ -8,6 +8,7 @@ import { privacyRules } from "../digest/gather.js";
 import { channelInputs } from "../inputs/inputs.js";
 import { speakerLabel } from "../core/tracker-text.js";
 import { readThreads, readTranscripts } from "../sources/transcripts.js";
+import { crmCompanies } from "./web-guard.js";
 
 /**
  * R5a: everyone this Mac knows by name, for the name swap (`peopleSwap`'s `known`), so a person a task's own sources
@@ -22,6 +23,17 @@ export async function knownPeople(ctx: Ctx): Promise<KnownPeople> {
   const p = read(ctx).catch(() => ({ people: [], strong: [] }));
   cache.set(ctx, { at: Date.now(), p });
   return p;
+}
+
+/**
+ * R6 (D2-1, rig test of #122): the companies this Mac knows, for the tracker guard's `known`: the CRM list's companies
+ * (a legal form, an "&" or a domain: "Vandelay & Sons", "Initrode GmbH") and every company and product its collected
+ * meetings and threads show (`knownPeople`'s `things`). So "Ask Hart & Stone for the order form", typed with no meeting
+ * behind it, still goes. In memory only.
+ */
+export async function knownThings(ctx: Ctx): Promise<string[]> {
+  const crm = ctx.personal.crmNamesFile ? (await readFile(ctx.personal.crmNamesFile, "utf8").catch(() => "")).split("\n") : [];
+  return [...new Set([...crmCompanies(crm), ...((await knownPeople(ctx)).things ?? [])])];
 }
 
 /** One background run or agent run reads it once; a long-lived process reads it again after a few minutes. */

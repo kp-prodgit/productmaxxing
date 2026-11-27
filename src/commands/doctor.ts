@@ -17,7 +17,7 @@ import { join } from "node:path";
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
 import type { Exec } from "../core/exec.js";
 import { Git } from "../core/git.js";
-import { parseGitHubRemote } from "../core/host.js";
+import { parseGitHubRemote, unsharedWork } from "../core/host.js";
 import type { Keychain } from "../core/keychain.js";
 import { killSwitchOn } from "../core/killswitch.js";
 import { jobEnv, VERSIONED_NODE, type Launchd } from "../core/launchd.js";
@@ -135,7 +135,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   // R24: a team repo with a remote that isn't GitHub keeps drafts as local branches, and an accept pushes the base.
   const remote = await new Git(repo, d.exec).remoteUrl().catch(() => null);
   if (remote && !parseGitHubRemote(remote)) {
-    add("repo.host", true, "team repo isn't on GitHub, so drafts wait as local branches on the Mac that drafted them; accepting one pushes your team's base branch to its remote (fast-forward only, never forced)");
+    add("repo.host", true, "team repo isn't on GitHub, so drafts wait as local branches on the Mac that drafted them; accepting one puts it on top of your team's latest base branch and pushes it to its remote (fast-forward only, never forced)");
   }
   // EQ-37 (bridge 3 of the join): PMX Engine's released strategy reaches agents only through CLAUDE.md.
   if (await stat(join(repo, "memory", "engine", "README.md")).then(() => true, () => false)) {
@@ -228,6 +228,11 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   // JOB-10: a checkout that stopped following the team's repo means different kinds of work from everyone else's.
   const behind = teamSyncProblem(st, d.now?.() ?? new Date());
   if (behind) add("team.sync", false, behind, "warn");
+  // D2-2: an accepted draft only on this Mac is one the team doesn't have: a warning with what to run, never a ✔.
+  if (remote && !parseGitHubRemote(remote)) {
+    const unshared = await unsharedWork(new Git(repo, d.exec), st.teamPush).catch(() => null);
+    add("team.push", !unshared, unshared ? unshared.text : "every accept on this Mac is in your team's repo", "warn");
+  }
   const cloud = st.cloudVersions;
   if (cloud?.latest) add("cli.latest", (compareVersions(cloud.latest, current) ?? 0) <= 0, `latest release is pmx ${cloud.latest}`, "warn");
 

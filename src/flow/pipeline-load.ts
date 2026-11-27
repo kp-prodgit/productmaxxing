@@ -29,6 +29,7 @@ import { pausedCategories } from "../core/services.js";
 import { analyticsOn, cloudTarget } from "../cloud/account.js";
 import { killSwitchOn } from "../core/killswitch.js";
 import { currentVersion } from "../core/version.js";
+import { unsharedWork } from "../core/host.js";
 import { pageProblem, stalePages } from "../claude/pages.js";
 import { synthStatus } from "../synth/status.js";
 import { buildActivity, buildAutomations } from "./automations.js";
@@ -149,6 +150,9 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const b = budget(ctx.personal, ctx.team, state, now);
   const blocked = budgetBlock(b);
   if (blocked) problems.push({ text: plain(blocked), fix: "rule:budget" });
+  // D2-2: accepted drafts only on this Mac that PMX can't share by itself, with what to run. This Mac's page only.
+  const unshared = o.level === "local" ? await unsharedWork(ctx.repo, state.teamPush).catch(() => null) : null;
+  if (unshared?.needsYou) problems.push({ text: unshared.text });
   const rules0 = privacyRules(ctx);
   if (!rules0.internalDomains.length) problems.push({ text: "PMX doesn't know your company's email domain yet, so it keeps every meeting private and can't spot customer calls. Add your domain under Who counts as a customer.", fix: "rule:domains" });
   const collect = state.collectReports.at(-1)?.at ?? null;

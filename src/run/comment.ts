@@ -1,5 +1,5 @@
 import { domainLabel } from "../core/filter.js";
-import { peopleIn, thingsIn, trackerGuard, type TrackerRules } from "../core/tracker-text.js";
+import { namesIn, peopleIn, thingsIn, trackerGuard, type TrackerRules } from "../core/tracker-text.js";
 import { plain, readFollowUps, sections, sentencesOf } from "../review/draft-reader.js";
 
 export { plain, sections, sentencesOf, type Section } from "../review/draft-reader.js";
@@ -35,6 +35,10 @@ export interface DraftCommentInput {
    * matched as names are written.
    */
   people?: string[];
+  /** D2-1: the companies and products the task's sources show (`sourceThings`): never a person after a cue. */
+  things?: string[];
+  /** R6: the companies this Mac knows from elsewhere (`knownThings`): never a person after a cue either. */
+  known?: string[];
   noun?: "Draft" | "Prototype";
 }
 
@@ -62,12 +66,45 @@ export function safe(sentence: string, names: string[], rules: Omit<TrackerRules
  * names are in `people`, in this Mac's memory, when it has the sources.
  */
 export function sourcePeople(e: { sources: { passages: string[] }[]; people?: string[]; swapped?: boolean }, internalDomains: string[] = [], companies: string[] = []): string[] {
+  return peopleIn([{ participants: e.people ?? [] }, ...(e.swapped ? [] : e.sources.map((s) => ({ text: s.passages.join("\n") })))], domainsOf(e, internalDomains, companies));
+}
+
+/** The participants' email domains' names and the team's own, with `companies`: never a person's name. */
+const domainsOf = (e: { people?: string[] }, internalDomains: string[], companies: string[]): string[] => {
   const emails = (e.people ?? []).flatMap((p) => p.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) ?? []);
-  const exclude = [...new Set([...[...emails.map((m) => m.split("@")[1]!), ...internalDomains].map(domainLabel), ...companies].filter(Boolean))];
-  return peopleIn([{ participants: e.people ?? [] }, ...(e.swapped ? [] : e.sources.map((s) => ({ text: s.passages.join("\n") })))], exclude);
+  return [...new Set([...[...emails.map((m) => m.split("@")[1]!), ...internalDomains].map(domainLabel), ...companies].filter(Boolean))];
+};
+
+/**
+ * D2-1: the companies and products a task's sources show, for the tracker guard's `things`: their participants' email
+ * domains' names and the team's own, the outside companies its evidence (a pack too) lists, the words its passages
+ * write as a company or product ("the Globex team", "at Globex", "the Globex Slides add-on": swapped passages too,
+ * which keep companies), and the companies its Sources line names (`linedCompanies`). So "Ask Globex for the list" may
+ * go to the tracker while "Ask Dana for the list" never does. Not the single words the task's own title and
+ * description use (`thingsIn`): a name that slipped into a task's text never vouches for itself. Undefined when there
+ * are no sources to show them, so the guard knows it can't tell a company after "with" from a person.
+ */
+export function sourceThings(e: { sources: { passages: string[] }[]; people?: string[]; companies?: string[] }, internalDomains: string[] = [], description = ""): string[] | undefined {
+  if (!e.sources.length) return undefined;
+  const texts = e.sources.map((s) => s.passages.join("\n"));
+  // R5: a swapped passage keeps each person's company: "[PERSON-2, Globex]".
+  const placed = texts.flatMap((t) => [...t.matchAll(/\[PERSON-\d+, ([^\[\]\n]{1,60})\]/g)].map((m) => m[1]!.trim())).filter((c) => c !== "our company");
+  const known = domainsOf(e, internalDomains, [...(e.companies ?? []), ...placed, ...linedCompanies(description)]);
+  const things = new Set<string>();
+  namesIn(texts.map((text) => ({ text })), known, { things });
+  return [...new Set([...known, ...things])];
 }
 
 const SOURCES_LINE = /^\*\*(?:Sources:|Based on)\*\*.*$/m;
+
+/**
+ * The companies a task's Sources line names, which PMX wrote there from the sources: "Acme" and "Globex" in
+ * "**Sources:** a customer call with Acme (Nov 20); 2 partner calls with Globex (Nov 19–25)".
+ */
+export function linedCompanies(description: string): string[] {
+  const line = description.match(SOURCES_LINE)?.[0] ?? "";
+  return [...line.matchAll(/\bcalls? with (.+?) \(/g)].map((m) => m[1]!.trim());
+}
 
 /**
  * The companies and products a task's own text names, so they never count as people (F14, R4b):
@@ -78,9 +115,7 @@ const SOURCES_LINE = /^\*\*(?:Sources:|Based on)\*\*.*$/m;
  *   teammate's Mac this is how a customer's name is known to be a company's.
  */
 export function sourceCompanies(description: string, title = ""): string[] {
-  const line = description.match(SOURCES_LINE)?.[0] ?? "";
-  const listed = [...line.matchAll(/\bcalls? with (.+?) \(/g)].map((m) => m[1]!.trim());
-  return [...new Set([...listed, ...thingsIn(title), ...thingsIn(description.replace(SOURCES_LINE, ""))].filter(Boolean))];
+  return [...new Set([...linedCompanies(description), ...thingsIn(title), ...thingsIn(description.replace(SOURCES_LINE, ""))].filter(Boolean))];
 }
 
 /**
@@ -129,7 +164,7 @@ export function draftCounts(markdown: string): { open: number; blocking: number;
 /** TASK-10: the comment, without the `pmx:pr` line PMX puts above it. At most COMMENT_MAX characters, never cut mid-sentence. */
 export function draftComment(i: DraftCommentInput): string {
   const names = i.names ?? [];
-  const rules = { people: i.people ?? [] };
+  const rules = { people: i.people ?? [], ...(i.things ? { things: i.things } : {}), ...(i.known ? { known: i.known } : {}) };
   const noun = i.noun ?? "Draft";
   const doc = i.markdown ? sections(i.markdown) : null;
   const own = doc?.title ? plain(doc.title).replace(/^[A-Z]{1,6}-\d+:\s*/, "") : "";

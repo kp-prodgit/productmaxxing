@@ -141,11 +141,11 @@ Install by hand over an older version (this keeps `~/.pmx`, your settings and ke
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.38.0/productmaxxing-0.38.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.38.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.39.0/productmaxxing-0.39.0.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.39.0/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
 npm uninstall -g productgit   # only if this Mac had Product Git 0.14.0 or older
-npm install -g ./productmaxxing-0.38.0.tgz
+npm install -g ./productmaxxing-0.39.0.tgz
 pmx whats-new --since <the version you had>
 ```
 

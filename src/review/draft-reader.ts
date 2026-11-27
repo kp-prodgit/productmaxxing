@@ -27,9 +27,28 @@ export function sections(md: string): { title: string | null; intro: string[]; s
   return { title, intro, sections: out };
 }
 
+/** A source ID, or a list of them: [T7], [C4, T3]. */
+const CITE = String.raw`\[(?:[A-Z]{1,3}\d+(?:\s*[,;]\s*[A-Z]{1,3}\d+)*)\]`;
+/** Words that set one source against another, or a point against one: "[C4] versus [T3]", "compared with [T3]". */
+const VERSUS = String.raw`(?:[Vv]ersus|[Vv]s(?:\.(?=\s*\[))?|[Cc]ompared\s+(?:with|to)|against)`;
+/** What joins two source IDs: "[C4] versus [T3]", "[T1] and [T2]", "[T1], [T2]". */
+const JOINS = String.raw`(?:${VERSUS}|and|or|&|\/|,|;)`;
+const CITE_RUN = String.raw`${CITE}(?:\s*${JOINS}\s*${CITE})*`;
+/** The end of a sentence, a clause or the text, which a word left before it would dangle at. */
+const CITE_END = String.raw`(?=\s*(?:[.,;:!?)…]|$))`;
 /**
- * Plain words from a Markdown line: no emphasis, links, code marks or source IDs like [T7]. What a code span holds is
- * kept as written (`gpu_ms` stays gpu_ms), and so is an underscore inside a word (adapter_version).
+ * FOLLOW-1 (end-to-end test 2026-11-27): source IDs with the words that joined them, so none is left dangling: "[C4]
+ * versus [T3]" goes whole, and so does a "versus", "vs", "compared with" or "against" right before IDs that end a
+ * sentence ("higher versus [T3]."), and one right after them ("[C4] versus."). "and" or "or" before what follows the IDs
+ * stays: "It grew [T1], and costs fell."
+ */
+const CITES = new RegExp(String.raw`(?:\s+${VERSUS}(?=\s*${CITE_RUN}${CITE_END}))?\s*${CITE_RUN}(?:\s*${JOINS}${CITE_END})?`, "g");
+
+/**
+ * Plain words from a Markdown line: no emphasis, links, code marks or source IDs like [T7], nor a word that joined
+ * them (`CITES`), nor punctuation they leave after a sentence's end ("negotiating? [C4] versus [T3]." is "negotiating?").
+ * What a code span holds is kept as written (`gpu_ms` stays gpu_ms), and so is an underscore inside a word
+ * (adapter_version).
  */
 export function plain(s: string): string {
   const code: string[] = [];
@@ -37,9 +56,12 @@ export function plain(s: string): string {
     .replace(/`([^`]+)`/g, (_m, c: string) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)\]\((?:[^)]*)\)/g, "$1")
-    .replace(/\s*\[(?:[A-Z]{1,3}\d+(?:\s*[,;]\s*[A-Z]{1,3}\d+)*)\]/g, "")
+    // Where source IDs were, until emphasis is gone and what's before them shows.
+    .replace(CITES, "\u0001")
     .replace(/[*`]+/g, "")
     .replace(/(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu, "")
+    .replace(/([.!?…])\u0001\s*[.,;:]+(?=\s|$)/g, "$1")
+    .replace(/\u0001/g, "")
     .replace(/\u0000(\d+)\u0000/g, (_m, i: string) => code[Number(i)]!)
     .replace(/\s+/g, " ")
     .trim();
@@ -59,6 +81,11 @@ export interface DraftDecision {
   /** A deadline the draft states ("before Dec 8"), as YYYY-MM-DD, or null. */
   due: string | null;
   key: string;
+  /**
+   * FOLLOW-1 (end-to-end test 2026-11-27): a call worded as something to do, a to-do as written ("Check the scope …"),
+   * not a decision: the accept's answer, the re-read's notice and the draft-ready comment count it apart.
+   */
+  action?: true;
 }
 
 /**
@@ -95,6 +122,14 @@ export interface DraftQuestion {
    * need real?"), so the ask's why names the task (FOLLOW-1).
    */
   from?: string;
+  /**
+   * FOLLOW-1 (end-to-end test 2026-11-27): a title made from the item's own ask ("Ask Dana Lee's team whether they want
+   * …") leans on whom it asks, so when the tracker rules cut that role, "they" would stand for no one. Then the ask goes
+   * to the team of the company the role names (`company`: "Globex's account lead Dana" is Globex), else reads as the
+   * item's question would without its own ask (`title`, `about`, `from`): its label or the task's subject first, else
+   * in its own words.
+   */
+  unasked?: { company: string | null; title: string; about: string | null; from?: string };
 }
 
 const LIST = /^ ?(?:[-*+•]|\d+[.)])\s+/;
@@ -808,8 +843,11 @@ function decisionOf(text: string, identifier: string, now: Date, r: Reading): Ca
     else if (r.title) names = `The call is from ${identifier}, "${r.title}".`;
   }
   const said = [names, why ?? ownWhy(ss, withOptions), also].filter(Boolean).join(" ");
-  return { text: worded(core, identifier, about), why: cut(said, 400), due: deadlineIn(p, now), key: keyOf("d", core), how, core, about, at: 0 };
+  return { text: worded(core, identifier, about), why: cut(said, 400), due: deadlineIn(p, now), key: keyOf("d", core), how, core, about, at: 0, ...acted(core) };
 }
+
+/** A call worded as something to do (`isAction`) is a to-do as written, counted apart from the decisions (FOLLOW-1). */
+const acted = (core: string): { action?: true } => (isAction(core) ? { action: true } : {});
 
 /**
  * A thin call: whether (or how, when …) to do something, with at most one bare word after the verb and nothing to
@@ -888,7 +926,7 @@ function oneDecision(parts: Part[], identifier: string, now: Date, r: Reading): 
   // The date the Decision section states for it, then one beside a mark, then one among the Decision section's items.
   const dateIn = (bs: Block[]) => bs.map((b) => deadlineIn(plain(b.text), now)).find(Boolean) ?? null;
   const due = dateIn(decision.blocks.filter((b) => !b.list && !b.sub)) ?? dateIn(marked) ?? dateIn(decision.blocks.filter((b) => b.list));
-  return { text: worded(core, identifier), why: cut(why, 400), due, key: keyOf("d", core), core };
+  return { text: worded(core, identifier), why: cut(why, 400), due, key: keyOf("d", core), core, ...acted(core) };
 }
 
 /**
@@ -1134,6 +1172,7 @@ function questionOf(text: string, where: DraftQuestion["where"], r: Reading, pri
   let { title, about } = leaned(whole, text, ss, r, prior);
   let kept = rest;
   let from: string | null = null;
+  let unasked: DraftQuestion["unasked"];
   if (title === whole && !whole.startsWith("Find out ")) {
     const label = labelOf(text, ss, Math.max(q, 0));
     if (q === 1 && label && whole === capFirst(ss[1]!) && !QUESTION_START.test(ss[1]!) && !AUX_START.test(ss[1]!)) {
@@ -1153,13 +1192,29 @@ function questionOf(text: string, where: DraftQuestion["where"], r: Reading, pri
         title = `Find out ${own.clause}`;
         ask = { role: own.role, by: "words" };
         kept = rest.filter((x) => x !== own.sentence);
+        // "whether they want …" leans on whom it asks: should that role be cut, the ask still says who "they" are,
+        // or reads as the question would without an ask of its own.
+        if (/\b(?:they|them|their|theirs)\b/i.test(own.clause)) {
+          const company = companyOf(own.role);
+          unasked = prefix ? { company, title: `${capFirst(prefix)}: ${commonFirst(whole, r)}`, about: theOf(prefix, r, true) }
+            : { company, title: whole, about, ...(r.title ? { from: r.title } : {}) };
+        }
       } else if (prefix) {
         title = `${capFirst(prefix)}: ${commonFirst(whole, r)}`;
         about = theOf(prefix, r, true);
       } else from = r.title ?? null;
     }
   }
-  return { question, title, about, rest: kept, where, ask, needs: mark && !mark.ask ? mark.value || null : null, key: keyOf("q", question), ...(from ? { from } : {}) };
+  return { question, title, about, rest: kept, where, ask, needs: mark && !mark.ask ? mark.value || null : null, key: keyOf("q", question), ...(from ? { from } : {}), ...(unasked ? { unasked } : {}) };
+}
+
+/**
+ * The company a role names, as its possessive or after "at": "Globex's account lead Dana", "the account lead at
+ * Globex". Its team is whom to ask when the tracker rules cut the role itself (FOLLOW-1); they still check the company.
+ */
+function companyOf(role: string): string | null {
+  const c = role.match(/^(\p{Lu}[\p{L}\p{N}&-]*)['’]s\s/u)?.[1] ?? role.match(/\bat\s+(\p{Lu}[\p{L}\p{N}&-]*)/u)?.[1];
+  return c && !DET.test(c) && !CALENDAR.test(c) && !PRONOUN.test(c) && !TEAM_LETTERS.test(c) ? c : null;
 }
 
 /** A question that starts with its verb: "Is …?", "Does …?", "Can …?". */

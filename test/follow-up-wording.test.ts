@@ -4,9 +4,11 @@
 // an ask's why is a whole sentence; and a company's name keeps its capital.
 import { beforeEach, describe, expect, it } from "vitest";
 import { services } from "../src/core/services.js";
+import { trackerGuard } from "../src/core/tracker-text.js";
 import type { Task } from "../src/core/types.js";
-import { followUpItems } from "../src/review/draft-reader.js";
-import { askText, askWhy, followUpsOnAccept, readFollowUps } from "../src/review/followups.js";
+import { followUpItems, plain } from "../src/review/draft-reader.js";
+import { askText, askTodo, askWhy, followUpsOnAccept, followUpText, readFollowUps } from "../src/review/followups.js";
+import { draftComment } from "../src/run/comment.js";
 import { readProposals } from "../src/synth/proposals.js";
 import { loadTodos } from "../src/todo/todo.js";
 import { memoryTracker } from "../src/tracker/types.js";
@@ -458,5 +460,77 @@ describe("the end-to-end test's lows on the re-read of older follow-ups, continu
     ]);
     // None of them is a follow-up when the draft is accepted (R2c).
     expect(readFollowUps(md, "PMX-18", NOW)).toEqual({ decisions: [], questions: [] });
+  });
+});
+
+describe("the end-to-end test's lows on the re-read of older follow-ups, last round (FOLLOW-1, 2026-11-27)", () => {
+  beforeEach(freshHome);
+
+  it("7. source IDs leave no joining word or stray mark behind: \"[C4] versus [T3]\" goes whole", () => {
+    const md = draft("PMX-7: Brief the pilot terms", "Open questions", [
+      "**Is \"pause the pilot\" a firm position or negotiating?** [C4] versus [T3]. — ask: the account lead",
+      "**Is the pilot length firm?** [C4] vs. [T3]. **PM decides.**",
+    ]);
+    const r = readFollowUps(md, "PMX-7", NOW);
+    expect(r.questions.map((q) => [askText(q.ask?.role ?? null, q.title, "PMX-7", q.about), q.rest])).toEqual([
+      ["Ask the account lead: Is \"pause the pilot\" a firm position or negotiating? (PMX-7)", []],
+    ]);
+    expect(r.decisions.map((d) => d.text)).toEqual(["Decide whether the pilot length is firm (PMX-7)"]);
+    expect([
+      "Two calls [T1] and [T2] say so.", "Seen twice [T1], [T2].", "Costs are higher compared with [T3].", "Check the scope against [C14].",
+      "Is it firm? [C4] versus.", "Costs differ [T1] vs.",
+      // A word that joins what comes after the IDs stays, and so does a sentence after them.
+      "It grew [T1], and costs fell [T2].", "It grew. [T1] Then it fell.", "Revenue or cost [T1] or churn.",
+    ].map(plain)).toEqual([
+      "Two calls say so.", "Seen twice.", "Costs are higher.", "Check the scope.",
+      "Is it firm?", "Costs differ.",
+      "It grew, and costs fell.", "It grew. Then it fell.", "Revenue or cost or churn.",
+    ]);
+  });
+
+  it("8. an item's own ask whose role the tracker rules cut asks the company's team, else reads as its question; never a bare \"they\"", () => {
+    const guard = trackerGuard({ names: ["Dana Lee"] });
+    const one = (item: string, title: string) => {
+      const q = readFollowUps(draft(title, "Open questions", [item]), "PMX-18", NOW, { title }).questions[0]!;
+      return askTodo(q, "PMX-18", (s) => !guard.problem(s));
+    };
+    const spec = "PMX-18: Spec the approval step";
+    // The company the cut role names: its team, and "they" are that team.
+    expect(one("**Is the other partners' need real?** Ask Dana Lee's team at Globex whether they want the approve step on or off by default. Evidence so far is Acme only [C14].", spec))
+      .toEqual({ text: "Ask Globex's team whether they want the approve step on or off by default (PMX-18)", why: "Evidence so far is Acme only." });
+    // No company: the item's question, with the task's subject first.
+    expect(one("**Is the other partners' need real?** Ask Dana Lee's team whether they want the approve step on or off by default.", spec))
+      .toEqual({ text: "Find out about the approval step: Is the other partners' need real? (PMX-18)", why: "PMX-18's accepted draft lists this as an open question." });
+    // Nothing else is known: the question in its own words, and its why names the task.
+    const long = "PMX-18: Draft a spec for beta approve and reject with audit log export";
+    expect(one("**Is the other partners' need real?** Ask Dana Lee's team whether they want the approve step on or off by default.", long)).toEqual({
+      text: "Find out: Is the other partners' need real? (PMX-18)",
+      why: "PMX-18's accepted draft, \"Draft a spec for beta approve and reject with audit log export\", lists this as an open question.",
+    });
+    // A role the rules let through is asked as before.
+    expect(one("**Is the other partners' need real?** Ask the other four beta partners whether they want the approve step on or off by default.", spec).text)
+      .toBe("Ask the other four beta partners whether they want the approve step on or off by default (PMX-18)");
+  });
+
+  it("9. a call worded as something to do is counted apart from the decisions: in the accept's answer and the draft-ready comment", async () => {
+    const md = draft("PMX-6: Brief the compliance approval", "Open questions", [
+      "**PM decides:** check the scope against the list in writing with Globex's legal lead.",
+      "**PM decides:** whether to ship the approval step in the beta.",
+      "**PM decides:** review cadence.",
+      "Who signs the order at Globex? — ask: the account lead",
+    ]);
+    expect(readFollowUps(md, "PMX-6", NOW).decisions.map((d) => [d.text, d.action ?? false])).toEqual([
+      ["Check the scope against the list in writing with Globex's legal lead (PMX-6)", true],
+      ["Decide whether to ship the approval step in the beta (PMX-6)", false],
+      ["Decide on the review cadence (PMX-6)", false],
+    ]);
+    expect(draftComment({ title: "Brief the compliance approval", prUrl: "branch:pmx/task/PMX-6-x", path: "outputs/spec/PMX-6.md", agent: "dana@m1", markdown: md }))
+      .toContain("\nIt leaves 1 open question, 2 calls marked PM decides and 1 thing to do.\n");
+    const r = await accept(md, { id: "lin-6", identifier: "PMX-6", title: "Brief the compliance approval" });
+    expect(followUpText(r)).toBe("2 decisions, 1 thing to do and 1 question to ask added to your to-dos.");
+    expect(r.todos.map((t) => t.action ?? false)).toEqual([true, false, false]);
+    // Over the cap, they stay in the draft as what they are.
+    expect(followUpText({ ...r, todos: r.todos.slice(0, 2), asks: [], moreDecisions: 1, moreActions: 2 }))
+      .toBe("1 decision and 1 thing to do added to your to-dos; 1 more decision stays in the draft; 2 more things to do stay in the draft.");
   });
 });

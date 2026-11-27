@@ -11,7 +11,7 @@ import type { Services } from "../core/services.js";
 import { loadState, updateState } from "../core/state.js";
 import type { Task } from "../core/types.js";
 import { followsIn } from "../tracker/mentions.js";
-import { readResolved } from "../tracker/relay.js";
+import { queuedIdentifiers, readResolved } from "../tracker/relay.js";
 import type { Tracker } from "../tracker/types.js";
 import { sourceCompanies } from "./comment.js";
 import { sourcesHere, swapLists, swapPassages, taskEvidence, type Evidence } from "./evidence.js";
@@ -115,6 +115,11 @@ export interface ShareResult {
   shared: string[];
   /** "PMX couldn't share PMX-12's quotes with your team: …", once per task. */
   notices: string[];
+  /**
+   * With `clear`: the PENDING-… tasks whose staged share was let go, since they left the Claude relay's queue before
+   * Linear had them and so never get an identifier. Only when there are some.
+   */
+  cleared?: string[];
 }
 
 const list = (ids: string[]) => (ids.length <= 2 ? ids.join(" and ") : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`);
@@ -181,20 +186,32 @@ async function logShared(ctx: Ctx, ids: string[]): Promise<void> {
 /**
  * Writes the packs of every staged task whose identifier is known (RUN-5). `say`: where a failure is told, once per
  * task: in the answer to the PM's approval, or (from the background run and the Claude sync) as a notification.
+ * `clear` (the background run's pass, which says so in its line): also lets go of each staged PENDING-… task that is
+ * neither queued in this Mac's outbox nor given its identifier by the sync: one taken back or dropped before Linear had
+ * it, or that Linear refused 3 times, which never gets an identifier (`cleared`). A Mac with no outbox lets go of none.
  */
-export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; store?: EvidenceStore }): Promise<ShareResult> {
+export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; store?: EvidenceStore; clear?: boolean }): Promise<ShareResult> {
   const out: ShareResult = { shared: [], notices: [] };
   const all = await read();
   if (!all.length) return out;
   const store = o.store ?? storeFor(ctx);
-  const resolved = all.some((w) => w.identifier.startsWith("PENDING-")) ? await readResolved() : {};
+  const pending = all.some((w) => w.identifier.startsWith("PENDING-"));
+  // The queue before the identifiers: the relay records an identifier before its op leaves the queue (checkRelay), so
+  // a task in neither has left the queue for good. An outbox PMX can't read lets go of nothing.
+  const queued = o.clear && pending ? await queuedIdentifiers().catch(() => null) : null;
+  const resolved = pending ? await readResolved() : {};
   const now = ctx.now();
   const old = (w: Waiting) => now.getTime() - Date.parse(w.at) > GIVE_UP_MS;
   const drop = new Set<string>();
+  const cleared: string[] = [];
   const ready: { w: Waiting; pack: EvidencePack }[] = [];
   for (const w of all) {
     const id = w.identifier.startsWith("PENDING-") ? resolved[w.identifier]?.identifier ?? null : w.identifier;
-    if (!id) { if (old(w)) drop.add(w.identifier); continue; }
+    if (!id) {
+      if (queued && !queued.has(w.identifier)) { drop.add(w.identifier); cleared.push(w.identifier); }
+      else if (old(w)) drop.add(w.identifier);
+      continue;
+    }
     const seen: { missing?: Evidence["missing"] } = {};
     const built = await packFor(ctx, store, w, id, now, undefined, seen);
     const pack = w.keep ? await keptPack(store, id, w.sources, built, seen.missing ?? []) : built;
@@ -224,10 +241,31 @@ export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; sto
     }
     await save(kept);
   });
+  if (cleared.length) out.cleared = cleared;
   await logShared(ctx, out.shared);
   if (o.say === "notify" && out.notices.length) await notify("ProductMaxxing", out.notices.join(" ")).catch(() => {});
   return out;
 }
+
+/**
+ * RUN-5: a task taken out of the Claude relay's queue before Linear had it (taken back to the PM's to-dos, or `pmx linear
+ * outbox drop`) never gets an identifier, so the share staged for it goes at once. Returns the ones it removed.
+ */
+export async function unstageShares(identifiers: string[]): Promise<string[]> {
+  const gone = new Set(identifiers.filter((id) => id.startsWith("PENDING-")));
+  if (!gone.size || !(await read()).some((w) => gone.has(w.identifier))) return [];
+  return withLock(file(), async () => {
+    const all = await read();
+    const removed = all.filter((w) => gone.has(w.identifier)).map((w) => w.identifier);
+    if (removed.length) await save(all.filter((w) => !gone.has(w.identifier)));
+    return removed;
+  });
+}
+
+/** The background run's line for `cleared`: what it let go of, and why. */
+const clearedLine = (ids: string[]) => ids.length === 1
+  ? `stopped waiting to share the quotes of ${ids[0]}: that task was taken out of the queue for Linear before Linear had it, so it will never be in Linear`
+  : `stopped waiting to share the quotes of ${list(ids)}: those tasks were taken out of the queue for Linear before Linear had them, so they will never be in Linear`;
 
 /**
  * The backfill's memory (RUN-5), on this Mac only (owner-only), by task ID: a task it had nothing to quote for, looked
@@ -499,8 +537,9 @@ export async function dropHeldSources(ctx: Ctx, svc: Pick<Services, "tracker">, 
 }
 
 /**
- * The background run's step for RUN-5: shares what's staged, and every few hours removes the packs of finished tasks.
- * Returns what changed in a line, or null.
+ * The background run's step for RUN-5: shares what's staged, lets go of what's staged for a task that left the relay's
+ * queue before Linear had it, and every few hours removes the packs of finished tasks. Returns what changed in a line, or
+ * null.
  */
 export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "tracker">>): Promise<string | null> {
   if (ctx.team.tracker.kind === "none") return null;
@@ -509,7 +548,8 @@ export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "
   const store = storeFor(ctx);
   let tracker: Promise<Pick<Services, "tracker">> | null = null;
   const services = () => (tracker ??= svc());
-  const s = await shareEvidence(ctx, { say: "notify", store });
+  // The one pass that lets go of a share whose task left the relay's queue before Linear had it, and says so.
+  const s = await shareEvidence(ctx, { say: "notify", store, clear: true });
   const st = await loadState();
   const now = ctx.now();
   // The backfill: due after an update (UPGRADE-1), daily, and at once again after a run that stopped at its limit or failed.
@@ -521,6 +561,7 @@ export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "
   if (b) await updateState((x) => { x.evidenceBackfill = { at: now.toISOString(), due: b.more > 0 || b.failed > 0 }; });
   const shared = [...s.shared, ...(b?.shared ?? [])];
   if (shared.length) lines.push(`shared the quotes of ${list(shared)} with your team`);
+  if (s.cleared?.length) lines.push(clearedLine(s.cleared));
   if (b?.rewritten?.length) lines.push(`took the names out of the shared quotes of ${list(b.rewritten)}`);
   if (b?.more) lines.push(`${b.more} more ${b.more === 1 ? "task's quotes go" : "tasks' quotes go"} to your team at the next background run`);
   lines.push(...s.notices, ...(b?.notices ?? []));

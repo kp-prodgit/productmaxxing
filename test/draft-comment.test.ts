@@ -51,7 +51,7 @@ describe("the comment PMX writes when a draft is ready (TASK-10)", () => {
       "Exported files lose the brand's fonts. Teams fix them by hand.",
       "Read it in the team repo at outputs/competitive-analysis/PMX-5.md, on ana@m1's Mac until it's accepted.",
     ].join("\n"));
-    expect(draftCounts(md)).toEqual({ open: 0, blocking: 0, pmDecides: 0 });
+    expect(draftCounts(md)).toEqual({ open: 0, blocking: 0, pmDecides: 0, actions: 0 });
   });
 
   it("reads a draft with no sections at all, and falls back to the task's title", () => {

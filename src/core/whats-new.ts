@@ -19,6 +19,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.40.2", date: "2026-11-27", headline: "Health asides and customer bonuses kept in context, follow-ups that say why, and no stale shared quotes",
+    items: [
+      { what: "A short health aside ('I'm out Tuesday for a doctor's appointment') takes only its own sentence, however long, so the work talk around it reaches your team. A bonus a product gives its customers ('a sign-up bonus of 50 credits') isn't read as pay; a person's bonus still is." },
+      { what: "Follow-ups read again say why one was dropped, leave no stray 'versus' after source IDs, never leave an unexplained 'they', and count things to do apart from your calls." },
+      { what: "A task taken back or dropped before Linear had it no longer waits to share its quotes; leftovers are cleared once, with a line saying so." },
+    ],
+  },
+  {
     version: "0.40.1", date: "2026-11-27", headline: "PMX's commands in the Claude app update again on Macs set up before the rename",
     items: [
       { what: "/pmx-schedule, /pmx-board and /pmx-flow installed by Product Git were read as your own copies and never updated. PMX now refreshes them, and adds /pmx-setup where it was missing. A copy you wrote yourself is still left alone. If PMX updated /pmx-schedule, type it in the Claude app once so your scheduled tasks get today's prompts.", try: "/pmx-schedule" },

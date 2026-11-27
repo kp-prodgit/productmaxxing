@@ -288,11 +288,11 @@ describe("sorting a draft's questions: to ask or to work on (FOLLOW-1, R2)", () 
       // Marked by the skill as a question, so it is one.
       "Pilot length for Globex",
     ]);
-    expect(draftCounts(md)).toEqual({ open: 3, blocking: 0, pmDecides: 0 });
+    expect(draftCounts(md)).toEqual({ open: 3, blocking: 0, pmDecides: 0, actions: 0 });
   });
 
   it("the draft-ready comment still counts every question once, asks included", () => {
-    expect(draftCounts(MARKED)).toEqual({ open: 4, blocking: 1, pmDecides: 0 });
+    expect(draftCounts(MARKED)).toEqual({ open: 4, blocking: 1, pmDecides: 0, actions: 0 });
     expect(draftCounts(UNMARKED)).toEqual(draftCounts(MARKED));
   });
 });
@@ -331,7 +331,7 @@ describe("a call marked PM decides is the PM's, an explicit mark beats the words
       ["Which editors do our largest accounts use?", "research"],
     ]);
     // The draft-ready comment counts what the reader reads.
-    expect(draftCounts(CALLS_AS_QUESTIONS)).toEqual({ open: 3, blocking: 0, pmDecides: 4 });
+    expect(draftCounts(CALLS_AS_QUESTIONS)).toEqual({ open: 3, blocking: 0, pmDecides: 4, actions: 0 });
   });
 
   it("R2f: a needs mark is work and an ask mark an ask, whatever the words; with PM decides it's the call, the role in its why", () => {
@@ -503,6 +503,22 @@ describe("accepting a draft: questions to ask become to-dos, work becomes tasks 
   it("a role the tracker rules would cut, like a name on the CRM list, is left out of the to-do", async () => {
     const { r } = await accept("# PMX-21: Spec\n\n## Open questions\n\n- Who signs the order? — ask: the Bramwell account lead\n", { crm: ["Bramwell"] });
     expect(r.asks.map((a) => a.text)).toEqual(["Find out: Who signs the order? (PMX-21)"]);
+  });
+
+  it("an item's own ask whose role the tracker rules cut never leaves a bare \"they\" (FOLLOW-1, 2026-11-27)", async () => {
+    const md = [
+      "# PMX-21: Spec", "", "## Open questions", "",
+      "- **Is the other partners' need real?** Ask Dana Lee's team at Globex whether they want the approve step on or off by default.",
+      "- **Do the other admins need the export?** Ask Dana Lee's team whether they need it before the beta.",
+    ].join("\n");
+    const { r } = await accept(md, { crm: ["Dana Lee"] });
+    expect(r.asks.map((a) => a.text)).toEqual([
+      // The company the cut role names: its team.
+      "Ask Globex's team whether they want the approve step on or off by default (PMX-21)",
+      // No company: the item's question, with the task's subject first.
+      "Find out about the editor plugin for Initech: Do the other admins need the export? (PMX-21)",
+    ]);
+    for (const a of r.asks) expect(a.text).not.toMatch(/^Find out whether they\b|Dana/);
   });
 
   it("an ask already open isn't doubled", async () => {

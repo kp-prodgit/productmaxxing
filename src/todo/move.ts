@@ -9,7 +9,7 @@ import { SIZES, type Size, type Task } from "../core/types.js";
 import { citationNeed, citeText } from "../pull/pull.js";
 import { receiptOf, taskEvidence } from "../run/evidence.js";
 import { packSources, swappedPack } from "../run/packs.js";
-import { removePackNow, shareEvidence, stageShares, storeFor } from "../run/share.js";
+import { removePackNow, shareEvidence, stageShares, storeFor, unstageShares } from "../run/share.js";
 import { dateRange } from "../synth/synthesize.js";
 import { approveProposals, CHECKED, heldText, holdProposal, markKept, readProposals, takeProposal, type Proposal } from "../synth/proposals.js";
 import { recheckProposal } from "../synth/recheck.js";
@@ -249,10 +249,16 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
   /**
    * Takes an issue back out of Linear: a comment for the team, then canceled. R16b: one only queued for Linear (the
    * Claude relay hasn't created it yet) leaves the queue instead, so nothing of it reaches Linear. Says which: "queued".
+   * RUN-5: it then never gets an identifier, so nothing waits for one: its staged share goes, and so does the to-do
+   * parked for a drop of it, since taking it back makes it a to-do again.
    */
   const withdraw = async (t: Task, why: string): Promise<"queued" | "canceled"> => {
     const tr = await tracker();
-    if (tr.unqueue && (await tr.unqueue(t.id))) return "queued";
+    if (tr.unqueue && (await tr.unqueue(t.id))) {
+      await unstageShares([t.identifier]);
+      await unpark([t.identifier]);
+      return "queued";
+    }
     await tr.comment(t.id, why);
     await tr.rewrite(t.id, { cancel: true });
     // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it.
@@ -499,6 +505,15 @@ async function park(identifier: string, todo: Todo, now: Date, quotes: KeptQuote
   await withLock(parkedFile(), async () => {
     const kept = (await readParked()).filter((p) => p.identifier !== identifier && now.getTime() - Date.parse(p.at) < PARK_MS);
     await saveParked([...kept, { identifier, at: now.toISOString(), todo, ...(quotes ? { quotes } : {}) }]);
+  });
+}
+
+/** R16b, RUN-5: a queued task taken back is a to-do again already, so no drop will ever give back the one parked for it. */
+async function unpark(identifiers: string[]): Promise<void> {
+  const gone = new Set(identifiers);
+  if (!(await readParked()).some((p) => gone.has(p.identifier))) return;
+  await withLock(parkedFile(), async () => {
+    await saveParked((await readParked()).filter((p) => !gone.has(p.identifier)));
   });
 }
 

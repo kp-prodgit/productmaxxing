@@ -275,7 +275,8 @@ describe("a decision brief's decision becomes one to-do (FOLLOW-1, R1)", () => {
   it("the draft-ready comment counts the calls and questions accepting reads, for these drafts and every skill's own example", async () => {
     const counted = (md: string) => {
       const r = readFollowUps(md, "PMX-1", now);
-      return { open: r.questions.filter((q) => q.where === "open").length, blocking: r.questions.filter((q) => q.where === "blocking").length, pmDecides: r.decisions.length };
+      // A call worded as something to do is counted apart, as a thing to do (FOLLOW-1, 2026-11-27).
+      return { open: r.questions.filter((q) => q.where === "open").length, blocking: r.questions.filter((q) => q.where === "blocking").length, pmDecides: r.decisions.filter((d) => !d.action).length, actions: r.decisions.filter((d) => d.action).length };
     };
     const examples: [string, string][] = [];
     for (const s of ["pmx-build-brief", "pmx-competitive", "pmx-decision-brief", "pmx-problem-brief", "pmx-research", "pmx-spec", "pmx-validation-plan", "pmx-validation-readout"]) {

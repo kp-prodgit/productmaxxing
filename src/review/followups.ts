@@ -136,10 +136,13 @@ export const followUpsFile = () => join(paths.staging(), "follow-ups.json");
 
 /**
  * D2-8: one waiting follow-up an older PMX made from this draft, read again by today's rules (src/review/requeue.ts):
- * now a to-do to ask someone (`ask`) or a call of the PM's (`decision`), with that to-do's ID, still work with a new
- * title and kind (`work`), or no follow-up at all, dropped (`dropped`). Its title then (`was`), and its words now (`now`).
+ * now a to-do to ask someone (`ask`), a call of the PM's (`decision`) or something to do as written (`action`, "Check
+ * the scope …"), with that to-do's ID, still work with a new title and kind (`work`), or no follow-up at all, dropped
+ * (`dropped`). Its title then (`was`), and its words now (`now`). `why`: why it was dropped. The ledger is on the Mac
+ * that read it again, so the reason is always here, wherever the run that suggested the original task was (its receipt
+ * may be on another PM's Mac, and never lists a follow-up an accept made).
  */
-export interface Requeued { at: string; proposal: string; was: string; as: "ask" | "decision" | "work" | "dropped"; now: string; todo?: string; category?: string }
+export interface Requeued { at: string; proposal: string; was: string; as: "ask" | "decision" | "action" | "work" | "dropped"; now: string; todo?: string; category?: string; why?: string }
 
 /**
  * Records in the ledger what reading a draft's older follow-ups again did (D2-8), with the follow-ups it now made, so
@@ -164,8 +167,8 @@ export async function recordRequeued(identifier: string, path: string, changes: 
 export interface FollowUpResult {
   /** The team turned follow-ups off, or the draft isn't a document. */
   skipped: "off" | "no-draft" | null;
-  /** The PM's calls, as to-dos. */
-  todos: { id: string; text: string }[];
+  /** The PM's calls, as to-dos. `action`: one worded as something to do ("Check the scope …"), not a decision. */
+  todos: { id: string; text: string; action?: true }[];
   /** Questions one person can answer, as to-dos: "Ask <role>: <question> (PMX-12)" (R2). */
   asks: { id: string; text: string }[];
   proposals: { id: string; title: string; category: string }[];
@@ -177,8 +180,9 @@ export interface FollowUpResult {
   leftOut: number;
   /** Questions over FOLLOW_TASKS or FOLLOW_ASKS: they stay in the draft. */
   moreQuestions: number;
-  /** Calls over FOLLOW_TODOS: they stay in the draft. */
+  /** Calls over FOLLOW_TODOS: they stay in the draft. `moreActions`: those of them worded as something to do. */
   moreDecisions: number;
+  moreActions: number;
   draft: string | null;
   /**
    * The handle of the PM who suggested the task, when it isn't the PM accepting it: the calls still came to this PM.
@@ -187,7 +191,7 @@ export interface FollowUpResult {
   suggestedBy?: string | null;
 }
 
-const EMPTY = (skipped: FollowUpResult["skipped"], draft: string | null = null): FollowUpResult => ({ skipped, todos: [], asks: [], proposals: [], repeated: 0, duplicates: 0, leftOut: 0, moreQuestions: 0, moreDecisions: 0, draft });
+const EMPTY = (skipped: FollowUpResult["skipped"], draft: string | null = null): FollowUpResult => ({ skipped, todos: [], asks: [], proposals: [], repeated: 0, duplicates: 0, leftOut: 0, moreQuestions: 0, moreDecisions: 0, moreActions: 0, draft });
 
 /**
  * A clause in a question's own word order ("what will the committee accept", "who is the contact", "which plans do
@@ -237,6 +241,22 @@ export function askWhy(q: Pick<DraftQuestion, "rest" | "where" | "from">, identi
   return cut(said && q.from ? `${where} ${said}` : said || where, 400);
 }
 
+/**
+ * An ask to-do's words and why (R2, FOLLOW-1), with its role only when the tracker rules let it through (`ok`): a role,
+ * never a person. End-to-end test 2026-11-27: an item's own ask ("Ask Dana Lee's team whether they want …") whose role
+ * they cut never leaves a bare "they" ("Find out whether they want …"): it asks the team of the company that role names
+ * ("Ask Globex's team whether they want …"), when they let that through; else it reads as the item's question with its
+ * label or the task's subject first; else in its own words ("Find out: Is the other partners' need real?").
+ */
+export function askTodo(q: DraftQuestion, identifier: string, ok: (s: string) => boolean): { text: string; why: string } {
+  const role = q.ask?.role && ok(q.ask.role) ? q.ask.role : null;
+  const u = role ? undefined : q.unasked;
+  if (!u) return { text: askText(role, q.title, identifier, q.about), why: askWhy(q, identifier) };
+  if (u.company && ok(u.company)) return { text: askText(`${u.company}'s team`, q.title, identifier, q.about), why: askWhy(q, identifier) };
+  const alone = { ...q, title: u.title, about: u.about, from: u.from };
+  return { text: askText(null, alone.title, identifier, alone.about), why: askWhy(alone, identifier) };
+}
+
 /** The draft a review item carries: the run's output, else the first Markdown file under outputs/. */
 export function draftFile(item: Pick<ReviewItem, "files" | "record">): { path: string; content: string } | null {
   const ref = item.record?.artifact?.ref;
@@ -282,15 +302,17 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
   const done: string[] = [];
   const stay: string[] = [];
   /** Made by an earlier accept: counted, not made again. Left in the draft then: still left there. */
-  const fresh = <T extends { key: string }>(list: T[], more: "moreQuestions" | "moreDecisions") => list.filter((x) => {
+  const fresh = <T extends { key: string }>(list: T[], more: (x: T) => "moreQuestions" | "moreDecisions" | "moreActions") => list.filter((x) => {
     if (made.has(x.key)) { out.repeated++; return false; }
-    if (leftBefore.has(x.key)) { out[more]++; stay.push(x.key); return false; }
+    if (leftBefore.has(x.key)) { out[more(x)]++; stay.push(x.key); return false; }
     return true;
   });
-  const decisions = fresh(found.decisions, "moreDecisions");
+  /** A call over the cap is a decision or, worded as something to do, a thing to do (FOLLOW-1). */
+  const moreCall = (d: { action?: true }) => (d.action ? "moreActions" : "moreDecisions");
+  const decisions = fresh(found.decisions, moreCall);
   // Blocking questions first, then the open ones, each in the draft's order. One a person can answer is a to-do to ask
   // them (R2); one that needs research or a document, a suggested task.
-  const questions = fresh([...found.questions.filter((q) => q.where === "blocking"), ...found.questions.filter((q) => q.where !== "blocking")], "moreQuestions");
+  const questions = fresh([...found.questions.filter((q) => q.where === "blocking"), ...found.questions.filter((q) => q.where !== "blocking")], () => "moreQuestions");
   const asks = questions.filter((q) => q.ask);
   const work = questions.filter((q) => !q.ask);
 
@@ -307,11 +329,11 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
   // The PM's calls: private to-dos, on this Mac only.
   const open = new Set((await loadTodos()).items.filter((t) => t.status === "open").map((t) => norm(t.text)));
   for (const d of decisions) {
-    if (out.todos.length >= FOLLOW_TODOS) { out.moreDecisions++; stay.push(d.key); continue; }
+    if (out.todos.length >= FOLLOW_TODOS) { out[moreCall(d)]++; stay.push(d.key); continue; }
     if (open.has(norm(d.text))) { out.duplicates++; done.push(d.key); continue; }
     const t = await keepTodo({ text: d.text, due: d.due, why: d.why, source: provenance }, now);
     open.add(norm(t.text));
-    out.todos.push({ id: t.id, text: t.text });
+    out.todos.push({ id: t.id, text: t.text, ...(d.action ? { action: true as const } : {}) });
     done.push(d.key);
   }
 
@@ -349,13 +371,12 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
     // to-dos. Linear's quote rule isn't theirs (R2a): moving one to Linear later checks it there.
     for (const q of asks) {
       if (out.asks.length >= FOLLOW_ASKS) { out.moreQuestions++; stay.push(q.key); continue; }
-      // A role, never a person: one the tracker rules would cut (a name, a placeholder) is left out.
-      const role = q.ask!.role && !tracker.problem(q.ask!.role) ? q.ask!.role : null;
-      const text = askText(role, q.title, task.identifier, q.about);
+      // A role, never a person: one the tracker rules would cut (a name, a placeholder) is left out, and an ask that
+      // leaned on it says whom else to ask (`askTodo`). Its why: a whole sentence that says where the question comes
+      // from, when the draft says nothing more about it; a question the draft left beside it ("Has a reviewer been
+      // asked?") is no reason (FOLLOW-1).
+      const { text, why } = askTodo(q, task.identifier, (s) => !tracker.problem(s));
       if (open.has(norm(text))) { out.duplicates++; done.push(q.key); continue; }
-      // A whole sentence that says where the question comes from, when the draft says nothing more about it. A question
-      // the draft left beside it ("Has a reviewer been asked?") is no reason (FOLLOW-1).
-      const why = askWhy(q, task.identifier);
       const t = await keepTodo({ text, due: deadlineIn([q.question, ...q.rest].join(" "), now), why, source: provenance }, now);
       open.add(norm(t.text));
       out.asks.push({ id: t.id, text: t.text });
@@ -419,19 +440,33 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/** "a", "a and b", "a, b and c". */
+export const inWords = (xs: string[]) => {
+  const ys = xs.filter(Boolean);
+  return ys.length <= 1 ? ys.join("") : `${ys.slice(0, -1).join(", ")} and ${ys.at(-1)}`;
+};
+
 /**
  * What accepting made, in a PM's words, for every surface: "2 decisions and 1 question to ask added to your to-dos; 3
- * follow-up tasks wait for your approval in Needs you." Empty when there was nothing to make. Never a command.
+ * follow-up tasks wait for your approval in Needs you." A call worded as something to do is counted apart, as a thing to
+ * do: "2 decisions, 1 thing to do and 1 question to ask …" (FOLLOW-1). Empty when there was nothing to make. Never a
+ * command.
  */
 export function followUpText(r: FollowUpResult | null): string {
   if (!r || r.skipped) return "";
   const asks = r.asks?.length ?? 0;
-  const todos = [r.todos.length ? plural(r.todos.length, "decision") : "", asks ? plural(asks, "question to ask", "questions to ask") : ""].filter(Boolean).join(" and ");
+  const actions = r.todos.filter((t) => t.action).length;
+  const decisions = r.todos.length - actions;
+  const todos = inWords([
+    decisions ? plural(decisions, "decision") : "", actions ? plural(actions, "thing to do", "things to do") : "",
+    asks ? plural(asks, "question to ask", "questions to ask") : "",
+  ]);
   const parts = [
     todos ? `${todos} added to your to-dos` : "",
     r.proposals.length ? `${plural(r.proposals.length, "follow-up task")} ${r.proposals.length === 1 ? "waits" : "wait"} for your approval in Needs you` : "",
     r.moreQuestions ? `${r.moreQuestions} more ${r.moreQuestions === 1 ? "question stays" : "questions stay"} in the draft` : "",
     r.moreDecisions ? `${r.moreDecisions} more ${r.moreDecisions === 1 ? "decision stays" : "decisions stay"} in the draft` : "",
+    r.moreActions ? `${r.moreActions} more ${r.moreActions === 1 ? "thing to do stays" : "things to do stay"} in the draft` : "",
     r.repeated ? `${plural(r.repeated, "follow-up")} ${r.repeated === 1 ? "was" : "were"} already made from this draft` : "",
     r.duplicates ? `${plural(r.duplicates, "follow-up")} ${r.duplicates === 1 ? "was" : "were"} already on your list` : "",
     r.leftOut ? `${plural(r.leftOut, "question")} stayed in the draft, because ${r.leftOut === 1 ? "its" : "their"} words can't go to Linear as written` : "",

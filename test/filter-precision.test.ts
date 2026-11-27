@@ -344,6 +344,26 @@ describe("a health aside is cut a sentence at a time, like fundraising (PRIV-2, 
     expect(passages.map((p) => [p.rule, p.followUp ?? false])).toEqual([["health", false], ["health", true]]);
   });
 
+  it("keeps the rest of the turn even when the aside is most of it", () => {
+    // End-to-end test 2026-11-27: the aside was longer than the rest, so the size rule took the commitment with it.
+    const { out, passages } = screen("Kim: I'll mock a client switcher and send it over. Early next week, I'm out Tuesday morning for a doctor's appointment, so probably Wednesday the second? Thursday the third at the latest.");
+    expect(out).toBe(`Kim: I'll mock a client switcher and send it over. ${HELD_MARKER} Thursday the third at the latest.`);
+    expect(passages).toEqual([{ rule: "health", hash: expect.any(String), part: { cut: 1, of: 3 } }]);
+    // More than half by sentences, with the one after it still about her: the work talk still stays.
+    expect(screen("Kim: Sam is out sick today. She'll be back Monday. Ship the importer fix.").out).toBe(`Kim: ${HELD_MARKER} Ship the importer fix.`);
+    // With nothing else in the turn, the whole turn goes, never a turn of only the marker.
+    expect(screen("Kim: I'm out sick today.\n\nAna: The SSO page ships Monday.").out).toBe("Ana: The SSO page ships Monday.");
+  });
+
+  it("keeps the size rule for other health talk, other topics, and an aside beside one", () => {
+    // Someone's surgery isn't an aside: three of six sentences, but most of the words, so the whole turn goes.
+    expect(screen("Kim: Ship it. Fine. Okay. Lee has been in the hospital since the accident on Friday and the whole team has been covering for her. Sure. Thanks.").out).toBe("");
+    // A fundraising line is cut a sentence at a time too, and still takes the turn when it's most of it.
+    expect(screen("Kim: Ship it. We are raising a Series B round from three new investors early next quarter, right after the launch. Thanks.").out).toBe("");
+    // An aside and a pay line in one turn: the size rule applies to the turn.
+    expect(screen("Kim: Early next week I'm out Tuesday morning for a doctor's appointment, so probably Wednesday. Ship it. Loop me in. The deck is fine. Okay. Dana's bonus is late.").out).toBe("");
+  });
+
   it("anything else about health still cuts the sentences around it, and a clinic's product talk is still kept", () => {
     // Someone's own therapist or a diagnosis isn't an aside: the sentence before and after go too.
     expect(screen("Kim: My therapist moved my session. I'm offline after 3. The pricing section on the page is my component.").out).toBe("");
@@ -366,8 +386,34 @@ describe("a bonus a product gives its customers isn't pay (PRIV-2, B2)", () => {
     ["She asked about a signing bonus.", "compensation"],
     ["Reps get a bonus for accounts closed this quarter.", "compensation"],
     ["The launch bonus for the team is set.", "compensation"],
+    // End-to-end test 2026-11-27: "a … bonus" given to customers, or paid in the product's terms, is marketing.
+    ["We give creators a sign-up bonus of 50 credits.", null],
+    ["Customers get a referral bonus of one free month.", null],
+    ["Teams on annual plans get a loyalty bonus.", null],
+    ["Subscribers who refer a friend earn a referral bonus.", null],
+    ["We offer new users a welcome bonus of 500 points.", null],
+    ["Accounts on the Pro plan also get a loyalty bonus.", null],
+    ["Each referral earns a bonus of 20 credits.", null],
+    ["A sign-up bonus of $20 in credit goes to every new workspace.", null],
+    // An employee, staff, a hire, a salary or a person's own bonus is still pay, worded "a … bonus" or not.
+    ["Q4 bonuses are paid in January.", "compensation"],
+    ["There's an employee referral bonus of $2k.", "compensation"],
+    ["The referral bonus for staff is $1k.", "compensation"],
+    ["Staff get a referral bonus of one free month.", "compensation"],
+    ["New hires get a sign-on bonus.", "compensation"],
+    ["Customers get a bonus of two months' salary.", "compensation"],
+    ["The sales team gets a bonus when customers upgrade.", "compensation"],
+    ["Customers get a referral bonus, and so does every rep who closes one.", "compensation"],
+    ["Dana's bonus depends on how many customers get a referral bonus.", "compensation"],
+    ["Users get an annual bonus.", "compensation"],
   ];
   it.each(cases)("%s", (s, want) => expect(ruleOf(s)).toBe(want));
+
+  it("keeps a customer bonus worded \"a … bonus\" in team work, and still cuts an employee's beside it", () => {
+    const { out, passages } = screen("Kim: We give creators a sign-up bonus of 50 credits. Teams on annual plans get a loyalty bonus.\n\nLee: There's an employee referral bonus of $2k.\n\nKim: The referral page goes live Monday.");
+    expect(out).toBe("Kim: We give creators a sign-up bonus of 50 credits. Teams on annual plans get a loyalty bonus.\n\nKim: The referral page goes live Monday.");
+    expect(passages.map((p) => p.rule)).toEqual(["compensation"]);
+  });
 
   it("keeps a bonus campaign line in team work, and still cuts a pay line beside it", () => {
     const { out, passages } = screen("Kim: Our launch bonus campaign for creators runs in January.\n\nLee: If the rollout slips, I lose my $5k bonus.\n\nKim: The campaign page goes live Monday.");

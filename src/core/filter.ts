@@ -141,6 +141,36 @@ const HEALTH_ASIDES: string[] = [
   "sick (today|tomorrow|yesterday|this week|all week|since \\w+)",
 ];
 
+/**
+ * PRIV-2 (end-to-end test 2026-11-27): who a product gives a bonus to: its customers, users, creators or subscribers,
+ * and teams or accounts on a plan ("Teams on annual plans"). Never a team on its own ("the sales team"), staff or a hire.
+ */
+const BONUS_TAKERS =
+  "(?:(?:new|early|existing|returning|paying|first-time|all|every|each|our|their)\\s+)*(?:customers?|clients?|creators?|users?|subscribers?|(?<!team\\s)members?|buyers?|shoppers?|players?|referrers?|readers?|viewers?|listeners?|fans?|adopters?|sign-?ups?|advertisers?|sellers?|merchants?|hosts?|affiliates?|learners?|students?)" +
+  "|(?:teams?|accounts?|workspaces?|customers?|users?|orgs?|organi[sz]ations?|companies|subscribers?)\\s+on\\s+(?:(?:a|an|the|our|their|any)\\s+)?(?:[\\w-]+\\s+){0,2}(?:plans?|tiers?|subscriptions?)";
+/** Words that make a bonus pay wherever they are in its sentence: an employee, staff, a hire, a salary, payroll. */
+const PAY_PEOPLE =
+  "employees?|employee's|staff\\w*|hires?|hired|hiring|salar(?:y|ies)|payroll|wages?|commissions?|reps?|recruit\\w*|colleagues?|co-?workers?|teammates?|team members?|contractors?|interns?|headcount|signing|sign-on|comp|compensation";
+/** A bonus that is someone's pay by whose it is ("my", "Dana's") or by its kind ("a signing bonus", "a Q4 bonus"). */
+const PAY_BONUS = "my|her|his|your|their|[\\w-]+'s|signing|sign-on|retention|performance|annual|year-end|end-of-year|holiday|spot|cash|target|relocation|quarterly|q[1-4]|discretionary|incentive|employee|staff|hiring";
+/** "bonus" itself, unless the word or two before it make it pay, or its sentence has one of `PAY_PEOPLE`. */
+const BONUS = `(?<!\\b(?:${PAY_BONUS})\\s+(?:[\\w-]+\\s+)?)(?<!\\b(?:${PAY_PEOPLE})\\b[^.!?\\n]*)bonus(?:es)?\\b(?![^.!?\\n]*\\b(?:${PAY_PEOPLE})\\b)`;
+/** What a product's bonus is paid in: credits, seats, storage, points, free months, credit in money. */
+const BONUS_UNITS =
+  "(?:(?:free|extra|additional|bonus)\\s+)?(?:credits?|seats?|points?|tokens?|coins?|gems?|stars?|miles?|licen[cs]es?|projects?|uploads?|downloads?|exports?|renders?|generations?|messages?|storage|[kmgt]b|gigs?|gigabytes?|terabytes?)\\b" +
+  "|free\\s+(?:months?|weeks?|days?)\\b|(?:months?|weeks?|days?)\\s+free\\b|[$€£]\\s?\\d[\\d,.]*\\s?(?:in\\s+|of\\s+|account\\s+|store\\s+)?credits?\\b";
+/**
+ * PRIV-2 (end-to-end test 2026-11-27): a bonus a product gives, worded "a … bonus": given to its customers ("We give
+ * creators a sign-up bonus", "Teams on annual plans get a loyalty bonus"), or paid in the product's terms ("a referral
+ * bonus of one free month", "a bonus of 50 credits"). Never with an employee, staff, a hire, a salary or payroll in its
+ * sentence ("an employee referral bonus of $2k"), and never someone's own or a pay kind ("my bonus", "a signing bonus").
+ */
+const PRODUCT_BONUS: string[] = [
+  `\\b(?:give|gives|giving|gave|given|offer|offers|offering|offered|award|awards|awarded|awarding|grant|grants|granted|granting)\\s+(?:${BONUS_TAKERS})\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}`,
+  `\\b(?:${BONUS_TAKERS})(?:\\s+(?:who|that)(?:\\s+[\\w-]+){1,4}?)?(?:\\s+(?:also|each|all|now|then|still|already|always|automatically|instantly|will|can|could|would|should|may|might|do|does))*\\s+(?:get|gets|getting|got|earn|earns|earned|earning|receive|receives|received|receiving|unlock|unlocks|unlocked|claim|claims|claimed|qualify for|qualifies for|qualified for)\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}`,
+  `(?=bonus)${BONUS}\\s+(?:of|worth)\\s+(?:(?:up to|another|an extra)\\s+)?(?:\\d[\\d,.]*\\s*|(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|a few|several)\\s+)?(?:${BONUS_UNITS})`,
+];
+
 /** The fixed topic rules, with plain-language labels and examples for `pmx explain`. */
 export const TOPIC_RULES: Record<Topic, TopicRule> = {
   performance: {
@@ -176,6 +206,9 @@ export const TOPIC_RULES: Record<Topic, TopicRule> = {
       // accounts closed" or "for the team".
       "\\bbonus(es)?\\s+(campaigns?|features?|content|credits?|points?|offers?|promos?|codes?|gifts?|rewards?|items?|tracks?|episodes?|chapters?|videos?|downloads?|materials?|packs?|templates?|assets?|seats?|storage|minutes|levels?|stages?|rounds?|questions?|sections?)\\b",
       "\\bbonus(es)?\\s+for\\s+(new\\s+|early\\s+|our\\s+|their\\s+)?(customers?|creators?|users?|subscribers?|buyers?|shoppers?|players?|sign-?ups?|readers?|viewers?|fans?)\\b",
+      // "We give creators a sign-up bonus of 50 credits", "Teams on annual plans get a loyalty bonus" (`PRODUCT_BONUS`).
+      // "an employee referral bonus of $2k" and "the referral bonus for staff" stay pay.
+      ...PRODUCT_BONUS,
     ],
   },
   health: {
@@ -867,7 +900,8 @@ const aboutThem = (text: string) => ONE_PERSON.test(text) || (THEY.test(text) &&
  * Judges one turn (F1, 2026-11-25). Only the sentences that match are cut, and the rest of the turn is used.
  * When the rule is about a person, the sentence before and after go too, and the ones after that while they
  * still talk about that person; after hiring plan talk, a next sentence that spells out who it would hire. The
- * whole turn goes, as before, when that would be more than half of it (by sentences or by length), when its
+ * whole turn goes, as before, when that would be more than half of it (by sentences or by length; PRIV-2: unless
+ * every cut in it is a health aside, which takes the whole turn only when nothing else is left), when its
  * speaker label matches, or when it names someone on the do-not-read list. D2-3: `near` is what's around the turn, for
  * words that count only in context: the sentence before it, the topics the whole text has, and the confidential names.
  */
@@ -885,11 +919,15 @@ function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules
   const personal = hits.some(([t, m]) => aboutAPerson(t, matches(t, m, seg)));
   const s = sentences(body);
   const cut = s.map(() => false);
+  // PRIV-2: every cut in the turn is a health aside, which skips the more-than-half rule below.
+  let asidesOnly = true;
   s.forEach((x, i) => {
     for (const [topic, m] of hits) {
       const found = matches(topic, m, x.text, i > 0 ? s[i - 1]!.text : near.before);
       if (!found.length) continue;
       cut[i] = true;
+      const aside = asideOnly(topic, x.text, found);
+      if (!aside) asidesOnly = false;
       if (!aboutAPerson(topic, found)) {
         // A plan's details: "I want to ask for headcount. Two backend engineers in Q1." F5: a raise's figures: "We're
         // raising a Series B. Targeting $40M."
@@ -899,7 +937,7 @@ function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules
       }
       // PRIV-2: a health aside ("I'm out Thursday (doctor).") goes with the sentences after it still about that person
       // ("She'll be back Monday."), never the sentence before it or the work talk after it.
-      if (asideOnly(topic, x.text, found)) {
+      if (aside) {
         for (let j = i + 1; j < s.length && aboutThem(s[j]!.text); j++) cut[j] = true;
         continue;
       }
@@ -910,7 +948,11 @@ function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules
   });
   const n = cut.filter(Boolean).length;
   const size = (c: boolean) => s.reduce((a, x, i) => a + (cut[i] === c ? x.text.length : 0), 0);
-  if (listed || !n || n * 2 > s.length || size(true) > size(false) || hits.some(([t, m]) => matches(t, m, label).length)) return { rule, kept: null, personal };
+  // PRIV-2 (end-to-end test 2026-11-27): an aside's sentences say only that someone is away, so however long they are,
+  // the rest of the turn is work talk and stays ("I'll mock a client switcher and send it over. [HELD] Thursday the
+  // third at the latest."). Only when nothing else is left does the whole turn go.
+  const most = asidesOnly ? n === s.length : n * 2 > s.length || size(true) > size(false);
+  if (listed || !n || most || hits.some(([t, m]) => matches(t, m, label).length)) return { rule, kept: null, personal };
   let kept = lead + label;
   for (let i = 0; i < s.length; i++) {
     if (!cut[i]) {

@@ -108,6 +108,16 @@ export async function readOutbox(): Promise<Outbox> {
   return (await readJson<Outbox>(files.outbox())) ?? { v: 1, ops: [] };
 }
 
+/**
+ * RUN-5: the PENDING-… identifiers of the issues still queued for Linear on this Mac (a `create-task` or `lodge-meeting`
+ * the sync hasn't applied), or null when this Mac has no outbox to tell by: it never queued anything through the relay.
+ */
+export async function queuedIdentifiers(): Promise<Set<string> | null> {
+  const o = await readJson<Outbox>(files.outbox());
+  if (!o || !Array.isArray(o.ops)) return null;
+  return new Set(o.ops.filter((op) => op.kind === "create-task" || op.kind === "lodge-meeting").map((op) => pendingIdentifier(op.id)));
+}
+
 async function saveOutbox(o: Outbox): Promise<void> {
   await privateDir(relayDir());
   await writeJson(files.outbox(), o, 0o600);
@@ -513,8 +523,8 @@ export async function checkRelay(team: TeamConfig, now = new Date()): Promise<st
     for (const k of ["body", "line", "comment", "description"]) if (typeof o[k] === "string") o[k] = swap(o[k]);
     if (Array.isArray(o.lines)) o.lines = o.lines.map(swap);
   }
-  await saveOutbox({ v: 1, ops: remaining });
-  await rm(files.results(), { force: true });
+  // The identifiers Claude reported are recorded before their ops leave the outbox, so a share pass running meanwhile
+  // finds a staged task's PENDING-… in one or the other, and never takes it for one that left the queue (RUN-5).
   const made = outbox.ops.filter((op) => op.kind === "create-task" || op.kind === "lodge-meeting").map((op) => [op, byId.get(op.id)] as const).filter(([, r]) => r?.ok && r.identifier);
   if (made.length) {
     const resolved = await readResolved();
@@ -523,6 +533,8 @@ export async function checkRelay(team: TeamConfig, now = new Date()): Promise<st
     for (const [op, r] of made) resolved[pendingIdentifier(op.id)] = { identifier: r!.identifier!, at: now.toISOString() };
     await writeJson(files.resolved(), resolved, 0o600);
   }
+  await saveOutbox({ v: 1, ops: remaining });
+  await rm(files.results(), { force: true });
   const refused = remaining.filter((op) => (op.failures ?? 0) > 0).length;
   out.unshift(`Applied ${applied} change(s) in Linear; ${remaining.length} still waiting${refused ? ` (Linear refused ${refused}; \`pmx linear outbox\` lists them)` : ""}.`);
 

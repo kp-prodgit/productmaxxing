@@ -7,9 +7,9 @@ import { macKeychain } from "../core/keychain.js";
 import { markTaskRun } from "../core/state.js";
 import { linearAccess } from "../linear/access.js";
 import { linearLogin, linearLogout, readGrant } from "../linear/oauth.js";
-import { removePackNow, shareEvidence } from "../run/share.js";
+import { removePackNow, shareEvidence, unstageShares } from "../run/share.js";
 import { giveBackTodos } from "../todo/move.js";
-import { checkRelay, dropOps, formatOutbox, opWords, readOutbox, readSnapshot, relayPrompt, relayTracker } from "../tracker/relay.js";
+import { checkRelay, dropOps, formatOutbox, opWords, pendingIdentifier, readOutbox, readSnapshot, relayPrompt, relayTracker } from "../tracker/relay.js";
 import { markTask, tendMarks } from "../lease/marks.js";
 import type { Command } from "./index.js";
 import { services } from "../core/services.js";
@@ -66,6 +66,8 @@ export const linearCommands: Command[] = [
         const ids = a.positionals.slice(2);
         if (!ids.length) throw new Error("Say which: pmx linear outbox drop <ID>, from `pmx linear outbox`.");
         const r = await dropOps(ids);
+        // RUN-5: a dropped task never gets an identifier, so the share staged to wait for one goes too.
+        await unstageShares(r.dropped.filter((op) => op.kind === "create-task").map((op) => pendingIdentifier(op.id)));
         for (const op of r.dropped) console.log(`- dropped ${opWords(op)}`);
         for (const m of r.missing) console.log(`· no waiting change ${m}`);
         if (r.dropped.length) console.log("Nothing of these reaches Linear.");

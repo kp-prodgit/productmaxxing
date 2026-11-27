@@ -10,7 +10,7 @@ import { privateNames } from "../run/run.js";
 import { dropProposals, readProposals, requeueProposals, type Proposal } from "../synth/proposals.js";
 import { keepTodo } from "../todo/todo.js";
 import { cut, deadlineIn, followUpItems, norm, type FollowUpItem } from "./draft-reader.js";
-import { askText, askWhy, followUpKind, recordRequeued, type Requeued } from "./followups.js";
+import { askTodo, followUpKind, inWords, recordRequeued, type Requeued } from "./followups.js";
 
 /**
  * D2-8 (FOLLOW-1, UPGRADE-1): the follow-ups an older PMX left waiting for approval, read again by today's rules.
@@ -22,10 +22,12 @@ import { askText, askWhy, followUpKind, recordRequeued, type Requeued } from "./
  * team repo, by the reader accepting uses now:
  *
  * - a question one person can answer becomes the PM's "Ask <role>: …" to-do, due when the draft says, and leaves Needs you;
- * - a call marked PM decides becomes a decision to-do, and leaves too;
+ * - a call marked PM decides becomes a decision to-do, and leaves too; one worded as something to do ("Check the scope …")
+ *   becomes a to-do as written, and the notice counts it apart, as a thing to do;
  * - work stays waiting, with today's title (the whole question) and the kind of work the question asks for;
  * - an item that is no question, no call and nothing someone can do ("Written plan owed.") is no follow-up at all: it is
- *   dropped, its receipt says why, and so does the ledger. A short action ("Send the plan.") stays as it is.
+ *   dropped, and the ledger on this Mac says why, wherever the run behind its task was. A short action ("Send the
+ *   plan.") stays as it is.
  *
  * A follow-up whose draft can't be read any more, or whose item the draft no longer has, stays as it is. Each change is
  * recorded with its draft in the follow-ups ledger, and the to-do says where it came from.
@@ -35,9 +37,10 @@ import { askText, askWhy, followUpKind, recordRequeued, type Requeued } from "./
 export const olderFollowUp = (p: Proposal) => !!p.follows && p.follows.where !== "done" && p.checked === undefined;
 
 export interface RequeueResult {
-  /** Now to-dos: questions to ask, and calls that are the PM's. */
+  /** Now to-dos: questions to ask, calls that are the PM's, and things to do as written ("Check the scope …"). */
   asks: Requeued[];
   decisions: Requeued[];
+  actions: Requeued[];
   /** Still work, with today's title or kind. */
   retitled: Requeued[];
   /** No follow-up by today's rules, and nothing someone can do: dropped. */
@@ -69,11 +72,14 @@ function itemOf(p: Proposal, items: FollowUpItem[]): FollowUpItem | null {
   }) ?? items.find((i) => i.junk && title.length >= 8 && norm(i.text).startsWith(title)) ?? null;
 }
 
-/** What the receipt says of a follow-up the requeue dropped (D2-8). */
-const NOT_A_FOLLOW_UP = "PMX: no question, call or task by today's rules";
+/**
+ * Why the requeue dropped a follow-up (D2-8), in the ledger on this Mac, and in its run's receipt too when this Mac has
+ * one that lists it.
+ */
+export const NOT_A_FOLLOW_UP = "PMX: no question, call or task by today's rules";
 
 export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
-  const out: RequeueResult = { asks: [], decisions: [], retitled: [], dropped: [], unchanged: 0, unreadable: 0 };
+  const out: RequeueResult = { asks: [], decisions: [], actions: [], retitled: [], dropped: [], unchanged: 0, unreadable: 0 };
   const older = (await readProposals()).filter(olderFollowUp);
   if (!older.length) return out;
   const now = ctx.now();
@@ -87,7 +93,7 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
   const retitle: { id: string; title: string; category: string }[] = [];
   const drop: string[] = [];
   /** What each one becomes, decided before anything changes. */
-  const plans = new Map<string, { p: Proposal; as: "ask" | "decision"; text: string; due: string | null; why: string; key: string } | { p: Proposal; as: "work"; title: string; category: string }>();
+  const plans = new Map<string, { p: Proposal; as: "ask" | "decision" | "action"; text: string; due: string | null; why: string; key: string } | { p: Proposal; as: "work"; title: string; category: string }>();
   for (const p of older) {
     const f = p.follows!;
     const path = f.path;
@@ -104,11 +110,11 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
       continue;
     }
     if (d) {
-      plans.set(p.id, { p, as: "decision", text: d.text, due: d.due, why: d.why, key: d.key });
+      plans.set(p.id, { p, as: d.action ? "action" : "decision", text: d.text, due: d.due, why: d.why, key: d.key });
       take.push(p.id);
     } else if (q?.ask) {
-      const role = q.ask.role && !guard.problem(q.ask.role) ? q.ask.role : null;
-      plans.set(p.id, { p, as: "ask", text: askText(role, q.title, f.identifier, q.about), due: deadlineIn([q.question, ...q.rest].join(" "), at), why: askWhy(q, f.identifier), key: q.key });
+      const { text, why } = askTodo(q, f.identifier, (s) => !guard.problem(s));
+      plans.set(p.id, { p, as: "ask", text, due: deadlineIn([q.question, ...q.rest].join(" "), at), why, key: q.key });
       take.push(p.id);
     } else if (q) {
       // Still work: the whole question as its title, and the kind of work it asks for. The task's own kind is the
@@ -144,7 +150,7 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
       receiptId: p.receipt, sources: p.sources,
     }, now);
     const r: Requeued = { at: now.toISOString(), proposal: p.id, was: p.title, as: plan.as, now: t.text, todo: t.id };
-    (plan.as === "ask" ? out.asks : out.decisions).push(r);
+    (plan.as === "ask" ? out.asks : plan.as === "action" ? out.actions : out.decisions).push(r);
     record(p, r, plan.key);
   }
   for (const id of retitled) {
@@ -155,10 +161,12 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
     record(plan.p, r);
   }
   out.unchanged += retitle.length - retitled.length;
-  // No follow-up at all: dropped like one the PM drops, with why in its receipt. One approved meanwhile is gone already.
+  // No follow-up at all: dropped like one the PM drops. One approved meanwhile is gone already. Why is in the ledger,
+  // which this Mac always has: the receipt `dropProposals` marks may be on the Mac of the PM who suggested the original
+  // task, and never lists a follow-up an accept made, so it can't be the only record.
   const { dropped } = drop.length ? await dropProposals(drop, now, NOT_A_FOLLOW_UP) : { dropped: [] as Proposal[] };
   for (const p of dropped) {
-    const r: Requeued = { at: now.toISOString(), proposal: p.id, was: p.title, as: "dropped", now: "" };
+    const r: Requeued = { at: now.toISOString(), proposal: p.id, was: p.title, as: "dropped", now: "", why: NOT_A_FOLLOW_UP };
     out.dropped.push(r);
     record(p, r);
   }
@@ -169,13 +177,14 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
 /**
- * What the PM is told, once: "PMX turned 12 waiting follow-ups into to-dos (questions one person can answer)." Null when
- * nothing changed.
+ * What the PM is told, once: "PMX turned 12 waiting follow-ups into to-dos (questions one person can answer)." With more
+ * than one kind, each counted apart, a call worded as something to do as a thing to do: "(2 questions one person can
+ * answer, 2 calls that are yours and 1 thing to do)". Null when nothing changed.
  */
 export function requeueText(r: RequeueResult): string | null {
-  const todos = r.asks.length + r.decisions.length;
-  const what = r.asks.length && r.decisions.length ? "questions one person can answer, and calls that are yours"
-    : r.asks.length ? "questions one person can answer" : "calls that are yours";
+  const kinds = ([[r.asks.length, "question one person can answer", "questions one person can answer"], [r.decisions.length, "call that is yours", "calls that are yours"], [r.actions.length, "thing to do", "things to do"]] as const).filter(([k]) => k);
+  const todos = r.asks.length + r.decisions.length + r.actions.length;
+  const what = kinds.length === 1 ? kinds[0]![2] : inWords(kinds.map(([k, one, many]) => n(k, one, many)));
   const k = r.retitled.length;
   const x = r.dropped.length;
   return [

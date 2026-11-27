@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { readJson } from "../src/core/fsutil.js";
 import { paths } from "../src/core/paths.js";
+import { listReceipts } from "../src/core/receipt.js";
 import { services } from "../src/core/services.js";
 import { loadState, updateState } from "../src/core/state.js";
 import type { Task } from "../src/core/types.js";
@@ -13,7 +14,7 @@ import { AUTO_STEPS, REQUEUE_ASKED, upgradeOnStart } from "../src/core/upgrade.j
 import { currentVersion } from "../src/core/version.js";
 import { fakeLaunchd } from "../src/core/launchd.js";
 import { followUpsFile, followUpsOnAccept } from "../src/review/followups.js";
-import { requeueStep } from "../src/review/requeue.js";
+import { NOT_A_FOLLOW_UP, requeueStep, requeueText, type RequeueResult } from "../src/review/requeue.js";
 import { readProposals, stageProposals, type Proposal } from "../src/synth/proposals.js";
 import { loadTodos } from "../src/todo/todo.js";
 import { memoryTracker } from "../src/tracker/types.js";
@@ -157,7 +158,8 @@ describe("the waiting follow-ups an older PMX made, read again by today's rules 
       staged("Send the plan."),
     ]);
     await updateState((s) => { s.followUpRequeue = { due: true, at: null }; });
-    expect(await requeueStep(ctx)).toBe("PMX turned 5 waiting follow-ups into to-dos (questions one person can answer, and calls that are yours). One that needs work still waits for your approval, with a clearer title. It dropped \"Written plan owed.\", which is no question, call or task.");
+    // "Check the scope …" is a thing to do, counted apart from the calls that are the PM's (2026-11-27).
+    expect(await requeueStep(ctx)).toBe("PMX turned 5 waiting follow-ups into to-dos (2 questions one person can answer, 2 calls that are yours and 1 thing to do). One that needs work still waits for your approval, with a clearer title. It dropped \"Written plan owed.\", which is no question, call or task.");
     expect((await loadTodos()).items.map((t) => t.text)).toEqual([
       "Ask the customer: How many refreshes per team per year does the customer expect? (PMX-21)",
       "Decide which approval gate applies: the $50k vendor threshold, the $20k-per-team self-approval limit, or both (PMX-21)",
@@ -169,6 +171,34 @@ describe("the waiting follow-ups an older PMX made, read again by today's rules 
     expect((await readProposals()).map((p) => p.title)).toEqual(["Separation of duties definition: same user only, or also same role or team?", "Send the plan."]);
     const ledger = await readJson<{ drafts: Record<string, { requeued: { was: string; as: string; now: string }[] }> }>(followUpsFile());
     expect(ledger!.drafts[`PMX-21 ${PATH}`]!.requeued.filter((r) => r.as === "dropped").map((r) => r.was)).toEqual(["Written plan owed."]);
+  });
+
+  it("a dropped follow-up's reason is in the ledger on this Mac, though the run behind its task is on another PM's Mac (2026-11-27)", async () => {
+    const { ctx } = await mac(LOWS);
+    await stageProposals([staged("Written plan owed."), staged("Does the beta scope meet the compliance bar?")]);
+    // The synthesis run that suggested PMX-21 is on another PM's Mac: this Mac has no receipt to say why.
+    expect(await listReceipts()).toEqual([]);
+    await updateState((s) => { s.followUpRequeue = { due: true, at: null }; });
+    // The notice still says what it dropped.
+    expect(await requeueStep(ctx)).toBe("PMX turned 1 waiting follow-up into to-dos (things to do). It dropped \"Written plan owed.\", which is no question, call or task.");
+    const ledger = await readJson<{ drafts: Record<string, { requeued: { was: string; as: string; now: string; why?: string }[] }> }>(followUpsFile());
+    expect(ledger!.drafts[`PMX-21 ${PATH}`]!.requeued.map((r) => [r.as, r.was, r.now, r.why ?? null])).toEqual([
+      // A call worded as something to do is recorded as one.
+      ["action", "Does the beta scope meet the compliance bar?", "Check the scope against the list in writing with Globex's Legal & Compliance lead (PMX-21)", null],
+      ["dropped", "Written plan owed.", "", "PMX: no question, call or task by today's rules"],
+    ]);
+    expect(NOT_A_FOLLOW_UP).toBe("PMX: no question, call or task by today's rules");
+  });
+
+  it("the notice counts each kind apart when there is more than one, a thing to do apart from the calls (2026-11-27)", () => {
+    const none: RequeueResult = { asks: [], decisions: [], actions: [], retitled: [], dropped: [], unchanged: 0, unreadable: 0 };
+    const r = (as: "ask" | "decision" | "action") => ({ at: NOW.toISOString(), proposal: "p1", was: "x", as, now: "y" });
+    expect(requeueText({ ...none, decisions: [r("decision"), r("decision")], actions: [r("action")] }))
+      .toBe("PMX turned 3 waiting follow-ups into to-dos (2 calls that are yours and 1 thing to do).");
+    expect(requeueText({ ...none, asks: [r("ask")], decisions: [r("decision")] }))
+      .toBe("PMX turned 2 waiting follow-ups into to-dos (1 question one person can answer and 1 call that is yours).");
+    // One kind: as before.
+    expect(requeueText({ ...none, decisions: [r("decision"), r("decision")] })).toBe("PMX turned 2 waiting follow-ups into to-dos (calls that are yours).");
   });
 
   it("runs once: the update asks for it, the next background run does it and records what it did, and nothing runs it again", async () => {

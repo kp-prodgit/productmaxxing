@@ -150,14 +150,17 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 /**
  * How many questions the draft leaves open or blocking, and how many calls it marks "PM decides", read by the reader an
  * accept uses (FOLLOW-1), so the two never disagree: a call is a to-do to make, a question marked PM decides counts once,
- * as a question. Counted before the caps and the tracker rules decide what an accept makes.
+ * as a question. A call worded as something to do ("Check the scope …") is a thing to do (`actions`), counted apart, as
+ * the accept counts it. Counted before the caps and the tracker rules decide what an accept makes.
  */
-export function draftCounts(markdown: string): { open: number; blocking: number; pmDecides: number } {
+export function draftCounts(markdown: string): { open: number; blocking: number; pmDecides: number; actions: number } {
   const { decisions, questions } = readFollowUps(markdown, "", new Date());
+  const actions = decisions.filter((d) => d.action).length;
   return {
     open: questions.filter((q) => q.where === "open").length,
     blocking: questions.filter((q) => q.where === "blocking").length,
-    pmDecides: decisions.length,
+    pmDecides: decisions.length - actions,
+    actions,
   };
 }
 
@@ -170,11 +173,12 @@ export function draftComment(i: DraftCommentInput): string {
   const own = doc?.title ? plain(doc.title).replace(/^[A-Z]{1,6}-\d+:\s*/, "") : "";
   const title = own && safe(own, names, rules) && own.length <= 120 ? own : i.title;
   const head = `${noun} ready for review: ${title.replace(/[.\s]+$/, "")}.`;
-  const counts = i.markdown ? draftCounts(i.markdown) : { open: 0, blocking: 0, pmDecides: 0 };
+  const counts = i.markdown ? draftCounts(i.markdown) : { open: 0, blocking: 0, pmDecides: 0, actions: 0 };
   const asks = [
     counts.blocking ? plural(counts.blocking, "blocking question") : null,
     counts.open ? plural(counts.open, "open question") : null,
     counts.pmDecides ? `${plural(counts.pmDecides, "call")} marked PM decides` : null,
+    counts.actions ? plural(counts.actions, "thing to do", "things to do") : null,
   ].filter(Boolean);
   const leaves = asks.length ? `It leaves ${asks.join(", ").replace(/, ([^,]*)$/, " and $1")}.` : "";
   const where = /^https?:\/\//.test(i.prUrl)

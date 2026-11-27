@@ -62,6 +62,8 @@ export const teamCommands: Command[] = [
       const cut = (n?: number) => (n ? ` (${n} ${n === 1 ? "sentence" : "sentences"} left out)` : "");
       for (const p of r.posted) console.log(`+ ${p.identifier} ${p.title}${cut(p.leftOut)}`);
       for (const p of r.staged) console.log(`? [${p.id}] ${p.title}${cut(p.leftOut)}`);
+      // INPUT-2: an open task heard again took the newer facts, in place of "heard again".
+      for (const u of r.updated ?? []) console.log(`~ ${updatedLine(u)}`);
       for (const s of r.skipped) console.log(`· skipped ${s}`);
       const m = r.meetings;
       console.log(`Meetings since ${since.toDateString()}: ${m.processed.length} processed now (recorded in your PMX repo, not Linear), ${m.already} already processed by the team, ${m.busy} being processed on another machine.`);
@@ -253,9 +255,21 @@ export const synthStep: TickStep = async (ctx: Ctx) => {
   const slackDue = !s.lastSynthAt || ctx.now().getTime() - new Date(s.lastSynthAt).getTime() >= 6 * 3600000;
   const w = synthWindow(s.lastSynthAt, ctx.now());
   const r = await synthesize(ctx, await services(ctx), { ...w, skipIfNothingNew: !slackDue });
-  if (!r.meetings.processed.length && !r.staged.length) return null;
-  return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} new task(s) waiting for your approval (pmx proposals)${r.heldOver ? `; ${heldOverLine(r.heldOver)!.replace(/\.$/, "")}` : ""}${(r.waiting ?? []).map((k) => `; ${kindLine(k)} (pmx jobs add ${k.kind})`).join("")}`;
+  if (!r.meetings.processed.length && !r.staged.length && !r.updated?.length) return null;
+  return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} new task(s) waiting for your approval (pmx proposals)${(r.updated ?? []).map((u) => `; ${updatedLine(u, false)}`).join("")}${r.heldOver ? `; ${heldOverLine(r.heldOver)!.replace(/\.$/, "")}` : ""}${(r.waiting ?? []).map((k) => `; ${kindLine(k)} (pmx jobs add ${k.kind})`).join("")}`;
 };
+
+/**
+ * INPUT-2: "updated PMX-46 with newer facts from 2 sources: GPU cost is now 22% over budget (was 18%).", or for a task
+ * an agent is drafting or that's in review, "commented on PMX-46 … (its draft is in review, so its description stays)".
+ * Through the Claude relay Linear has it at the next sync. `changes`: with what changed, as the comment says it.
+ */
+export function updatedLine(u: NonNullable<Awaited<ReturnType<typeof synthesize>>["updated"]>[number], changes = true): string {
+  // "with a newer figure from a new source" when only a figure from the run's other work changed it (matchFacts).
+  const what = u.figure ? `with a newer figure from ${u.sources === 1 ? "a new source" : `${u.sources} new sources`}` : `with newer facts from ${u.sources} ${u.sources === 1 ? "source" : "sources"}`;
+  const head = u.how === "description" ? `updated ${u.identifier} ${what}` : `commented on ${u.identifier} ${what} (${u.why}, so its description stays)`;
+  return `${head}${u.queued ? ", in Linear at the next Claude sync" : ""}${changes && u.changes.length ? `: ${u.changes.join(" ")}` : ""}`;
+}
 
 /** RUN-5: approved tasks' quotes shared with the team, and the quotes of finished tasks removed. */
 export const evidenceTickStep: TickStep = (ctx) => evidenceStep(ctx, () => services(ctx));

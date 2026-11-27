@@ -19,6 +19,16 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.40.0", date: "2026-11-27", headline: "Linear tasks take newer figures, to-dos from your emails, and clearer follow-ups",
+    items: [
+      { what: "When a later call or thread gives a newer figure ('22% over budget' after '18% over plan'), PMX updates the open task in Linear with a short comment saying what changed. A draft in review gets the comment only; a done task is left alone.", try: "pmx explain <receiptId>" },
+      { what: "Promises you make by email ('I'll send the bridge letter by Thursday') become to-dos, and a later reply in the same thread ticks them off or moves the date.", try: "pmx todo" },
+      { what: "Follow-ups read as you'd write them: 'Decide which …', 'Ask the customer: …?', a plain to-do for something to do. Follow-ups waiting from before 0.38.0 are read once more by today's rules." },
+      { what: "A task you take back keeps its kind, size, summary, sources and quotes, and dropping a queued task gives back the to-do it came from." },
+      { what: "The privacy filter cuts less around a short health aside or a pay line, keeps a customer bonus and a brand's name, and still holds a person's pay and health." },
+    ],
+  },
+  {
     version: "0.39.0", date: "2026-11-27", headline: "Names stay out of Linear, accepts reach your team, and clearer follow-ups",
     items: [
       { what: "A to-do's own words are checked before they reach Linear, whether you move it to the team or send it as your own: 'Ask <name>…' is held with the reason. Reword it and keep its meetings and due date.", try: "pmx todo edit <id> \"<new words>\"" },

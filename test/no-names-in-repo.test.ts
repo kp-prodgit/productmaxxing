@@ -111,7 +111,7 @@ describe("a task's evidence pack names no one (R5)", () => {
     expect(text).toContain("[PERSON-2, our company]: How long does that take");
     expect(text).toContain("[PERSON-3, Globex] in Globex legal has the security questionnaire; ask [PERSON-3, Globex] for it, or write to [PERSON-3, Globex].");
     // The company stays, and the pack says which outside companies its sources are with.
-    expect(pack).toMatchObject({ nameSwap: 2, companies: ["globex"] });
+    expect(pack).toMatchObject({ nameSwap: 3, companies: ["globex"] });
 
     // On this Mac the agent is shown the same, so a draft written here names no one either.
     const task = [...a.tracker.tasks.values()][0]!;
@@ -178,10 +178,12 @@ describe("the name swap (R5)", () => {
   });
 });
 
-describe("packs from the first name swap (R5a)", () => {
-  it("are swapped again: a pack marked nameSwap 1 doesn't count as swapped", () => {
+describe("packs from an earlier name swap (R5a, R5)", () => {
+  it("are swapped again: a pack marked nameSwap 1 or 2 doesn't count as swapped", () => {
+    expect(NAME_SWAP).toBe(3);
     expect(swappedPack({ nameSwap: 1 })).toBe(false);
-    expect(swappedPack({ nameSwap: 2 })).toBe(true);
+    expect(swappedPack({ nameSwap: 2 })).toBe(false);
+    expect(swappedPack({ nameSwap: 3 })).toBe(true);
     expect(swappedPack({})).toBe(false);
   });
 });
@@ -218,7 +220,7 @@ describe("packs shared before the name swap (R5)", () => {
 
     const pack = await packIn(a.origin, task.identifier);
     expect(JSON.stringify(pack)).not.toMatch(NAMES);
-    expect(pack).toMatchObject({ nameSwap: 2, companies: ["globex"], at: old.at });
+    expect(pack).toMatchObject({ nameSwap: 3, companies: ["globex"], at: old.at });
     expect(passagesOf(pack)).toContain("[PERSON-1, Globex]: Every Friday we export a CSV");
     // Removed and written afresh: one commit, so the old one with the names is in no ref's history.
     expect(await git(a.origin, "rev-list", "--count", `refs/pmx/evidence/${task.identifier}`)).toBe("1");
@@ -251,7 +253,7 @@ describe("packs shared before the name swap (R5)", () => {
     expect(r.rewritten).toEqual([task.identifier]);
     const pack = await packIn(a.origin, task.identifier);
     expect(JSON.stringify(pack)).not.toMatch(NAMES);
-    expect(pack.nameSwap).toBe(2);
+    expect(pack.nameSwap).toBe(3);
     expect(passagesOf(pack)).toContain("[PERSON-2] in Globex legal has the security questionnaire; ask [PERSON-2] for it.");
   });
 });
@@ -454,5 +456,55 @@ describe("what a placeholder keeps, spelled as the sources do; no brand taken fo
     expect(known.people.map((p) => p.key)).not.toEqual(expect.arrayContaining(["bluefin"]));
     expect(known.people.map((p) => p.key)).not.toEqual(expect.arrayContaining(["kestrel"]));
     expect(peopleSwap({ items }).swap(items[0]!.text)).toBe("[PERSON-1, Globex]: the Kestrel team sent the proofs. Bluefin ships the reprint.");
+  });
+});
+
+describe("a brand or an imprint is no one's name (R5, end-to-end test 2026-11-26)", () => {
+  // Saltwind is a typeface and an imprint, Juniper Lane an imprint. "Juniper Lane" reads like a full name, so before,
+  // the list "Saltwind and Juniper Lane" made both people, and "Lane's guidelines" a person's with a known Lane.
+  const call = { participants: ["Dana Ruiz <dana@hooli.example>", "Lee Park <lee.park@us.com>"], text: [
+    "Dana Ruiz: For a start, two imprints, Saltwind and Juniper Lane.",
+    "Dana Ruiz: Hooli's Saltwind face may be print-only. Saltwind's cover face is a print licence, I think.",
+    "Lee Park: Please hold off on uploading the Saltwind face; we can start Saltwind from past covers.",
+    "Dana Ruiz: Juniper Lane refreshes its guidelines in March. Ask Sam about the rest.",
+  ].join("\n") };
+
+  it("isn't swapped where the sources write it as a thing, and the people around it still are", () => {
+    const known = buildKnown({ items: [call], internalDomains: ["us.com"] });
+    expect(known.strong).not.toEqual(expect.arrayContaining(["saltwind"]));
+    expect(known.people.map((p) => p.key)).not.toEqual(expect.arrayContaining(["saltwind"]));
+    expect(known.people.map((p) => p.key)).not.toEqual(expect.arrayContaining(["juniper lane"]));
+    expect(peopleSwap({ items: [call], internalDomains: ["us.com"], known }).swap(call.text)).toBe([
+      "[PERSON-1, Hooli]: For a start, two imprints, Saltwind and Juniper Lane.",
+      "[PERSON-1, Hooli]: Hooli's Saltwind face may be print-only. Saltwind's cover face is a print licence, I think.",
+      "[PERSON-2, our company]: Please hold off on uploading the Saltwind face; we can start Saltwind from past covers.",
+      "[PERSON-1, Hooli]: Juniper Lane refreshes its guidelines in March. Ask [PERSON-3] about the rest.",
+    ].join("\n"));
+    // A list in a source of its own, right after its kind, names things too.
+    const alone = "Dana Ruiz: For a start, two imprints, Saltwind and Juniper Lane. If we have both by December 2, we can train them.";
+    expect(peopleSwap({ items: [{ participants: call.participants, text: alone }] }).swap(alone)).toBe(alone.replace("Dana Ruiz:", "[PERSON-1, Hooli]:"));
+  });
+
+  it("a known person's surname with a thing's possessive is the thing's", () => {
+    const known = buildKnown({ items: [{ participants: ["Theo Lane <theo.lane@initech.example>"], text: "" }] });
+    const text = "Two imprints, Saltwind and Juniper Lane. Juniper Lane's guidelines are a PDF. Lane's team owns the rollout.";
+    expect(peopleSwap({ items: [{ text }], known }).swap(text)).toBe("Two imprints, Saltwind and Juniper Lane. Juniper Lane's guidelines are a PDF. [PERSON-1, Initech]'s team owns the rollout.");
+  });
+});
+
+describe("a placeholder's company as the sources write it (R5, end-to-end test 2026-11-26)", () => {
+  it("matches the domain's name with spaces or \"&\" taken out, never on past a sentence's end or after \"And\"", () => {
+    // A person this Mac knows from another call, in a thread of the company's own people, as the test found it.
+    const known = buildKnown({ items: [{ participants: ["Noor Haddad <noor@hartstone.example>"], text: "" }] });
+    const text = "Sam: It's the same at Hart & Stone. Noor's creatives sketch in another tool first.";
+    expect(peopleSwap({ items: [{ participants: ["sam@us.com"], text }], internalDomains: ["us.com"], known }).swap(text))
+      .toBe("[PERSON-1, our company]: It's the same at Hart & Stone. [PERSON-2, Hart & Stone]'s creatives sketch in another tool first.");
+    // With the company's domain in the call, its name with the spaces taken out is the company's, never a person's.
+    const call = "Sam: It's the same at Hooli Works. Noor's creatives sketch in another tool first.";
+    expect(peopleSwap({ items: [{ participants: ["sam@us.com", "Noor Haddad <noor@hooliworks.example>"], text: call }], internalDomains: ["us.com"] }).swap(call))
+      .toBe("[PERSON-1, our company]: It's the same at Hooli Works. [PERSON-2, Hooli Works]'s creatives sketch in another tool first.");
+    const and = "Lee: And Globex wants it too. So does Hart & Stone.";
+    expect(peopleSwap({ items: [{ participants: ["lee@globex.example", "Dana <dana@hartstone.example>"], text: `${and}\nDana: Yes.` }] }).swap(`${and}\nDana: Yes.`))
+      .toBe("[PERSON-1, Globex]: And Globex wants it too. So does Hart & Stone.\n[PERSON-2, Hart & Stone]: Yes.");
   });
 });

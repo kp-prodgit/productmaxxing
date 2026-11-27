@@ -38,8 +38,10 @@ export interface EvidencePack {
 /**
  * R5: the name swap new packs' passages go through. A higher one later makes every Mac rewrite the packs it wrote.
  * 2 (R5a, R5c): every name this Mac knows, possessives, and company runs; packs from the first R5 swap are rewritten.
+ * 3: a brand or an imprint written as a thing ("the Saltwind face", "two imprints, Saltwind and Juniper Lane") is no
+ * one's name, and a placeholder spells its company as the sources do, never on past a sentence ("Hooli Works").
  */
-export const NAME_SWAP = 2;
+export const NAME_SWAP = 3;
 /** Whether a pack's passages went through today's name swap. */
 export const swappedPack = (p: Partial<EvidencePack> | null | undefined): boolean => typeof p?.nameSwap === "number" && p.nameSwap >= NAME_SWAP;
 

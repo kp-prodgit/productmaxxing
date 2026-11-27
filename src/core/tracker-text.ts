@@ -285,6 +285,14 @@ const ROLES = new Set(("vp svp evp avp ceo cto cfo coo cmo cpo cio ciso cro cso 
   "buyer champion sponsor contact rep ae csm consultant advisor adviser assistant coordinator specialist recruiter controller " +
   "accountant boss chair chairman chairwoman principal producer author writer agent").split(" "));
 const POSSESSORS = new Set("my our your their his her".split(" "));
+/**
+ * R5 (end-to-end test 2026-11-26): nouns for a thing a brand or a product is named for: a typeface, a kit, a plan, a
+ * line, an imprint. Capitalized words between an article or an owner and one of them ("the Saltwind face", "Hooli's
+ * Saltwind display face", "our Juniper Lane imprint") name a thing, and a list right after one names things ("two
+ * imprints, Saltwind and Juniper Lane"). As words `norm` writes them ("add on" for "add-on").
+ */
+const THING_NOUNS = new Set(("face|faces|font|fonts|typeface|typefaces|kit|kits|plan|plans|tier|tiers|line|lines|brand|brands|studio|studios|" +
+  "app|apps|add on|add ons|addon|addons|collection|collections|imprint|imprints|style|styles|guidelines|logo|logos|series|edition|editions").split("|"));
 
 /**
  * R5a: whether the one word at `i` is named as someone's role: in parentheses right after a role ("Her VP (Robin)",
@@ -372,6 +380,44 @@ function lineWords(body: string): Word[] {
   return out;
 }
 
+/**
+ * R5 (end-to-end test 2026-11-26): the capitalized words right before the thing's noun at `i` (`THING_NOUNS`, with one
+ * describing word between at most). After an article or an owner ("the Saltwind face", "Hooli's Saltwind display face",
+ * "our Juniper Lane imprint") they go in `owned`: a thing's name. One word on its own with a possessive ("Saltwind's
+ * cover face") goes in `possessed`; never the end of a longer run ("Dana Ruiz's plan" is a person's).
+ */
+function thingBefore(words: Word[], i: number, owned: Set<string>, possessed: Set<string>): void {
+  const spaced = (x: Word | undefined) => !!x && /^[ \t]+$/.test(x.sep);
+  if (!spaced(words[i])) return;
+  let k = i - 1;
+  const d = words[k];
+  if (d && !d.shaped && !d.poss && d.raw === d.raw.toLowerCase() && !FUNCTION.has(d.w) && !THING_NOUNS.has(d.w) && spaced(d)) k--;
+  const last = words[k];
+  if (!last?.shaped || soft(last.w)) return;
+  if (last.poss) {
+    const p = words[k - 1];
+    if (!(p?.shaped && !p.poss && spaced(last) && !soft(p.w))) possessed.add(last.w);
+    return;
+  }
+  let first = k;
+  while (first > 0 && k - first < 2 && spaced(words[first]) && words[first - 1]!.shaped && !words[first - 1]!.poss && !soft(words[first - 1]!.w)) first--;
+  const before = words[first - 1];
+  if (!before || !spaced(words[first]) || !(["the", "a", "an", "its"].includes(before.w) || POSSESSORS.has(before.w) || before.poss)) return;
+  for (let j = first; j <= k; j++) owned.add(words[j]!.w);
+}
+
+/**
+ * R5 (end-to-end test 2026-11-26): whether a possessive names a thing's ("'s face", "'s cover face", "'s guidelines":
+ * `THING_NOUNS`, one describing word between at most), for the text right after a word. "Saltwind's cover face" is a
+ * typeface's, so the possessive there says nothing about a person.
+ */
+export function thingFollows(rest: string): boolean {
+  const m = rest.match(/^['’]s[ \t]+(\p{Ll}[\p{L}\p{M}-]*)(?:[ \t]+(\p{Ll}[\p{L}\p{M}-]*))?/u);
+  if (!m) return false;
+  const a = norm(m[1]!), b = m[2] ? norm(m[2]) : "";
+  return THING_NOUNS.has(a) || (!FUNCTION.has(a) && THING_NOUNS.has(b));
+}
+
 /** Consecutive name-shaped words with only spaces between them and no possessive inside: "Dana Ruiz", "Brand Kit". */
 function runsOf(words: Word[]): number[][] {
   const runs: number[][] = [];
@@ -447,6 +493,10 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
   const cuedWords = new Set<string>();
   // D2-1: words the text writes after an article ("the Globex export", "a Fieldbook seat"): a thing's, not a person's.
   const articled = new Set<string>();
+  // R5: words the text writes as a thing's name before a thing's noun (`THING_NOUNS`): after an article or an owner
+  // ("the Saltwind face", "Hooli's Saltwind display face"), a company's or a product's; or one word with a possessive
+  // ("Saltwind's cover face"), which only says it's no name in a list (see below): "Avery's plan" may be Avery's.
+  const owned = new Set<string>(), possessed = new Set<string>();
   const bump = (m: Map<string, number>, w: string) => m.set(w, (m.get(w) ?? 0) + 1);
   for (const it of items) {
     for (const rawLine of (it.text ?? "").split(/\r?\n/)) {
@@ -484,6 +534,7 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
         if (alone && (orgNext || (prev && ORG_BEFORE.has(prev.w) && /^[ \t]+$/.test(x.sep)))) org.add(x.w);
         if (x.shaped && (/@[ \t]*$/.test(x.sep) || (prev && PERSON_CUES.has(prev.w) && /^[ \t]*[,:]?[ \t]*$/.test(x.sep)))) cuedWords.add(x.w);
         if (x.shaped && prev && ["the", "a", "an"].includes(prev.w) && /^[ \t]+$/.test(x.sep)) articled.add(x.w);
+        if (THING_NOUNS.has(x.w) && x.raw === x.raw.toLowerCase()) thingBefore(words, i, owned, possessed);
         // R4a: "the Globex Slides add-on": the capitalized words before a product word are a product or its company.
         if (PRODUCT_AFTER.has(x.w) && /^[ \t]+$/.test(x.sep)) {
           for (let k = i - 1, n = 0; k >= 0 && n < 3; k--, n++) {
@@ -497,6 +548,8 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
       lines.push({ body, words, cued });
     }
   }
+  // R5: "the Saltwind face" is a thing's name, unless the text also writes the word after a cue only a person gets.
+  for (const w of owned) if (!cuedWords.has(w)) org.add(w);
 
   for (const it of items) {
     for (const p of it.participants ?? []) {
@@ -534,6 +587,9 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
   const fullName = (ws: Word[]): boolean => {
     if (!given(ws[0]!) || !last(ws.at(-1)!) || ws.slice(1, -1).some((x) => !given(x) && !last(x))) return false;
     if (weak(ws[0]!) && weak(ws.at(-1)!)) return false;
+    // R5: a company's name as its domain writes it with the spaces taken out ("Hooli Works" for hooliworks.example), unless
+    // a participant or speaker has its words.
+    if (skip.has(ws.map((x) => x.w.replace(/ /g, "")).join("")) && !ws.some((x) => known.has(x.w))) return false;
     return !isCompany(norm(ws.map((x) => x.raw).join(" ")));
   };
   const putFull = (ws: Word[]) => {
@@ -563,10 +619,15 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
       const items = runs.slice(a, b + 1).map((r) => r.ws);
       // R4a: a list of three or more whose one-word items the sources never show as people ("Pagecraft, Globex Slides,
       // Mailbloom") is a list of products or companies, unless a cue only a person gets opens it ("Thanks Dana Ruiz,
-      // Sam and Avery"). Its longer items aren't full names there.
+      // Sam and Avery"). Its longer items aren't full names there. R5: so is a list right after the things it names
+      // ("two imprints, Saltwind and Juniper Lane", "three tiers: Starter, Pro and Max"), whose words are things'
+      // names throughout the sources.
       const singles = items.filter((ws) => ws.length === 1).map((ws) => ws[0]!);
-      const things = items.length >= 3 && singles.length >= 2 && !runs[a]!.cued && !singles.some((x) => known.has(x.w) || cuedWords.has(x.w));
+      const head = l.words[l.words.indexOf(items[0]![0]!) - 1];
+      const named = !!head && THING_NOUNS.has(head.w) && head.raw === head.raw.toLowerCase() && /^[ \t]*[,:][ \t]*$/.test(items[0]![0]!.sep);
+      const things = !runs[a]!.cued && !singles.some((x) => known.has(x.w) || cuedWords.has(x.w)) && (named || (items.length >= 3 && singles.length >= 2));
       if (things) for (const ws of items) if (ws.length > 1) for (const x of ws) inThings.add(x);
+      if (things && named) for (const ws of items) for (const x of ws) if (!cuedWords.has(x.w)) org.add(x.w);
       if (items.length > 1) found.push({ items, things });
       a = b + 1;
     }
@@ -626,15 +687,17 @@ export function namesIn(items: { participants?: string[]; text?: string }[], exc
   }
 
   // A list with a name in it: "Dana Ruiz and Sam", "Lee, Sam and Robin", "Sam & Lee". Its other one-word items are
-  // names, unless it's a list of things (above).
+  // names, unless it's a list of things (above), or (R5) the sources write the item as a thing's with a possessive
+  // ("Saltwind's cover face"): a list is too weak a sign to call it a person.
   for (const l of lines) {
     for (const { items, things } of lists.get(l) ?? []) {
       if (things || !items.some((ws) => seen.has(norm(ws.map((x) => x.raw).join(" "))))) continue;
-      for (const ws of items) if (ws.length === 1 && single(ws[0]!) && !isCompany(ws[0]!.w)) put(ws[0]!.raw, "text");
+      for (const ws of items) if (ws.length === 1 && single(ws[0]!) && !isCompany(ws[0]!.w) && !possessed.has(ws[0]!.w)) put(ws[0]!.raw, "text");
     }
   }
   // R5: the words the sources write as a company or a product, for a caller that reads participants itself.
   for (const w of org) o.things?.add(w);
+  for (const w of possessed) if (!seen.has(w) && !known.has(w)) o.things?.add(w);
   return [...out.values()];
 }
 
@@ -785,6 +848,37 @@ function companyAt(l: Line, i: number, k: Things): boolean {
     if (k.joined.has(key)) return true;
   }
   return first.length >= 3 && [...k.joined].some((d) => d.length > first.length && d.startsWith(first) && COMPANY_TAIL.has(d.slice(first.length)));
+}
+
+/**
+ * R5 (end-to-end test 2026-11-26): a company as the sources write it, for a placeholder (`peopleSwap`): the capitalized
+ * words in `text` whose words, joined by spaces, "&" or "and", are a domain's name ("Hooli Works", "Hart & Stone",
+ * "Hart and Stone" for hooliworks and hartstone). Read word by word as the guard reads a company (`companyAt`), so a
+ * run never goes on past a sentence's end or a possessive: "Same at Hooli Works. Dana's team…" is "Hooli Works", not
+ * "Hooli Works. Dana". Null when the text never writes it as two or more words.
+ */
+export function writtenCompany(text: string, label: string): string | null {
+  const flat = norm(label).replace(/ /g, "");
+  if (!flat) return null;
+  for (const line of text.split(/\r?\n/)) {
+    const ws = lineWords(line);
+    for (let i = 0; i < ws.length; i++) {
+      const x = ws[i]!;
+      let key = x.w.replace(/ /g, "");
+      if (!/^\p{Lu}/u.test(x.raw) || key.length >= flat.length || !flat.startsWith(key)) continue;
+      for (let j = i + 1, n = 1; j < ws.length && n < 4 && key.length < flat.length; j++) {
+        const y = ws[j]!, after = ws[j + 1];
+        if (ws[j - 1]!.poss) break;
+        // "Hart and Stone": the "and" joins the name, and is in the domain's name or not ("hartandstone", "hartstone").
+        if (y.w === "and" && /^[ \t]+$/.test(y.sep) && after?.shaped && /^[ \t]+$/.test(after.sep)) { if (flat.startsWith(`${key}and`)) key += "and"; continue; }
+        if (!/^\p{Lu}/u.test(y.raw) || !y.sep || !/^[ \t]*&?[ \t]*$/.test(y.sep)) break;
+        key += y.w.replace(/ /g, "");
+        n++;
+        if (key === flat) return line.slice(x.at, y.at + y.raw.length);
+      }
+    }
+  }
+  return null;
 }
 
 /**

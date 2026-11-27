@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { scriptedAsker } from "../src/core/ask.js";
-import { filterItems, followsUp, HELD_MARKER, outsideSpeaker, screenText, sentences, TOPICS, type FilterRules, type HoldReason, type PassageCut } from "../src/core/filter.js";
+import { filterItems, followsUp, HELD_MARKER, HOLD_RULES, outsideSpeaker, screenText, sentences, TOPICS, type FilterRules, type HoldReason, type PassageCut } from "../src/core/filter.js";
 import { DATA_RULES } from "../src/core/prompt.js";
 import { listReceipts, readReceipt } from "../src/core/receipt.js";
 import type { SignalItem } from "../src/core/types.js";
@@ -251,6 +251,128 @@ describe("a direct reply to a cut passage about a person is cut too (F2)", () =>
     expect(followsUp("Kim: Yeah, I'll take the API work from here.")).toBe(true);
     expect(followsUp("Kim: Okay, I'll ship the SSO fix tonight.")).toBe(false);
     expect(followsUp("Kim: Sure. Can you write up the OAuth flow?")).toBe(false);
+  });
+});
+
+describe("after a pay line, only a reply to it is cut (PRIV-2, B2)", () => {
+  const pay = "Lee: If the rollout slips, I lose my $5k bonus.";
+
+  it("keeps the customer's next line and the PM's next question in an eight-line call", () => {
+    const call = [
+      "Lee Park: The pilot went well, and the admins want SSO next.",
+      "KP: Good to hear. Which teams use it most?",
+      "Lee Park: Mostly brand and the regional marketing teams.",
+      "Lee Park: Honestly, if this rollout slips into next quarter, that's half my bonus.",
+      "Lee Park: We also need the export to run every night for the regional teams.",
+      "KP: How many regional teams are there today?",
+      "Lee Park: About forty, and each one has its own folder.",
+      "KP: Thanks, I'll write that up.",
+    ].join("\n");
+    const { out, passages, held } = screen(call);
+    expect(out).toBe(call.split("\n").filter((l) => !l.includes("bonus")).join("\n"));
+    expect(passages).toEqual([{ rule: "compensation", hash: expect.any(String) }]);
+    expect(held.compensation).toBe(1);
+  });
+
+  it("cuts a reply to the cut topic: a short reaction, its words or its figure", () => {
+    for (const reply of ["Congrats, that's well deserved.", "Sorry to hear that.", "Fingers crossed.", "Yeah, totally.", "Is that before tax?", "That's a lot more than last year."]) {
+      const { out, passages } = screen(`${pay}\n\nKP: ${reply}\n\nLee: The export is next.`);
+      expect(out, reply).toBe("Lee: The export is next.");
+      expect(passages.map((p) => p.followUp ?? false), reply).toEqual([false, true]);
+    }
+  });
+
+  it("keeps a passage on another subject, short or not", () => {
+    for (const next of ["Okay, how many seats would the pilot need?", "Yeah, the export also needs to run nightly.", "Sounds good, I'll send the deck tomorrow.", "We need the launch copy by Friday."])
+      expect(screen(`${pay}\n\nKP: ${next}`).out, next).toBe(`KP: ${next}`);
+  });
+
+  it("never holds a three-line thread whole for one pay line, and the hold rules are rechecked", () => {
+    const thread: SignalItem = { id: "C1", kind: "thread", ref: "/x/c1.md", title: "#launch", at: "2026-11-26", participants: [], place: "#launch",
+      text: "Ana: if the Globex deal slips into Q1 that's half my Q4 bonus\nKim: We need the launch copy by Friday.\nAna: I'll send the draft tomorrow." };
+    const d = filterItems([thread], { ...rules, wholeMeeting: true, approvedPlace: () => true }).decisions[0]!;
+    expect(d).toMatchObject({ decision: "kept", passagesKept: 2 });
+    expect(d.passages).toEqual([{ rule: "compensation", hash: expect.any(String) }]);
+    expect(HOLD_RULES).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe("a short health aside is a health cut, and a clinic's product talk isn't (PRIV-2, B2)", () => {
+  const cases: [string, string | null][] = [
+    ["I'm out Tue morning (doctor), otherwise around.", "health"],
+    ["Back after lunch (dentist appt).", "health"],
+    ["Out Thursday for the dentist.", "health"],
+    ["I'm off early for physio.", "health"],
+    ["Sam is out sick today.", "health"],
+    ["She called in sick.", "health"],
+    ["I have a medical appointment at 9.", "health"],
+    ["Therapy on Wednesday, so I'm offline after 3.", "health"],
+    ["Her doctor's office called.", "health"],
+    ["Our doctor's office customers want SMS reminders.", null],
+    ["The clinic scheduling feature ships in March.", null],
+    ["The therapy clinic scheduling feature is late.", null],
+    ["Dental practices want online booking.", null],
+    ["Doctor's appointment reminders go out by text.", null],
+    ["We're sick of this flaky test.", null],
+  ];
+  it.each(cases)("%s", (s, want) => expect(ruleOf(s)).toBe(want));
+
+  it("cuts the aside's sentence, keeps the work talk around it, and keeps the next turn", () => {
+    // End-to-end test 2026-11-27: the aside took the whole turn, the work talk beside it too.
+    const { out, passages } = screen("Kim: The pricing section is my component, so loop me in. I'm out Tue morning (doctor), otherwise around.\n\nAna: Globex sent the SOC 2 questions. I'll answer them Monday.");
+    expect(out).toBe(`Kim: The pricing section is my component, so loop me in. ${HELD_MARKER}\n\nAna: Globex sent the SOC 2 questions. I'll answer them Monday.`);
+    expect(passages).toEqual([{ rule: "health", hash: expect.any(String), part: { cut: 1, of: 2 } }]);
+  });
+});
+
+describe("a health aside is cut a sentence at a time, like fundraising (PRIV-2, B2)", () => {
+  it("keeps the work talk before and after the aside", () => {
+    expect(screen("Kim: I'm out Thursday (doctor). The pricing section on the page is my component, so loop me in on whatever's decided.").out)
+      .toBe(`Kim: ${HELD_MARKER} The pricing section on the page is my component, so loop me in on whatever's decided.`);
+    expect(screen("Kim: The export spec is ready for review. Back after lunch (dentist appt). Send comments in the doc.").out)
+      .toBe(`Kim: The export spec is ready for review. ${HELD_MARKER} Send comments in the doc.`);
+    expect(screen("Kim: Sam is out sick today. The release notes go out Friday, with the importer fix.").out)
+      .toBe(`Kim: ${HELD_MARKER} The release notes go out Friday, with the importer fix.`);
+  });
+
+  it("still cuts what follows about that person, and a reply to the aside", () => {
+    // "She'll be back Monday" still talks about her.
+    expect(screen("Kim: Sam is out sick today. She'll be back Monday. The release notes go out Friday, with the importer fix. The SSO page follows next week.").out)
+      .toBe(`Kim: ${HELD_MARKER} The release notes go out Friday, with the importer fix. The SSO page follows next week.`);
+    const { out, passages } = screen("Kim: I'm out Thursday (doctor). The pricing section on the page is my component, so loop me in on whatever's decided.\n\nAna: Feel better soon!\n\nAna: The SSO page ships Monday.");
+    expect(out).toBe(`Kim: ${HELD_MARKER} The pricing section on the page is my component, so loop me in on whatever's decided.\n\nAna: The SSO page ships Monday.`);
+    expect(passages.map((p) => [p.rule, p.followUp ?? false])).toEqual([["health", false], ["health", true]]);
+  });
+
+  it("anything else about health still cuts the sentences around it, and a clinic's product talk is still kept", () => {
+    // Someone's own therapist or a diagnosis isn't an aside: the sentence before and after go too.
+    expect(screen("Kim: My therapist moved my session. I'm offline after 3. The pricing section on the page is my component.").out).toBe("");
+    expect(screen("Kim: The beta starts Monday. Lee had surgery last week. The pricing section on the page is my component, so loop me in on whatever's decided.").out).toBe("");
+    for (const s of ["Kim: Doctor's office customers want appointment reminders by text.", "Kim: The landing page needs a doctor-approved disclaimer."]) expect(screen(s).out, s).toBe(s);
+  });
+});
+
+describe("a bonus a product gives its customers isn't pay (PRIV-2, B2)", () => {
+  const cases: [string, string | null][] = [
+    ["Our launch bonus campaign for creators runs in January.", null],
+    ["The bonus feature ships with the beta.", null],
+    ["Annual plans get bonus credits for the first month.", null],
+    ["We're adding bonus content to the onboarding course.", null],
+    ["A welcome bonus for new users would lift sign-ups.", null],
+    // A person's bonus is still pay.
+    ["My bonus is late.", "compensation"],
+    ["Her bonus this year depends on the rollout.", "compensation"],
+    ["The bonus pool is set.", "compensation"],
+    ["She asked about a signing bonus.", "compensation"],
+    ["Reps get a bonus for accounts closed this quarter.", "compensation"],
+    ["The launch bonus for the team is set.", "compensation"],
+  ];
+  it.each(cases)("%s", (s, want) => expect(ruleOf(s)).toBe(want));
+
+  it("keeps a bonus campaign line in team work, and still cuts a pay line beside it", () => {
+    const { out, passages } = screen("Kim: Our launch bonus campaign for creators runs in January.\n\nLee: If the rollout slips, I lose my $5k bonus.\n\nKim: The campaign page goes live Monday.");
+    expect(out).toBe("Kim: Our launch bonus campaign for creators runs in January.\n\nKim: The campaign page goes live Monday.");
+    expect(passages.map((p) => p.rule)).toEqual(["compensation"]);
   });
 });
 

@@ -53,7 +53,7 @@ export const meetingCommands: Command[] = [
   },
   {
     name: "todo",
-    summary: "Your own to-dos from your meetings, including 1:1s; stays on this Mac. Shows and reads the last 7 days unless you pick a period",
+    summary: "Your own to-dos from your meetings, including 1:1s, and the email threads you wrote in; stays on this Mac. Shows and reads the last 7 days unless you pick a period",
     usage: "pmx todo [--days N|all | --since today|Nd|YYYY-MM-DD] [--all] [--json] | pmx todo --refresh [--days N | --since …] [--dry-run] | pmx todo done <id> | pmx todo edit <id> \"<new words>\" | pmx todo --me <name or email> | pmx todo --linear on|off | pmx todo linear <id> (or pmx move <id> todo)",
     options: {
       refresh: { type: "boolean" }, since: { type: "string" }, days: { type: "string" }, "dry-run": { type: "boolean" }, all: { type: "boolean" }, json: { type: "boolean" },
@@ -102,9 +102,11 @@ export const meetingCommands: Command[] = [
         if (period.days === Infinity) throw new Error(`--refresh reads at most ${TODO_MAX_DAYS} days of meetings. Try --days ${TODO_MAX_DAYS}.`);
         const since = period.since;
         const r = await refreshTodos(ctx, { since, dryRun: a.values["dry-run"] });
-        console.log(`Meetings since ${localDay(since)}: ${r.meetings.read} read now${r.calls > 1 ? ` (${r.calls} Claude calls, up to ${TODO_BATCH} meetings each)` : ""}, ${r.meetings.alreadyRead} already read for to-dos.`);
+        console.log(`Meetings since ${localDay(since)}: ${r.meetings.read} read now${r.emails ? ` (${r.emails} of them email threads you wrote in)` : ""}${r.calls > 1 ? ` (${r.calls} Claude calls, up to ${TODO_BATCH} meetings each)` : ""}, ${r.meetings.alreadyRead} already read for to-dos.`);
         if (!r.meetings.read && !period.chosen) console.log(`The last ${TODO_DAYS} days are read by default. For earlier meetings: pmx todo --refresh --days 30`);
         console.log(r.added.length ? `${a.values["dry-run"] ? "Would add" : "Added"} ${r.added.length} to-do(s):\n${formatTodos(r.added)}` : "No new to-dos.");
+        // TODO-8: what a later message in an email thread settled on to-dos you already had.
+        for (const x of r.settled) console.log(`${x.how === "changed" ? (a.values["dry-run"] ? "Would change" : "Changed") : a.values["dry-run"] ? "Would tick" : "Ticked"} ${x.id}: ${x.text}${x.how === "changed" ? " (a later email changed it)" : ` (a later email shows it ${x.how})`}${x.why ? `. ${x.why}` : ""}`);
         if (r.receiptId) console.log(`See how each meeting was read: pmx explain ${r.receiptId}`);
         // The collection task's last step (COLLECT_TASK step 4), so its run counts as finished.
         if (!a.values["dry-run"]) await markTaskRun(COLLECT_TASK.id, "finish", ctx.now());
@@ -156,7 +158,8 @@ export const todoStep: TickStep = async (ctx: Ctx) => {
   const store = await loadTodos();
   if (!(await loadState()).lastCollectAt && !store.items.length && !Object.keys(store.processed).length) return null;
   const r = await refreshTodos(ctx, { skipIfNothingNew: true });
-  return r.meetings.read ? `read ${r.meetings.read} meeting(s) for to-dos, ${r.added.length} new to-do(s)` : null;
+  const read = r.emails ? `${r.meetings.read - r.emails} meeting(s) and ${r.emails} email thread(s)` : `${r.meetings.read} meeting(s)`;
+  return r.meetings.read ? `read ${read} for to-dos, ${r.added.length} new to-do(s)${r.settled.length ? `, ${r.settled.length} settled by a later email` : ""}` : null;
 };
 
 /** The company roll-up, once a day on the company machine (COMPANY-1). */

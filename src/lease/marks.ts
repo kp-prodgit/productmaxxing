@@ -47,6 +47,11 @@ export interface StoredMark extends TaskMark {
 export interface MarkStore {
   /** Every task's mark, fetched from the team repo now. */
   list(): Promise<Map<string, StoredMark>>;
+  /**
+   * Every task's mark as this Mac last fetched them (the background run's `list`, and this Mac's own writes), without
+   * reaching the team repo: for a page that loads every minute.
+   */
+  cached(): Promise<Map<string, StoredMark>>;
   /** One task's mark, fetched from the team repo now. */
   read(identifier: string): Promise<StoredMark | null>;
   /** Writes the mark `f` makes from the current one (null: no change). Returns the mark there afterwards. */
@@ -110,6 +115,19 @@ export function markStore(git: Git): MarkStore {
     return at(MIRROR, id);
   }
 
+  /** Every mark under `base`, as it is here. */
+  async function marksAt(base: string): Promise<Map<string, StoredMark>> {
+    const out = new Map<string, StoredMark>();
+    const lines = (await git.ok(["for-each-ref", "--format=%(refname:lstrip=3)%09%(objectname)%09%(contents:subject)", base])).split("\n").filter(Boolean);
+    for (const l of lines) {
+      const [id, token, ...rest] = l.split("\t");
+      if (!id || !TASK.test(id)) continue;
+      const m = parse(rest.join("\t"), id);
+      if (m) out.set(id, { ...m, token: token! });
+    }
+    return out;
+  }
+
   return {
     async list() {
       let base = TASK_STATE_REFS;
@@ -118,15 +136,10 @@ export function markStore(git: Git): MarkStore {
         if (f.code !== 0) throw new Error(`it couldn't reach your team's repo (${firstLine(f.stderr)})`);
         base = MIRROR;
       }
-      const out = new Map<string, StoredMark>();
-      const lines = (await git.ok(["for-each-ref", "--format=%(refname:lstrip=3)%09%(objectname)%09%(contents:subject)", base])).split("\n").filter(Boolean);
-      for (const l of lines) {
-        const [id, token, ...rest] = l.split("\t");
-        if (!id || !TASK.test(id)) continue;
-        const m = parse(rest.join("\t"), id);
-        if (m) out.set(id, { ...m, token: token! });
-      }
-      return out;
+      return marksAt(base);
+    },
+    async cached() {
+      return marksAt((await remote()) ? MIRROR : TASK_STATE_REFS);
     },
     async read(identifier) {
       if (!TASK.test(identifier)) return null;

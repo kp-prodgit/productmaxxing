@@ -91,7 +91,7 @@ describe("the install checklist (SETUP-1)", () => {
       checks: [...HEALTHY.filter((c) => c.id !== "claude.task.collect"), warn("claude.task.collect", "Claude scheduled task \"Collect meetings\" has an older prompt: type /pmx-schedule in the Claude app"), warn("flow.page", "your /pmx-flow page is from pmx 0.34.0: type /pmx-flow in the Claude app to update it to 0.35.0")],
     }));
     expect(cl.upgrade).toMatchObject({ from: "0.34.0", to: "0.35.0", applied: [{ id: "app-skills", did: "updated /pmx-schedule" }, { id: "mcp-entry", did: "nothing to do" }] });
-    expect(cl.upgrade!.pending.map((s) => s.id)).toEqual(["claude.tasks", "claude.page", "linear.hours", "update.background-job", "update.evidence-backfill", "update.evidence-names-2"]);
+    expect(cl.upgrade!.pending.map((s) => s.id)).toEqual(["claude.tasks", "claude.page", "linear.hours", "update.background-job", "update.evidence-backfill", "update.evidence-names-3", "update.follow-ups-requeue"]);
     expect(find(cl, "update.background-job")).toMatchObject({ status: "warn", do: "pmx checklist --fix" });
     // RUN-5: a one-off step for a Mac from before 0.37.0, which PMX does on its next run (or now, from the checklist).
     expect(find(cl, "update.evidence-backfill")).toMatchObject({ status: "warn", title: "This Mac's open tasks share their quotes with your team", detail: "PMX will do it on its next run" });

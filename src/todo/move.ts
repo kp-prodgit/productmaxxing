@@ -1,16 +1,22 @@
+import { join } from "node:path";
 import type { Ctx } from "../core/context.js";
+import { privateDir, readJson, withLock, writeJson } from "../core/fsutil.js";
+import { paths } from "../core/paths.js";
 import { markTask } from "../lease/marks.js";
 import { readReceipt, writeReceipt } from "../core/receipt.js";
 import type { Services } from "../core/services.js";
 import { SIZES, type Size, type Task } from "../core/types.js";
 import { citationNeed, citeText } from "../pull/pull.js";
 import { receiptOf, taskEvidence } from "../run/evidence.js";
-import { removePackNow, shareEvidence, stageShares } from "../run/share.js";
+import { packSources, swappedPack } from "../run/packs.js";
+import { removePackNow, shareEvidence, stageShares, storeFor } from "../run/share.js";
 import { dateRange } from "../synth/synthesize.js";
 import { approveProposals, CHECKED, heldText, holdProposal, markKept, readProposals, takeProposal, type Proposal } from "../synth/proposals.js";
 import { recheckProposal } from "../synth/recheck.js";
-import { readResolved } from "../tracker/relay.js";
-import { COMMITMENT, getTodo, keepTodo, linkTodo, loadTodos, removeTodo, sendTodoToLinear, type Todo } from "./todo.js";
+import { followsIn, plainMentions } from "../tracker/mentions.js";
+import { pendingIdentifier, readResolved, type RelayOp } from "../tracker/relay.js";
+import { dropQuotes, keepQuotes, quotesFor, type KeptQuotes } from "./kept-quotes.js";
+import { COMMITMENT, getTodo, keepTodo, linkTodo, loadTodos, removeTodo, restoreTodo, sendTodoToLinear, type Todo } from "./todo.js";
 
 /**
  * Where a piece of the PM's work lives (TODO-5). Private: a to-do only on this Mac. To-do: the same to-do tracked in
@@ -54,18 +60,34 @@ interface Carried {
 
 const NONE: Carried = { receipt: null, ids: [], seen: [], kept: 0, none: null };
 
+/** TODO-5, R16c: what a to-do taken back from a team task gives it back: the task's summary (the to-do's note) and its Follows line. */
+interface FromTask {
+  summary?: string;
+  follows?: string;
+}
+
+/** A to-do's `FromTask`. Only a to-do taken back from a team task has a kind of work, so only its note was that task's summary. */
+const fromTask = (t: Todo): FromTask => ({ ...(t.kind && t.why ? { summary: t.why } : {}), ...(t.follows ? { follows: t.follows } : {}) });
+
 /**
  * The description of a to-do moved to the team (TODO-5). Only PMX's own words and the to-do's due date; R16: with the
  * meetings it came from as a readable sources line (their kind and dates, never a title, person or word) and the
  * `pmx:source` lines an agent's evidence comes from, under the to-do run's receipt. D2: a to-do from a run whose
  * meetings none can go names that receipt all the same, so taking the task back keeps it (`sourcesOf`) and moving it
- * to the team again checks its words against those meetings' people.
+ * to the team again checks its words against those meetings' people. A to-do taken back from a team task gets back
+ * that task's summary, first, as it was, and (R16c) its Follows line as it was and the source IDs its text gave, kept
+ * when this Mac hasn't that task's receipt.
  */
-const productDescription = (handle: string, due: string | null, c: Carried = NONE) => {
+const productDescription = (handle: string, due: string | null, c: Carried = NONE, from: FromTask = {}) => {
   const head = `A task ${handle} moved here from their own to-dos${due ? `, due ${due}` : ""}.`;
   const note = "PMX sent only these words: no meeting title, transcript, attendees or quotes.";
-  if (!c.receipt) return [head, "", note].join("\n");
-  if (!c.ids.length) return [head, "", `**Sources:** none agents can quote. Where it came from stays on the PM's Mac: \`pmx explain ${c.receipt}\` there shows it.`, "", note].join("\n");
+  const follows = from.follows ? [from.follows] : [];
+  const block = (sources: string | null, ids: string[] = []) => [
+    ...(from.summary ? [from.summary, ""] : []), head, "", ...(sources || follows.length ? [...follows, ...(sources ? [sources] : []), ""] : []), note,
+    ...(ids.length ? ["", ...ids.map((id) => `pmx:source ${id}`)] : []),
+  ].join("\n");
+  if (!c.receipt) return block(c.ids.length ? `**Sources:** ${c.ids.length === 1 ? "a source" : `${c.ids.length} sources`} the team's task cited before it was taken back. They stay on the Mac whose run found them.` : null, c.ids);
+  if (!c.ids.length) return block(`**Sources:** none agents can quote. Where it came from stays on the PM's Mac: \`pmx explain ${c.receipt}\` there shows it.`);
   const part = (kind: "meeting" | "thread") => {
     const days = c.seen.filter((x) => x.kind === kind).map((x) => x.at);
     if (!days.length) return null;
@@ -74,7 +96,7 @@ const productDescription = (handle: string, due: string | null, c: Carried = NON
     return `${what}${when ? ` (${when})` : ""}`;
   };
   const line = [part("meeting"), part("thread")].filter(Boolean).join("; ");
-  return [head, "", `**Sources:** ${line}. They stay on the PM's Mac: \`pmx explain ${c.receipt}\` there shows them.`, "", note, "", ...c.ids.map((id) => `pmx:source ${id}`)].join("\n");
+  return block(`**Sources:** ${line}. They stay on the PM's Mac: \`pmx explain ${c.receipt}\` there shows them.`, c.ids);
 };
 
 const normText = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -87,13 +109,36 @@ const normText = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ")
 const dueIn = (description: string | undefined): string | null => description?.match(/^A (?:task|commitment) [^\n]*?, due (\d{4}-\d{2}-\d{2})\b/m)?.[1] ?? null;
 
 /**
+ * R16c: a task's Follows line as PMX wrote it, in either form: FOLLOW-1's "**Follows PMX-12:** …" (a question an accepted
+ * draft left) or R6's "**Follows PMX-18, done Nov 26:** …" (new work after done work), with Linear's mention markup read
+ * as the identifier. A to-do taken back keeps it, and the task it becomes gets it back in the same form. (`followsIn`
+ * reads only the first form: only a FOLLOW-1 follow-up may quote its original's pack.)
+ */
+const FOLLOWS_LINE = /^\*\*Follows(?:\*\*)? ([A-Za-z][A-Za-z0-9]*-\d+)(?:\*\*)?(, done [^:*\n]{1,40})?(?:\*\*)?:(?:\*\*)?[ \t]*(.*)$/m;
+const followsLine = (description: string | undefined): string | null => {
+  const m = plainMentions(description ?? "").match(FOLLOWS_LINE);
+  return m ? `**Follows ${m[1]}${m[2] ?? ""}:**${m[3]?.trim() ? ` ${m[3].trim()}` : ""}` : null;
+};
+
+/**
+ * TODO-5: a team task's own summary, the opening paragraph of its description, which the to-do it becomes keeps as its
+ * note. Never a paragraph PMX wrote itself: a moved to-do's or a commitment's first line, or a sources or `pmx:` line.
+ */
+const summaryOf = (description: string | undefined): string => {
+  const first = plainMentions(description ?? "").split(/\n\s*\n/)[0]!.replace(/\s+/g, " ").trim();
+  return /^A (?:task|commitment) \S+ (?:moved here|made)\b/.test(first) || /^(?:pmx:|\*\*)/.test(first) ? "" : first.slice(0, 1500);
+};
+
+/**
  * R16 (TODO-5, RUN-3): the meetings a to-do came from, as its run's receipt records them, that the team's agents may
  * quote now. A to-do keeps their IDs (`sources`); one from before that is found in its run's `todo.added`. Each is read
  * again through the team's privacy rules, as an agent's evidence is: a 1:1, an internal meeting or anything else those
  * rules keep from team work stays with the PM's to-dos, and only a source that passes is carried.
  */
 async function todoSources(ctx: Ctx, t: Todo): Promise<Carried> {
-  if (!t.receiptId) return NONE;
+  // R16c: a to-do taken back from a team task on a Mac without that task's receipt kept the IDs the task's own text gave
+  // (the team had them already): they go back as they are, for the team's shared quotes to carry.
+  if (!t.receiptId) return t.sources?.length ? { ...NONE, ids: [...t.sources] } : NONE;
   const r = await readReceipt(t.receiptId);
   if (!r) return { ...NONE, none: "the run that found it is no longer on this Mac" };
   const added = r.todo?.added.find((a) => normText(a.text) === normText(t.text));
@@ -181,12 +226,13 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
     if (ctx.team.tracker.kind === "none") throw new Error("Your team has no task tracker, so there's no Linear to move it to or from.");
     return (await svc()).tracker;
   };
-  const kind = (): { kind: string; size: Size } => {
+  /** TODO-5: a to-do taken back from a team task goes back as the kind and size it was (`kept`), unless the PM picks others. */
+  const kind = (kept: Pick<Todo, "kind" | "size"> = {}): { kind: string; size: Size } => {
     const kinds = Object.keys(ctx.team.categories);
     if (!kinds.length) throw new Error("Your team hasn't set up any kinds of work yet, so there's no product task to make.");
-    const k = o.kind?.trim().toLowerCase();
-    if (!k || !kinds.includes(k)) throw new Error(`${k ? `"${o.kind}" isn't one of your team's kinds of work. ` : "Pick a kind of work for the task: "}${kinds.join(", ")} (--kind).`);
-    const size = (o.size?.trim().toUpperCase() || "S") as Size;
+    const k = o.kind?.trim().toLowerCase() || kept.kind;
+    if (!k || !kinds.includes(k)) throw new Error(`${k ? `"${o.kind?.trim() || k}" isn't one of your team's kinds of work. ` : "Pick a kind of work for the task: "}${kinds.join(", ")} (--kind).`);
+    const size = (o.size?.trim().toUpperCase() || kept.size || "S") as Size;
     if (!SIZES.includes(size)) throw new Error(`A size is ${SIZES.join(", ")}, not "${o.size}".`);
     return { kind: k, size };
   };
@@ -219,16 +265,34 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
   const gone = (t: Task, how: "queued" | "canceled") => (how === "queued" ? `${t.identifier} hadn't reached Linear yet, so nothing of it goes there.` : `${t.identifier} is canceled in Linear.`);
   /**
    * R16c (TODO-5): a team task taken back as a to-do keeps its sources (its `pmx:source` IDs, under the receipt its
-   * description names, when this Mac has that receipt), so moving it to the team again brings them back. D2: and that
-   * receipt, sources or not, so the move's check reads its meetings' people (`guardMove`).
+   * description names, when this Mac has that receipt; as its text gives them, when it hasn't) and the task it follows
+   * up on ("Follows PMX-12"), so moving it to the team again brings them back. D2: and that receipt, sources or not, so
+   * the move's check reads its meetings' people (`guardMove`). And its kind of work, size and summary (the to-do's
+   * note), so moving it back needs no kind again and keeps its size.
    */
-  const sourcesOf = async (t: Task): Promise<{ receiptId?: string; sources?: string[]; due?: string }> => {
+  const sourcesOf = async (t: Task): Promise<Partial<Pick<Todo, "receiptId" | "sources" | "kind" | "size" | "why" | "follows">> & { due?: string }> => {
     const id = receiptOf(t);
     const r = id ? await readReceipt(id) : null;
-    const ids = r ? t.sources.filter((x) => r.sources.some((s) => s.decision === "used" && s.id === x)) : [];
+    const ids = r ? t.sources.filter((x) => r.sources.some((s) => s.decision === "used" && s.id === x)) : t.sources;
     // R6: and its due date, as the task's description gives it.
     const due = dueIn(t.description);
-    return { ...(r ? { receiptId: r.id, ...(ids.length ? { sources: ids } : {}) } : {}), ...(due ? { due } : {}) };
+    const follows = followsLine(t.description);
+    const summary = summaryOf(t.description);
+    return {
+      ...(r ? { receiptId: r.id } : {}), ...(ids.length ? { sources: [...ids] } : {}), ...(due ? { due } : {}),
+      ...(t.category && t.category !== COMMITMENT ? { kind: t.category } : {}), ...(t.size ? { size: t.size } : {}),
+      ...(summary ? { why: summary } : {}), ...(follows ? { follows } : {}),
+    };
+  };
+  /**
+   * R16c (RUN-5): the task's own shared quotes for the sources its to-do keeps, read before taking it back removes them
+   * from the team repo, so the task it becomes again can have them (`kept-quotes.ts`).
+   */
+  const packCopy = async (t: Task, sources: string[] | undefined): Promise<KeptQuotes | null> => {
+    if (!sources?.length || ctx.team.tracker.kind === "none") return null;
+    const pack = await storeFor(ctx).read(t.identifier).catch(() => null);
+    const quotes = packSources(pack, sources);
+    return quotes.length ? { quotes, ...(swappedPack(pack) ? { quotesSwap: pack!.nameSwap } : {}) } : null;
   };
   /** A Linear task becomes the PM's commitment: agents stop seeing it as theirs. */
   const toCommitment = async (t: Task) => {
@@ -306,8 +370,10 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
       return moved("product", k.text, k.id, t.identifier, `Now your to-do, still in Linear as ${t.identifier}: ${k.text}. Agents don't pick it up.`);
     }
     const kept = await sourcesOf(t);
+    const copy = await packCopy(t, kept.sources);
     const how = await withdraw(t, `${handle} took this off the team's list to keep as a private to-do.`);
     const k = await keepTodo({ text: t.title, source: { title: `Moved from ${t.identifier}`, at: now.toISOString().slice(0, 10), keys: [] }, ...kept }, now);
+    if (copy) await keepQuotes(k.id, copy, now);
     return moved("product", k.text, k.id, null, `Now your private to-do: ${k.text}. ${gone(t, how)}${kept.sources ? ` It keeps ${kept.sources.length === 1 ? "its source" : `its ${kept.sources.length} sources`}, so moving it to the team again brings ${kept.sources.length === 1 ? "it" : "them"} back.` : ""}`);
   }
 
@@ -327,15 +393,19 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
         const s = await sendCommitment(ctx, await tracker(), t.id, { again: "move it again" });
         return moved(from, t.text, t.id, s.identifier, `Sent to Linear as ${s.identifier}: ${t.text}. Agents don't pick it up.`);
       }
-      const k = kind();
+      const k = kind(t);
       const tr = await tracker();
       // R16: the meetings it came from go with it, so an agent can draft it.
       const c = await todoSources(ctx, t);
       // F14: nothing reaches Linear before its words pass the guard; a title that fails keeps the to-do.
-      const g = await guardMove(ctx, t, c, productDescription(handle, t.due, c));
+      const g = await guardMove(ctx, t, c, productDescription(handle, t.due, c, fromTask(t)));
       const made = await tr.createInbox({ title: t.text.slice(0, 200), description: g.description, category: k.kind, size: k.size, sources: c.ids });
-      await removeTodo(t.id);
-      const shared = await carried(t.id, c, made.identifier, t.text, g.description);
+      // R16b: a task only queued for Linear keeps the to-do, so dropping it from the queue gives the to-do back.
+      const q = await quotesFor(t.id);
+      await park(made.identifier, await removeTodo(t.id), ctx.now(), q);
+      // R16c: the copy of its old task's quotes goes into the new task's pack (`carried`), or nowhere.
+      await dropQuotes(t.id);
+      const shared = await carried(t.id, c, made.identifier, t.text, g.description, q);
       return moved(from, t.text, null, made.identifier, [`"${t.text}" is now ${made.identifier}, a ${k.kind} task for the team${c.ids.length ? `, with ${c.ids.length === 1 ? "the meeting" : `the ${c.ids.length} meetings`} it came from as its sources` : ""}.`, ...(g.leftOut ? [`PMX left ${g.leftOut} out of it.`] : []), ...keptText(c), await draftable(k.kind, made.identifier, c), ...shared].filter(Boolean).join(" "));
     }
     // In Linear as a commitment.
@@ -345,21 +415,25 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
       let how: "queued" | "canceled" = "canceled";
       if (issue) {
         movable(issue);
+        const copy = await packCopy(issue, t.sources);
         how = await withdraw(issue, `${handle} took this back to their private to-dos.`);
+        if (copy) await keepQuotes(t.id, copy, ctx.now());
       }
       await linkTodo(t.id, null);
       return moved(from, t.text, t.id, null, `Back to your private to-dos: ${t.text}.${issue ? ` ${gone(issue, how)}` : ""}`);
     }
     if (!issue) throw new Error(`${id} isn't in your team's PMX project any more, so there's no task to change. Move it to private first, then to product.`);
     movable(issue);
-    const k = kind();
+    const k = kind(t);
     // R16: PMX's commitment text is replaced, and with it come the meetings the to-do came from.
     const c = isCommitmentText(issue.description ?? "") && !issue.sources.length ? await todoSources(ctx, t) : NONE;
     // F14: a task for the team, which agents draft, is held to the guard, though its words are in Linear as a to-do.
-    const g = await guardMove(ctx, t, c, productDescription(handle, t.due, c));
+    const g = await guardMove(ctx, t, c, productDescription(handle, t.due, c, fromTask(t)));
     await toProduct(issue, k, t.due, g.description);
-    await removeTodo(t.id);
-    const shared = c.receipt ? await carried(t.id, c, issue.identifier, issue.title, g.description) : [];
+    const q = await quotesFor(t.id);
+    await park(issue.identifier, await removeTodo(t.id), ctx.now(), q);
+    await dropQuotes(t.id);
+    const shared = c.receipt || c.ids.length ? await carried(t.id, c, issue.identifier, issue.title, g.description, q) : [];
     const now = c.ids.length ? c : { ...c, ids: issue.sources };
     return moved(from, t.text, null, issue.identifier, [`${issue.identifier} is now a ${k.kind} task for the team: ${t.text}.`, ...keptText(c), await draftable(k.kind, issue.identifier, now), ...shared].filter(Boolean).join(" "));
   }
@@ -368,11 +442,13 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
    * R16: a moved to-do's sources reach its task's run receipt and, through an evidence pack, any Mac's agent (RUN-5).
    * D2: a to-do with none still notes the move in its run, which keeps that receipt as long as the task needs it.
    */
-  async function carried(todoId: string, c: Carried, identifier: string, title: string, description: string): Promise<string[]> {
+  async function carried(todoId: string, c: Carried, identifier: string, title: string, description: string, q: KeptQuotes | null = null): Promise<string[]> {
     await noteMoved(ctx, todoId, c, identifier);
     if (!c.ids.length) return [];
     if (ctx.team.tracker.kind === "none") return [];
-    await stageShares(ctx, [{ identifier, title, description, sources: c.ids, follows: null }]);
+    // R16c: when this Mac has none of the sources, the task a FOLLOW-1 follow-up came from lends its shared quotes, and
+    // else the copy of its own old task's quotes the to-do kept.
+    await stageShares(ctx, [{ identifier, title, description, sources: c.ids, follows: followsIn(description), ...(q ? { quotes: q.quotes, quotesSwap: q.quotesSwap ?? null } : {}) }]);
     return (await shareEvidence(ctx, { say: "answer" }).catch((e: any) => ({ shared: [], notices: [`PMX couldn't share the quotes of ${identifier} with your team: ${e?.message ?? e}.`] }))).notices;
   }
 
@@ -399,4 +475,52 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
     const kinds = free.length ? `move it back (\`pmx move ${identifier} private\`) and make it ${free.length === 1 ? `a ${free[0]}` : `one of ${free.join(", ")}`}, which can be drafted without them, or ` : "";
     return `Agents can't draft ${identifier} yet: ${why}, and ${citeText(category, need.min)}. To have it drafted, ${kinds}wait for a meeting that raises it: synthesis then suggests it with sources, and approving that gives ${identifier} its sources.`;
   }
+}
+
+/**
+ * R16b (TODO-5): a to-do that became a task only queued for Linear (PENDING-…), kept on this Mac (owner-only) until the
+ * sync creates that task, so dropping it from the queue (`pmx linear outbox drop`) gives the to-do back as it was.
+ */
+interface Parked {
+  identifier: string;
+  at: string;
+  todo: Todo;
+  /** R16c: the copy of its old team task's quotes it had, given back with it. */
+  quotes?: KeptQuotes;
+}
+const parkedFile = () => join(paths.staging(), "moved-todos.json");
+const readParked = async (): Promise<Parked[]> => (await readJson<{ v: 1; todos: Parked[] }>(parkedFile()))?.todos ?? [];
+const saveParked = async (todos: Parked[]) => { await privateDir(paths.staging()); await writeJson(parkedFile(), { v: 1, todos }, 0o600); };
+/** By then the task reached Linear or left the queue. */
+const PARK_MS = 30 * 86400000;
+
+async function park(identifier: string, todo: Todo, now: Date, quotes: KeptQuotes | null = null): Promise<void> {
+  if (!identifier.startsWith("PENDING-")) return;
+  await withLock(parkedFile(), async () => {
+    const kept = (await readParked()).filter((p) => p.identifier !== identifier && now.getTime() - Date.parse(p.at) < PARK_MS);
+    await saveParked([...kept, { identifier, at: now.toISOString(), todo, ...(quotes ? { quotes } : {}) }]);
+  });
+}
+
+/**
+ * R16b (TODO-5): after `pmx linear outbox drop`, the to-dos the dropped tasks came from, given back as they were. A
+ * to-do moved to the team (`pmx move <to-do> product`) comes back with its words, due date, run's receipt and sources;
+ * one sent to Linear as the PM's own (`pmx move <to-do> todo`) is private again. Returns them.
+ */
+export async function giveBackTodos(dropped: RelayOp[]): Promise<Todo[]> {
+  const gone = new Set(dropped.filter((op) => op.kind === "create-task").map((op) => pendingIdentifier(op.id)));
+  if (!gone.size) return [];
+  const back = new Map<string, Todo>();
+  await withLock(parkedFile(), async () => {
+    const all = await readParked();
+    if (!all.some((p) => gone.has(p.identifier))) return;
+    for (const p of all) if (gone.has(p.identifier)) {
+      const t = await restoreTodo(p.todo);
+      if (p.quotes) await keepQuotes(t.id, p.quotes, new Date());
+      back.set(t.id, t);
+    }
+    await saveParked(all.filter((p) => !gone.has(p.identifier)));
+  });
+  for (const t of (await loadTodos()).items) if (t.status === "open" && t.linear && gone.has(t.linear.toUpperCase())) back.set(t.id, await linkTodo(t.id, null));
+  return [...back.values()];
 }

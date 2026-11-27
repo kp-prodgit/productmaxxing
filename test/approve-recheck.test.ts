@@ -377,9 +377,10 @@ describe("a fact a later call says again in other words joins a task once (R12a,
     expect(licence.added).toEqual(["An add-on could take a couple of weeks."]);
     expect(licence.fuller).toEqual([{ was: real.licence[0], now: foundry }]);
     expect(merged(real.licence[1]!, real.licence[0]!)).toEqual([real.licence[1], "A publisher prospect and a freelancer hit the same uncertainty over print-only and desktop licences."]);
-    // "$360k" is new, and the rest of the later sentence says the first clause again: it takes that clause's place.
+    // "$360k" is new, and the rest of the later sentence says the first clause again: the clause there gains the detail
+    // (end-to-end test 2026-11-27: the founder's expected wording keeps the clause already there).
     expect(newFacts(real.pilot[0]!, real.pilot[1]!)).toEqual([]);
-    expect(merged(real.pilot[0]!, real.pilot[1]!)).toEqual(["Vandelay, a $360k pilot, will use the beta for internal work only if these two are missing, so the spec should define the beta cut and the GA gap."]);
+    expect(merged(real.pilot[0]!, real.pilot[1]!)).toEqual(["Vandelay, a $360k pilot, will use the beta internally only if these are missing, so the spec should define the beta cut and the GA gap."]);
     expect(merged(real.pilot[1]!, real.pilot[0]!)).toEqual([real.pilot[1], "The spec should define the beta cut and the GA gap."]);
   });
 

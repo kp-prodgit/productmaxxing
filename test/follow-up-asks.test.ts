@@ -158,7 +158,8 @@ describe("sorting a draft's questions: to ask or to work on (FOLLOW-1, R2)", () 
 
   it("without a mark, a question one person can answer is still an ask, by its words; research stays work", () => {
     expect(read(UNMARKED).map((q) => [q.title, q.ask])).toEqual([
-      ["Who signs the contract at Globex, and who is the procurement contact?", { role: null, by: "words" }],
+      // FOLLOW-1: who holds a role at a company is for that company's team.
+      ["Who signs the contract at Globex, and who is the procurement contact?", { role: "Globex's procurement", by: "words" }],
       ["Can a designer be freed for the plugin UI in December?", { role: null, by: "words" }],
       ["Who funds the $10,000, and what is our share?", { role: null, by: "words" }],
       ["Which editors do our largest accounts use alongside the plugin?", null],
@@ -455,7 +456,7 @@ describe("accepting a draft: questions to ask become to-dos, work becomes tasks 
     const { r } = await accept(UNMARKED);
     expect(r).toMatchObject({ asks: [{}, {}, {}], proposals: [{}, {}] });
     expect((await loadTodos()).items.map((t) => [t.text, t.due])).toEqual([
-      ["Find out: Who signs the contract at Globex, and who is the procurement contact? (PMX-21)", "2026-12-12"],
+      ["Ask Globex's procurement: Who signs the contract at Globex, and who is the procurement contact? (PMX-21)", "2026-12-12"],
       ["Find out: Can a designer be freed for the plugin UI in December? (PMX-21)", null],
       ["Find out: Who funds the $10,000, and what is our share? (PMX-21)", null],
     ]);

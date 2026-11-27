@@ -26,8 +26,12 @@ export type RunLogEntry =
       tokens: number | null; costUsd: number | null; receipt?: string; week?: string } & Base)
   /** `receipt` is the run's receipt ID on the machine that ran it (FLOW-1): a timestamp, no content. */
   | ({ type: "synthesize"; posted: number; held: number; durationMs: number; tokens: number | null; costUsd: number | null; receipt?: string } & Base)
+  /**
+   * `degraded` (REV-3): a redo or reject of a draft whose run record shows the run itself went wrong (`DegradedRun`).
+   * The accept rate doesn't count it. Absent for every other verdict.
+   */
   | ({ type: "verdict"; taskId: string; category: string; size: string; verdict: "accepted" | "rejected" | "redo";
-      reviewMinutes: number | null; editSize: number | null } & Base)
+      reviewMinutes: number | null; editSize: number | null; degraded?: DegradedRun } & Base)
   /** `retry` (PULL-12): the PM tried a task that stopped after failed runs again. Its failed-run count starts over. */
   | ({ type: "release"; taskId: string; reason: "stale" | "manual" | "redo" | "failed" | "brain" | "retry" } & Base)
   /** PULL-12: the PM dropped a task that stopped after failed runs. It left the agents' queue for good. */
@@ -40,6 +44,13 @@ export type RunLogEntry =
    * its task is done or was dropped. IDs only, like every entry.
    */
   | ({ type: "evidence"; taskId: string; action: "shared" | "removed"; reason?: "done" | "dropped" | "held" } & Base);
+
+/**
+ * REV-3: why a draft says little about its skill, from its run record: the run failed, or was cut short or didn't pass
+ * its checklist ("partial"), or a web run (RUN-6) got no web: its web tools weren't there ("no-web"), or PMX's web guard
+ * blocked its calls and it cited no page ("web-blocked").
+ */
+export type DegradedRun = "failed" | "partial" | "no-web" | "web-blocked";
 
 interface Base {
   ts: string;

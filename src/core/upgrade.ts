@@ -126,7 +126,24 @@ export const AUTO_STEPS: AutoStep[] = [
       return "the next background run writes the quotes this Mac shared with your team again, with people's names swapped for placeholders";
     },
   },
+  {
+    // D2-8 (FOLLOW-1): before 0.38.0, accepting a draft made a waiting task of every question, so many waiting in Needs
+    // you are one message to a colleague. The background run reads each again by today's rules (src/review/requeue.ts):
+    // a question to ask or a call becomes a to-do, and work keeps waiting with today's title. Keyed to this Mac's state,
+    // so it runs once whichever version brings it, and never again after.
+    id: "follow-ups-requeue",
+    since: null,
+    title: "Waiting follow-ups an older PMX suggested follow today's rules",
+    async run() {
+      if ((await loadState()).followUpRequeue) return null;
+      await updateState((st) => { st.followUpRequeue = { due: true, at: null }; });
+      return REQUEUE_ASKED;
+    },
+  },
 ];
+
+/** What the follow-ups step says it asked for, until the background run has done it and says what it did instead. */
+export const REQUEUE_ASKED = "the next background run reads again the follow-ups an older PMX left waiting for your approval, and turns questions one person can answer into to-dos";
 
 const keyOf = (s: AutoStep, version: string) => (s.since === null ? `${s.id}@${version}` : s.id);
 const before = (v: string | null, since: string) => v === null || (compareVersions(v, since) ?? -1) < 0;

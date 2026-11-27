@@ -132,6 +132,8 @@ export async function readThreads(o: ThreadOpts): Promise<SignalItem[]> {
       text: p.body,
       origin: { source: p.source, sourceId: p.sourceId },
       place: p.place,
+      // TODO-8: who collected it says who the PM is, for an email thread's check on their own to-dos. Never sent.
+      ...(p.owner ? { owner: p.owner } : {}),
     });
   }
   return items;

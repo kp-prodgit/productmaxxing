@@ -96,7 +96,8 @@ export interface Tracker {
   /**
    * Replaces an issue's title or description, and with `cancel` moves it to canceled (TIDY-1). Only `pmx linear tidy`,
    * `pmx linear withdraw`, `pmx move` and dropping a task that stopped after failed runs (PULL-12) call it, to take
-   * back or reword what PMX wrote. Never deletes.
+   * back or reword what PMX wrote; approval (R16) and synthesis (INPUT-2: an open task in the backlog or Ready taking a
+   * later call's newer facts, through the tracker guard) to put checked text on a task. Never deletes.
    */
   rewrite(id: string, o: { title?: string; description?: string; cancel?: boolean }): Promise<void>;
   /**

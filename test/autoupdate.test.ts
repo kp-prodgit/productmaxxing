@@ -27,8 +27,8 @@ describe("installing the team's version (COMPAT-2, COMPAT-6)", () => {
   });
 
   it("installs only a newer package, never downgrades, and never replaces a source checkout", async () => {
-    const newer = fakeExec({ vendored: "0.40.0" });
-    expect(await installTeamVersion("/repo", newer.exec)).toEqual({ result: "updated", version: "0.40.0" });
+    const newer = fakeExec({ vendored: "0.41.0" });
+    expect(await installTeamVersion("/repo", newer.exec)).toEqual({ result: "updated", version: "0.41.0" });
     expect(newer.npmCalls()[0]).toEqual(["npm", "install", "-g", "/repo/.pmx/cli/productmaxxing.tgz"]);
 
     const older = fakeExec({ vendored: "0.4.0" });
@@ -38,14 +38,14 @@ describe("installing the team's version (COMPAT-2, COMPAT-6)", () => {
     expect((await installTeamVersion("/repo", fakeExec({ vendored: null }).exec)).result).toBe("no-package");
 
     delete process.env.PMX_INSTALL_ROOT_FOR_TESTS; // this test runs from a git checkout
-    const dev = fakeExec({ vendored: "0.40.0" });
-    expect(await installTeamVersion("/repo", dev.exec)).toEqual({ result: "dev-install", version: "0.40.0" });
+    const dev = fakeExec({ vendored: "0.41.0" });
+    expect(await installTeamVersion("/repo", dev.exec)).toEqual({ result: "dev-install", version: "0.41.0" });
     expect(dev.npmCalls()).toEqual([]);
   });
 
   it("explains a global folder that needs sudo", async () => {
-    const r = await installTeamVersion("/repo", fakeExec({ vendored: "0.40.0", npm: { code: 243, stderr: "npm ERR! code EACCES" } }).exec);
-    expect(r).toEqual({ result: "needs-sudo", version: "0.40.0", command: 'sudo npm install -g "/repo/.pmx/cli/productmaxxing.tgz"' });
+    const r = await installTeamVersion("/repo", fakeExec({ vendored: "0.41.0", npm: { code: 243, stderr: "npm ERR! code EACCES" } }).exec);
+    expect(r).toEqual({ result: "needs-sudo", version: "0.41.0", command: 'sudo npm install -g "/repo/.pmx/cli/productmaxxing.tgz"' });
   });
 
   it("updates into the folder pmx was installed under, not npm's own (--prefix)", async () => {
@@ -53,17 +53,17 @@ describe("installing the team's version (COMPAT-2, COMPAT-6)", () => {
     const prefix = await realpath(await tmp("homebrew-"));
     process.env.PMX_INSTALL_ROOT_FOR_TESTS = join(prefix, "lib", "node_modules", "productmaxxing");
     await mkdir(process.env.PMX_INSTALL_ROOT_FOR_TESTS, { recursive: true });
-    const elsewhere = fakeExec({ vendored: "0.40.0", globalPrefix: "/usr/local" });
-    expect(await installTeamVersion("/repo", elsewhere.exec)).toEqual({ result: "updated", version: "0.40.0" });
+    const elsewhere = fakeExec({ vendored: "0.41.0", globalPrefix: "/usr/local" });
+    expect(await installTeamVersion("/repo", elsewhere.exec)).toEqual({ result: "updated", version: "0.41.0" });
     expect(elsewhere.npmCalls()[0]).toEqual(["npm", "install", "-g", "--prefix", prefix, "/repo/.pmx/cli/productmaxxing.tgz"]);
 
     // Installed in npm's own folder: the command stays as it always was.
-    const same = fakeExec({ vendored: "0.40.0", globalPrefix: prefix });
+    const same = fakeExec({ vendored: "0.41.0", globalPrefix: prefix });
     await installTeamVersion("/repo", same.exec);
     expect(same.npmCalls()[0]).toEqual(["npm", "install", "-g", "/repo/.pmx/cli/productmaxxing.tgz"]);
 
     // And the sudo hint names the same folder.
-    const denied = fakeExec({ vendored: "0.40.0", globalPrefix: "/usr/local", npm: { code: 243, stderr: "EACCES" } });
+    const denied = fakeExec({ vendored: "0.41.0", globalPrefix: "/usr/local", npm: { code: 243, stderr: "EACCES" } });
     expect(await installTeamVersion("/repo", denied.exec)).toMatchObject({ result: "needs-sudo", command: `sudo npm install -g --prefix "${prefix}" "/repo/.pmx/cli/productmaxxing.tgz"` });
   });
 });
@@ -81,17 +81,17 @@ describe("background auto-update (COMPAT-6)", () => {
   }
 
   it("does nothing unless the team turned it on", async () => {
-    const fx = fakeExec({ vendored: "0.40.0" });
+    const fx = fakeExec({ vendored: "0.41.0" });
     expect(await updateStep(await ctxWith(fx, undefined))).toBeNull();
     expect(await updateStep(await ctxWith(fx, false))).toBeNull();
     expect(fx.calls).toEqual([]);
   });
 
   it("installs a newer team version, then waits an hour before looking again", async () => {
-    const fx = fakeExec({ vendored: "0.40.0" });
+    const fx = fakeExec({ vendored: "0.41.0" });
     const ctx = await ctxWith(fx, true);
-    expect(await updateStep(ctx)).toBe("auto-update: installed pmx 0.40.0");
-    expect((await loadState()).autoUpdate).toMatchObject({ result: "updated", version: "0.40.0" });
+    expect(await updateStep(ctx)).toBe("auto-update: installed pmx 0.41.0");
+    expect((await loadState()).autoUpdate).toMatchObject({ result: "updated", version: "0.41.0" });
     expect(await updateStep(ctx)).toBeNull();
     expect(fx.npmCalls()).toHaveLength(1);
     const later = { ...ctx, now: () => new Date("2026-11-06T11:30:00Z") };
@@ -100,11 +100,11 @@ describe("background auto-update (COMPAT-6)", () => {
   });
 
   it("says once per version when it needs sudo, and keeps the result for doctor", async () => {
-    const fx = fakeExec({ vendored: "0.40.0", npm: { code: 243, stderr: "EACCES: permission denied" } });
+    const fx = fakeExec({ vendored: "0.41.0", npm: { code: 243, stderr: "EACCES: permission denied" } });
     const ctx = await ctxWith(fx, true);
-    expect(await updateStep(ctx)).toMatch(/pmx 0\.40\.0 is waiting \(Run: sudo npm install -g/);
+    expect(await updateStep(ctx)).toMatch(/pmx 0\.41\.0 is waiting \(Run: sudo npm install -g/);
     const later = { ...ctx, now: () => new Date("2026-11-06T12:00:00Z") };
     expect(await updateStep(later)).toBeNull(); // same version: no second notice
-    expect((await loadState()).autoUpdate).toMatchObject({ result: "needs-sudo", version: "0.40.0", notifiedFor: "0.40.0" });
+    expect((await loadState()).autoUpdate).toMatchObject({ result: "needs-sudo", version: "0.41.0", notifiedFor: "0.41.0" });
   });
 });

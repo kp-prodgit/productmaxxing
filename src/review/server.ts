@@ -83,7 +83,8 @@ export async function startReviewServer(ctx: Ctx, svc: Services, o: { all?: bool
       if (req.method === "GET" && url.pathname === "/api/queue") {
         cache = await loadQueue(ctx, svc, { all: o.all });
         for (const i of cache.items) if (!shownAt.has(i.task.id)) shownAt.set(i.task.id, Date.now());
-        return json(res, 200, { reviewer: ctx.personal.handle, items: cache.items.map(view) });
+        // R13: a draft another Mac decided since this Mac's last Linear sync isn't offered; the page says why instead.
+        return json(res, 200, { reviewer: ctx.personal.handle, items: cache.items.map(view), decided: cache.decided.map((d) => ({ identifier: d.identifier, text: d.text })) });
       }
       const m = url.pathname.match(/^\/api\/items\/([^/]+)\/(accept|reject|redo)$/);
       if (req.method === "POST" && m) {

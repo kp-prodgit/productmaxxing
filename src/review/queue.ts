@@ -1,13 +1,14 @@
 import type { Ctx } from "../core/context.js";
 import { outputHost, type OutputHost } from "../core/host.js";
 import { RunLogStore } from "../core/runlog-store.js";
-import type { RunLogEntry } from "../core/runlog.js";
+import type { DegradedRun, RunLogEntry } from "../core/runlog.js";
 import type { Services } from "../core/services.js";
 import type { Task } from "../core/types.js";
 import { draftDecided, lookAt, markStore, markTask, type StoredMark } from "../lease/marks.js";
+import { webCitations } from "../run/environments.js";
 import type { RunRecord } from "../run/record.js";
 import { removePackNow } from "../run/share.js";
-import { followUpsOnAccept, followUpText, type FollowUpResult } from "./followups.js";
+import { draftFile, followUpsOnAccept, followUpText, type FollowUpResult } from "./followups.js";
 
 export interface ReviewItem {
   task: Task;
@@ -132,12 +133,41 @@ export async function recordDecision(
   // clean-up's tombstone in that mark. One the team repo doesn't take now goes at the next clean-up; the accept stands.
   // A reject or a redo keeps them: the task may be drafted again.
   if (verdict === "accepted") await removePackNow(ctx, svc.tracker, task.identifier, "done");
+  // REV-3: a redo or reject of a draft whose run went wrong says so, and the accept rate leaves it out.
+  const degraded = verdict === "accepted" ? null : degradedRun(item);
   await new RunLogStore(ctx).record({
     type: "verdict", agent: ctx.agent, machine: ctx.personal.machineId, taskId: task.identifier,
     category: task.category ?? "unknown", size: task.size ?? "?", verdict, reviewMinutes: o.reviewMinutes ?? null, editSize: null,
+    ...(degraded ? { degraded } : {}),
   });
   const more = followError ? `PMX couldn't make its follow-ups: ${followError}.` : followUpText(followUps);
   return { message: [`${task.identifier} ${verdict}.`, more, unpushed].filter(Boolean).join(" "), followUps };
+}
+
+/**
+ * REV-3: a draft saying its run had no web: "WebSearch and WebFetch were not available", "web access was denied", "I
+ * couldn't reach the web". Read only in a web run's draft that cites no page.
+ */
+const NO_WEB = /\b(?:web ?search|web ?fetch|web (?:tools?|access|search(?:es)?|research))\b[^.\n]{0,80}?(?:\b(?:were|was|are|is)(?:n't| not) (?:available|allowed|permitted|reachable)\b|\b(?:unavailable|denied|disabled|blocked)\b)|\b(?:no|without) (?:web|internet) access\b|\bcould(?:n't| not) (?:reach|access|use|search) the web\b/i;
+
+/**
+ * REV-3: why a draft says little about its kind of work's skill, or null. Its run record shows the run failed, or was
+ * cut short (the per-run cap) or didn't pass its checklist ("partial"), or a web run (RUN-6) got no web: its web check
+ * failed, or its draft cites no page and says its web tools weren't there ("no-web"), or PMX's web guard blocked its
+ * calls and it cites no page ("web-blocked"). A redo or reject of such a draft isn't counted toward the accept rate,
+ * so a kind of work isn't paused for its runs' trouble. A draft without a run record counts as before.
+ */
+export function degradedRun(item: Pick<ReviewItem, "files" | "record">): DegradedRun | null {
+  const r = item.record;
+  if (!r) return null;
+  if (r.outcome === "failed") return "failed";
+  if (r.outcome === "capped" || r.checklist?.ok === false) return "partial";
+  if (r.web !== true) return null;
+  if (r.profile?.checksFailed?.includes("profile.web")) return "no-web";
+  const draft = draftFile(item)?.content ?? "";
+  if (webCitations(draft) > 0) return null;
+  if ((r.webBlocked ?? 0) > 0) return "web-blocked";
+  return NO_WEB.test(draft) ? "no-web" : null;
 }
 
 export interface CategoryStats {
@@ -146,9 +176,14 @@ export interface CategoryStats {
   redo: number;
   total: number;
   rate: number;
+  /** REV-3: redos and rejects of drafts whose runs went wrong (`degradedRun`), left out of the rest. */
+  degraded: number;
 }
 
-/** Accept rate per category over a window (REV-3, MET-1). Redo counts against acceptance. */
+/**
+ * Accept rate per category over a window (REV-3, MET-1). Redo counts against acceptance, except a redo or reject of a
+ * draft whose run went wrong (`degraded`), which isn't counted at all.
+ */
 export function acceptStats(entries: RunLogEntry[], now: Date, windowDays: number): Record<string, CategoryStats> {
   const since = now.getTime() - windowDays * 86400000;
   const unpausedAt = new Map<string, number>();
@@ -159,7 +194,8 @@ export function acceptStats(entries: RunLogEntry[], now: Date, windowDays: numbe
     const t = Date.parse(e.ts);
     // An unpause resets the window for that category, so it gets a fresh chance.
     if (t < since || t < (unpausedAt.get(e.category) ?? 0)) continue;
-    const s = (out[e.category] ??= { accepted: 0, rejected: 0, redo: 0, total: 0, rate: 0 });
+    const s = (out[e.category] ??= { accepted: 0, rejected: 0, redo: 0, total: 0, rate: 0, degraded: 0 });
+    if (e.verdict !== "accepted" && e.degraded) { s.degraded++; continue; }
     s[e.verdict]++;
     s.total++;
   }
@@ -170,5 +206,5 @@ export function acceptStats(entries: RunLogEntry[], now: Date, windowDays: numbe
 export function formatStats(stats: Record<string, CategoryStats>): string {
   const rows = Object.entries(stats).sort(([a], [b]) => a.localeCompare(b));
   if (!rows.length) return "No review decisions yet.";
-  return rows.map(([c, s]) => `${c.padEnd(22)} ${(s.rate * 100).toFixed(0).padStart(3)}% accepted  (${s.accepted} accepted, ${s.redo} redo, ${s.rejected} rejected)`).join("\n");
+  return rows.map(([c, s]) => `${c.padEnd(22)} ${(s.rate * 100).toFixed(0).padStart(3)}% accepted  (${s.accepted} accepted, ${s.redo} redo, ${s.rejected} rejected${s.degraded ? `; ${s.degraded} not counted, since their runs failed or got no web` : ""})`).join("\n");
 }

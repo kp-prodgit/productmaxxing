@@ -145,7 +145,7 @@ describe("evidence packs for tasks approved before them (RUN-5 backfill)", () =>
     const pack = await packIn(a.origin, "PMX-1");
     const task = byId(a.tracker, "PMX-1");
     // Exactly what this Mac's agent is shown, as at approval: the cited passages, filtered and redacted, nothing else.
-    expect(pack).toEqual({ v: 1, task: "PMX-1", at: a.ctx.now().toISOString(), nameSwap: 2, companies: ["acme"], sources: (await taskEvidence(a.ctx, task)).sources });
+    expect(pack).toEqual({ v: 1, task: "PMX-1", at: a.ctx.now().toISOString(), nameSwap: 3, companies: ["acme"], sources: (await taskEvidence(a.ctx, task)).sources });
     const text = JSON.stringify(pack);
     expect(text).toContain("SCIM provisioning would fix it");
     expect(text).not.toMatch(/salary|Acme weekly|jane@acme\.com|synthesize-\d/);

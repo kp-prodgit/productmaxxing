@@ -125,7 +125,8 @@ export async function enqueueSkillDoc(name: string, body: string, now: () => Dat
 }
 
 const ref = (opId: string) => `ref:${opId}`;
-const pendingIdentifier = (opId: string) => `PENDING-${opId.slice(0, 6).toUpperCase()}`;
+/** The placeholder identifier of the issue a queued `create-task` or `lodge-meeting` makes, until the sync reports the real one. */
+export const pendingIdentifier = (opId: string) => `PENDING-${opId.slice(0, 6).toUpperCase()}`;
 
 /** A queued op, as a PM reads it: what it does and to which task. Never its text. */
 export function opWords(op: RelayOp): string {
@@ -540,9 +541,14 @@ export async function checkRelay(team: TeamConfig, now = new Date()): Promise<st
         snap.syncedAt = written.toISOString();
         await writeJson(files.snapshot(), snap, 0o600);
       }
-      // Each created task must now be in Linear: matched by title, since Claude made it this run.
-      for (const r of results.filter((x) => x.ok && x.identifier)) {
-        if (!snap.issues.some((n) => n.identifier === r.identifier)) out.push(`  ⚠ ${r.identifier} was reported done but isn't in the snapshot; PMX will check again next sync.`);
+      // Each issue a change was reported done on must now be in Linear, said once per issue. Not one this batch canceled:
+      // the snapshot leaves canceled issues out on purpose.
+      const issueOf = (t: string) => (t.startsWith("ref:") ? byId.get(t.slice(4))?.identifier : t);
+      const canceled = new Set(outbox.ops.filter((op) => op.kind === "rewrite" && op.cancel && byId.get(op.id)?.ok)
+        .flatMap((op) => [byId.get(op.id)!.identifier, "target" in op ? issueOf(op.target) : undefined]).filter(Boolean));
+      const reported = new Set(results.filter((x) => x.ok && x.identifier && !canceled.has(x.identifier)).map((x) => x.identifier!));
+      for (const id of reported) {
+        if (!snap.issues.some((n) => n.identifier === id)) out.push(`  ⚠ ${id} was reported done but isn't in the snapshot; PMX will check again next sync.`);
       }
       out.push(...reconcile(outbox.ops.filter((op) => byId.get(op.id)?.ok), byId, snap.issues));
       out.push(`Snapshot: ${snap.issues.length} item(s) from Linear, synced ${snap.syncedAt}.`);

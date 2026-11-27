@@ -33,6 +33,7 @@ import { listReceipts, readReceipt } from "../core/receipt.js";
 import { packageRoot, skillInventory, teamSkillPath } from "../core/skills.js";
 import { claudePresent, installAppSkill, SETUP_SKILL } from "../claude/skill.js";
 import { AUTO_STEPS } from "../core/upgrade.js";
+import { requeueStep } from "../review/requeue.js";
 import { formatChecklist, type Checklist, type Step } from "../setup/checklist.js";
 import { gatherChecklist } from "../setup/gather.js";
 import { syncOrgSkills, validateOrgSkill } from "../core/org-skills.js";
@@ -87,6 +88,8 @@ export const tickSteps: [string, TickStep][] = [
   ["update", updateStep],
   ["digest", digestStep],
   ["todo", todoStep],
+  // D2-8: once after an update, the follow-ups an older PMX left waiting, read again by today's rules.
+  ["follow-ups", requeueStep],
   ["release", releaseStep],
   ["synthesize", synthStep],
   ["company", companyStep],

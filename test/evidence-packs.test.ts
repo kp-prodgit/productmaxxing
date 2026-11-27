@@ -137,7 +137,7 @@ describe("evidence packs: an approved task's quotes in the team repo (RUN-5)", (
     // Keyed by the task's own source IDs, with each source's kind and date; R5: names swapped, and the sources' outside
     // companies as their domains name them. Nothing more.
     expect(Object.keys(pack).sort()).toEqual(["at", "companies", "nameSwap", "sources", "task", "v"]);
-    expect(pack).toMatchObject({ nameSwap: 2, companies: ["acme"] });
+    expect(pack).toMatchObject({ nameSwap: 3, companies: ["acme"] });
     expect(pack.sources.map((s: any) => s.id)).toEqual(task.sources);
     for (const s of pack.sources) expect(Object.keys(s).sort()).toEqual(["at", "id", "kind", "passages"]);
     expect(pack.sources[0]).toMatchObject({ kind: "meeting", at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
@@ -335,7 +335,7 @@ describe("evidence packs: an approved task's quotes in the team repo (RUN-5)", (
     const id = r.posted[0]!.identifier;
     expect(id).toBe("PMX-2");
     expect(await packsIn(origin!)).toEqual(["PMX-2"]);
-    expect(await packIn(origin!, "PMX-2")).toEqual({ v: 1, task: "PMX-2", at: other.now().toISOString(), nameSwap: 2, sources: original.sources });
+    expect(await packIn(origin!, "PMX-2")).toEqual({ v: 1, task: "PMX-2", at: other.now().toISOString(), nameSwap: 3, sources: original.sources });
     expect(JSON.stringify(await packIn(origin!, "PMX-2"))).not.toMatch(/salary|Globex|Acme weekly|jane@acme\.com/);
     // The copy went with the proposal, and nothing waits to be shared.
     expect(await readProposals()).toEqual([]);

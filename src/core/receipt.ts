@@ -58,6 +58,11 @@ export interface RunReceipt {
     tasks: TaskReceipt[]; skipped: string[]; heldOver?: { title: string; category: string; sources: string[]; rounds: number }[];
     waiting?: { title: string; category: string; sources: string[] }[];
     quoted?: { task: string; part: "title" | "description"; source: string; words: string; skipped: boolean }[];
+    /**
+     * INPUT-2: open tasks that took a newer figure from this run's other work (`matchFacts`), which no task of this run
+     * was matched to: the task, and what changed.
+     */
+    updated?: (OpenUpdated & { identifier: string })[];
   };
   /** Individual to-dos (TODO-1): what was added, and from which used source. Stays on this Mac. */
   todo?: {
@@ -67,9 +72,10 @@ export interface RunReceipt {
      * TODO-6: how many batches of meetings it read, and what a later meeting (`by`) did to a to-do an earlier batch
      * found: showed it done (and `why`, when Claude said), showed it overtaken (and `why`: its outcome happened
      * anyway), changed it, or said it again; or PMX found it the same ask as another to-do, kept in the words of
-     * `into`. Only "done" and "overtaken" drop one.
+     * `into`. Only "done" and "overtaken" drop one. TODO-8: `stored` is a to-do already on the PM's list, from an email
+     * thread read again with new messages: done or overtaken ticks it, and a change is made to it.
      */
-    batches?: number; reconciled?: { text: string; how: "done" | "overtaken" | "replaced" | "merged" | "same-ask"; by?: string; why?: string; into?: string }[];
+    batches?: number; reconciled?: { text: string; how: "done" | "overtaken" | "replaced" | "merged" | "same-ask"; by?: string; why?: string; into?: string; stored?: string }[];
     /**
      * R16 (TODO-5): to-dos from this run the PM moved to the team as product tasks, with the sources each carried (this
      * run's IDs). The task's description names this receipt, so its agent finds those sources here (RUN-3), and the
@@ -139,8 +145,22 @@ export interface TaskReceipt {
    * R6: `duplicateOf` with `done` (the day, YYYY-MM-DD): work the team finished recently, heard again, so not suggested.
    * `dropped` with `reason`: why the PM dropped it, in their words (`pmx proposals drop … --reason`), on this Mac only.
    */
-  posted?: { identifier: string } | { duplicateOf: string; done?: string } | { dryRun: true } | { staged: string } | { dropped: true; reason?: string } | { mergedInto: string } | { todo: string };
+  /**
+   * INPUT-2 (founder, 2026-11-27): `duplicateOf` with `updated`: an open task the need was heard again for, which took
+   * this run's newer facts.
+   */
+  posted?: { identifier: string } | { duplicateOf: string; done?: string; updated?: OpenUpdated } | { dryRun: true } | { staged: string } | { dropped: true; reason?: string } | { mergedInto: string } | { todo: string };
 }
+
+/**
+ * INPUT-2: what a later run did to an open task it heard a need again for. `description`: in the backlog or Ready, its
+ * description took the newer facts and a comment says what changed; `comment`: an agent was drafting it or its draft was
+ * in review (`why`), so only the comment. `changes` as the comment says them ("GPU cost is now 22% over budget (was
+ * 18%)."), already through the tracker guard; `sources`: how many of the run's sources were new to it; `queued`: through
+ * the Claude relay, so Linear has it at the next sync; `noComment`: the comment couldn't be said within the rules;
+ * `figure`: only a newer figure from the run's other work changed it (`matchFacts`), not the same need heard again.
+ */
+export interface OpenUpdated { how: "description" | "comment"; changes: string[]; sources: number; why?: string; queued?: true; noComment?: true; figure?: true }
 
 export type SizeFlag = "no-reason" | "cell-mismatch" | "count-below" | "count-above";
 

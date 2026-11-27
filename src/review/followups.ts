@@ -19,7 +19,7 @@ import { privateNames } from "../run/run.js";
 import { CHECKED, stageProposals, readProposals, type Proposal } from "../synth/proposals.js";
 import { STRATEGY_SOURCE, SOURCES_LINE, strategyFiles } from "../synth/synthesize.js";
 import { keepTodo, loadTodos } from "../todo/todo.js";
-import { cut, deadlineIn, norm, readFollowUps, type DraftQuestion } from "./draft-reader.js";
+import { cut, deadlineIn, norm, readFollowUps, statements, type DraftQuestion } from "./draft-reader.js";
 import type { ReviewItem } from "./queue.js";
 
 export { deadlineIn, readFollowUps, type DraftDecision, type DraftQuestion } from "./draft-reader.js";
@@ -131,8 +131,35 @@ export function followUpKind(
  * Which follow-ups this Mac already made from each accepted draft (`made`), and which it left in the draft over the caps
  * (`left`), so accepting it again neither doubles them nor makes the ones left behind.
  */
-interface Ledger { v: 1; drafts: Record<string, { at: string; made: string[]; left?: string[] }> }
+interface Ledger { v: 1; drafts: Record<string, { at: string; made: string[]; left?: string[]; requeued?: Requeued[] }> }
 export const followUpsFile = () => join(paths.staging(), "follow-ups.json");
+
+/**
+ * D2-8: one waiting follow-up an older PMX made from this draft, read again by today's rules (src/review/requeue.ts):
+ * now a to-do to ask someone (`ask`) or a call of the PM's (`decision`), with that to-do's ID, still work with a new
+ * title and kind (`work`), or no follow-up at all, dropped (`dropped`). Its title then (`was`), and its words now (`now`).
+ */
+export interface Requeued { at: string; proposal: string; was: string; as: "ask" | "decision" | "work" | "dropped"; now: string; todo?: string; category?: string }
+
+/**
+ * Records in the ledger what reading a draft's older follow-ups again did (D2-8), with the follow-ups it now made, so
+ * accepting that draft again makes none of them twice.
+ */
+export async function recordRequeued(identifier: string, path: string, changes: Requeued[], keys: string[], now: Date): Promise<void> {
+  if (!changes.length) return;
+  const key = `${identifier} ${path}`;
+  await privateDir(paths.staging());
+  await withLock(followUpsFile(), async () => {
+    const l = (await readJson<Ledger>(followUpsFile())) ?? { v: 1, drafts: {} };
+    const d = l.drafts[key] ?? { at: now.toISOString(), made: [] };
+    d.made = [...new Set([...d.made, ...keys])];
+    d.left = d.left?.filter((k) => !d.made.includes(k));
+    if (!d.left?.length) delete d.left;
+    d.requeued = [...(d.requeued ?? []), ...changes];
+    l.drafts[key] = d;
+    await writeJson(followUpsFile(), l, 0o600);
+  });
+}
 
 export interface FollowUpResult {
   /** The team turned follow-ups off, or the draft isn't a document. */
@@ -162,6 +189,12 @@ export interface FollowUpResult {
 
 const EMPTY = (skipped: FollowUpResult["skipped"], draft: string | null = null): FollowUpResult => ({ skipped, todos: [], asks: [], proposals: [], repeated: 0, duplicates: 0, leftOut: 0, moreQuestions: 0, moreDecisions: 0, draft });
 
+/**
+ * A clause in a question's own word order ("what will the committee accept", "who is the contact", "which plans do
+ * admins use"), not one that reports a question ("what the DPA covers", "how long imports take").
+ */
+const DIRECT = /^(?:what|which|who|whom|whose|when|where|why|how(?:\s+(?:many|much|long|often|soon|far))?)\s+(?:[\w'’-]+\s+)?(?:is|are|was|were|will|would|can|could|should|shall|does|do|did|has|have|must|may|might)\b/i;
+
 /** Words that add nothing to a question: "what exactly will …" asks what will. Not before a number ("exactly 30 days"). */
 const FILLER = /\s+(?:exactly|precisely|actually|really|basically)\b(?!\s+(?:\d|(?:one|two|three|four|five|six|seven|eight|nine|ten|half|once|twice|the same)\b))/gi;
 
@@ -174,18 +207,34 @@ const FILLER = /\s+(?:exactly|precisely|actually|really|basically)\b(?!\s+(?:\d|
  */
 export function askText(role: string | null, title: string, identifier: string, about: string | null = null): string {
   const id = identifier ? ` (${identifier})` : "";
-  const words = title.replace(FILLER, "");
+  let words = title.replace(FILLER, "");
   const clause = words.match(/^Find out (.+)$/)?.[1];
-  if (clause) {
+  // FOLLOW-1: a clause that is a question as the draft asks it ("what will the committee accept …?", "who is the
+  // contact") is asked as one, after a colon: "Ask the security lead: What will the committee accept …?".
+  if (clause && (clause.includes("?") || DIRECT.test(clause))) words = clause.replace(/[\s.;:,]+$/, "").replace(/\?*$/, "?");
+  else if (clause) {
     const head = role ? `Ask ${role} ` : "Find out ";
     return `${head}${cut(clause, 200 - head.length - id.length)}${id}`;
   }
+  // One question, ending at its "?": nothing the draft wrote after it (", via …") is part of it.
+  words = words.replace(/^([^?]*\?)(?:\s*[,;]|\s+[—–-]\s|\s+\p{Lu}).*$/u, "$1");
   const leaned = about ? words.match(/^[^:?]{1,80}:\s+(.+)$/)?.[1] : undefined;
   const q = (leaned ?? words).replace(/^\p{Ll}/u, (c) => c.toUpperCase());
   const head = `${role ? `Ask ${role}` : "Find out"}${leaned ? ` about ${about}` : ""}: `;
   const room = 200 - head.length - id.length;
   // Cut short, a question still ends with its "?".
   return `${head}${q.length > room && q.endsWith("?") ? `${cut(q, room - 1)}?` : cut(q, room)}${id}`;
+}
+
+/**
+ * An ask to-do's why (FOLLOW-1): what the draft says beside the question, as statements (the reason, the recommendation,
+ * a date), or else a whole sentence that says where it comes from. A title that leans on something nothing says
+ * (`from`) gets that sentence too, naming the task.
+ */
+export function askWhy(q: Pick<DraftQuestion, "rest" | "where" | "from">, identifier: string): string {
+  const said = statements(q.rest).join(" ");
+  const where = `${identifier}'s accepted draft${q.from ? `, "${q.from}",` : ""} lists this as ${q.where === "blocking" ? "a blocking" : "an open"} question.`;
+  return cut(said && q.from ? `${where} ${said}` : said || where, 400);
 }
 
 /** The draft a review item carries: the run's output, else the first Markdown file under outputs/. */
@@ -304,8 +353,9 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
       const role = q.ask!.role && !tracker.problem(q.ask!.role) ? q.ask!.role : null;
       const text = askText(role, q.title, task.identifier, q.about);
       if (open.has(norm(text))) { out.duplicates++; done.push(q.key); continue; }
-      // A whole sentence that says where the question comes from, when the draft says nothing more about it.
-      const why = cut(q.rest.join(" "), 400) || `${task.identifier}'s accepted draft lists this as ${q.where === "blocking" ? "a blocking" : "an open"} question.`;
+      // A whole sentence that says where the question comes from, when the draft says nothing more about it. A question
+      // the draft left beside it ("Has a reviewer been asked?") is no reason (FOLLOW-1).
+      const why = askWhy(q, task.identifier);
       const t = await keepTodo({ text, due: deadlineIn([q.question, ...q.rest].join(" "), now), why, source: provenance }, now);
       open.add(norm(t.text));
       out.asks.push({ id: t.id, text: t.text });
@@ -359,7 +409,8 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
       const l = (await readJson<Ledger>(followUpsFile())) ?? { v: 1, drafts: {} };
       const all = new Set([...(l.drafts[draftKey]?.made ?? []), ...done]);
       const left = [...new Set([...(l.drafts[draftKey]?.left ?? []), ...stay])].filter((k) => !all.has(k));
-      l.drafts[draftKey] = { at: now.toISOString(), made: [...all], ...(left.length ? { left } : {}) };
+      const requeued = l.drafts[draftKey]?.requeued;
+      l.drafts[draftKey] = { at: now.toISOString(), made: [...all], ...(left.length ? { left } : {}), ...(requeued?.length ? { requeued } : {}) };
       await writeJson(followUpsFile(), l, 0o600);
     });
   }

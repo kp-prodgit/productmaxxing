@@ -1,5 +1,5 @@
 import { domainLabel, domainOf as domainIn } from "./filter.js";
-import { nameKey, namesIn, PERSON_CUES, personForm, personKey, speakerLabel } from "./tracker-text.js";
+import { nameKey, namesIn, PERSON_CUES, personForm, personKey, speakerLabel, thingFollows, writtenCompany } from "./tracker-text.js";
 
 /**
  * R5 (founder decision 2026-11-26): no people's names in the team repo. Before, PMX swapped a name for `[PERSON-n]`
@@ -23,7 +23,8 @@ import { nameKey, namesIn, PERSON_CUES, personForm, personKey, speakerLabel } fr
  *   or every word of it is a name on its own; one word of a name when it's capitalized ("Dana", "Avery's"), or after a
  *   word only a person gets ("thanks dana", "w/ sean"); a name or surname that is also an ordinary word ("Mark",
  *   "Max", "Grant", which `namesIn` never takes alone) only as a speaker label, in a full name, after such a word, with
- *   a possessive ("Grant's") or doing what a person does mid-sentence ("as Grant said"), so "the Max plan" stays.
+ *   a possessive ("Grant's", not a thing's: "Lane's guidelines") or doing what a person does mid-sentence ("as Grant
+ *   said"), so "the Max plan" stays.
  * - **Companies stay** (the tracker rules allow them): an email domain's name, and the companies the caller knows (the
  *   task's own text, a pack's list), though never over a participant's name: an attendee is a person by the meeting's
  *   own record. A label that starts with a company ("Globex Hotels:") is the company's (R5c).
@@ -251,9 +252,9 @@ export function peopleSwap(o: PeopleSwapInput): PeopleSwap {
     const flat = label.replace(/-/g, "");
     const named = (o.companies ?? []).filter((c) => /^\p{Lu}/u.test(c.trim()));
     const said = [...texts.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${esc(label)}(?![\\p{L}\\p{N}])`, "giu"))].map((m) => m[0]).find((m) => /^\p{Lu}/u.test(m));
-    // A capitalized run whose words, without spaces, "&" or "and", are the label: "Hart & Stone", "Hart and Stone".
-    const run = [...texts.matchAll(/(?<![\p{L}\p{N}])\p{Lu}[\p{L}\p{M}'’.-]*(?:[ \t]+(?:&[ \t]+|and[ \t]+)?\p{Lu}[\p{L}\p{M}'’.-]*){1,3}/gu)]
-      .map((m) => m[0].replace(/['’]s?$/, "")).find((m) => { const w = nameKey(m).split(" "); return w.join("") === flat || w.filter((x) => x !== "and").join("") === flat; });
+    // Capitalized words that, without spaces, "&" or "and", are the label ("Hart & Stone", "Hooli Works"), read as the
+    // tracker guard reads a company: never on past a sentence's end or a possessive ("Hooli Works. Dana's…").
+    const run = writtenCompany(texts, flat);
     return named.find((c) => nameKey(c).replace(/ /g, "") === flat) ?? named.find((c) => nameKey(c).split(" ")[0] === flat) ?? run ?? said ?? label.charAt(0).toUpperCase() + label.slice(1);
   };
   const company = new Map<string, string | null>();
@@ -304,8 +305,10 @@ export function peopleSwap(o: PeopleSwapInput): PeopleSwap {
     const cued = () => CUE.test(whole!.slice(Math.max(0, at! - 24), at!));
     const capital = /^\p{Lu}/u.test(word);
     // A full name in any case only when each of its words is a name on its own: "we will price it" stays.
-    // R5a: "Grant's skeleton variant" or "as Grant said" for Theo Grant, mid-sentence: the person, not the word.
-    const person = () => capital && (/^['’]s\b/.test(whole!.slice(at! + word.length)) || (SAYS.test(whole!.slice(at! + word.length)) && !STARTS.test(whole!.slice(Math.max(0, at! - 4), at!))));
+    // R5a: "Grant's skeleton variant" or "as Grant said" for Theo Grant, mid-sentence: the person, not the word. R5: not
+    // a thing's possessive, though ("Lane's guidelines", "Saltwind's cover face"): a typeface's or an imprint's.
+    const after = () => whole!.slice(at! + word.length);
+    const person = () => capital && ((/^['’]s\b/.test(after()) && !thingFollows(after())) || (SAYS.test(after()) && !STARTS.test(whole!.slice(Math.max(0, at! - 4), at!))));
     const swap = v.kind === "listed"
       || (v.kind === "full" && (word.normalize("NFC").split(/[ \t '’.-]+/).every((p) => /^\p{Lu}/u.test(p)) || key.split(" ").every((w) => strong.has(w)) || cued()))
       || (v.kind === "strong" && (capital || cued()))

@@ -109,7 +109,7 @@ const USED_BY: Record<string, string> = {
   "pmx-digest": "`pmx digest`: writes your weekly digest from your calls",
   "pmx-synthesize": "`pmx synthesize`: turns customer calls and threads into suggested tasks",
   "pmx-size": "`pmx synthesize`: the rubric it sizes each task with (S, M, L, XL)",
-  "pmx-todo": "`pmx todo --refresh`: finds your own to-dos in your meetings; they stay on your Mac",
+  "pmx-todo": "`pmx todo --refresh`: finds your own to-dos in your meetings and the email threads you wrote in; they stay on your Mac",
   "pmx-rollup": "`pmx company`: merges teams' tasks into company-level themes",
   "pmx-brain": "`pmx brain` (Team plan): assesses the board and suggests next actions; fixed rules decide what happens",
   "pmx-pull": "Not used by PMX runs. Helps you steer the queue from your own Claude Code session if you install the plugin",

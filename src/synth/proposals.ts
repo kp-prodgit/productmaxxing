@@ -14,7 +14,7 @@ import { sentencesIn } from "../core/tracker-text.js";
 import { fillable, groupsLine, mergeGroups, type SourceGroup } from "./synthesize.js";
 import { doneDay, recentlyDone } from "./done.js";
 import { recheckProposal } from "./recheck.js";
-import { addsNothing, anchorsIn, anchorsOf, asks, differs, newWords, piecesOf, sameFact, saysMore, sharedCompanies, stem, swapsTerm, tellsApart, withoutDates } from "./repeats.js";
+import { addsNothing, anchorsIn, anchorsOf, asks, differs, foldDetail, labeledRepeat, newerFigure, newWords, piecesOf, question, sameFact, saysMore, sharedCompanies, stem, swapsTerm, tellsApart, updates, withoutDates, type FigureUpdate } from "./repeats.js";
 
 /**
  * Proposed tasks waiting for the PM (APPROVE-1). Synthesis stages what it would write to the tracker here, exactly
@@ -197,6 +197,31 @@ export interface FactMerge {
   added: string[];
   /** The summary's sentences a later one said more fully (`saysMore`), and the sentence now in each one's place. */
   fuller: { was: string; now: string }[];
+  /**
+   * With `newer` (an open task, INPUT-2): the summary's sentences a later one gave a newer date or figure for
+   * (`updates`, `newerFigure`), and the sentence now in each one's place. `said`: the later clause that gave it, when the
+   * summary keeps its own words with the newer figure; `figures`: the older figures or dates it replaced; `from`: the
+   * later sentence as given.
+   */
+  newer: Newer[];
+}
+
+/** A sentence of the summary a later one gave a newer date or figure for (INPUT-2). */
+export interface Newer { was: string; now: string; said?: string; figures?: string[]; from?: string }
+
+/** How a merge treats a later run's sentences. */
+export interface MergeOptions {
+  /**
+   * INPUT-2 (founder, 2026-11-27): an open task's description takes a later call's newer figures. A sentence that says
+   * one there again with a newer date or figure (`updates`) takes its place, or that of its clause, instead of joining
+   * beside it. Off for a task still waiting for the PM, whose description keeps both.
+   */
+  newer?: boolean;
+  /**
+   * INPUT-2: sentences from the run's other work (`matchFacts`), merged after `later` only where they give a newer figure
+   * for one there (`newerFigure`); nothing else of them joins.
+   */
+  facts?: string[];
 }
 
 /**
@@ -212,14 +237,20 @@ export function newFacts(description: string, rationale: string, max = SUMMARY_M
 }
 
 /** `newFacts`, with what the merge makes of the summary: a later sentence that says one of its facts more fully takes that one's place. */
-export function mergeFacts(description: string, rationale: string, max = SUMMARY_MAX, companies: string[] = []): FactMerge {
+export function mergeFacts(description: string, rationale: string, max = SUMMARY_MAX, companies: string[] = [], o: MergeOptions = {}): FactMerge {
   const summary = description.split(/\n\n/)[0] ?? "";
-  return mergeSentences(sentencesIn(summary.replace(/\s+/g, " ").trim()), sentencesIn(rationale.replace(/\s+/g, " ").trim()), max, companies);
+  return mergeSentences(sentencesIn(summary.replace(/\s+/g, " ").trim()), sentencesIn(rationale.replace(/\s+/g, " ").trim()), max, companies, o);
 }
 
 /**
  * The same merge, of sentences already split (R12a). Each later sentence:
  *
+ * - is left out when it's a short labeled line whose dates, figures and words the summary already says
+ *   (`labeledRepeat`: "Launch readiness: Dec 8 beta.");
+ * - gives a sentence there the short detail it adds after its subject, when without it the sentence says that one again
+ *   (`foldDetail`: "Vandelay, a $360k pilot, will…");
+ * - with `newer` (an open task), takes the place of a sentence there, or of a clause of one, that it gives a newer date or
+ *   figure for (`updates`);
  * - takes the place of a sentence there that it says more fully (`saysMore`), so the fuller of the two stays;
  * - is compared clause by clause (`byClause`): clauses said again are left out, the rest joins as a sentence of its own,
  *   and a first clause that says a first clause there more fully takes that one's place in its sentence;
@@ -228,20 +259,26 @@ export function mergeFacts(description: string, rationale: string, max = SUMMARY
  *   never left out;
  * - else joins `base` (up to three of them, the summary under `max` characters).
  */
-export function mergeSentences(base: string[], later: string[], max = SUMMARY_MAX, companies: string[] = []): FactMerge {
+export function mergeSentences(base: string[], later: string[], max = SUMMARY_MAX, companies: string[] = [], o: MergeOptions = {}): FactMerge {
   const said = [...base];
   const out: string[] = [];
   const fuller: FactMerge["fuller"] = [];
+  const newer: FactMerge["newer"] = [];
   let len = said.join(" ").length;
   const fits = (at: number, now: string) => len + now.length - said[at]!.length <= max;
-  const replace = (at: number, now: string) => {
+  const replace = (at: number, now: string, why: "fuller" | "newer" = "fuller", how: Omit<Newer, "was" | "now"> = {}) => {
     const was = said[at]!;
     said[at] = now;
     len += now.length - was.length;
     if (at >= base.length) out[at - base.length] = now;
     else {
-      const f = fuller.find((r) => r.now === was);
-      if (f) f.now = now;
+      // A sentence changed twice keeps the first one it replaced, under the latest reason.
+      const f: Newer | undefined = [...fuller, ...newer].find((r) => r.now === was);
+      if (f) {
+        f.now = now;
+        if (why === "newer") Object.assign(f, how);
+        if (why === "newer" && fuller.includes(f)) { fuller.splice(fuller.indexOf(f), 1); newer.push(f); }
+      } else if (why === "newer") newer.push({ was, now, ...how });
       else fuller.push({ was, now });
     }
   };
@@ -258,8 +295,30 @@ export function mergeSentences(base: string[], later: string[], max = SUMMARY_MA
     const inIt = w.filter((x) => have.has(x)).length;
     return !w.length || (anchorsIn(said.join(" "), t) && inIt / w.length >= 0.6 && (inIt >= 3 || inIt === w.length));
   };
-  for (const s of later) {
+  // The later run's sentences, then (INPUT-2) the run's other facts, which count only where they give a newer figure.
+  const queue = [...later.map((x) => ({ s: x, only: false })), ...(o.facts ?? []).map((x) => ({ s: x, only: true }))];
+  while (queue.length) {
+    const { s, only } = queue.shift()!;
     if (!factWords(s).size) continue;
+    if (only) {
+      const up = newerPlace(said, s, companies, { dates: false, loose: true });
+      if (up && fits(up.at, up.now)) replace(up.at, up.now, "newer", { ...up.how, from: s });
+      continue;
+    }
+    // "Launch readiness: Dec 8 beta." beside a summary that says the Dec 8 beta.
+    if (labeledRepeat(said.join(" "), s)) continue;
+    // "Vandelay, a $360k pilot, will…": the detail joins the sentence it says again, not the sentence whole.
+    const fold = foldDetail(said, s, companies);
+    if (fold && fits(fold.at, fold.now)) { replace(fold.at, fold.now); continue; }
+    // An open task: "GPU cost is now 22% over budget" takes the place of "… 18% …", in a sentence or in its clause, or
+    // the newer figure takes the older one's place in a sentence that says it otherwise; the rest of the later sentence
+    // is judged on its own.
+    const up = o.newer ? newerPlace(said, s, companies, { dates: true, loose: false }) : null;
+    if (up && fits(up.at, up.now)) {
+      replace(up.at, up.now, "newer", { ...up.how, from: s });
+      queue.unshift(...up.rest.map((x) => ({ s: x, only: false })));
+      continue;
+    }
     // The sentences it could say again: a different date or figure, a claim turned around, another company, another
     // question or another distinctive term makes it a new fact beside that one, however many words they share.
     const i = said.findIndex((x) => !tellsApart(x, s, companies) && (nearDuplicate(x, s) || sameFact(x, s, companies)));
@@ -278,7 +337,67 @@ export function mergeSentences(base: string[], later: string[], max = SUMMARY_MA
     if (twin ? anchorsIn(twin, s) && !c.unmatched : spread(s)) continue;
     add(s);
   }
-  return { sentences: said, added: out, fuller };
+  return { sentences: said, added: out, fuller, newer };
+}
+
+/** Words a clause may start with that are lower case inside a sentence ("The close moved…" as "…, and the close moved…"). */
+const OPENS = /^(?:The|A|An|Its|Their|This|That|These|Those|It|They|There|Our|We)\b/;
+
+/** Where a later sentence's newer date or figure goes (`newerPlace`), and what else of the later sentence is left to judge. */
+interface Place { at: number; now: string; how: Omit<Newer, "was" | "now" | "from">; rest: string[] }
+
+/**
+ * INPUT-2: where a later sentence gives a newer date or figure for a fact already there:
+ *
+ * - it says all that sentence says, with a newer date or figure (`updates`): in that sentence's place;
+ * - it's one clause and says all a clause of one there says (`updates`): in that clause's place ("Acme will not sign
+ *   before it has an answer, and its close date moved to Feb 12");
+ * - else a clause of it gives a newer figure for one there, however it's worded (`newerFigure`, with `dates` a newer date
+ *   for the same event too): the newer figure takes the older one's place in that sentence, which keeps its own words
+ *   and its other facts ("November GPU spend is running 22% over plan and nobody can say which tenants drive it"), and
+ *   the later sentence's other clauses are judged on their own (`rest`), when they can stand as sentences.
+ *
+ * `loose` (the run's other facts): only the last way, and with `dates` false only for a figure.
+ *
+ * Null when it updates none.
+ */
+function newerPlace(said: string[], s: string, companies: string[], o: { dates: boolean; loose: boolean }): Place | null {
+  const whole = o.loose ? -1 : said.findIndex((x) => updates(x, s, companies));
+  if (whole >= 0) return { at: whole, now: s, how: {}, rest: [] };
+  const mine = question(s) ? [] : piecesOf(s);
+  const body = s.replace(/[\s.!?]+$/, "");
+  if (mine.length === 1 && !o.loose && !asks(s)) {
+    for (let at = 0; at < said.length; at++) {
+      const x = said[at]!;
+      const parts = asks(x) ? [] : piecesOf(x);
+      if (parts.length < 2) continue;
+      const p = parts.find((q) => updates(q.text, s, companies));
+      if (!p) continue;
+      const text = p.from > 0 && OPENS.test(body) ? `${body.charAt(0).toLowerCase()}${body.slice(1)}` : body;
+      return { at, now: `${x.slice(0, p.from)}${text}${x.slice(p.to)}`, how: {}, rest: [] };
+    }
+  }
+  // The newer figure in the older one's place, in the clause of one there it's about.
+  let best: { at: number; k: number; u: FigureUpdate; from: number } | null = null;
+  for (let at = 0; at < said.length; at++) {
+    const x = said[at]!;
+    for (const p of question(x) ? [] : piecesOf(x)) {
+      mine.forEach((c, k) => {
+        const u = newerFigure(p.text, c.text, companies, { dates: o.dates });
+        if (u && (!best || u.subject > best.u.subject)) best = { at, k, u, from: p.from };
+      });
+    }
+  }
+  if (!best) return null;
+  const { at, k, u, from } = best as { at: number; k: number; u: FigureUpdate; from: number };
+  const x = said[at]!;
+  const now = `${x.slice(0, from + u.at)}${u.now}${x.slice(from + u.end)}`;
+  const clause = mine[k]!.text;
+  const rest: string[] = [];
+  if (k > 0) rest.push(`${s.slice(0, mine[k]!.join).trimEnd().replace(/[,;:]$/, "")}.`);
+  const next = mine[k + 1];
+  if (next?.free) { const r = s.slice(next.from).trim(); rest.push(`${r.charAt(0).toUpperCase()}${r.slice(1)}`); }
+  return { at, now, how: { said: `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`, figures: [u.was] }, rest };
 }
 
 /**
@@ -639,6 +758,31 @@ export async function takeProposal(ref: string): Promise<Proposal | null> {
     if (!p) return null;
     await save(all.filter((x) => x.id !== p.id));
     return p;
+  });
+}
+
+/**
+ * D2-8 (FOLLOW-1): what reading an older PMX's waiting follow-ups again decided, under the proposals' lock. Those now
+ * to-dos leave the list (`take`), and those still work take today's title and kind (`retitle`). One approved or dropped
+ * meanwhile is no longer here, so nothing happens to it. Returns the ones taken off, and the IDs retitled.
+ */
+export async function requeueProposals(o: { take: string[]; retitle: { id: string; title: string; category: string }[] }): Promise<{ taken: Proposal[]; retitled: string[] }> {
+  return withLock(proposalsFile(), async () => {
+    const all = await readProposals();
+    const take = new Set(o.take);
+    const taken = all.filter((p) => take.has(p.id));
+    const keep = all.filter((p) => !take.has(p.id));
+    const retitled: string[] = [];
+    for (const r of o.retitle) {
+      const p = keep.find((x) => x.id === r.id);
+      // Never two waiting tasks with one title.
+      if (!p || keep.some((x) => x !== p && norm(x.title) === norm(r.title))) continue;
+      p.title = r.title;
+      p.category = r.category;
+      retitled.push(p.id);
+    }
+    if (taken.length || retitled.length) await save(keep);
+    return { taken, retitled };
   });
 }
 

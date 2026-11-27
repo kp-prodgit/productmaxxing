@@ -7,13 +7,14 @@ import type { Services } from "../core/services.js";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { newReceiptId, refHash, writeReceipt, type RunReceipt, type SizeFlag, type Sizing, type TaskReceipt } from "../core/receipt.js";
+import { newReceiptId, readReceipt, refHash, writeReceipt, type RunReceipt, type SizeFlag, type Sizing, type TaskReceipt } from "../core/receipt.js";
 import { parseRubric, type SizeRubric } from "../core/skillcheck.js";
 import { categoryMenu, loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
 import { updateState } from "../core/state.js";
 import { COMPANY_ROLES, SIZES, type CandidateTask, type CompanyRole, type SignalItem, type Size, type Task } from "../core/types.js";
+import { CANARY_REFUSAL } from "../core/canary.js";
 import { domainLabel } from "../core/filter.js";
-import { cutText, isFundraising, meaningful, quoteGuard, sentencesIn, trackerGuard, type TrackerGuard, type TrackerRules } from "../core/tracker-text.js";
+import { cutText, isFundraising, meaningful, quoteGuard, sentencesIn, thingsIn, trackerGuard, type TrackerGuard, type TrackerRules } from "../core/tracker-text.js";
 import { meetingSeries } from "../inputs/inputs.js";
 import { checkBudget, recordSpend } from "../budget/provider.js";
 import { gather } from "../digest/gather.js";
@@ -22,7 +23,12 @@ import type { MeetingEntry } from "../tracker/types.js";
 import { addEvidence, CHECKED, companiesOf, newFacts, readProposals, stageProposals } from "./proposals.js";
 import { doneDay, DONE_DAYS, recentlyDone, sameWords, type DoneTask } from "./done.js";
 import { COMMITMENT } from "../todo/todo.js";
-import { inlineSources } from "../run/evidence.js";
+import { inlineSources, receiptOf } from "../run/evidence.js";
+import { shareEvidence } from "../run/share.js";
+import { lookAt, markStore, type TaskMark } from "../lease/marks.js";
+import type { LeaseInfo } from "../lease/types.js";
+import { followsIn } from "../tracker/mentions.js";
+import { applyOpenUpdate, matchFacts, newSources, openStep, planOpenUpdate, updatedRecord, type OpenStep } from "./open-update.js";
 import { heldOverBlock, heldSource, heldSourcesIn, isHeldSource, kindWords, nextHeld, nextWaiting, readHeldOver, saveHeldOver, WAIT_DAYS, type HeldNeed } from "./held-over.js";
 import { knownBlock, matchKnown, sameTitle, type Known } from "./dedup.js";
 import { openThemes, themeBlock, themeNamed, type RoadmapTheme } from "./themes.js";
@@ -38,6 +44,12 @@ export interface SynthResult {
   heldOver: number;
   /** N1: suggestions waiting for a kind of work the team hasn't turned on, by kind. */
   waiting?: { kind: string; n: number }[];
+  /**
+   * INPUT-2 (founder, 2026-11-27): open tasks a need was heard again for that took this run's newer facts: their
+   * description and a comment (`description`), or a comment only (`comment`, with why). `queued`: through the Claude
+   * relay, Linear has it at the next sync. `figure`: only a newer figure from the run's other work (`matchFacts`).
+   */
+  updated?: { identifier: string; title: string; how: "description" | "comment"; sources: number; changes: string[]; why?: string; queued?: boolean; figure?: boolean }[];
   /** The meeting ledger (MEET-2): lodged and finished now, already done by someone, claimed elsewhere, before the window. */
   meetings: { processed: { entry: string; tasks: string[] }[]; already: number; busy: number; before: number };
 }
@@ -632,12 +644,15 @@ export async function synthesize(
     throw new Error(`Synthesis run failed: ${result.error ?? "unknown"}`);
   }
 
-  const { tasks, skipped, heldOver, waiting, quoted } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), {
-    guarded: await strategyFiles(ctx.personal.repoPath), themes, maxTasks: maxTasks(ctx.team), offKinds,
+  const strategy = await strategyFiles(ctx.personal.repoPath);
+  const tctx: TrackerContext = {
     // F14: who the sources name, what the meetings are called and the team's series never reach the tracker.
     people: { found: [...g.people.found, ...back.people.found], listed: g.people.listed, things: [...(g.people.things ?? []), ...(back.people.things ?? [])] }, titles: work.filter((i) => i.kind === "transcript").map((i) => i.title), series: meetingSeries(ctx.team), items: work,
     // F5: nor do investors' and other confidential contacts' names.
     confidential: g.confidential,
+  };
+  const { tasks, skipped, heldOver, waiting, quoted } = parseCandidates(result.text, categories, new Set(work.map((i) => i.id)), parseRubric(rubric.text), new Map(work.map((i) => [i.id, i.text])), {
+    guarded: strategy, themes, maxTasks: maxTasks(ctx.team), offKinds, ...tctx,
   });
   const posted: SynthResult["posted"] = [];
   const bySource = new Map<string, number>();
@@ -645,6 +660,8 @@ export async function synthesize(
   const went = new Map<CandidateTask, NonNullable<TaskReceipt["posted"]>>();
   const fresh: CandidateTask[] = [];
   const folded = new Set<CandidateTask>();
+  // INPUT-2: open tasks a need was heard again for, with each repeat of it and its line in `skipped`.
+  const heard = new Map<string, { task: Task; cands: { c: CandidateTask; at: number }[] }>();
   // R6: follow-ups to recently done tasks, and R16: suggestions that give a sourceless open task its sources.
   const after = new Map<CandidateTask, DoneTask>();
   const fills = new Map<CandidateTask, string>();
@@ -670,7 +687,14 @@ export async function synthesize(
     // R16: an open task that names no sources (a to-do moved to the team) can't be drafted, so it doesn't cover a need
     // with sources: the sourced version is suggested, and approving it gives that task these sources (APPROVE-1).
     const sourceless = hit?.where === "tracker" ? open.find((t) => t.identifier === hit.id && fillable(t)) : undefined;
-    if (hit?.where === "tracker" && !sourceless) { skipped.push(`${c.title}: already open as ${hit.id}; heard again in ${c.sources.length} more source(s)`); went.set(c, { duplicateOf: hit.id }); continue; }
+    if (hit?.where === "tracker" && !sourceless) {
+      const at = skipped.push(`${c.title}: already open as ${hit.id}; heard again in ${c.sources.length} more source(s)`) - 1;
+      went.set(c, { duplicateOf: hit.id });
+      // INPUT-2: and it may bring the open task newer facts, once every repeat of it in this run is known.
+      const t = open.find((x) => x.identifier === hit.id);
+      if (t) heard.set(t.identifier, { task: t, cands: [...(heard.get(t.identifier)?.cands ?? []), { c, at }] });
+      continue;
+    }
     if (hit?.where === "waiting" && !o.dryRun) {
       // N2: the waiting task gains this run's facts (its summary, already through the tracker guard) and its sources.
       const merged = await addEvidence(hit.id, {
@@ -686,6 +710,8 @@ export async function synthesize(
     if (sourceless) fills.set(c, sourceless.identifier);
     fresh.push(c);
   }
+  // INPUT-2 (founder, 2026-11-27): an open task heard again takes this run's newer facts, through the tracker guard.
+  const { updated, figures } = await updateOpen(ctx, svc, { heard, open, cands: tasks.filter((c) => !folded.has(c)), items: work, receipt, tctx, strategy, dryRun: !!o.dryRun, skipped, went });
   // APPROVE-1: proposals wait on this Mac, exactly as they'd be written, until the PM approves them.
   const staged = await stageProposals(fresh.map((c) => ({
     at: ctx.now().toISOString(), receipt: receipt.id, title: c.title, description: describe(c, work, receipt.id, after.get(c)), category: c.category, size: c.size, sources: c.sources,
@@ -725,6 +751,7 @@ export async function synthesize(
     ...(next.needs.length ? { heldOver: next.needs.map((n) => ({ title: n.title, category: n.category, sources: keep.find((h) => h.title === n.title)?.sources ?? [], rounds: n.rounds })) } : {}),
     ...(waiting.length ? { waiting: waiting.map((w) => ({ title: w.title, category: w.category, sources: w.sources })) } : {}),
     ...(quoted.length ? { quoted } : {}),
+    ...(figures.length ? { updated: figures } : {}),
   };
   await writeReceipt(receipt, ctx.now());
   if (!o.dryRun) {
@@ -737,7 +764,108 @@ export async function synthesize(
   const kinds = new Map<string, number>();
   for (const w of o.dryRun ? [...stillWaiting, ...waiting] : wait.waiting) kinds.set(w.category, (kinds.get(w.category) ?? 0) + 1);
   const cutFrom = (title: string) => fresh.find((c) => c.title === title)?.leftOut?.sentences;
-  return { ...result0, posted, staged: staged.map((p) => ({ id: p.id, title: p.title, ...(cutFrom(p.title) ? { leftOut: cutFrom(p.title) } : {}) })), skipped, heldOver: next.needs.length, waiting: [...kinds].map(([kind, n]) => ({ kind, n })) };
+  return { ...result0, posted, staged: staged.map((p) => ({ id: p.id, title: p.title, ...(cutFrom(p.title) ? { leftOut: cutFrom(p.title) } : {}) })), skipped, heldOver: next.needs.length, waiting: [...kinds].map(([kind, n]) => ({ kind, n })), ...(updated.length ? { updated } : {}) };
+}
+
+/**
+ * INPUT-2 (founder decision, KP 2026-11-27; src/synth/open-update.ts): each open task this run heard a need again for
+ * takes the run's newer facts, and (rig test of #127) so does an open task a newer figure from the run's other work is
+ * about, whether or not synthesis matched a need to it (`matchFacts`): in the backlog or Ready, its description and a
+ * comment; while an agent drafts it or its draft is in review, a comment only; done or canceled, nothing. Every changed
+ * sentence goes through the run's tracker guard (with the task's own companies as things, never people) and quote
+ * rule. The receipt records it with the task heard again (`posted.updated`), or for a newer figure alone in
+ * `synth.updated`, and the run's answer says "updated PMX-46 with newer facts from 2 sources" (or "with a newer figure
+ * from a new source") in place of "heard again". A repeat's line counts only the sources new to the task ("heard again
+ * (no new sources)"). A dry run says what a real run would do and writes nothing. A task whose update fails stays heard
+ * again.
+ */
+async function updateOpen(ctx: Ctx, svc: Services, o: {
+  heard: Map<string, { task: Task; cands: { c: CandidateTask; at: number }[] }>; open: Task[]; cands: CandidateTask[]; items: SignalItem[]; receipt: RunReceipt;
+  tctx: TrackerContext; strategy: { name: string; text: string }[]; dryRun: boolean; skipped: string[]; went: Map<CandidateTask, NonNullable<TaskReceipt["posted"]>>;
+}): Promise<{ updated: NonNullable<SynthResult["updated"]>; figures: NonNullable<NonNullable<RunReceipt["synth"]>["updated"]> }> {
+  const out: NonNullable<SynthResult["updated"]> = [];
+  const figures: NonNullable<NonNullable<RunReceipt["synth"]>["updated"]> = [];
+  // An agent's claim and the team's marks (PULL-14): what this Mac's copy of Linear may not show yet. Read once, and
+  // only when an update would be written, since the marks are fetched from the team repo.
+  let seen: { leases: LeaseInfo[]; marks: Map<string, TaskMark>; look: Awaited<ReturnType<typeof lookAt>> } | null = null;
+  const team = async () => (seen ??= {
+    leases: await svc.lease.list().catch(() => [] as LeaseInfo[]),
+    marks: await markStore(ctx.repo).list().catch(() => new Map<string, TaskMark>()),
+    look: await lookAt(ctx, svc.tracker),
+  });
+  const meetings = quoteGuard(o.items.map((i) => ({ id: i.id, text: i.text })));
+  const released = quoteGuard(o.strategy.map((f) => ({ id: STRATEGY_SOURCE(f.name), text: f.text })));
+  const queued = svc.tracker.kind === "claude-relay";
+  const gone = new Set<number>();
+  // Its new sources get IDs in its own synthesis run, when that's here; a draft's follow-up cites its original's.
+  const runs = new Map<string, RunReceipt | null>();
+  const ownOf = async (t: Task) => {
+    if (!runs.has(t.identifier)) { const id = followsIn(t.description) ? null : receiptOf(t); runs.set(t.identifier, id ? await readReceipt(id).catch(() => null) : null); }
+    return runs.get(t.identifier)!;
+  };
+  // A repeat counts only the sources new to the task: its own run says which files its sources are.
+  for (const [identifier, h] of o.heard) {
+    const own = await ownOf(h.task);
+    for (const x of h.cands) {
+      const n = newSources(h.task, x.c.sources, o.receipt, own, o.items).length;
+      o.skipped[x.at] = `${x.c.title}: already open as ${identifier}; ${n ? `heard again in ${n} more source(s)` : "heard again (no new sources)"}`;
+    }
+  }
+  // A newer figure from the run's other work goes to the open task it's about, matched or not.
+  const { facts, left } = matchFacts({ tasks: o.open, cands: o.cands, heard: new Map([...o.heard].map(([id, h]) => [id, h.cands.map((x) => x.c)])), items: o.items, now: ctx.now() });
+  // A task that states the same older figure but isn't plainly about the same measure is left, and the answer says so.
+  const said = new Set<string>();
+  for (const l of left) {
+    if (facts.has(l.identifier) || said.has(l.identifier)) continue;
+    said.add(l.identifier);
+    o.skipped.push(`${l.identifier}: also says ${l.was} where this run brought a newer figure ("${l.sentence}"), but PMX left it: its sentence isn't plainly about the same measure (another subject, unit, date or company)`);
+  }
+  const targets = new Map<string, Task>([...[...o.heard.values()].map((h) => [h.task.identifier, h.task] as const), ...[...facts.keys()].map((id) => [id, o.open.find((t) => t.identifier === id)!] as const)]);
+  for (const [identifier, task] of targets) {
+    const cands = o.heard.get(identifier)?.cands ?? [];
+    // The task's own companies and products, as its title and description name them, are never people (R4b).
+    const guard = runGuard({ ...o.tctx, people: { found: o.tctx.people?.found ?? [], listed: o.tctx.people?.listed ?? [], things: [...(o.tctx.people?.things ?? []), ...thingsIn(`${task.title}\n${task.description}`)] } });
+    const check = (s: string) => !guard.problem(s) && !meetings.match(s) && !released.match(s);
+    const own = await ownOf(task);
+    const planFor = (step: Exclude<OpenStep, { how: "none" }>) => planOpenUpdate({ task, step, cands: cands.map((x) => x.c), facts: facts.get(identifier), items: o.items, run: o.receipt, own, check, now: ctx.now() });
+    // Where Linear says it is first; then, before anything is written, what an agent's claim or a mark says.
+    // A task the run's other work gave a newer figure that doesn't take it: the answer says why.
+    const why = (reason: string) => { if (!cands.length) o.skipped.push(`${identifier}: a newer figure came in ("${facts.get(identifier)![0]!.sentence}"), but PMX left it: ${reason}`); };
+    const first = openStep(task, { now: ctx.now() });
+    const firstPlan = first.how === "none" ? null : planFor(first);
+    if (!firstPlan) {
+      if (facts.has(identifier)) why(!facts.get(identifier)!.some((f) => newSources(task, f.sources, o.receipt, own, o.items).length) ? "it already cites the source with the newer figure" : "the sentence with it can't go to Linear under the tracker rules");
+      continue;
+    }
+    const t = await team();
+    const step = openStep(task, { leases: t.leases, mark: t.marks.get(identifier) ?? null, look: t.look, now: ctx.now() });
+    const plan = step.how === "none" ? null : planFor(step);
+    if (!plan) { if (step.how === "none") why(`another Mac's step shows ${step.why}`); continue; }
+    const n = plan.fresh.length;
+    const did = `${plan.step.how === "description" ? "updated" : "commented on"} ${identifier} ${plan.figure ? `with a newer figure from ${n === 1 ? "a new source" : `${n} new sources`}` : `with newer facts from ${n} ${n === 1 ? "source" : "sources"}`}`;
+    if (o.dryRun) {
+      for (const x of cands) o.skipped[x.at] = `${x.c.title}: already open as ${identifier}; a real run would have ${did}`;
+      if (!cands.length) o.skipped.push(`${task.title}: a real run would have ${did}`);
+      continue;
+    }
+    try {
+      await applyOpenUpdate(ctx, svc, plan);
+    } catch (e: any) {
+      if (e?.message === CANARY_REFUSAL) throw e;
+      for (const x of cands) o.skipped[x.at] += `; PMX couldn't update it: ${String(e?.message ?? e).slice(0, 200)}`;
+      if (!cands.length) o.skipped.push(`${task.title}: PMX couldn't give ${identifier} its newer figure: ${String(e?.message ?? e).slice(0, 200)}`);
+      continue;
+    }
+    const rec = updatedRecord(plan, queued);
+    for (const x of cands) { o.went.set(x.c, { duplicateOf: identifier, updated: rec }); gone.add(x.at); }
+    if (!cands.length) figures.push({ identifier, ...rec });
+    out.push({ identifier, title: task.title, how: plan.step.how, sources: n, changes: plan.changes, ...(plan.step.how === "comment" ? { why: plan.step.why } : {}), ...(queued ? { queued } : {}), ...(plan.figure ? { figure: true } : {}) });
+  }
+  // The answer says what was updated in their place, not "heard again".
+  for (const at of [...gone].sort((a, b) => b - a)) o.skipped.splice(at, 1);
+  // RUN-5: the updated tasks' packs get the new quotes now; one that can't be written yet goes at the next background run.
+  if (out.some((u) => u.how === "description") && ctx.team.tracker.kind !== "none") await shareEvidence(ctx, { say: "notify" }).catch(() => null);
+  return { updated: out, figures };
 }
 
 /**

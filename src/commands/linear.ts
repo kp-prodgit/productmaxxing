@@ -8,6 +8,7 @@ import { markTaskRun } from "../core/state.js";
 import { linearAccess } from "../linear/access.js";
 import { linearLogin, linearLogout, readGrant } from "../linear/oauth.js";
 import { removePackNow, shareEvidence } from "../run/share.js";
+import { giveBackTodos } from "../todo/move.js";
 import { checkRelay, dropOps, formatOutbox, opWords, readOutbox, readSnapshot, relayPrompt, relayTracker } from "../tracker/relay.js";
 import { markTask, tendMarks } from "../lease/marks.js";
 import type { Command } from "./index.js";
@@ -68,6 +69,8 @@ export const linearCommands: Command[] = [
         for (const op of r.dropped) console.log(`- dropped ${opWords(op)}`);
         for (const m of r.missing) console.log(`· no waiting change ${m}`);
         if (r.dropped.length) console.log("Nothing of these reaches Linear.");
+        // R16b: a dropped task a to-do became gives the to-do back, as it was.
+        for (const t of await giveBackTodos(r.dropped)) console.log(`"${t.text}" is your private to-do again.`);
         return r.missing.length ? 1 : 0;
       }
       const ctx = await a.ctx();

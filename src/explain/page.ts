@@ -109,16 +109,19 @@ function h(tag, cls, ...kids) {
 const chip = (text, cls) => h("span", "chip" + (cls ? " " + cls : ""), text);
 const plural = (n, one, many) => n + " " + (n === 1 ? one : (many || one + "s"));
 const money = (n) => (n === null || n === undefined ? "cost unknown" : "$" + n.toFixed(2));
-// The same words as reconciledText in format.ts (TODO-6).
+// The same words as reconciledText in format.ts (TODO-6, TODO-8).
 const reconciledText = (x, sources) => {
   const by = x.by ? " [" + x.by + "]" : "";
   const m = x.by ? (sources || []).find((s) => s.id === x.by) : undefined;
-  const where = m && m.title ? 'in "' + m.title + '"' + (m.at ? " on " + m.at.slice(0, 10) : "") : "in a later meeting";
+  const email = !!m && m.kind === "thread";
+  const later = email ? "a later email" : "a later meeting";
+  const where = m && m.title ? "in " + (email ? "the email " : "") + '"' + m.title + '"' + (m.at ? " on " + m.at.slice(0, 10) : "") : "in " + later;
   const why = x.why ? ". " + x.why : "";
-  if (x.how === "done") return "Done " + where + by + ", so dropped: " + x.text + why;
-  if (x.how === "overtaken") return "Overtaken " + where + by + ", so dropped: " + x.text + why;
+  const gone = x.stored ? "so PMX ticked your to-do " + x.stored : "so dropped";
+  if (x.how === "done") return "Done " + where + by + ", " + gone + ": " + x.text + why;
+  if (x.how === "overtaken") return "Overtaken " + where + by + ", " + gone + ": " + x.text + why;
   if (x.how === "same-ask") return 'The same ask as "' + x.into + '"' + by + ", kept once citing both: " + x.text;
-  return (x.how === "merged" ? "Said again" : "Changed") + " in a later meeting" + by + ", kept once citing both: " + x.text;
+  return (x.how === "merged" ? "Said again" : "Changed") + " in " + later + by + ", kept once citing both: " + x.text;
 };
 
 async function api(path) {
@@ -286,7 +289,9 @@ function taskCard(t, r) {
     s && s.why ? h("div", "small", "Why: " + s.why) : null,
     s ? s.flags.map((f) => h("div", "flag", "Check the size: " + (flagText[f] || f) + ".")) : null,
     t.leftOut ? h("div", "small", "Left out of what Linear gets: " + t.leftOut + "." + words.map((q) => " \u201c" + q.words + "\u201d, from " + quoteFrom(q.source, r.sources) + ".").join("")) : null,
-    t.posted && t.posted.dropped ? h("div", "small", "You dropped it" + (t.posted.reason ? ": " + t.posted.reason : "") + ".") : null);
+    t.posted && t.posted.dropped ? h("div", "small", "You dropped it" + (t.posted.reason ? ": " + t.posted.reason : "") + ".") : null,
+    // INPUT-2: an open task it was heard again for, which took this run's newer facts.
+    t.posted && t.posted.duplicateOf && t.posted.updated ? h("div", "small", (t.posted.updated.how === "description" ? "Updated " + t.posted.duplicateOf : "Commented on " + t.posted.duplicateOf + " (" + (t.posted.updated.why || "it was being drafted") + ", so its description stays)") + ": " + t.posted.updated.changes.join(" ")) : null);
 }
 
 // ---- Privacy rules ------------------------------------------------------------------------------

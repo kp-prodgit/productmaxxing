@@ -75,6 +75,11 @@ export interface State {
   evidenceRulesKey?: string | null;
   /** R5e: the name swap (NAME_SWAP) whose rewrite this Mac last asked its backfill for. */
   evidenceNameSwap?: number | null;
+  /**
+   * D2-8 (FOLLOW-1, UPGRADE-1): reading again the follow-ups an older PMX left waiting as tasks. An update asks for it
+   * (`due`); the next background run does it once and says what it did (`did`), when (`at`).
+   */
+  followUpRequeue?: { due: boolean; at: string | null; did?: string | null } | null;
   /** When this Mac's pmx started tracking task runs. Older runs left no record, so "never ran" counts from here. */
   taskRunsSince: string | null;
 }

@@ -25,6 +25,7 @@ import { overlay, readOutbox, readResolved, readSnapshot, relayHealth } from "..
 import { buildFlowGraph } from "./graph.js";
 import { buildLogbook, buildPipeline, rubricFor, type HealthProblem, type PipelineData, type PipelineLevel } from "./pipeline.js";
 import { pendingTeamPrs } from "./team-prs.js";
+import { draftDecided, markStore, type StoredMark } from "../lease/marks.js";
 import { pausedCategories } from "../core/services.js";
 import { analyticsOn, cloudTarget } from "../cloud/account.js";
 import { killSwitchOn } from "../core/killswitch.js";
@@ -91,11 +92,15 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   const outbox = await readOutbox();
   const nodes = snap ? overlay(snap, outbox.ops) : [];
   const state = await loadState();
+  // R13 (PULL-14): a draft this Mac's copy shows in review, though the task's mark says another Mac accepted, rejected
+  // or dropped it since, isn't one to review. The marks as the background run last fetched them: no fetch per load.
+  const marks = await markStore(ctx.repo).cached().catch(() => new Map<string, StoredMark>());
+  const look = { asOf: snap ? Date.parse(snap.syncedAt) : 0, now, agent: ctx.agent };
   // A task canceled in Linear is out of PMX's work (TASK-8); a task's status follows a person's move there.
   const issues = nodes.filter((n) => n.state?.type !== "canceled").map((n) => {
     const t = toTask(n);
     return { identifier: t.identifier, title: t.title, url: t.url || undefined, createdAt: n.createdAt, status: t.status, meeting: kindOf(n) === "meeting", category: t.category, agent: t.agent };
-  });
+  }).filter((x) => !(x.status === "review" && draftDecided(x.identifier, marks.get(x.identifier), look)));
 
   // The privacy checks the flow view already computes, from the same records.
   const graph = buildFlowGraph({

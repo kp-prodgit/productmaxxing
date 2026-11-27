@@ -31,17 +31,32 @@ const FIGURE = /(?<![\p{L}\p{N}])\$?\d+(?:[.,]\d+)*(?:\s?(?:k|m|bn|%|percent)(?!
 /** The dates and figures a sentence states, as comparable keys. */
 export interface Anchors { dates: Set<string>; figures: Set<string> }
 
+/** A date as these rules compare it ("nov 23", "2026-11-23", "fri"), from DATE's groups. */
+const dateKey = (iso?: string, m1?: string, d1?: string, d2?: string, m2?: string, wd?: string): string | null =>
+  iso ? iso : m1 ? `${m1.slice(0, 3).toLowerCase()}${d1 ? ` ${Number(d1)}` : ""}` : m2 ? `${m2.slice(0, 3).toLowerCase()} ${Number(d2)}` : wd ? wd.slice(0, 3).toLowerCase() : null;
+/** A figure as these rules compare it ("$22k", "15%", "40"). */
+const figureKey = (f: string) => f.toLowerCase().replace(/,/g, "").replace(/\s+/g, "").replace("percent", "%");
+
 export function anchorsOf(s: string): Anchors {
   const dates = new Set<string>();
   const rest = s.replace(DATE, (_m, iso?: string, m1?: string, d1?: string, d2?: string, m2?: string, wd?: string) => {
-    if (iso) dates.add(iso);
-    else if (m1) dates.add(`${m1.slice(0, 3).toLowerCase()}${d1 ? ` ${Number(d1)}` : ""}`);
-    else if (m2) dates.add(`${m2.slice(0, 3).toLowerCase()} ${Number(d2)}`);
-    else if (wd) dates.add(wd.slice(0, 3).toLowerCase());
+    const k = dateKey(iso, m1, d1, d2, m2, wd);
+    if (k) dates.add(k);
     return " ";
   });
-  const figures = new Set([...rest.matchAll(FIGURE)].map((m) => m[0].toLowerCase().replace(/,/g, "").replace(/\s+/g, "").replace("percent", "%")));
+  const figures = new Set([...rest.matchAll(FIGURE)].map((m) => figureKey(m[0])));
   return { dates, figures };
+}
+
+/** The dates and figures a sentence states, each as it's written and as these rules compare it ("Jan 29", "jan 29"). */
+export function anchorWords(s: string): { key: string; text: string }[] {
+  const out: { key: string; text: string }[] = [];
+  for (const m of s.matchAll(DATE)) {
+    const k = dateKey(m[1], m[2], m[3], m[4], m[5], m[6]);
+    if (k) out.push({ key: k, text: m[0].trim() });
+  }
+  for (const m of withoutDates(s).matchAll(FIGURE)) out.push({ key: figureKey(m[0]), text: m[0].trim() });
+  return out;
 }
 
 /** A sentence without its dates, which these rules compare as dates (`anchorsOf`), never as words. */
@@ -345,4 +360,254 @@ export function piecesOf(s: string): Piece[] {
     [from, join, free] = [c.from, c.at, c.free];
   }
   return out;
+}
+
+/**
+ * What a figure counts, so two figures of one measure can be told from two measures: a share ("%"), money ("$"), a
+ * thousand or million ("k"), else the word after it, stemmed ("40 seats", "14-property": "seat", "property").
+ */
+function figureKinds(s: string): Map<string, string> {
+  const rest = withoutDates(s);
+  const out = new Map<string, string>();
+  for (const m of rest.matchAll(FIGURE)) {
+    const raw = m[0].toLowerCase().replace(/\s+/g, "");
+    const next = rest.slice(m.index! + m[0].length).match(/^[\s-]*(\p{L}+)/u)?.[1];
+    out.set(figureKey(m[0]), /%|percent/.test(raw) ? "%" : raw.startsWith("$") ? "$" : /\d(?:k|m|bn)$/.test(raw) ? "k" : next ? stem(next) : "#");
+  }
+  return out;
+}
+
+/** The distinctive terms one sentence has and the other doesn't: an acronym, or a capitalized product, plan or company name. */
+function ownTerms(a: string, b: string): string[] {
+  const t = termsOf(a);
+  return [...t.acronyms.filter((x) => !hasAcronym(b, x)), ...t.names.filter((x) => !names(b, x))];
+}
+
+/**
+ * INPUT-2 (founder, 2026-11-27): `b` says `a`'s fact again with a newer date or figure, so for an open task it takes
+ * `a`'s place: "GPU cost is now 22% over budget" after "GPU cost is 18% over budget". `b` states a date where `a` states
+ * one, or a figure of the same measure as one of `a`'s ("22%" for "18%", "60 seats" for "40 seats"), that `a` doesn't;
+ * nothing else tells them apart (no claim turned around, no other question, no distinctive term or company only one of
+ * them has); and `b` says every word `a` says but the generic ones, two of them at least, and at most three more. "Acme's
+ * pilot moved to Feb 12" doesn't update "Acme's renewal moved to Jan 29", and "60 seats at GA" doesn't update "40 seats
+ * in the beta": those are two facts.
+ */
+export function updates(a: string, b: string, companies: string[] = []): boolean {
+  const A = anchorsOf(a), B = anchorsOf(b);
+  if (!differs(A, B)) return false;
+  if (flips(a, b) || otherQuestion(a, b) || ownTerms(a, b).length || ownTerms(b, a).length) return false;
+  if (ownCompanies(a, b, companies).length || ownCompanies(b, a, companies).length) return false;
+  const newDate = [...B.dates].some((d) => !A.dates.has(d)) && A.dates.size > 0;
+  const kindsA = new Set(figureKinds(a).values());
+  const newFigure = [...figureKinds(b)].some(([f, kind]) => !A.figures.has(f) && kindsA.has(kind));
+  if (!newDate && !newFigure) return false;
+  const x = stemsOf(a), y = stemsOf(b);
+  const key = (s: Set<string>) => [...s].filter((w) => !GENERIC.has(w));
+  const lost = key(x).filter((w) => !y.has(w)).length;
+  const shared = key(x).filter((w) => y.has(w)).length;
+  const gained = key(y).filter((w) => !x.has(w)).length;
+  return lost === 0 && shared >= 2 && gained <= 3;
+}
+
+/** Words for one thing said other ways, stemmed: spend, spending, expenses and a bill are a cost; a budget, forecast or target is a plan. */
+const SYNONYMS = new Map<string, string>([
+  ...["cost", "costs", "spend", "spending", "expense", "expenses", "expenditure", "bill"].map((w) => [stem(w), "cost"] as const),
+  ...["plan", "planned", "budget", "budgeted", "forecast", "forecasted", "target"].map((w) => [stem(w), "plan"] as const),
+]);
+const same = (w: string) => SYNONYMS.get(w) ?? w;
+/** Verbs and adverbs a figure's subject often comes with ("is running 18%", "is already 18%"): never what it's about. */
+const NOT_SUBJECT = new Set(["run", "runn", "grow", "ris", "rise", "ros", "stay", "remain", "sit", "sitt", "trend", "com", "look", "already", "current", "now", "nearly", "about", "around", "roughly", "almost", "up", "down", "still", "come"].map(stem));
+/**
+ * The verb a clause's subject ends at ("Copy tone | is on-brand 78%", "BrandScore | drops from 91 to 84", "GPU spend |
+ * running 18% over plan"): a form of be, have or do, a modal, a word in -ed, or a verb figures often go with.
+ */
+const VERB = /^(?:is|are|was|were|be|been|being|has|have|had|does|do|did|will|would|can|could|should|must|may|might|shall|\p{L}{3,}(?<!e)ed|runs?|running|drops?|dropping|rises?|rose|rising|falls?|fell|falling|grows?|grew|growing|hits?|reach(?:es)?|reaching|climbs?|climbing|jumps?|jumping|sits?|sitting|stands?|standing|stays?|staying|ends?|ending|starts?|starting|goes|went|comes|came|needs?|wants?|expects?|allows?|takes?|gets?|scores?|averages?)$/iu;
+/** Where the words a figure is about start: after the last comma, semicolon, bracket or word that joins a clause before it. */
+const SUBJECT_START = /[,;:(]|\b(?:and|but|so|while|because|which|that|whose|where|with|after|before|since|than)\b/gi;
+/** Words that compare a figure ("18% over plan", "18% of revenue"), as one word each. */
+const COMPARE = new Map([...["over", "above", "past", "higher", "more", "up", "beyond", "ahead"].map((w) => [w, "over"] as const), ...["under", "below", "lower", "less", "down", "behind"].map((w) => [w, "under"] as const), ["of", "of"]]);
+
+/** A figure or a date in a sentence, where it is, as it's written and as these rules compare it. */
+interface Spot { key: string; text: string; at: number; end: number; date: boolean }
+
+/** The sentence's dates and figures in order, each with where it is in the sentence itself. */
+function spotsOf(s: string): Spot[] {
+  const dates: Spot[] = [...s.matchAll(DATE)].flatMap((m) => {
+    const k = dateKey(m[1], m[2], m[3], m[4], m[5], m[6]);
+    const text = m[0].trimEnd();
+    return k ? [{ key: k, text, at: m.index!, end: m.index! + text.length, date: true }] : [];
+  });
+  const figures: Spot[] = [...s.matchAll(FIGURE)].filter((m) => !dates.some((d) => m.index! < d.end && m.index! + m[0].length > d.at))
+    .map((m) => { const text = m[0].trimEnd(); return { key: figureKey(m[0]), text, at: m.index!, end: m.index! + text.length, date: false }; });
+  return [...dates, ...figures].sort((a, b) => a.at - b.at);
+}
+
+/**
+ * What a figure measures: its kind (a share, money, thousands, or the word it counts: "40 seats" is "seat"), and how a
+ * share or an amount is compared and to what ("18% over plan" and "22% over budget" alike, "18% of revenue" not).
+ */
+function unitOf(s: string, f: Spot): { kind: string; compare: string | null; to: string | null } {
+  const raw = f.text.toLowerCase().replace(/\s+/g, "");
+  const words = [...s.slice(f.end).matchAll(/[\p{L}][\p{L}'’-]*/gu)].slice(0, 4).map((m) => m[0]);
+  if (/%|percent/.test(raw) || raw.startsWith("$") || /\d(?:k|m|bn)$/.test(raw)) {
+    const kind = /%|percent/.test(raw) ? "%" : "$";
+    const compare = words[0] ? COMPARE.get(words[0].toLowerCase()) ?? null : null;
+    const noun = (compare ? words.slice(1) : []).map((w) => contentWord(w.replace(/^than$/i, ""))).find((w): w is string => !!w);
+    return { kind, compare, to: noun ? same(noun) : null };
+  }
+  // The word it counts, and per what ("60 requests per minute", "60 req/min" aren't "120 burst requests").
+  const m = s.slice(f.end).match(/^[\s-]*(\p{L}+)(?:\s*\/\s*(\p{L}+)|\s+(?:per|a|an|each)\s+(\p{L}+))?/u);
+  const per = m?.[2] ?? m?.[3];
+  return { kind: m ? `${same(stem(m[1]!))}${per ? `/${stem(per)}` : ""}` : "#", compare: null, to: null };
+}
+
+const sameUnit = (a: ReturnType<typeof unitOf>, b: ReturnType<typeof unitOf>) =>
+  a.kind === b.kind && a.compare === b.compare && (a.to === b.to || !a.to || !b.to);
+
+/**
+ * What a figure or date measures: the subject of its clause (from the last comma, bracket or word that joins a clause
+ * before it, up to the clause's first verb: "Copy tone" in "Copy tone is on-brand 78%", "GPU spend" in "…, and GPU
+ * spend running 18% over plan"), stemmed, synonyms as one, companies aside. With no verb before it, the words before it.
+ */
+function aboutOf(s: string, f: Spot, companies: string[]): string[] {
+  const before = s.slice(0, f.at);
+  const cut = [...before.matchAll(SUBJECT_START)].at(-1);
+  const clause = cut ? before.slice(cut.index! + cut[0].length) : before;
+  const words = [...clause.matchAll(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)];
+  const verb = words.find((w) => VERB.test(w[0]));
+  const subject = verb ? clause.slice(0, verb.index!) : clause;
+  const own = new Set([...companies, ...namesIn(s)].flatMap((c) => [...stemsOf(c)]));
+  // In order, so the words before the one both are about qualify it ("GPU" in "GPU spend"). Generic words qualify
+  // too ("beta cost"); only another word is what two subjects can share.
+  return [...new Set([...stemsOf(subject)].map(same).filter((w) => !own.has(w) && !NOT_SUBJECT.has(w)))];
+}
+
+/**
+ * How much two figures' subjects share (`aboutOf`), or 0 when they're two measures (rig test of #127): they share a key
+ * word, and the words before the last one they share (its qualifiers: "GPU" in "GPU spend", "launch marketing" in
+ * "launch marketing spend") don't differ. A qualifier on one side only is fine, and so is one side's that holds all the
+ * other's ("cloud GPU spend" and "GPU spend"); "launch marketing spend" and "GPU spend", or "retrain cost" and "GPU
+ * cost", are two measures.
+ */
+function sharedSubject(a: string[], b: string[]): number {
+  const shared = b.filter((w) => !GENERIC.has(w) && a.includes(w));
+  if (!shared.length) return 0;
+  const head = [...a].reverse().find((w) => shared.includes(w))!;
+  const qa = new Set(a.slice(0, a.indexOf(head))), qb = new Set(b.slice(0, b.indexOf(head)));
+  const within = (x: Set<string>, y: Set<string>) => [...x].every((w) => y.has(w));
+  return qa.size && qb.size && !within(qa, qb) && !within(qb, qa) ? 0 : shared.length;
+}
+
+/** A question as such: a question mark, or a question word or verb first ("Whether…", "Is…"); "nobody can say which tenants…" isn't one. */
+export const question = (s: string): boolean => /\?\s*$/.test(s) || /^(?:whether|which|what|how|when|why|who|where|is|are|does|do|did|can|could|will|would|should)\b/i.test(s.trim());
+
+/** Whether a sentence states a figure as written ("18%"), compared as these rules compare figures. */
+export const statesFigure = (s: string, figure: string): boolean => spotsOf(s).some((f) => !f.date && f.key === figureKey(figure));
+
+/** A clause's content words, stemmed, synonyms as one: for how close two clauses are. */
+export const sameStems = (s: string): Set<string> => new Set([...stemsOf(s)].map(same));
+
+/** The newer figure (or date) a later clause gives for one in an earlier clause, as `newerFigure` finds it. */
+export interface FigureUpdate {
+  /** Where the older one is in the earlier clause, and how it's written. */
+  at: number; end: number; was: string;
+  /** The newer one, as the later clause writes it. */
+  now: string;
+  /** How many words of what they're about the two share: the more, the surer. */
+  subject: number;
+}
+
+/**
+ * INPUT-2 (end-to-end test 2026-11-27): `b` gives a newer figure for one `a` states, whatever its wording: "GPU costs are
+ * running 22% over budget this month" for "November GPU spend is running 18% over plan and nobody can say why". The two
+ * are about the same thing (the subjects of the figures' clauses share a key word, stemmed, with "cost" and "spend" or
+ * "plan" and "budget" as one, and its qualifiers don't differ: `sharedSubject`), the figure measures the same (a share or an amount compared the same way to the same
+ * thing, or the same counted word: "seats", "days"), it differs, and nothing else tells them apart: no claim turned
+ * around, no other question, no distinctive term only one of them has, no company only one names (but the task's own,
+ * `companies`), and no other date (December's spend isn't November's). With `dates`, a newer date for the same event
+ * counts too ("the go or no-go moved to Dec 5" for "… is on Dec 3"), when neither states a figure the other doesn't.
+ * Null when it gives none; the best when it gives several.
+ */
+export function newerFigure(a: string, b: string, companies: string[] = [], o: { dates?: boolean } = {}): FigureUpdate | null {
+  if (question(a) || question(b) || flips(a, b) || otherQuestion(a, b) || swapsTerm(a, b)) return null;
+  const own = (c: string) => companies.some((k) => k.toLowerCase() === c.toLowerCase() || names(k, c) || names(c, k));
+  if ([...ownCompanies(a, b, companies), ...ownCompanies(b, a, companies)].some((c) => !own(c))) return null;
+  const A = anchorsOf(a), B = anchorsOf(b);
+  const sa = spotsOf(a), sb = spotsOf(b);
+  let best: FigureUpdate | null = null;
+  for (const nb of sb) {
+    if (nb.date ? A.dates.has(nb.key) : A.figures.has(nb.key)) continue;
+    if (nb.date ? !o.dates || differs({ dates: new Set(), figures: A.figures }, { dates: new Set(), figures: B.figures }) : differs({ dates: A.dates, figures: new Set() }, { dates: B.dates, figures: new Set() })) continue;
+    const ub = nb.date ? null : unitOf(b, nb);
+    const hb = aboutOf(b, nb, companies);
+    for (const na of sa) {
+      if (na.date !== nb.date || na.key === nb.key) continue;
+      if (ub && !sameUnit(unitOf(a, na), ub)) continue;
+      const subject = sharedSubject(aboutOf(a, na, companies), hb);
+      if (!subject || (best && best.subject >= subject)) continue;
+      best = { at: na.at, end: na.end, was: na.text, now: nb.text, subject };
+    }
+  }
+  return best;
+}
+
+/**
+ * A short detail set off right after the name a sentence starts with: "Vandelay, a $360k pilot, will use…" or "Vandelay
+ * (a $360k pilot) will use…". A phrase of at most six words that starts with "a", "an", "the" or a figure and has no
+ * verb of its own, so a list ("Acme, Globex and Initech") or a clause ("Acme, which renewed, …") is never one.
+ */
+export function detailOf(s: string): { name: string; detail: string; rest: string } | null {
+  const m = s.match(new RegExp(String.raw`^(${NAMES})(?:,\s+([^,;()]{2,60}?),\s+|\s+\(([^()]{2,60})\)\s+)(?=\p{Ll})`, "u"));
+  if (!m) return null;
+  const detail = (m[2] ?? m[3])!.trim();
+  if (!/^(?:an?|the)\s|^\$?\d/i.test(detail) || detail.split(/\s+/).length > 6 || CLAUSE_MARK.test(detail)) return null;
+  return { name: m[1]!, detail, rest: `${m[1]} ${s.slice(m[0].length)}` };
+}
+
+/**
+ * Fix (R12a, end-to-end test 2026-11-27): a later sentence that says a sentence there again, but for a short detail set
+ * off after its subject ("Vandelay, a $360k pilot, will use the beta for internal work only if these two are missing"),
+ * gives that sentence the detail instead of joining whole: the never-drop-a-figure rule kept the clause twice. Without
+ * the detail, each of its clauses says nothing a clause of that sentence doesn't (`addsNothing`, and nothing tells them
+ * apart), and that sentence names the same subject, as a plain word the detail can follow ("Vandelay will…", not
+ * "Vandelay's"). The detail goes right after it: "Vandelay, a $360k pilot, will use the beta internally only if these
+ * are missing, so the spec should define the beta cut and the GA gap." Null when it doesn't fold.
+ */
+export function foldDetail(said: string[], s: string, companies: string[] = []): { at: number; now: string } | null {
+  const d = detailOf(s);
+  if (!d || asks(s)) return null;
+  const mine = piecesOf(d.rest);
+  if (!mine.length) return null;
+  const subject = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(d.name).replace(/\s+/g, "\\s+")}(?=\\s+[\\p{Ll}\\p{N}])`, "u");
+  for (let at = 0; at < said.length; at++) {
+    const x = said[at]!;
+    const hit = asks(x) ? null : x.match(subject);
+    // Already said: it isn't new to this sentence.
+    if (!hit || x.toLowerCase().includes(d.detail.toLowerCase())) continue;
+    const theirs = piecesOf(x);
+    const again = mine.every((c) => theirs.some((t) => !tellsApart(t.text, c.text, companies) && addsNothing(t.text, c.text)));
+    if (!again) continue;
+    const end = hit.index! + hit[0].length;
+    return { at, now: `${x.slice(0, end)}, ${d.detail},${x.slice(end)}` };
+  }
+  return null;
+}
+
+/** "Launch readiness: Dec 8 beta.": a label of at most three words, a colon, and at most eight words after it. */
+const LABELED = /^(\p{Lu}[\p{L}'’-]*(?:\s+[\p{L}'’-]+){0,2}):\s+(.+?)[\s.!]*$/u;
+
+/**
+ * Fix (R12a, end-to-end test 2026-11-27): a short labeled line whose dates and figures, and every word after its label,
+ * the text already says is a repeat: "Launch readiness: Dec 8 beta." beside a summary that says the Dec 8 beta. It needs
+ * a date or figure, so a labeled line that only names a subject is judged as any sentence is.
+ */
+export function labeledRepeat(text: string, s: string): boolean {
+  const m = s.match(LABELED);
+  if (!m || m[2]!.split(/\s+/).length > 8) return false;
+  const body = m[2]!;
+  const B = anchorsOf(body);
+  if (!B.dates.size && !B.figures.size) return false;
+  if (!within(anchorsOf(text), B)) return false;
+  const have = stemsOf(text);
+  return [...stemsOf(body)].every((w) => have.has(w));
 }

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { isThread, type SignalItem } from "./types.js";
+import { authorsOf } from "../sources/email.js";
 
 /**
  * The personal-content filter (B2, PRIV-2). Fixed rules only (Q10, decided 2026-11-03):
@@ -116,6 +117,30 @@ export const OTHERS_DATA_ROOM: string[] = [
   `${DATA_ROOM}(?=[^.!?;,\\n]{0,40}\\b(${DR_REVIEW})\\b)`,
 ];
 
+/** PRIV-2: who someone sees about their health, in a short aside: "(doctor)", "out Thursday for the dentist". */
+const HEALTH_ASIDE = "doctor'?s?|dentist'?s?|physio|physiotherapist|GP|therapist|therapy|hospital";
+
+/**
+ * PRIV-2 (end-to-end test 2026-11-26): short asides about someone's health. A doctor, a dentist or physio only as
+ * someone's own visit: in parentheses ("I'm out Tue morning (doctor)"), as an appointment, or what they're out or off
+ * for ("out Thursday for the dentist"); and someone out, off or called in sick. Never the word alone, which a team
+ * selling to clinics uses for its customers ("doctor's office customers"). Someone's own doctor or therapist ("my
+ * therapist") is health too, but no aside (see the health rule).
+ *
+ * PRIV-2 (end-to-end test 2026-11-27): an aside says only that someone is away, so like a fundraising passage it is cut
+ * a sentence at a time (`asideOnly`): its sentence, and the ones after it still about that person ("She'll be back
+ * Monday."), never the work talk around it ("I'm out Thursday (doctor). The pricing section is my component, so loop
+ * me in."). A reply to it is still cut with it.
+ */
+const HEALTH_ASIDES: string[] = [
+  `(?<=\\(\\s{0,2}(?:at |at the |for |for the |to the |see the |seeing the |the |a |my )?)(${HEALTH_ASIDE}|sick|out sick|medical|dental)(\\s(appt|appointment|visit|check-?up|stuff|thing))?(?=\\s{0,2}\\))`,
+  "(doctor'?s?|dentist'?s?|dental|physio|GP|hospital|therapy|medical) (note|appointment|appt|visit|check-?up)s?",
+  `(out|off|away|leaving|leave|ooo|offline)\\b[^.!?\\n()]{0,30}?\\b(for|at|to see|seeing|with) (the |my |a |an )?(${HEALTH_ASIDE}|check-?up)`,
+  // Someone sick, not something: "out sick", "called in sick", "she's sick", "sick today". Not "sick of this bug".
+  "(out|off|home|called in|call in|calling in|calls in|feeling|felt|fell|got|getting|been|still|i'm|i am|i was|he's|she's|he is|she is|he was|she was|they're|they are|they were|we're) sick\\b(?! of\\b)",
+  "sick (today|tomorrow|yesterday|this week|all week|since \\w+)",
+];
+
 /** The fixed topic rules, with plain-language labels and examples for `pmx explain`. */
 export const TOPIC_RULES: Record<Topic, TopicRule> = {
   performance: {
@@ -144,14 +169,32 @@ export const TOPIC_RULES: Record<Topic, TopicRule> = {
       "vesting (schedule|cliff|date|period|start)s?", "(vesting|one-year|1-year|one year|1 year|12-month) cliffs?", "strike prices?",
       "RSUs?", "severance", "payroll",
     ],
+    notWhen: [
+      // PRIV-2 (end-to-end test 2026-11-27): a bonus a product gives its customers is marketing, not anyone's pay: "our
+      // launch bonus campaign for creators", "bonus credits", "a bonus feature", "a welcome bonus for new users". A
+      // person's bonus stays pay: "my bonus", "her bonus this year", "the bonus pool", "a signing bonus", "a bonus for
+      // accounts closed" or "for the team".
+      "\\bbonus(es)?\\s+(campaigns?|features?|content|credits?|points?|offers?|promos?|codes?|gifts?|rewards?|items?|tracks?|episodes?|chapters?|videos?|downloads?|materials?|packs?|templates?|assets?|seats?|storage|minutes|levels?|stages?|rounds?|questions?|sections?)\\b",
+      "\\bbonus(es)?\\s+for\\s+(new\\s+|early\\s+|our\\s+|their\\s+)?(customers?|creators?|users?|subscribers?|buyers?|shoppers?|players?|sign-?ups?|readers?|viewers?|fans?)\\b",
+    ],
   },
   health: {
     label: "Health and leave",
-    examples: ["medical", "diagnosis", "therapy", "sick leave", "surgery", "pregnant", "parental leave", "mental health", "FMLA"],
+    examples: ["medical", "diagnosis", "therapy", "sick leave", "out sick", "surgery", "pregnant", "parental leave", "mental health", "FMLA", "(doctor)", "dentist appointment"],
     patterns: [
       "medical", "diagnos\\w*", "therapy", "therapist", "sick (leave|day)s?", "illness", "surgery", "pregnan\\w*", "maternity", "paternity",
-      "parental leave", "disabilit(y|ies)", "mental health", "FMLA", "doctor'?s? (note|appointment)", "hospitals?", "hospitali[sz](ed|ation|ations)",
-      "medication",
+      "parental leave", "disabilit(y|ies)", "mental health", "FMLA", "hospitals?", "hospitali[sz](ed|ation|ations)",
+      "medication", "physiotherapy",
+      // PRIV-2: short asides (`HEALTH_ASIDES`), and someone's own doctor, dentist, physio or therapist ("my dentist").
+      HEALTH_ASIDES[0]!, HEALTH_ASIDES[1]!,
+      `(my|her|his) (doctor|dentist|physio|physiotherapist|GP|therapist)'?s?`,
+      ...HEALTH_ASIDES.slice(2),
+    ],
+    notWhen: [
+      // A practice and what it buys, for a team that sells to them: "the doctor's office customers", "dental practices",
+      // "the therapy clinic scheduling feature", "hospital staff". Never someone's own: "her doctor's office called".
+      "(?<!\\b(my|her|his|their|your)\\s)\\b(doctor|dentist|physio|physiotherapy|therapy|therapist|medical|dental|clinic|hospital|GP)('s|s'|s)?\\s+(offices?|practices?|clinics?|groups?|networks?|customers?|clients?|patients?|staff|front desks?|scheduling|booking|software|platform|features?|vertical|segment|market|EHR|EMR|portals?|billing|apps?|integrations?|providers?)\\b",
+      "\\b(appointments?|appts?)\\s+(booking|reminders?|scheduling|scheduler|flow|page|feature|types?|slots?|requests?|confirmations?|calendar|widget|system)\\b",
     ],
   },
   hiring: {
@@ -502,8 +545,9 @@ export function confidentialCompanies(decisions: Pick<ItemDecision, "item" | "de
 /**
  * F5b: the version of how passages are counted and weighed into a hold; part of `holdRulesKey`. 2: F5a. 3: D2-3, a
  * data room counts only in context, and fundraising holds a whole meeting or thread only at a third of its passages.
+ * 4: PRIV-2, a turn after a cut about a person is cut with it only when it replies to it (`followsUp`).
  */
-export const HOLD_RULES = 3;
+export const HOLD_RULES = 4;
 
 /**
  * F5 (RUN-5): a key for the rules that decide what team work may read: the topic rules, the company's and the
@@ -640,6 +684,24 @@ export function notAttended(item: Attendable, me: Me): string | null {
   return `you aren't among its ${n} participant${n === 1 ? "" : "s"}, so it never feeds your own to-dos. If you were in it under another name or email, give every name and email you use: \`pmx todo --me <name> --me <email>\``;
 }
 
+/**
+ * TODO-8: why an email thread may not feed the PM's own to-dos, or null when it may. Only a thread the PM is on (a
+ * sender or recipient, by their own addresses or name, or the file's `owner` line) and wrote at least one message in:
+ * a promise in an email is the PM's only in their own words, so a thread they're only copied on gives nothing. Unlike
+ * a meeting, a thread is held until PMX knows who the PM is (`pmx todo --me`, or `pmx collect --check`): the owner
+ * line alone can't tell Claude whose messages are the PM's.
+ */
+export function notWritten(item: Attendable & Pick<SignalItem, "text">, me: Me): string | null {
+  // Claude is told who the PM is only from what PMX knows: without it, nothing says whose messages are whose.
+  if (!me.emails.length && !me.names.length) return "PMX doesn't know your name or email yet, so it can't tell which messages in this email thread are yours. Give them: `pmx todo --me <name> --me <email>`";
+  const on = attended(item, me);
+  if (on && attended({ ...item, participants: authorsOf(item.text) }, me)) return null;
+  if (on) return "it's an email thread you never wrote in (you're only copied on it), so it never feeds your own to-dos: a promise in an email is yours only in a message you wrote";
+  const n = new Set(item.participants.map(lc)).size;
+  if (!n) return "this email thread lists no one on it, so PMX can't tell you're on it, and it never feeds your own to-dos";
+  return `you aren't among this email thread's ${n} participant${n === 1 ? "" : "s"}, so it never feeds your own to-dos. If you write under another name or email, give every one you use: \`pmx todo --me <name> --me <email>\``;
+}
+
 export function itemDecision(item: SignalItem, r: FilterRules): { reason: HoldReason | null; detail: string; series?: string } {
   const ni = r.neverIngest;
   if (r.blockedSources?.includes(sourceOf(item))) return { reason: "source-off", detail: `you set ${sourceOf(item)} not to feed this` };
@@ -647,6 +709,8 @@ export function itemDecision(item: SignalItem, r: FilterRules): { reason: HoldRe
   if (absent) return { reason: "not-attended", detail: absent };
   if (item.kind === "thread" && !(item.place && !/^D(?=[A-Z0-9]*\d)[A-Z0-9]{8,10}$/.test(item.place) && r.approvedPlace?.(sourceOf(item), item.place)))
     return { reason: "place-not-approved", detail: "it was posted in a place your team hasn't approved, or no longer approves" };
+  const unwritten = r.attendedBy && item.kind !== "transcript" ? notWritten(item, r.attendedBy) : null;
+  if (unwritten) return { reason: "not-attended", detail: unwritten };
   // F5: an investor's or another confidential contact's meeting, email or thread is held from team work like a 1:1.
   const conf = !r.allowConfidential && r.confidentialDomains?.length ? confidentialIn(item, confidentialDomains(r.confidentialDomains)) : null;
   if (conf) return { reason: "confidential", detail: conf };
@@ -767,6 +831,16 @@ export function outsideSpeaker(item: Pick<SignalItem, "participants">, r: Pick<F
 /** Whether these matches are about a person: their review, pay, health, 1:1 or candidacy. Those cut more around them. */
 const aboutAPerson = (topic: Screen, found: RegExpMatchArray[]) =>
   topic !== "fundraising" && topic !== "confidential" && (topic !== "hiring" || found.some((m) => !PLAN_TALK.test(m[0])));
+const ASIDE = new RegExp(`\\b(${HEALTH_ASIDES.join("|")})\\b`, "gi");
+/**
+ * PRIV-2: whether a sentence's health matches are all short asides (`HEALTH_ASIDES`: "(doctor)", "out sick"), so only
+ * that sentence and the ones after it still about the person are cut, never the work talk around it.
+ */
+const asideOnly = (topic: Screen, text: string, found: RegExpMatchArray[]) => {
+  if (topic !== "health" || !found.length) return false;
+  const spans = [...straight(text).matchAll(ASIDE)].map((x) => [x.index!, x.index! + x[0].length] as const);
+  return found.every((m) => spans.some(([a, b]) => a <= m.index! && m.index! + m[0].length <= b));
+};
 /** F5: a sentence that gives a raise's figures: an amount, a multiple or a share ("Targeting $40M", "2x", "15%"). */
 const FUNDS_DETAIL = /[$€£]\s?\d|\b\d+(?:[.,]\d+)?\s?(?:k|m|mm|bn|million|billion)\b|\b\d+(?:\.\d+)?\s?(?:%|x\b)/i;
 
@@ -823,6 +897,12 @@ function judgeTurn(seg: string, topics: [Screen, TopicMatcher][], r: FilterRules
         if (detail && i + 1 < s.length && detail.test(s[i + 1]!.text)) cut[i + 1] = true;
         continue;
       }
+      // PRIV-2: a health aside ("I'm out Thursday (doctor).") goes with the sentences after it still about that person
+      // ("She'll be back Monday."), never the sentence before it or the work talk after it.
+      if (asideOnly(topic, x.text, found)) {
+        for (let j = i + 1; j < s.length && aboutThem(s[j]!.text); j++) cut[j] = true;
+        continue;
+      }
       if (i > 0) cut[i - 1] = true;
       // The sentence after, and on while the talk is still about that person: "She'll be back in April."
       for (let j = i + 1; j < s.length && (j === i + 1 || aboutThem(s[j]!.text)); j++) cut[j] = true;
@@ -853,30 +933,70 @@ const SHIFT = new RegExp(
   `^${FILLER}(?:(?:ok(?:ay)?|alright|all right|right)[,.!]?\\s+)?(?:anyway|anyhow|moving on|back to|switching (?:gears|topics)|changing (?:gears|topics|the subject)|on (?:another|a different|a separate) (?:note|topic)|separately|unrelated(?:ly)?|next (?:topic|item|up|thing)|let's (?:move on|get back|go back|switch|turn to))\\b`,
   "i",
 );
-/** A turn that opens by taking over someone's work or answering news about them: "(Yeah,) I'll take over…", "Sorry", "Congrats". */
+/** A turn that opens by taking over someone's work: "(Yeah,) I'll take over…", "I can cover the standups". */
 const HAND_OVER = new RegExp(
-  `^${FILLER}(?:(?:yeah|yes|ok|okay|sure|right|agreed|fine|of course)[,.!]?\\s+)?(?:(?:sorry|i'm sorry|oh no|ugh|poor \\w+|congrats|congratulations|that(?:'s| is) (?:rough|tough|hard|sad|awful|a shame|too bad))\\b|i(?:'ll| will| can|'d| could)(?: \\w+)? (?:take|cover|pick up|handle|talk to|check in|follow up|step in|own|backfill|loop in|deal with|sit down|reach out))`,
+  `^${FILLER}(?:(?:yeah|yes|ok|okay|sure|right|agreed|fine|of course)[,.!]?\\s+)?i(?:'ll| will| can|'d| could)(?: \\w+)? (?:take|cover|pick up|handle|talk to|check in|follow up|step in|own|backfill|loop in|deal with|sit down|reach out)`,
   "i",
 );
-/** A turn that opens by agreeing: "Yeah", "Agreed", "That's fair". On its own this says little, so it counts only when nothing new follows. */
+/**
+ * A turn that opens by reacting to news about someone: sympathy, congratulations, praise or good wishes ("Sorry to hear that",
+ * "Congrats", "That's great", "That's a lot"). Not a bare "Sorry", which as often opens a question ("Sorry, can you
+ * share the doc?").
+ */
+const REACTION = new RegExp(
+  `^${FILLER}(?:(?:yeah|yes|oh|wow|aw+|ah)[,.!]?\\s+)?(?:sorry to hear|so sorry|i'm (?:so |really )?sorry|sorry about (?:that|this|it)|oh no|ugh|poor \\w+|congrats|congratulations|well deserved|good for (?:you|him|her|them)|great news|good luck|fingers crossed|hope (?:you|he|she|they)|that(?:'s| is) (?:so |really )?(?:great|amazing|awesome|fantastic|wonderful|brilliant|huge|exciting|good news|great news|well deserved|deserved|rough|tough|hard|sad|awful|terrible|a shame|too bad|a lot|generous|not bad))\\b`,
+  "i",
+);
+/** A turn that opens by agreeing: "Yeah", "Agreed", "That's fair". On its own this says little, so it counts only in a short reaction. */
 const AGREE = new RegExp(
   `^${FILLER}(?:yeah|yes|yep|yup|ok|okay|sure|of course|right|agreed|agree|true|totally|exactly|absolutely|definitely|fair|understood|noted|got it|makes sense|sounds (?:good|right|fair)|that(?:'s| is) (?:fair|right|true|fine)|that makes sense|wow|good call|no worries|same|me too|thanks|thank you)\\b`,
   "i",
 );
 const ONE_PERSON = /\b(he|she|him|his|her|hers|himself|herself)\b/i;
 const THEY = /\b(they|them|their|theirs|themselves)\b/i;
+/** Words that point back at what was just said: "Agreed, that's overdue", "Yeah, it's been rough". */
+const BACK = /\b(it|its|that|this|those|these)\b/i;
 /** Something new to talk about: an acronym (SSO, SCIM), a product's mixed-case name (OAuth, GitHub, iOS) or a number. */
 const NEW_SUBJECT = /\b(?!OK\b)[A-Z]{2,}s?\b|\b[A-Z]{2,}[a-z]\w*|\b\w*[a-z][A-Z]\w*|\d/;
+/**
+ * PRIV-2 (end-to-end test 2026-11-26): words that carry on a cut topic without being one of its own: "Is that before
+ * tax?", "Hope you feel better", "Did he miss the deadline again?". A reply that has one is about the cut passage.
+ */
+const REPLY_WORDS: Partial<Record<HoldReason, RegExp>> = {
+  compensation: /\b(?:(?:my|your|his|her|their) (?:pay|paycheck|paycheque|payout|comp|commission|number|raise|check|cheque)|commissions?|payouts?|paychecks?|paycheques?|take-home|(?:before|after|pre-?) ?tax|deserved|earned it)\b/i,
+  health: /\b(?:feel(?:ing|s)? better|get(?:ting)? better|get well|speedy recovery|recover\w*|rest up|take care|appointments?|doctor|dentist|physio|sick|unwell|hospital|surgery|okay now|ok now)\b/i,
+  performance: /\b(?:deadlines?|missed|struggl\w*|warnings?|HR|feedback|improv\w*|overdue|flag(?:ged)?|concerns?|concerned)\b/i,
+  hiring: /\b(?:candidates?|interview\w*|hire[sd]?|hiring|offers?|start date|resumes?|CVs?|references?|onsite)\b/i,
+  "one-on-one": /\b(?:career|growth|promotions?|promo|feedback|goals?)\b/i,
+};
+/** A reply about the figure a cut passage gave: "Is that before tax?", "That's more than last year", "Is it double?". */
+const FIGURE_BACK = /\b(?:that|it|this)(?:'s| is| was)?\b[^.!?]{0,30}\b(?:more|less|higher|lower|bigger|smaller|than|enough|a lot|much|half|double|twice|percent|gross|net|per (?:year|month)|a year|a month|annual(?:ly)?|monthly)\b/i;
+
+/** What a reply follows: the rule its passage was cut for, and whether that passage gave a figure ("a $5k bonus"). */
+export interface CutBefore {
+  rule: HoldReason;
+  figure?: boolean;
+}
 
 /**
- * Whether a turn reads as a direct reply to the one before it (F2): "he"/"she" in its first two sentences; a
- * hand-over or sympathy cue at its start ("I'll take over…", "Sorry"); "they"/"their" in a first sentence that
- * names nothing new; or, if the turn names nothing new, an agreeing cue ("Yeah", "That's fair") or two sentences
- * or fewer. A turn that opens by changing the subject is a reply only through "he"/"she". Something new is an
- * acronym, a product name or a number ("Okay, I'll ship the SSO fix tonight", "Sure. Can you write up the OAuth
- * flow?"): the talk has moved on.
+ * Whether a turn reads as a direct reply to the cut passage before it (F2), so it shows who or what it was about.
+ * PRIV-2 (end-to-end test 2026-11-26): only a reply to the cut topic, never any short turn after it, which cut a
+ * customer's next line and the PM's next question after a bonus line, and held a three-line thread whole. A reply:
+ *
+ * - points back at the person: "he"/"she" in its first two sentences, or "they"/"their" in a first sentence that names
+ *   nothing new; or takes over their work ("I'll take over…", "I can cover the standups");
+ * - has a word of the cut topic (`REPLY_WORDS`: "before tax", "feel better", "the deadline"), or points back at the
+ *   figure the passage gave ("Is that more than last year?");
+ * - or is a short reaction: two sentences or fewer that name nothing new and open with sympathy, congratulations, praise
+ *   or good wishes ("Sorry to hear that", "Congrats", "That's great"), or with agreement that points back at what was said or
+ *   says little more ("Agreed, that's overdue", "Yeah, it's been rough", "Sounds good"). A question counts only when it
+ *   points back ("Okay, how many seats would the pilot need?" is the next question, not a reply).
+ *
+ * A turn that opens by changing the subject is a reply only through "he"/"she". Something new is an acronym, a product
+ * name or a number ("Okay, I'll ship the SSO fix tonight", "Sure. Can you write up the OAuth flow?"): the talk has
+ * moved on. Anything else, a short turn on another subject too, is kept.
  */
-export function followsUp(seg: string): boolean {
+export function followsUp(seg: string, cut?: CutBefore): boolean {
   const body = straight(parts(seg).body).trim();
   if (!body) return false;
   const s = sentences(body).map((x) => x.text);
@@ -884,8 +1004,17 @@ export function followsUp(seg: string): boolean {
   if (SHIFT.test(body)) return false;
   if (HAND_OVER.test(body)) return true;
   if (THEY.test(s[0]!) && !NEW_SUBJECT.test(s[0]!)) return true;
-  if (NEW_SUBJECT.test(body)) return false;
-  return AGREE.test(body) || s.length <= 2;
+  const topic = cut ? REPLY_WORDS[cut.rule] : undefined;
+  if (topic?.test(body) || (cut?.figure && FIGURE_BACK.test(s[0]!))) return true;
+  if (NEW_SUBJECT.test(body) || s.length > 2) return false;
+  const reaction = REACTION.exec(body);
+  const agree = reaction ? null : AGREE.exec(body);
+  const opener = reaction ?? agree;
+  if (!opener) return false;
+  const rest = body.slice(opener[0].length);
+  const back = BACK.test(rest);
+  if (rest.includes("?") && !back) return false;
+  return !!reaction || back || (rest.match(/[\p{L}\p{N}'’]+/gu) ?? []).length <= 3;
 }
 
 /**
@@ -901,7 +1030,7 @@ export function screenText(
   const also = topics.find(([t]) => t === "confidential")?.[1] ?? null;
   const about = new Set(topics.filter(([, m]) => m.inContext && m.all(text, { also }).length).map(([t]) => t));
   const kept: string[] = [];
-  let after: { rule: HoldReason; left: number } | null = null;
+  let after: (CutBefore & { left: number }) | null = null;
   let before: string | undefined;
   for (const seg of segments(text)) {
     if (!seg.trim()) {
@@ -914,10 +1043,10 @@ export function screenText(
       counts[cut.rule]++;
       passages?.push({ rule: cut.rule, hash: passageHash(seg), ...(cut.part ? { part: cut.part } : {}) });
       if (cut.kept !== null) kept.push(cut.kept);
-      if (cut.rule !== "never-ingest") after = cut.personal ? { rule: cut.rule, left: FOLLOW_UPS } : null;
+      if (cut.rule !== "never-ingest") after = cut.personal ? { rule: cut.rule, figure: FUNDS_DETAIL.test(parts(seg).body), left: FOLLOW_UPS } : null;
       continue;
     }
-    if (after && followsUp(seg)) {
+    if (after && followsUp(seg, after)) {
       counts[after.rule]++;
       passages?.push({ rule: after.rule, hash: passageHash(seg), followUp: true });
       after = after.left > 1 ? { rule: after.rule, left: after.left - 1 } : null;

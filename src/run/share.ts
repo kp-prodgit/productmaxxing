@@ -38,6 +38,11 @@ interface Waiting {
   quotes?: PackQuotes;
   /** R5: the name swap that copy went through (`keptQuotes`), as a pack's `nameSwap`. */
   quotesSwap?: number;
+  /**
+   * INPUT-2: an open task that took a later call's sources: its pack is written again with their quotes, and keeps the
+   * passages of the sources this Mac no longer has the files of (the pack there has them), and when it was first written.
+   */
+  keep?: boolean;
   /** The PM was told it failed (once per task). */
   told?: boolean;
 }
@@ -57,15 +62,24 @@ const TIDY_EVERY_MS = 3 * 3600000;
 
 export const storeFor = (ctx: Pick<Ctx, "repo" | "personal">) => evidenceStore(ctx.repo, { email: `${ctx.personal.handle}@pmx.local` });
 
-/** Stages approved tasks that cite sources, for their packs (RUN-5). A team without a tracker has no tasks to share. */
-export async function stageShares(ctx: Pick<Ctx, "team" | "now">, tasks: { identifier: string; title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null; quotesSwap?: number | null }[]): Promise<void> {
+/**
+ * Stages approved tasks that cite sources, for their packs (RUN-5). A team without a tracker has no tasks to share. A
+ * task staged again before its pack was written (INPUT-2: an open task that took a later call's sources) waits with
+ * its newer text and sources, and the copy of quotes it had.
+ */
+export async function stageShares(ctx: Pick<Ctx, "team" | "now">, tasks: { identifier: string; title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null; quotesSwap?: number | null; keep?: boolean }[]): Promise<void> {
   const want = tasks.filter((t) => t.sources.length);
   if (ctx.team.tracker.kind === "none" || !want.length) return;
   await withLock(file(), async () => {
     const all = await read();
-    const seen = new Set(all.map((w) => w.identifier));
-    for (const { quotes, quotesSwap, ...t } of want) {
-      if (!seen.has(t.identifier)) all.push({ ...t, follows: t.follows ?? null, ...(quotes?.length ? { quotes, ...(quotesSwap ? { quotesSwap } : {}) } : {}), at: ctx.now().toISOString() });
+    for (const { quotes, quotesSwap, keep, ...t } of want) {
+      const was = all.findIndex((w) => w.identifier === t.identifier);
+      const w: Waiting = { ...t, follows: t.follows ?? null, ...(quotes?.length ? { quotes, ...(quotesSwap ? { quotesSwap } : {}) } : {}), ...(keep ? { keep } : {}), at: ctx.now().toISOString() };
+      if (was < 0) all.push(w);
+      else if (keep) {
+        const cur = all[was]!;
+        all[was] = { ...cur, title: w.title, description: w.description, sources: [...new Set([...cur.sources, ...w.sources])], keep: true };
+      }
     }
     await save(all);
   });
@@ -114,8 +128,9 @@ const list = (ids: string[]) => (ids.length <= 2 ? ids.join(" and ") : `${ids.sl
  * checked like a pack and swapped the same way. The one builder for an approval, the backfill and a rewrite (`at`: the pack's first write); the
  * store refuses a pack that carries a canary (FLOW-3).
  */
-async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null; quotesSwap?: number | null }, id: string, now: Date, at?: string): Promise<EvidencePack | null> {
+async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; description: string; sources: string[]; follows?: string | null; quotes?: PackQuotes | null; quotesSwap?: number | null }, id: string, now: Date, at?: string, seen?: { missing?: Evidence["missing"] }): Promise<EvidencePack | null> {
   const e: Evidence = await taskEvidence(ctx, { title: t.title, description: t.description, sources: t.sources }).catch(() => ({ sources: [], missing: [] }));
+  if (seen) seen.missing = e.missing;
   let sources = e.sources;
   let companies = e.companies ?? [];
   if (!sources.length && t.follows) {
@@ -130,6 +145,24 @@ async function packFor(ctx: Ctx, store: EvidenceStore, t: { title: string; descr
     if (sources.length && !swappedPack(kept)) sources = swapPassages(sources, sourceCompanies(t.description, t.title), await swapLists(ctx)).sources;
   }
   return sources.length ? { v: 1, task: id, at: at ?? now.toISOString(), nameSwap: NAME_SWAP, ...(companies.length ? { companies } : {}), sources } : null;
+}
+
+/**
+ * INPUT-2 (RUN-5): an open task's pack written again after it took a later call's sources (`built`, from this Mac's
+ * files now), keeping from the pack there the passages of the sources whose files this Mac no longer has, so the update
+ * never loses quotes, and when it was first written. Only from a pack through today's name swap, and never a source the
+ * privacy rules now hold: `missing` says why each one wasn't built.
+ */
+async function keptPack(store: EvidenceStore, id: string, sources: string[], built: EvidencePack | null, missing: Evidence["missing"]): Promise<EvidencePack | null> {
+  const there = await store.read(id).catch(() => null);
+  if (!there || !swappedPack(there)) return built;
+  const gone = new Set(missing.filter((m) => m.why === "its meeting or thread is no longer in your folders").map((m) => m.id));
+  const have = new Set((built?.sources ?? []).map((s) => s.id));
+  const kept = packSources(there, sources).filter((s) => gone.has(s.id) && !have.has(s.id));
+  if (!built && !kept.length) return null;
+  const all = [...(built?.sources ?? []), ...kept].sort((a, b) => sources.indexOf(a.id) - sources.indexOf(b.id));
+  const companies = [...new Set([...(built?.companies ?? []), ...packCompanies(there)])];
+  return { v: 1, task: id, at: there.at, nameSwap: NAME_SWAP, ...(companies.length ? { companies } : {}), sources: all };
 }
 
 /** "PMX couldn't share PMX-12's quotes with your team: …", a sentence per reason. */
@@ -162,7 +195,9 @@ export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; sto
   for (const w of all) {
     const id = w.identifier.startsWith("PENDING-") ? resolved[w.identifier]?.identifier ?? null : w.identifier;
     if (!id) { if (old(w)) drop.add(w.identifier); continue; }
-    const pack = await packFor(ctx, store, w, id, now);
+    const seen: { missing?: Evidence["missing"] } = {};
+    const built = await packFor(ctx, store, w, id, now, undefined, seen);
+    const pack = w.keep ? await keptPack(store, id, w.sources, built, seen.missing ?? []) : built;
     // Nothing this Mac can quote, so nothing to share: the task runs where its sources are, as before.
     if (!pack) { drop.add(w.identifier); continue; }
     ready.push({ w, pack });

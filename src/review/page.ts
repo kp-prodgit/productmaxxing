@@ -52,12 +52,14 @@ a { color: var(--accent); }
 .bar button:disabled { opacity: .5; cursor: default; }
 .bar kbd { font: 11px ui-monospace, monospace; color: var(--muted); margin-left: 4px; }
 .empty { color: var(--muted); padding: 48px 0; text-align: center; }
+.decided { color: var(--muted); font-size: 13px; line-height: 1.45; padding: 8px 12px; margin: 0 0 6px; border-left: 3px solid var(--line); }
 #toast { position: fixed; top: 16px; right: 16px; background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 #toast.show { opacity: 1; }
 @media (max-width: 760px) {
   main { grid-template-columns: 1fr; }
   nav { border-right: 0; border-bottom: 1px solid var(--line); display: flex; overflow-x: auto; gap: 6px; padding: 8px 16px; }
   nav button { width: auto; min-width: 180px; }
+  .decided { flex: 0 0 240px; margin: 0; }
   section#draft { padding: 16px 16px 180px; }
   .file { padding: 4px 16px 12px; }
   .bar { left: 0; padding: 12px 16px; }
@@ -80,7 +82,7 @@ a { color: var(--accent); }
 <div id="toast" role="status"></div>
 <script>
 const TOKEN = "__TOKEN__";
-let items = [], current = null;
+let items = [], decided = [], current = null;
 const $ = (id) => document.getElementById(id);
 const escText = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let toastT = 0;
@@ -92,7 +94,7 @@ async function api(path, opts = {}) {
   return data;
 }
 function renderList() {
-  $("list").innerHTML = items.map((i) => '<button data-id="' + escText(i.id) + '" aria-current="' + (current && current.id === i.id) + '"><span class="id">' + escText(i.identifier) + ' · ' + escText(i.category) + ' · ' + escText(i.size) + '</span><span class="t">' + escText(i.title) + '</span></button>').join("");
+  $("list").innerHTML = decided.map((d) => '<p class="decided">' + escText(d.text) + '</p>').join("") + items.map((i) => '<button data-id="' + escText(i.id) + '" aria-current="' + (current && current.id === i.id) + '"><span class="id">' + escText(i.identifier) + ' · ' + escText(i.category) + ' · ' + escText(i.size) + '</span><span class="t">' + escText(i.title) + '</span></button>').join("");
   for (const b of $("list").querySelectorAll("button")) b.onclick = () => select(b.dataset.id);
 }
 function select(id) {
@@ -135,7 +137,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "r") { $("note").focus(); e.preventDefault(); }
   if (e.key === "x") decide("reject");
 });
-api("/api/queue").then((d) => { items = d.items; $("sub").textContent = items.length + " waiting · reviewing as " + d.reviewer; select(items[0] && items[0].id); })
+api("/api/queue").then((d) => { items = d.items; decided = d.decided || []; $("sub").textContent = items.length + " waiting · reviewing as " + d.reviewer; select(items[0] && items[0].id); })
   .catch((e) => { $("draft").innerHTML = '<p class="empty">Could not load the queue: ' + escText(e.message) + '</p>'; });
 </script>
 </body>

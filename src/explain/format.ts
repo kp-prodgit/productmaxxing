@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { HOLD_LABELS } from "../core/filter.js";
-import type { RunReceipt, SourceReceipt } from "../core/receipt.js";
+import type { OpenUpdated, RunReceipt, SourceReceipt } from "../core/receipt.js";
 import type { RedactionKind } from "../core/redact.js";
 import type { SkillInfo } from "../core/skills.js";
 import { FLAG_TEXT } from "../synth/synthesize.js";
@@ -72,13 +72,17 @@ export function receiptSummary(r: RunReceipt): string {
 export function reconciledText(x: NonNullable<NonNullable<RunReceipt["todo"]>["reconciled"]>[number], sources: SourceReceipt[] = []): string {
   const by = x.by ? ` [${x.by}]` : "";
   const m = x.by ? sources.find((s) => s.id === x.by) : undefined;
-  const where = m?.title ? `in "${m.title}"${m.at ? ` on ${m.at.slice(0, 10)}` : ""}` : "in a later meeting";
+  // TODO-8: an email thread is named as one; a to-do already on the list that a later message settled is ticked.
+  const email = m?.kind === "thread";
+  const later = email ? "a later email" : "a later meeting";
+  const where = m?.title ? `in ${email ? "the email " : ""}"${m.title}"${m.at ? ` on ${m.at.slice(0, 10)}` : ""}` : `in ${later}`;
   const why = x.why ? `. ${x.why}` : "";
-  if (x.how === "done") return `done ${where}${by}, so dropped: ${x.text}${why}`;
-  if (x.how === "overtaken") return `overtaken ${where}${by}, so dropped: ${x.text}${why}`;
+  const gone = x.stored ? `so PMX ticked your to-do ${x.stored}` : "so dropped";
+  if (x.how === "done") return `done ${where}${by}, ${gone}: ${x.text}${why}`;
+  if (x.how === "overtaken") return `overtaken ${where}${by}, ${gone}: ${x.text}${why}`;
   if (x.how === "same-ask") return `the same ask as "${x.into}"${by}, kept once citing both: ${x.text}`;
-  if (x.how === "merged") return `said again in a later meeting${by}, kept once citing both: ${x.text}`;
-  return `changed in a later meeting${by}, kept once citing both: ${x.text}`;
+  if (x.how === "merged") return `said again in ${later}${by}, kept once citing both: ${x.text}`;
+  return `changed in ${later}${by}, kept once citing both: ${x.text}`;
 }
 
 /** The full receipt for the terminal: every source, the rule that decided it, what Claude got. */
@@ -124,7 +128,11 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
       }
       // R6: a task the PM dropped, with the reason they gave (`pmx proposals drop … --reason`).
       if (t.posted && "dropped" in t.posted) out.push(`      you dropped it${t.posted.reason ? `: ${t.posted.reason}` : ""}`);
+      // INPUT-2: an open task it was heard again for, which took this run's newer facts.
+      if (t.posted && "duplicateOf" in t.posted && t.posted.updated) out.push(`      ${updatedText(t.posted.duplicateOf, t.posted.updated)}`);
     }
+    // INPUT-2: open tasks a newer figure from this run's other work went to, matched to no task of it.
+    for (const u of r.synth.updated ?? []) out.push(`   ${updatedText(u.identifier, u)}`);
     for (const s of r.synth.skipped) out.push(`   skipped: ${s}`);
     // N4: what repeated a source word for word, with the words and which source. Your own sources' words, on this Mac.
     if (r.synth.quoted?.length) {
@@ -152,6 +160,16 @@ export function formatReceipt(r: RunReceipt, live: LiveSource[]): string {
   if (r.error) out.push("", `The run failed: ${r.error}`);
   out.push("", "Left-out text is never stored. File names and lines above were found just now in your own folders.");
   return out.join("\n");
+}
+
+/**
+ * INPUT-2: "updated PMX-46: GPU cost is now 22% over budget (was 18%). (1 new source)", or "commented on PMX-46: …
+ * (its draft is in review, so its description stays; 1 new source)".
+ */
+export function updatedText(identifier: string, u: OpenUpdated): string {
+  const n = `${u.figure ? "a newer figure from " : ""}${u.sources} new ${u.sources === 1 ? "source" : "sources"}`;
+  const why = u.how === "description" ? `${n}${u.queued ? "; in Linear at the next Claude sync" : ""}${u.noComment ? "; no comment, since one couldn't be said within the tracker rules" : ""}` : `${u.why ?? "it was being drafted"}, so its description stays; ${n}`;
+  return `${u.how === "description" ? "updated" : "commented on"} ${identifier}: ${u.changes.join(" ")} (${why})`;
 }
 
 export function formatSkills(skills: SkillInfo[]): string {

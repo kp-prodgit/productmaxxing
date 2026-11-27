@@ -6,7 +6,9 @@
  *  3. across runs, Claude sees what's already open or waiting and says when a need is the same as one of them
  *     (`sameAs`); a near-identical title is caught in code too, in case it doesn't.
  * A repeat of a waiting proposal adds its evidence to that proposal. A repeat of an open task is recorded as heard
- * again, on this Mac only: nothing is written to the tracker without the PM's approval (APPROVE-1). R6: Claude also sees
+ * again on this Mac, and (founder decision, KP 2026-11-27) when it brings newer facts PMX puts them in that task through
+ * the tracker guard: its description in the backlog or Ready, a comment while it's drafted or reviewed
+ * (src/synth/open-update.ts). A new task still never reaches the tracker without the PM's approval (APPROVE-1). R6: Claude also sees
  * the team's recently done tasks (src/synth/done.ts); a repeat of one is recorded as done and heard again, and new work
  * building on one is suggested as a follow-up that links it (`follows`).
  */
@@ -59,6 +61,7 @@ export function knownBlock(known: Known[], doneDays = 30): string {
       ...open.slice(0, 150).map((k) => `- ${k.id}${k.where === "waiting" ? " (waiting for approval)" : ""}: ${line(k)}`),
       "",
       "When a need you find is the same need as one of these, even worded differently or from a different source, still return it, with `\"sameAs\": \"<that ID>\"`, so PMX adds your sources to it instead of making a second task. Use `sameAs` only for the same need, not a related one.",
+      "When your sources give such a need a newer fact or figure (a date that moved, a cost or a count that changed), say the newer one in its rationale: PMX puts what's new in that task.",
     ] : []),
     ...(done.length ? [
       ...(open.length ? [""] : []),

@@ -5,6 +5,7 @@ import { makeRedactor } from "../core/redact.js";
 import { sourceReceipts, topicRulesHash, type RunReceipt } from "../core/receipt.js";
 import type { SignalItem } from "../core/types.js";
 import { readThreads, readTranscripts } from "../sources/transcripts.js";
+import { isEmailThread, ownAddresses } from "../sources/email.js";
 import { channelInputs, meetingSeries, placeApproved } from "../inputs/inputs.js";
 import { namesIn } from "../core/tracker-text.js";
 import { crmCompanies } from "../run/web-guard.js";
@@ -20,11 +21,12 @@ import { runCanaries } from "../core/canary.js";
  */
 export function privacyRules(ctx: Pick<Ctx, "team" | "personal">, individual = false, o: { digest?: boolean } = {}) {
   const { team, personal } = ctx;
+  const internalDomains = companyDomains(team.internalDomains, { companyDomains: personal.companyDomains, emails: personal.identity?.emails });
   return {
     // F3: the team's approved internal meeting series feed team work (synthesis and agents), never a digest or to-dos'
     // relaxed rules, which don't need them.
     meetingSeries: individual || o.digest ? [] : meetingSeries(team),
-    internalDomains: companyDomains(team.internalDomains, { companyDomains: personal.companyDomains, emails: personal.identity?.emails }),
+    internalDomains,
     requireExternalParticipant: !individual, neverIngest: personal.neverIngest, allowOneOnOne: individual, wholeMeeting: !individual,
     confidentialDomains: confidentialDomains(team.confidentialDomains), allowConfidential: individual,
     // "off" blocks a source everywhere; "mine" lets it feed only the PM's own to-dos.
@@ -32,7 +34,9 @@ export function privacyRules(ctx: Pick<Ctx, "team" | "personal">, individual = f
     // Threads only from places the team approves today (INPUT-1).
     approvedPlace: (source: string, place: string) => placeApproved(channelInputs(team), source, place),
     // COLLECT-4: a meeting the PM wasn't in never feeds their to-dos, whether or not it was collected for the team.
-    ...(individual ? { attendedBy: { emails: personal.identity?.emails ?? [], names: personal.identity?.names ?? [] } } : {}),
+    // TODO-8: nor does an email thread they didn't write in. The PM's addresses include their mailbox at each of the
+    // company's domains.
+    ...(individual ? { attendedBy: { emails: ownAddresses(personal.identity?.emails ?? [], internalDomains), names: personal.identity?.names ?? [] } } : {}),
   };
 }
 
@@ -81,9 +85,13 @@ export async function gather(ctx: Ctx, o: { days: number; scope: "personal" | "t
   }
 
   // Threads from the team's approved channels (INPUT-1), saved by the collection task through the PM's own connectors.
-  // Team runs and the digest read them; private to-dos come from meetings only.
+  // Team runs and the digest read them all. TODO-8: private to-dos read the email threads among them (an approved
+  // inbox or label), and the filter keeps only those the PM is on and wrote in.
   const channels = channelInputs(team);
-  if (channels.length && o.scope !== "individual") raw.push(...(await readThreads({ dir: paths.threads(), sinceMs, idPrefix: "C" })));
+  if (channels.length) {
+    const threads = await readThreads({ dir: paths.threads(), sinceMs, idPrefix: "C" });
+    raw.push(...(o.scope === "individual" ? threads.filter(isEmailThread) : threads));
+  }
 
   // Meeting identities come from participants and IDs, so they're worked out before redaction (MEET-1).
   const salt = await teamSalt(ctx.repo);

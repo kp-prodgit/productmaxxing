@@ -4,7 +4,7 @@ This guide is written for **Claude Code** to follow on a PM's Mac. To use it, op
 
 > Install PMX following https://github.com/kp-prodgit/productmaxxing/blob/main/INSTALL.md
 
-The install is one command, `npx --yes productmaxxing@latest install`, then `pmx init`. Installing by hand from the release package (version **0.40.0**, `productmaxxing-0.40.0.tgz` from the [v0.40.0 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.40.0)) is the fallback at the end.
+The install is one command, `npx --yes productmaxxing@latest install`, then `pmx init`. Installing by hand from the release package (version **0.40.1**, `productmaxxing-0.40.1.tgz` from the [v0.40.1 release](https://github.com/kp-prodgit/productmaxxing/releases/tag/v0.40.1)) is the fallback at the end.
 
 ---
 
@@ -145,24 +145,24 @@ The fallback when `npx` can't reach npm. Download the package and its checksum f
 
 ```bash
 d="$(mktemp -d)" && cd "$d"
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.40.0/productmaxxing-0.40.0.tgz
-curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.40.0/SHA256SUMS
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.40.1/productmaxxing-0.40.1.tgz
+curl -fsSLO https://github.com/kp-prodgit/productmaxxing/releases/download/v0.40.1/SHA256SUMS
 shasum -a 256 -c SHA256SUMS --ignore-missing
-npm install -g ./productmaxxing-0.40.0.tgz
+npm install -g ./productmaxxing-0.40.1.tgz
 ```
 
-If `shasum` doesn't print `productmaxxing-0.40.0.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
+If `shasum` doesn't print `productmaxxing-0.40.1.tgz: OK`, stop and don't install. Tell the user the download didn't match the release.
 
 - **If npm says `EACCES`**, its own folder belongs to the system. Don't use `sudo`. Install into `~/.local` instead, and put its folder on the PATH once:
 
   ```bash
-  npm install -g --prefix ~/.local ./productmaxxing-0.40.0.tgz
+  npm install -g --prefix ~/.local ./productmaxxing-0.40.1.tgz
   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
   ```
 
   Then open a new Terminal window. `pmx update` keeps using `~/.local` by itself.
 - **Joining a team?** Clone the team's PMX repo (ask the team lead for its URL), then `npm install -g <repo>/.pmx/cli/productmaxxing.tgz` (with `--prefix ~/.local` if npm needed it above).
-- **Check:** `pmx --version` in a new Terminal window prints `0.40.0`, or the team's version. Then go on with step 4.
+- **Check:** `pmx --version` in a new Terminal window prints `0.40.1`, or the team's version. Then go on with step 4.
 
 ## Background for people reading this
 

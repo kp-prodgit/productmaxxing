@@ -2,6 +2,10 @@
 
 Versions follow [semantic versioning](https://semver.org): new features raise the minor number, fixes the patch number, and anything that breaks an older CLI, file or team the major number. See "Updating" in the README.
 
+## 0.40.1: PMX's commands in the Claude app update again on Macs set up before the rename
+
+- **PMX's commands in the Claude app update again on Macs set up before the rename.** `/pmx-schedule`, `/pmx-board` and `/pmx-flow` installed by Product Git (0.14.0 or older) say "Installed by Product Git", which PMX read as your own copy, so it never updated them. On one Mac, `/pmx-schedule` and `/pmx-board` were three weeks old, and `/pmx-schedule` would have set up scheduled tasks with old prompts. PMX now refreshes those copies at its next update, as it does its newer ones. A copy you wrote yourself is still left alone. (RENAME-1)
+
 ## 0.40.0: Linear tasks take newer figures, to-dos from your emails, and clearer follow-ups
 
 - **A kind of work isn't paused for its runs' trouble.** An agent paused competitive analyses ("accept rate 20% over 5 reviews"), though 3 of the 4 redos were of drafts whose runs couldn't use the web. Now a redo or reject of a draft whose run record shows its run went wrong doesn't count toward the accept rate: a failed run, one cut off at the per-run cap or whose checklist didn't pass, or a web run that got no web (its web tools weren't available, or PMX's web guard blocked its calls and it cites no page). The run log says so on the decision, as a code, so every Mac counts the same, and `pmx review --stats` shows how many weren't counted. An accept always counts. (REV-3, RUN-6)

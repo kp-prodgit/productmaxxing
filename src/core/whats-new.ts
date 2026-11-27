@@ -19,6 +19,12 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.40.1", date: "2026-11-27", headline: "PMX's commands in the Claude app update again on Macs set up before the rename",
+    items: [
+      { what: "/pmx-schedule, /pmx-board and /pmx-flow installed by Product Git were read as your own copies and never updated. PMX now refreshes them, and adds /pmx-setup where it was missing. A copy you wrote yourself is still left alone. If PMX updated /pmx-schedule, type it in the Claude app once so your scheduled tasks get today's prompts.", try: "/pmx-schedule" },
+    ],
+  },
+  {
     version: "0.40.0", date: "2026-11-27", headline: "Linear tasks take newer figures, to-dos from your emails, and clearer follow-ups",
     items: [
       { what: "When a later call or thread gives a newer figure ('22% over budget' after '18% over plan'), PMX updates the open task in Linear with a short comment saying what changed. A draft in review gets the comment only; a done task is left alone.", try: "pmx explain <receiptId>" },

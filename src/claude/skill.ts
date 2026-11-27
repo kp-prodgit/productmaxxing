@@ -15,7 +15,13 @@ export const FLOW_SKILL = "pmx-flow";
 /** SETUP-1: Claude's guide through installing, updating and checking PMX, from `pmx checklist`. */
 export const SETUP_SKILL = "pmx-setup";
 export type AppSkill = typeof APP_SKILL | typeof BOARD_SKILL | typeof FLOW_SKILL | typeof SETUP_SKILL;
-const MARKER = "Installed by ProductMaxxing";
+/**
+ * The line PMX writes in every skill it installs, so it knows the copy is its own to refresh. A skill installed before
+ * the rename (Product Git, 0.14.0 and older; RENAME-1) says "Installed by Product Git": that copy is PMX's too, so it
+ * is refreshed like any other, not kept as the PM's own.
+ */
+const MARKERS = ["Installed by ProductMaxxing", "Installed by Product Git"];
+const byPmx = (text: string) => MARKERS.some((m) => text.includes(m));
 
 export const appSkillSource = (name: AppSkill = APP_SKILL) => join(packageRoot(), "app-skills", name, "SKILL.md");
 /** The PM's Claude app folder. Tests point PMX_CLAUDE_HOME elsewhere so they never touch the real one. */
@@ -29,7 +35,7 @@ export async function installAppSkill(name: AppSkill = APP_SKILL): Promise<Skill
   const want = await readFile(appSkillSource(name), "utf8");
   const have = await readFile(appSkillTarget(name), "utf8").catch(() => null);
   if (have === want) return "current";
-  if (have !== null && !have.includes(MARKER)) return "kept-yours";
+  if (have !== null && !byPmx(have)) return "kept-yours";
   await mkdir(join(appSkillTarget(name), ".."), { recursive: true });
   await writeFile(appSkillTarget(name), want, { mode: 0o644 });
   return have === null ? "installed" : "updated";
@@ -41,7 +47,7 @@ export async function appSkillInstalled(name: AppSkill = APP_SKILL): Promise<boo
 
 /** Whether the copy in the Claude app is one PMX wrote (and may refresh), not the PM's own. */
 export async function skillInstalledByPmx(name: AppSkill): Promise<boolean> {
-  return readFile(appSkillTarget(name), "utf8").then((t) => t.includes(MARKER), () => false);
+  return readFile(appSkillTarget(name), "utf8").then(byPmx, () => false);
 }
 
 /** Whether the copy in the Claude app is this version's. */
@@ -60,7 +66,7 @@ export async function refreshAppSkills(): Promise<AppSkill[]> {
   const out: AppSkill[] = [];
   for (const name of [APP_SKILL, BOARD_SKILL, FLOW_SKILL, SETUP_SKILL] as const) {
     const have = await readFile(appSkillTarget(name), "utf8").catch(() => null);
-    if (have?.includes(MARKER) && (await installAppSkill(name)) === "updated") out.push(name);
+    if (have !== null && byPmx(have) && (await installAppSkill(name)) === "updated") out.push(name);
   }
   return out;
 }

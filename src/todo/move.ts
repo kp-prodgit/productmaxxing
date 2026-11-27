@@ -9,7 +9,7 @@ import { SIZES, type Size, type Task } from "../core/types.js";
 import { citationNeed, citeText } from "../pull/pull.js";
 import { receiptOf, taskEvidence } from "../run/evidence.js";
 import { packSources, swappedPack } from "../run/packs.js";
-import { removePackNow, shareEvidence, stageShares, storeFor, unstageShares } from "../run/share.js";
+import { removePackNow, shareEvidence, stagedPack, stageShares, storeFor, unstageShares } from "../run/share.js";
 import { dateRange } from "../synth/synthesize.js";
 import { approveProposals, CHECKED, heldText, holdProposal, markKept, readProposals, takeProposal, type Proposal } from "../synth/proposals.js";
 import { recheckProposal } from "../synth/recheck.js";
@@ -249,26 +249,31 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
   /**
    * Takes an issue back out of Linear: a comment for the team, then canceled. R16b: one only queued for Linear (the
    * Claude relay hasn't created it yet) leaves the queue instead, so nothing of it reaches Linear. Says which: "queued".
-   * RUN-5: it then never gets an identifier, so nothing waits for one: its staged share goes, and so does the to-do
-   * parked for a drop of it, since taking it back makes it a to-do again.
+   * RUN-5: it then never gets an identifier, so nothing waits for one: its staged share goes. TODO-5: and a to-do it
+   * came from, parked for a drop of it, comes back as it was (`back`), as `pmx linear outbox drop` gives it back, so the
+   * take-back makes no new one. A canceled one's staged share goes too (a push that failed left it), so its quotes never
+   * reach the team repo.
    */
-  const withdraw = async (t: Task, why: string): Promise<"queued" | "canceled"> => {
+  const withdraw = async (t: Task, why: string): Promise<{ how: "queued" | "canceled"; back: Todo | null }> => {
     const tr = await tracker();
     if (tr.unqueue && (await tr.unqueue(t.id))) {
       await unstageShares([t.identifier]);
-      await unpark([t.identifier]);
-      return "queued";
+      return { how: "queued", back: await giveBack(t.identifier, now) };
     }
     await tr.comment(t.id, why);
     await tr.rewrite(t.id, { cancel: true });
     // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it.
     await markTask(ctx, tr, t.identifier, "dropped");
-    // RUN-5: dropped, so its shared quotes leave the team repo now, as the clean-up would remove them.
+    // RUN-5: dropped, so a share still staged for it never goes, and its shared quotes leave the team repo now, as the
+    // clean-up would remove them.
+    await unstageShares([t.identifier]);
     await removePackNow(ctx, tr, t.identifier, "dropped");
-    return "canceled";
+    return { how: "canceled", back: null };
   };
   /** What became of the issue, in a sentence: canceled in Linear, or never sent. */
   const gone = (t: Task, how: "queued" | "canceled") => (how === "queued" ? `${t.identifier} hadn't reached Linear yet, so nothing of it goes there.` : `${t.identifier} is canceled in Linear.`);
+  /** TODO-5 (R16b): what a take-back says when the to-do a queued task came from is back: the same to-do, as it was. */
+  const asItWas = (t: Task, back: Todo) => `"${back.text}" is your private to-do again, as it was before you moved it. ${gone(t, "queued")}`;
   /**
    * R16c (TODO-5): a team task taken back as a to-do keeps its sources (its `pmx:source` IDs, under the receipt its
    * description names, when this Mac has that receipt; as its text gives them, when it hasn't) and the task it follows
@@ -292,11 +297,12 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
   };
   /**
    * R16c (RUN-5): the task's own shared quotes for the sources its to-do keeps, read before taking it back removes them
-   * from the team repo, so the task it becomes again can have them (`kept-quotes.ts`).
+   * from the team repo, so the task it becomes again can have them (`kept-quotes.ts`). With no pack there yet, the copy
+   * of quotes its staged share holds, which the take-back removes.
    */
   const packCopy = async (t: Task, sources: string[] | undefined): Promise<KeptQuotes | null> => {
     if (!sources?.length || ctx.team.tracker.kind === "none") return null;
-    const pack = await storeFor(ctx).read(t.identifier).catch(() => null);
+    const pack = (await storeFor(ctx).read(t.identifier).catch(() => null)) ?? (await stagedPack(t.identifier).catch(() => null));
     const quotes = packSources(pack, sources);
     return quotes.length ? { quotes, ...(swappedPack(pack) ? { quotesSwap: pack!.nameSwap } : {}) } : null;
   };
@@ -360,9 +366,10 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
       if (to === "todo") throw same("todo", t.title);
       movable(t);
       if (to === "private") {
-        const how = await withdraw(t, `${handle} took this back to their private to-dos.`);
+        const w = await withdraw(t, `${handle} took this back to their private to-dos.`);
+        if (w.back) return moved("todo", w.back.text, w.back.id, null, asItWas(t, w.back));
         const k = await keepTodo({ text: t.title, due: dueIn(t.description) }, now);
-        return moved("todo", k.text, k.id, null, `Back to your private to-dos: ${k.text}. ${gone(t, how)}`);
+        return moved("todo", k.text, k.id, null, `Back to your private to-dos: ${k.text}. ${gone(t, w.how)}`);
       }
       const k = kind();
       await toProduct(t, k, null);
@@ -377,10 +384,15 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
     }
     const kept = await sourcesOf(t);
     const copy = await packCopy(t, kept.sources);
-    const how = await withdraw(t, `${handle} took this off the team's list to keep as a private to-do.`);
+    const w = await withdraw(t, `${handle} took this off the team's list to keep as a private to-do.`);
+    if (w.back) {
+      // R16c: it keeps its own copy of quotes, if it had one, and its Follows line; one with no copy takes the task's.
+      if (copy && !(await quotesFor(w.back.id))) await keepQuotes(w.back.id, copy, now);
+      return moved("product", w.back.text, w.back.id, null, asItWas(t, w.back));
+    }
     const k = await keepTodo({ text: t.title, source: { title: `Moved from ${t.identifier}`, at: now.toISOString().slice(0, 10), keys: [] }, ...kept }, now);
     if (copy) await keepQuotes(k.id, copy, now);
-    return moved("product", k.text, k.id, null, `Now your private to-do: ${k.text}. ${gone(t, how)}${kept.sources ? ` It keeps ${kept.sources.length === 1 ? "its source" : `its ${kept.sources.length} sources`}, so moving it to the team again brings ${kept.sources.length === 1 ? "it" : "them"} back.` : ""}`);
+    return moved("product", k.text, k.id, null, `Now your private to-do: ${k.text}. ${gone(t, w.how)}${kept.sources ? ` It keeps ${kept.sources.length === 1 ? "its source" : `its ${kept.sources.length} sources`}, so moving it to the team again brings ${kept.sources.length === 1 ? "it" : "them"} back.` : ""}`);
   }
 
   // A to-do: private, or in Linear as the PM's commitment.
@@ -422,7 +434,8 @@ export async function moveWork(ctx: Ctx, svc: () => Promise<Services>, ref: stri
       if (issue) {
         movable(issue);
         const copy = await packCopy(issue, t.sources);
-        how = await withdraw(issue, `${handle} took this back to their private to-dos.`);
+        // Its to-do is this one, still on the PM's list, so nothing was parked for it.
+        how = (await withdraw(issue, `${handle} took this back to their private to-dos.`)).how;
         if (copy) await keepQuotes(t.id, copy, ctx.now());
       }
       await linkTodo(t.id, null);
@@ -508,13 +521,35 @@ async function park(identifier: string, todo: Todo, now: Date, quotes: KeptQuote
   });
 }
 
-/** R16b, RUN-5: a queued task taken back is a to-do again already, so no drop will ever give back the one parked for it. */
-async function unpark(identifiers: string[]): Promise<void> {
-  const gone = new Set(identifiers);
-  if (!(await readParked()).some((p) => gone.has(p.identifier))) return;
+/**
+ * R16b (TODO-5): the to-dos parked for these queued tasks, put back as they were (`restoreTodo`), each with the copy of
+ * its old team task's quotes it had, and no longer parked. Returns them.
+ */
+async function unpark(gone: Set<string>, now: Date): Promise<Todo[]> {
+  const back: Todo[] = [];
   await withLock(parkedFile(), async () => {
-    await saveParked((await readParked()).filter((p) => !gone.has(p.identifier)));
+    const all = await readParked();
+    if (!all.some((p) => gone.has(p.identifier))) return;
+    for (const p of all) if (gone.has(p.identifier)) {
+      const t = await restoreTodo(p.todo);
+      if (p.quotes) await keepQuotes(t.id, p.quotes, now);
+      back.push(t);
+    }
+    await saveParked(all.filter((p) => !gone.has(p.identifier)));
   });
+  return back;
+}
+
+/**
+ * R16b, TODO-5: a queued task taken back (`pmx move PENDING-… private`, or the page's move) gives back the to-do it came
+ * from, as a drop of it does: the same to-do, with its words, due date, kind, notes, run's receipt, sources, Follows line
+ * and copy of quotes. One first sent to Linear as the PM's own, then moved to the team, is private again. Null when no
+ * to-do is parked for it: a task approved from a waiting one, or made on another surface.
+ */
+async function giveBack(identifier: string, now: Date): Promise<Todo | null> {
+  const [t] = await unpark(new Set([identifier]), now);
+  if (!t) return null;
+  return t.linear && t.linear.toUpperCase() === identifier.toUpperCase() ? linkTodo(t.id, null) : t;
 }
 
 /**
@@ -526,16 +561,7 @@ export async function giveBackTodos(dropped: RelayOp[]): Promise<Todo[]> {
   const gone = new Set(dropped.filter((op) => op.kind === "create-task").map((op) => pendingIdentifier(op.id)));
   if (!gone.size) return [];
   const back = new Map<string, Todo>();
-  await withLock(parkedFile(), async () => {
-    const all = await readParked();
-    if (!all.some((p) => gone.has(p.identifier))) return;
-    for (const p of all) if (gone.has(p.identifier)) {
-      const t = await restoreTodo(p.todo);
-      if (p.quotes) await keepQuotes(t.id, p.quotes, new Date());
-      back.set(t.id, t);
-    }
-    await saveParked(all.filter((p) => !gone.has(p.identifier)));
-  });
+  for (const t of await unpark(gone, new Date())) back.set(t.id, t);
   for (const t of (await loadTodos()).items) if (t.status === "open" && t.linear && gone.has(t.linear.toUpperCase())) back.set(t.id, await linkTodo(t.id, null));
   return [...back.values()];
 }

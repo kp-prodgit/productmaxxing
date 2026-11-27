@@ -454,10 +454,19 @@ function asChoice(core: string, r: Reading): string {
   return !CHOSEN.test(c) && nounPhrase(c) ? `on ${theOf(c, r)}` : c;
 }
 
+/** A call on doing something, then the question it hangs on: "whether to warn users: Does a font change …?". */
+const HANGS_ON = /^((?:whether|how|what|which|when|where)\s+(?:not\s+)?to\s+[^:?]+?):\s+(\p{Lu}[\s\S]*\?)$/u;
+/** Verbs whose thing can be the question itself: "whether to ask the question: …", "whether to pursue the question: …". */
+const ASKS_IT = /^(?:whether|how|when|where)\s+(?:not\s+)?to\s+(?:ask|pursue|answer|chase|escalate|research|investigate|explore|revisit|reopen)$/i;
+
 /**
  * The to-do's words: "Decide whether to … (PMX-12)", or "Decide: <the item's lead> (PMX-12)". A call that leans on a
  * word nothing in it explains starts with what its item is about (`about`): "Price floor: decide whether to commission
- * that test … (PMX-33)". At most 200 characters.
+ * that test … (PMX-33)". A call that carries the question it hangs on reads as the call, the question after it
+ * (FOLLOW-1, end-to-end test 2026-11-27): "Decide whether to ask the question: What is the real cost …?" when the
+ * question is what the call is on, else "Decide how to package, given the question: Is the price conditional …?",
+ * never "Decide how to package: Is …?", which reads as a question. No quotation marks: the tracker rules read those as
+ * someone quoted, and the to-do could never go to Linear. At most 200 characters.
  */
 function worded(core: string, identifier: string, about: string | null = null): string {
   const id = ` (${identifier})`;
@@ -469,7 +478,12 @@ function worded(core: string, identifier: string, about: string | null = null): 
   }
   const verb = /^(?:(?:whether|if|how|which|what|who|when|where|to|between)\b|on\s)/i.test(core) ? "Decide " : "Decide: ";
   const head = about && verb === "Decide " ? `${about}: decide ` : verb;
-  const body = cut(core.replace(/^./, (c) => (verb === "Decide " ? c.toLowerCase() : c)), 200 - head.length - id.length);
+  const hangs = core.match(HANGS_ON);
+  const reworded = hangs ? `${hangs[1]}${ASKS_IT.test(hangs[1]!) ? " the question" : ", given the question"}: ${hangs[2]}` : null;
+  // Only when the question fits whole: a longer one keeps 0.40.2's "<call>: <Q>?" rather than lose its end, so whether a
+  // call takes its question (`decisionOf`, by this length) and its key stay what 0.40.2 decided (rig rerun 2026-11-27).
+  const said = reworded && head.length + reworded.length + id.length <= 200 ? reworded : core;
+  const body = cut(said.replace(/^./, (c) => (verb === "Decide " ? c.toLowerCase() : c)), 200 - head.length - id.length);
   return `${head}${body}${id}`;
 }
 
@@ -830,12 +844,15 @@ function decisionOf(text: string, identifier: string, now: Date, r: Reading): Ca
   }
   // FOLLOW-1 (end-to-end test 2026-11-27): a thin call ("whether to warn users") says what it's about: the item's label
   // first ("Font restarts: decide whether to warn users"), else the question the item asks before it ("Decide whether
-  // to warn users: Does a font change mid-run restart the job?"), else the task's subject. A call whose leaning word
-  // nothing resolves, with no label, takes the question too. With none of them, the why names the task.
+  // to warn users, given the question: Does a font change mid-run restart the job?"), else the task's subject. A call
+  // whose leaning word nothing resolves, with no label, takes the question too. With none of them, the why names the
+  // task.
   let names = "";
   if (!about && !fromLead && (l ? !ref : THIN.test(core))) {
     // The item's nearest question before the mark, through its "?" ("Is the price conditional …? says pricing is …").
     const asked = [pre, ...ss.slice(0, at).reverse()].map((x) => x.match(/^(.*\?)/)?.[1]?.trim()).find(Boolean) ?? null;
+    // Kept as "<call>: <Question>?", so its key is the one an earlier accept recorded; `worded` says it as the call,
+    // the question after it (`HANGS_ON`).
     const withAsked = asked ? `${core}: ${capFirst(asked)}` : null;
     if (!l && topic) about = capFirst(topic);
     else if (withAsked && worded(withAsked, identifier).length <= 200 && !worded(withAsked, identifier).includes("…")) core = withAsked;
@@ -960,17 +977,25 @@ const ROLE_WORD = /\b(?:leads?|owners?|managers?|head|director|vp|chief|officer|
 /** Who isn't one person to ask: several people, customers in general, a pronoun, or no one. */
 const NOT_ONE = /^(?:\d|one|two|three|four|five|six|seven|eight|nine|ten|a few|few|some|several|many|more|most|all|any|them|him|her|us|we|i|you|they|it|this|that|everyone|anyone|nobody|no one|around|customers?|users?|admins|accounts?|buyers|prospects?|people|interviewees?|in|at|on|during|after|before|for|about|whether|if)\b/i;
 const capWord = (w: string) => /^\p{Lu}\p{Ll}/u.test(w) && !/['’]s$/.test(w);
+/**
+ * How, when or how else to ask, after whom: "Ask the VP Brand directly", "— ask: legal in person", "Ask the CFO first".
+ * No part of the role (FOLLOW-1, end-to-end test 2026-11-27).
+ */
+const MANNER = /\s+(?:directly|personally|first|again|separately|in person|offline|privately|informally|formally|explicitly|yourself|too|also|as well|in advance|beforehand|early|now|today|soon|asap|one[- ]on[- ]one|1:1|in writing|by (?:e-?mail|phone)|over (?:e-?mail|the phone)|on a call)$/i;
 
 /**
  * The role a draft gives for who answers a question, worded to follow "Ask": "the finance lead", "legal", "the CFO",
  * "Globex's procurement contact". Null for anything that may be a person's name ("Lee Park", "Sam from finance"):
- * PMX's to-dos from drafts name roles, never people. `strict` also wants a word that makes it a role (for a role read
- * from the draft's prose rather than its mark).
+ * PMX's to-dos from drafts name roles, never people. How to ask them ("directly", "in person", "first": `MANNER`) is no
+ * part of it: "the VP Brand directly" is "the VP Brand", wherever the role is used (the tracker rules that check it,
+ * the company's team an ask falls back to). `strict` also wants a word that makes it a role (for a role read from the
+ * draft's prose rather than its mark).
  */
 function roleOf(raw: string, strict = false): string | null {
   let r = raw.replace(/\s+/g, " ").trim().replace(/[\s.,;:]+$/, "");
   // "Lee Park, the finance lead": the part that is a role.
   if (r.includes(",")) r = r.split(/\s*,\s*/).find((x) => DETERMINER.test(x) && ROLE_WORD.test(x)) ?? "";
+  for (let was = ""; was !== r;) { was = r; r = r.replace(MANNER, "").replace(/[\s.,;:]+$/, ""); }
   if (!r || r.length > 60 || r.split(" ").length > 8) return null;
   if (TEAM_LETTERS.test(r)) return r;
   if (NOT_ONE.test(r)) return null;

@@ -364,6 +364,28 @@ describe("a health aside is cut a sentence at a time, like fundraising (PRIV-2, 
     expect(screen("Kim: Early next week I'm out Tuesday morning for a doctor's appointment, so probably Wednesday. Ship it. Loop me in. The deck is fine. Okay. Dana's bonus is late.").out).toBe("");
   });
 
+  it("the speaker's own physio or appointment that only says when they're away is an aside, even with \"my\"", () => {
+    // Rig test 2026-11-27: "my physio" counted as full health, so the work talk went with it.
+    const { out, passages } = screen("Kim: Quick one: my physio moved, so I'm out Thursday afternoon. The mockups are in Figma. Ping me for anything urgent.\n\nAna: The SSO page ships Monday.");
+    expect(out).toBe(`Kim: ${HELD_MARKER} The mockups are in Figma. Ping me for anything urgent.\n\nAna: The SSO page ships Monday.`);
+    expect(passages).toEqual([{ rule: "health", hash: expect.any(String), part: { cut: 1, of: 3 } }]);
+    expect(screen("Kim: My dentist appointment got moved, so I'm in late tomorrow. The export spec is ready for review.").out)
+      .toBe(`Kim: ${HELD_MARKER} The export spec is ready for review.`);
+    expect(screen("Kim: The export spec is ready. My doctor's appointment is back on Friday, so I'm off early. Send comments in the doc.").out)
+      .toBe(`Kim: The export spec is ready. ${HELD_MARKER} Send comments in the doc.`);
+  });
+
+  it("still cuts the whole turn for a family member's health, the speaker's condition, someone else's physio or a therapist", () => {
+    for (const s of [
+      "Kim: The spec is done. I'm at the hospital with my dad all week, he had surgery. Sam has the review.",
+      "Kim: Quick one: my physio says the tendon is torn, so I'm out Thursday afternoon. The mockups are in Figma. Ping me for anything urgent.",
+      "Kim: Quick one: my physio moved my knee session, so I'm out Thursday afternoon. The mockups are in Figma. Ping me for anything urgent.",
+      "Kim: Quick one: my physio moved my dad's session, so I'm out Thursday afternoon. The mockups are in Figma. Ping me for anything urgent.",
+      "Kim: Quick one: her physio moved, so she's out Thursday afternoon. The mockups are in Figma. Ping me for anything urgent.",
+      "Kim: Quick one: my therapist moved, so I'm out Thursday afternoon. The mockups are in Figma. Ping me for anything urgent.",
+    ]) expect(screen(s).out, s).toBe("");
+  });
+
   it("anything else about health still cuts the sentences around it, and a clinic's product talk is still kept", () => {
     // Someone's own therapist or a diagnosis isn't an aside: the sentence before and after go too.
     expect(screen("Kim: My therapist moved my session. I'm offline after 3. The pricing section on the page is my component.").out).toBe("");
@@ -418,6 +440,107 @@ describe("a bonus a product gives its customers isn't pay (PRIV-2, B2)", () => {
   it("keeps a bonus campaign line in team work, and still cuts a pay line beside it", () => {
     const { out, passages } = screen("Kim: Our launch bonus campaign for creators runs in January.\n\nLee: If the rollout slips, I lose my $5k bonus.\n\nKim: The campaign page goes live Monday.");
     expect(out).toBe("Kim: Our launch bonus campaign for creators runs in January.\n\nKim: The campaign page goes live Monday.");
+    expect(passages.map((p) => p.rule)).toEqual(["compensation"]);
+  });
+});
+
+describe("a customer's or partner's bonus worded \"X gets a … bonus\" isn't pay when its own words say so (PRIV-2, B2)", () => {
+  const cases: [string, string | null][] = [
+    // Rig test 2026-11-27: a company's name reads like a person's, so the bonus's own words decide.
+    ["Northwind gets a volume bonus: 5% more credits above 10k renders.", null],
+    ["Resellers get a partner bonus of 10% of first-year revenue.", null],
+    ["Northwind gets a partner bonus of 10% of first-year revenue.", null],
+    ["Channel partners earn a launch bonus.", null],
+    ["Annual prepay customers get a seat bonus of 5 extra seats.", null],
+    ["Northwind gets a usage bonus above 10k renders.", null],
+    // Still pay: whatever was cut before stays cut.
+    ["The sales team gets a bonus if Northwind signs.", "compensation"],
+    ["Reps get a bonus for every enterprise deal.", "compensation"],
+    ["Staff get a referral bonus of one free month.", "compensation"],
+    ["Employees get a loyalty bonus after two years.", "compensation"],
+    ["Dana gets a bonus this quarter.", "compensation"],
+    ["I asked about her bonus.", "compensation"],
+    ["Q4 bonuses are late.", "compensation"],
+    ["She turned down a retention bonus.", "compensation"],
+    ["We still owe a new hire's signing bonus.", "compensation"],
+    ["The bonus pool is set.", "compensation"],
+    // Ambiguous, so still pay: no product terms, a share of revenue to anyone but a partner, "partners" alone, staff or a person.
+    ["Northwind gets a volume bonus.", "compensation"],
+    ["Dana gets a volume bonus this quarter.", "compensation"],
+    ["Dana gets a bonus of 10% of first-year revenue.", "compensation"],
+    ["Partners get a bonus of 10% of first-year revenue.", "compensation"],
+    ["The sales team gets a partner bonus of 10% of first-year revenue.", "compensation"],
+    ["The sales team gets a volume bonus: 5% more credits.", "compensation"],
+    ["AEs get a tier bonus above 10k seats.", "compensation"],
+    ["She gets a partner bonus of 10% of first-year revenue.", "compensation"],
+    ["Northwind gets a volume bonus: 2.5% more credits, and reps get the same.", "compensation"],
+    ["Dana's volume bonus: 5% more credits.", "compensation"],
+    // Review of the rig fix: a team named beside a customer bonus doesn't make it pay, as on 0.40.2; a team that takes or
+    // owns the bonus does.
+    ["We give creators a sign-up bonus; the growth team will run it.", null],
+    ["Customers get a referral bonus of one free month, and the support team will handle questions.", null],
+    ["Teams on annual plans get a loyalty bonus, and the success team will announce it.", null],
+    ["The sales team's bonus is late.", "compensation"],
+    ["The team gets a bonus of 50 credits.", "compensation"],
+    ["We give the team a bonus of 50 credits.", "compensation"],
+    ["Resellers get a partner bonus of 10% of first-year revenue, and the sales team gets one too.", "compensation"],
+  ];
+  it.each(cases)("%s", (s, want) => expect(ruleOf(s)).toBe(want));
+
+  it("keeps the partner terms in team work, and still cuts the sales team's bonus beside them", () => {
+    const { out, passages } = screen("Kim: Northwind gets a volume bonus: 5% more credits above 10k renders. Resellers get a partner bonus of 10% of first-year revenue.\n\nLee: The sales team gets a bonus if Northwind signs.\n\nKim: The pricing page goes live Monday.");
+    expect(out).toBe("Kim: Northwind gets a volume bonus: 5% more credits above 10k renders. Resellers get a partner bonus of 10% of first-year revenue.\n\nKim: The pricing page goes live Monday.");
+    expect(passages.map((p) => p.rule)).toEqual(["compensation"]);
+  });
+});
+
+describe("a commission, a comp plan or an OTE is pay, and a commission that is a price isn't (PRIV-2, B2)", () => {
+  const cases: [string, string | null][] = [
+    // Rig test 2026-11-27: a team's or a person's commission plan was kept.
+    ["The sales team's commission plan changes next quarter.", "compensation"],
+    ["My commission check is late.", "compensation"],
+    ["Dana's commission this quarter is late.", "compensation"],
+    ["Reps' commission this quarter is late.", "compensation"],
+    ["Reps earn a 10% commission on each deal.", "compensation"],
+    ["AEs get commission on renewals.", "compensation"],
+    ["Dana earns a 10% commission on each deal.", "compensation"],
+    ["Commissions are paid on the 15th.", "compensation"],
+    ["The new comp plan lands in January.", "compensation"],
+    ["Her OTE is 200k.", "compensation"],
+    ["Resellers earn a 20% commission, and so do the reps who sourced them.", "compensation"],
+    // A commission that is the product's price or a partner program's rate is a commercial term.
+    ["We take a 15% commission on each marketplace sale.", null],
+    ["Resellers earn a 20% commission on renewals.", null],
+    ["Affiliates get 30% commission on the first year.", null],
+    ["The app store charges a 30% commission.", null],
+    ["The marketplace commission drops to 12% in March.", null],
+    ["Commission-free trading is the hook.", null],
+    // Not pay at all: the verb, a body, a machine out of commission.
+    ["PM decides: whether to commission that test before Dec 8.", null],
+    ["We should commission a pen test.", null],
+    ["We commissioned a study last year.", null],
+    ["The European Commission guidance lands in March.", null],
+    ["The build box is out of commission.", null],
+    // Review of the rig fix: a marketplace's rate, what it's taken on, who pays it and the company's own take are prices.
+    ["The commission rate for sellers is 12% this quarter.", null],
+    ["Our commission is 15% of each booking.", null],
+    ["We're lowering the marketplace fee and the commission on bookings.", null],
+    ["Hosts pay a 3% commission per booking.", null],
+    ["Is the commission model for affiliates fair?", null],
+    // Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE.
+    ["Reps' commission is moving to quarterly.", "compensation"],
+    ["Her commission was late.", "compensation"],
+    ["Our AEs' commission on each deal goes up.", "compensation"],
+    ["OTE for the new AE role is set.", "compensation"],
+    ["Dana earns a 10% commission on each booking.", "compensation"],
+    ["Our commission check is late.", "compensation"],
+    ["The commission structure for the sales team changes.", "compensation"],
+  ];
+  it.each(cases)("%s", (s, want) => expect(ruleOf(s)).toBe(want));
+
+  it("cuts the team's commission plan from team work, and keeps the marketplace's and the resellers' rates", () => {
+    const { out, passages } = screen("Kim: We take a 15% commission on each marketplace sale. Resellers earn a 20% commission on renewals.\n\nLee: The sales team's commission plan changes next quarter.\n\nKim: The pricing page goes live Monday.");
+    expect(out).toBe("Kim: We take a 15% commission on each marketplace sale. Resellers earn a 20% commission on renewals.\n\nKim: The pricing page goes live Monday.");
     expect(passages.map((p) => p.rule)).toEqual(["compensation"]);
   });
 });

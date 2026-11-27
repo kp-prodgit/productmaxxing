@@ -138,10 +138,11 @@ export const linearCommands: Command[] = [
           if (!a.values.yes && !(await a.ask.confirm("Withdraw them?", false))) { console.log("Nothing changed."); return 0; }
           for (const w of hit) {
             await svc.tracker.rewrite(w.id, { description: WITHDRAWN, cancel: true });
-            // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it. RUN-5: canceled, so its shared
-            // quotes leave the team repo now, as the clean-up would remove them.
+            // PULL-14: a Mac whose copy of Linear still shows it Ready doesn't draft it. RUN-5: canceled, so a share still
+            // staged for it never goes, and its shared quotes leave the team repo now, as the clean-up would remove them.
             if (w.kind !== "meeting") {
               await markTask(ctx, svc.tracker, w.identifier, "dropped");
+              await unstageShares([w.identifier]);
               await removePackNow(ctx, svc.tracker, w.identifier, "dropped");
             }
           }

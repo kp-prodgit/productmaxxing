@@ -19,6 +19,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: "0.40.3", date: "2026-11-27", headline: "Calls that read as calls, take-backs that give back your to-do, and partner terms kept",
+    items: [
+      { what: "Follow-ups read more plainly: a notice about one kind counts it ('1 question one person can answer'), who to ask leaves out how ('Ask the VP Brand', not 'directly'), and a call on a question reads as your call ('Decide whether to ask the question: …')." },
+      { what: "Taking back a queued task gives back the to-do it came from, exactly as it was. A task taken back, withdrawn or dropped never has its waiting quotes written to your team's repo." },
+      { what: "A partner's or customer's bonus in the product's terms ('a volume bonus: 5% more credits') and a marketplace's commission are kept; a commission plan or OTE is pay. Your own physio or dentist moving is a short aside, so the work talk around it reaches your team." },
+    ],
+  },
+  {
     version: "0.40.2", date: "2026-11-27", headline: "Health asides and customer bonuses kept in context, follow-ups that say why, and no stale shared quotes",
     items: [
       { what: "A short health aside ('I'm out Tuesday for a doctor's appointment') takes only its own sentence, however long, so the work talk around it reaches your team. A bonus a product gives its customers ('a sign-up bonus of 50 credits') isn't read as pay; a person's bonus still is." },

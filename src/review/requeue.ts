@@ -177,18 +177,22 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
 const n = (k: number, one: string, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
 
 /**
- * What the PM is told, once: "PMX turned 12 waiting follow-ups into to-dos (questions one person can answer)." With more
- * than one kind, each counted apart, a call worded as something to do as a thing to do: "(2 questions one person can
- * answer, 2 calls that are yours and 1 thing to do)". Null when nothing changed.
+ * What the PM is told, once: "PMX turned 12 waiting follow-ups into to-dos (12 questions one person can answer)." Each
+ * kind counted, even when there is only one, and each word agrees with its count: "PMX turned 1 waiting follow-up into
+ * a to-do (1 question one person can answer)." With more than one kind, each counted apart, a call worded as something
+ * to do as a thing to do: "(2 questions one person can answer, 2 calls that are yours and 1 thing to do)". Null when
+ * nothing changed.
  */
 export function requeueText(r: RequeueResult): string | null {
   const kinds = ([[r.asks.length, "question one person can answer", "questions one person can answer"], [r.decisions.length, "call that is yours", "calls that are yours"], [r.actions.length, "thing to do", "things to do"]] as const).filter(([k]) => k);
   const todos = r.asks.length + r.decisions.length + r.actions.length;
-  const what = kinds.length === 1 ? kinds[0]![2] : inWords(kinds.map(([k, one, many]) => n(k, one, many)));
+  // End-to-end test 2026-11-27: one kind is counted too, as with several ("(questions one person can answer)" said no
+  // number, and a plural for one).
+  const what = inWords(kinds.map(([k, one, many]) => n(k, one, many)));
   const k = r.retitled.length;
   const x = r.dropped.length;
   return [
-    todos ? `PMX turned ${n(todos, "waiting follow-up")} into to-dos (${what}).` : "",
+    todos ? `PMX turned ${n(todos, "waiting follow-up")} into ${todos === 1 ? "a to-do" : "to-dos"} (${what}).` : "",
     !k ? "" : todos ? `${k === 1 ? "One that needs work still waits" : `${k} that need work still wait`} for your approval, with a clearer title.`
       : `PMX gave ${n(k, "waiting follow-up")} a clearer title; ${k === 1 ? "it still waits" : "they still wait"} for your approval.`,
     // D2-8: what it dropped, by its old title, so the PM can find it in the draft.

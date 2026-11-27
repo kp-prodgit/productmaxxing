@@ -120,6 +120,11 @@ export interface ShareResult {
    * Linear had them and so never get an identifier. Only when there are some.
    */
   cleared?: string[];
+  /**
+   * With `clear`: the tasks Linear has whose staged share was let go unwritten, since their mark (PULL-14) says PMX took
+   * them back or dropped them, so they're canceled in Linear. Only when there are some.
+   */
+  canceled?: string[];
 }
 
 const list = (ids: string[]) => (ids.length <= 2 ? ids.join(" and ") : `${ids.slice(0, -1).join(", ")} and ${ids.at(-1)}`);
@@ -184,11 +189,24 @@ async function logShared(ctx: Ctx, ids: string[]): Promise<void> {
 }
 
 /**
+ * RUN-5: the tasks whose mark in the team repo (PULL-14) says PMX dropped them: taken back to a PM's to-dos, withdrawn
+ * (`pmx linear withdraw`) or dropped after failed runs, so canceled in Linear. The team's marks now, else as this Mac
+ * last fetched them (its own steps among them); none when it can read neither.
+ */
+async function droppedTasks(ctx: Pick<Ctx, "repo">, now: Date): Promise<Set<string>> {
+  const marks = markStore(ctx.repo);
+  const all = await marks.list().catch(() => marks.cached()).catch(() => new Map<string, TaskMark>());
+  return new Set([...all.values()].filter((m) => m.state === "dropped" && !expired(m, now)).map((m) => m.task));
+}
+
+/**
  * Writes the packs of every staged task whose identifier is known (RUN-5). `say`: where a failure is told, once per
  * task: in the answer to the PM's approval, or (from the background run and the Claude sync) as a notification.
  * `clear` (the background run's pass, which says so in its line): also lets go of each staged PENDING-… task that is
  * neither queued in this Mac's outbox nor given its identifier by the sync: one taken back or dropped before Linear had
  * it, or that Linear refused 3 times, which never gets an identifier (`cleared`). A Mac with no outbox lets go of none.
+ * Never a task whose mark says PMX took it back or dropped it (canceled in Linear, on this Mac or another): every pass
+ * leaves its pack unwritten, and `clear` lets go of its share (`canceled`), so its quotes never reach the team repo.
  */
 export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; store?: EvidenceStore; clear?: boolean }): Promise<ShareResult> {
   const out: ShareResult = { shared: [], notices: [] };
@@ -202,14 +220,23 @@ export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; sto
   const resolved = pending ? await readResolved() : {};
   const now = ctx.now();
   const old = (w: Waiting) => now.getTime() - Date.parse(w.at) > GIVE_UP_MS;
+  const idOf = (w: Waiting) => (w.identifier.startsWith("PENDING-") ? resolved[w.identifier]?.identifier ?? null : w.identifier);
+  // Read only when there's a pack to write: a task taken back or dropped since its share was staged.
+  const dropped = all.some((w) => !!idOf(w)) ? await droppedTasks(ctx, now) : new Set<string>();
   const drop = new Set<string>();
   const cleared: string[] = [];
+  const canceled: string[] = [];
   const ready: { w: Waiting; pack: EvidencePack }[] = [];
   for (const w of all) {
-    const id = w.identifier.startsWith("PENDING-") ? resolved[w.identifier]?.identifier ?? null : w.identifier;
+    const id = idOf(w);
     if (!id) {
       if (queued && !queued.has(w.identifier)) { drop.add(w.identifier); cleared.push(w.identifier); }
       else if (old(w)) drop.add(w.identifier);
+      continue;
+    }
+    // Canceled in Linear: nothing of it goes to the team repo, and the background run's pass lets it go, saying so.
+    if (dropped.has(id)) {
+      if (o.clear) { drop.add(w.identifier); canceled.push(id); }
       continue;
     }
     const seen: { missing?: Evidence["missing"] } = {};
@@ -242,30 +269,59 @@ export async function shareEvidence(ctx: Ctx, o: { say: "answer" | "notify"; sto
     await save(kept);
   });
   if (cleared.length) out.cleared = cleared;
+  if (canceled.length) out.canceled = canceled;
   await logShared(ctx, out.shared);
   if (o.say === "notify" && out.notices.length) await notify("ProductMaxxing", out.notices.join(" ")).catch(() => {});
   return out;
 }
 
+/** Which staged shares are these tasks': staged under one of their identifiers, or under a PENDING-… the sync gave one. */
+async function stagedAs(all: Waiting[], ids: Set<string>): Promise<(w: Waiting) => boolean> {
+  const resolved = all.some((w) => w.identifier.startsWith("PENDING-") && !ids.has(w.identifier)) ? await readResolved() : {};
+  return (w) => ids.has(w.identifier) || (w.identifier.startsWith("PENDING-") && ids.has(resolved[w.identifier]?.identifier ?? ""));
+}
+
 /**
- * RUN-5: a task taken out of the Claude relay's queue before Linear had it (taken back to the PM's to-dos, or `pmx linear
- * outbox drop`) never gets an identifier, so the share staged for it goes at once. Returns the ones it removed.
+ * RUN-5: the share staged for a task PMX takes out of the team's work goes at once, so none of its quotes reach the
+ * team repo after. A task taken out of the Claude relay's queue before Linear had it (taken back to the PM's to-dos, or
+ * `pmx linear outbox drop`) never gets an identifier. One Linear has that PMX takes back, withdraws or drops is
+ * canceled there, and its share may still be staged after a push that failed, under its identifier or under the
+ * PENDING-… it had before the sync gave it one. Returns the ones it removed.
  */
 export async function unstageShares(identifiers: string[]): Promise<string[]> {
-  const gone = new Set(identifiers.filter((id) => id.startsWith("PENDING-")));
-  if (!gone.size || !(await read()).some((w) => gone.has(w.identifier))) return [];
+  const gone = new Set(identifiers);
+  const before = await read();
+  if (!gone.size || !before.length || !before.some(await stagedAs(before, gone))) return [];
   return withLock(file(), async () => {
     const all = await read();
-    const removed = all.filter((w) => gone.has(w.identifier)).map((w) => w.identifier);
-    if (removed.length) await save(all.filter((w) => !gone.has(w.identifier)));
+    const mine = await stagedAs(all, gone);
+    const removed = all.filter(mine).map((w) => w.identifier);
+    if (removed.length) await save(all.filter((w) => !mine(w)));
     return removed;
   });
+}
+
+/**
+ * R16c (RUN-5): the copy of quotes a task's staged share holds (a FOLLOW-1 follow-up's, or the copy a to-do kept), as a
+ * pack, for a take-back when the team repo has no pack of the task: its share is still staged, waiting for the sync or
+ * after a push that failed. Null when it holds none.
+ */
+export async function stagedPack(identifier: string): Promise<EvidencePack | null> {
+  const all = await read();
+  const mine = await stagedAs(all, new Set([identifier]));
+  const w = all.find((x) => mine(x) && x.quotes?.length);
+  return w ? { v: 1, task: identifier, at: w.at, ...(w.quotesSwap ? { nameSwap: w.quotesSwap } : {}), sources: w.quotes! } : null;
 }
 
 /** The background run's line for `cleared`: what it let go of, and why. */
 const clearedLine = (ids: string[]) => ids.length === 1
   ? `stopped waiting to share the quotes of ${ids[0]}: that task was taken out of the queue for Linear before Linear had it, so it will never be in Linear`
   : `stopped waiting to share the quotes of ${list(ids)}: those tasks were taken out of the queue for Linear before Linear had them, so they will never be in Linear`;
+
+/** The background run's line for `canceled`: what it let go of unwritten, and why. */
+const canceledLine = (ids: string[]) => ids.length === 1
+  ? `stopped waiting to share the quotes of ${ids[0]}: that task was taken back or dropped, so it's canceled in Linear and its quotes stay off your team's repo`
+  : `stopped waiting to share the quotes of ${list(ids)}: those tasks were taken back or dropped, so they're canceled in Linear and their quotes stay off your team's repo`;
 
 /**
  * The backfill's memory (RUN-5), on this Mac only (owner-only), by task ID: a task it had nothing to quote for, looked
@@ -538,8 +594,8 @@ export async function dropHeldSources(ctx: Ctx, svc: Pick<Services, "tracker">, 
 
 /**
  * The background run's step for RUN-5: shares what's staged, lets go of what's staged for a task that left the relay's
- * queue before Linear had it, and every few hours removes the packs of finished tasks. Returns what changed in a line, or
- * null.
+ * queue before Linear had it or that PMX took back or dropped (canceled in Linear), and every few hours removes the
+ * packs of finished tasks. Returns what changed in a line, or null.
  */
 export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "tracker">>): Promise<string | null> {
   if (ctx.team.tracker.kind === "none") return null;
@@ -548,7 +604,8 @@ export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "
   const store = storeFor(ctx);
   let tracker: Promise<Pick<Services, "tracker">> | null = null;
   const services = () => (tracker ??= svc());
-  // The one pass that lets go of a share whose task left the relay's queue before Linear had it, and says so.
+  // The one pass that lets go of a share whose task left the relay's queue before Linear had it, or was canceled there
+  // by PMX, and says so.
   const s = await shareEvidence(ctx, { say: "notify", store, clear: true });
   const st = await loadState();
   const now = ctx.now();
@@ -562,6 +619,7 @@ export async function evidenceStep(ctx: Ctx, svc: () => Promise<Pick<Services, "
   const shared = [...s.shared, ...(b?.shared ?? [])];
   if (shared.length) lines.push(`shared the quotes of ${list(shared)} with your team`);
   if (s.cleared?.length) lines.push(clearedLine(s.cleared));
+  if (s.canceled?.length) lines.push(canceledLine(s.canceled));
   if (b?.rewritten?.length) lines.push(`took the names out of the shared quotes of ${list(b.rewritten)}`);
   if (b?.more) lines.push(`${b.more} more ${b.more === 1 ? "task's quotes go" : "tasks' quotes go"} to your team at the next background run`);
   lines.push(...s.notices, ...(b?.notices ?? []));

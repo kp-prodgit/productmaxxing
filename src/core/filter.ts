@@ -125,7 +125,8 @@ const HEALTH_ASIDE = "doctor'?s?|dentist'?s?|physio|physiotherapist|GP|therapist
  * someone's own visit: in parentheses ("I'm out Tue morning (doctor)"), as an appointment, or what they're out or off
  * for ("out Thursday for the dentist"); and someone out, off or called in sick. Never the word alone, which a team
  * selling to clinics uses for its customers ("doctor's office customers"). Someone's own doctor or therapist ("my
- * therapist") is health too, but no aside (see the health rule).
+ * therapist") is health too, but no aside (see the health rule), unless its sentence says only when the speaker is away
+ * (`OWN_VISIT`: "my physio moved, so I'm out Thursday afternoon").
  *
  * PRIV-2 (end-to-end test 2026-11-27): an aside says only that someone is away, so like a fundraising passage it is cut
  * a sentence at a time (`asideOnly`): its sentence, and the ones after it still about that person ("She'll be back
@@ -148,27 +149,126 @@ const HEALTH_ASIDES: string[] = [
 const BONUS_TAKERS =
   "(?:(?:new|early|existing|returning|paying|first-time|all|every|each|our|their)\\s+)*(?:customers?|clients?|creators?|users?|subscribers?|(?<!team\\s)members?|buyers?|shoppers?|players?|referrers?|readers?|viewers?|listeners?|fans?|adopters?|sign-?ups?|advertisers?|sellers?|merchants?|hosts?|affiliates?|learners?|students?)" +
   "|(?:teams?|accounts?|workspaces?|customers?|users?|orgs?|organi[sz]ations?|companies|subscribers?)\\s+on\\s+(?:(?:a|an|the|our|their|any)\\s+)?(?:[\\w-]+\\s+){0,2}(?:plans?|tiers?|subscriptions?)";
-/** Words that make a bonus pay wherever they are in its sentence: an employee, staff, a hire, a salary, payroll. */
-const PAY_PEOPLE =
-  "employees?|employee's|staff\\w*|hires?|hired|hiring|salar(?:y|ies)|payroll|wages?|commissions?|reps?|recruit\\w*|colleagues?|co-?workers?|teammates?|team members?|contractors?|interns?|headcount|signing|sign-on|comp|compensation";
+/** The rest of a sentence, past a decimal point too ("2.5% more credits"). */
+const SENTENCE = "(?:[^.!?\\n]|\\.(?=\\d))*";
+/**
+ * PRIV-2 (rig test 2026-11-27): one of the company's teams: "the sales team", "the growth team". Never a team on a plan
+ * ("Teams on annual plans", "the Team plan"). A customer bonus may name one ("the growth team will run it"), so a team
+ * makes a bonus pay only as its taker (`TEAM_TAKES`) or owner ("the sales team's bonus"), or beside the rig test's
+ * rules and a commission.
+ */
+const TEAM = "(?<!\\bon\\s+(?:(?:the|a|an|our|their|any)\\s+)?)teams?(?!\\s+(?:on|plans?|tiers?|workspaces?|accounts?|subscriptions?|editions?)\\b)";
+/** PRIV-2 (rig test 2026-11-27): the company's own sellers: "AEs", "SDRs", an account executive, an OTE. */
+const SELLERS = "AEs?|SDRs?|BDRs?|CSMs?|account\\s+(?:executives?|managers?)|sales\\s?(?:people|persons?|force|org|staff)|salespeople|OTEs?|on-target earnings";
+/** Someone who is paid by the company: an employee, staff, a hire, a salary, payroll, a rep, an AE. */
+const PAID_PEOPLE =
+  "employees?|employee's|staff\\w*|hires?|hired|hiring|salar(?:y|ies)|payroll|wages?|reps?|recruit\\w*|colleagues?|co-?workers?|teammates?|team members?|contractors?|interns?|headcount|signing|sign-on|comp|compensation|" + SELLERS;
+/** Words that make a bonus pay wherever they are in its sentence: those, and a commission. */
+const PAY_PEOPLE = `${PAID_PEOPLE}|commissions?`;
+/** Words that make a commission pay wherever they are in its sentence: those, and one of the company's teams. */
+const STAFF_PAY = `${PAID_PEOPLE}|${TEAM}`;
 /** A bonus that is someone's pay by whose it is ("my", "Dana's") or by its kind ("a signing bonus", "a Q4 bonus"). */
 const PAY_BONUS = "my|her|his|your|their|[\\w-]+'s|signing|sign-on|retention|performance|annual|year-end|end-of-year|holiday|spot|cash|target|relocation|quarterly|q[1-4]|discretionary|incentive|employee|staff|hiring";
-/** "bonus" itself, unless the word or two before it make it pay, or its sentence has one of `PAY_PEOPLE`. */
-const BONUS = `(?<!\\b(?:${PAY_BONUS})\\s+(?:[\\w-]+\\s+)?)(?<!\\b(?:${PAY_PEOPLE})\\b[^.!?\\n]*)bonus(?:es)?\\b(?![^.!?\\n]*\\b(?:${PAY_PEOPLE})\\b)`;
+/** PRIV-2 (rig test 2026-11-27): a team given a bonus, so it's the team's: "the team gets a bonus", "give the team a bonus". */
+const TEAM_TAKES =
+  `\\b(?:${TEAM})\\s+(?:(?:also|each|all|now|then|still|already|always|will|can|could|would|should|may|might|do|does)\\s+)*(?:get|gets|getting|got|earn|earns|earned|earning|receive|receives|received|receiving|split|splits)\\s+` +
+  `|\\b(?:give|gives|giving|gave|given|offer|offers|offering|offered|award|awards|awarded|awarding|grant|grants|granted|granting|pay|pays|paid|paying)\\s+(?:(?:the|our|my|your|their|this|that|whole|entire)\\s+)*(?:[\\w-]+\\s+)?(?:${TEAM})\\s+`;
+/** "bonus" itself, unless the words before it make it pay or a team's, or its sentence has one of `PAY_PEOPLE`. */
+const BONUS =
+  `(?<!\\b(?:${PAY_BONUS})\\s+(?:[\\w-]+\\s+)?)(?<!(?:${TEAM_TAKES})(?:(?:a|an|the|another|one)\\s+)?(?:[\\w-]+\\s+){0,2})` +
+  `(?<!\\b(?:${PAY_PEOPLE})\\b${SENTENCE})bonus(?:es)?\\b(?!${SENTENCE}\\b(?:${PAY_PEOPLE})\\b)`;
+/** He or she in a sentence: the bonus or commission is a person's. */
+const PRONOUN = "\\b(?:he|she|him|her|his|hers)\\b";
+/** PRIV-2 (rig test 2026-11-27): words that make the rig test's bonuses a person's or a team's anywhere in their sentence. */
+const NOT_THEIRS = `(?:${PRONOUN}|\\b(?:${TEAM})\\b)`;
+/**
+ * PRIV-2 (rig test 2026-11-27): who a partner program pays: resellers, distributors, agencies, integrators, a channel or
+ * referral partner. Companies, never staff. "Partners" on its own can be a firm's own people, so it takes no bonus.
+ */
+const PARTNERS =
+  "(?:(?:our|their|new|all|every|each|top|certified|authori[sz]ed|preferred|approved|registered)\\s+)*(?:resellers?|distributors?|VARs?|MSPs?|(?:systems?\\s+)?integrators?|agencies|" +
+  "(?:channel|referral|reseller|solutions?|technology|tech|integration|implementation|agency|services?|marketplace|affiliate|alliance|ISV|OEM|white-?label)\\s+partners?)";
 /** What a product's bonus is paid in: credits, seats, storage, points, free months, credit in money. */
 const BONUS_UNITS =
   "(?:(?:free|extra|additional|bonus)\\s+)?(?:credits?|seats?|points?|tokens?|coins?|gems?|stars?|miles?|licen[cs]es?|projects?|uploads?|downloads?|exports?|renders?|generations?|messages?|storage|[kmgt]b|gigs?|gigabytes?|terabytes?)\\b" +
   "|free\\s+(?:months?|weeks?|days?)\\b|(?:months?|weeks?|days?)\\s+free\\b|[$€£]\\s?\\d[\\d,.]*\\s?(?:in\\s+|of\\s+|account\\s+|store\\s+)?credits?\\b";
+/** PRIV-2 (rig test 2026-11-27): what a deal's or a plan's bonus is named for: volume, usage, seats, credits, a tier, a partner program. */
+const DEAL_BONUS = "volume|usage|seat|credit|tier|partner|reseller|channel|prepay|prepayment|top-?up|overage|storage";
+/** The product's own terms beside such a bonus: credits, seats, renders, licenses, storage, free months, a share off. */
+const DEAL_UNITS =
+  "credits?|seats?|renders?|licen[cs]es?|tokens?|storage|[kmgt]b|gigabytes?|terabytes?|free\\s+(?:months?|weeks?|days?)|(?:months?|weeks?)\\s+free|\\d[\\d,.]*\\s?%\\s+off";
+/** What a partner program shares: "10% of first-year revenue", "15% of ARR". Pay when anyone but a partner gets it. */
+const REVENUE_SHARE =
+  "\\b\\d[\\d,.]*\\s?%\\s+of\\s+(?:(?:the|their|its|each|every|all|net|gross|first-year|first year|1st-year|annual|recurring|new|partner-sourced|referred)\\s+)*(?:revenue|ARR|MRR|bookings|billings|spend|GMV|contract value|ACV|TCV)\\b";
+const GIVE = "give|gives|giving|gave|given|offer|offers|offering|offered|award|awards|awarded|awarding|grant|grants|granted|granting";
+const GET = "get|gets|getting|got|earn|earns|earned|earning|receive|receives|received|receiving|unlock|unlocks|unlocked|claim|claims|claimed|qualify for|qualifies for|qualified for";
+const THEN = "(?:\\s+(?:also|each|all|now|then|still|already|always|automatically|instantly|will|can|could|would|should|may|might|do|does))*";
 /**
  * PRIV-2 (end-to-end test 2026-11-27): a bonus a product gives, worded "a … bonus": given to its customers ("We give
  * creators a sign-up bonus", "Teams on annual plans get a loyalty bonus"), or paid in the product's terms ("a referral
  * bonus of one free month", "a bonus of 50 credits"). Never with an employee, staff, a hire, a salary or payroll in its
  * sentence ("an employee referral bonus of $2k"), and never someone's own or a pay kind ("my bonus", "a signing bonus").
+ *
+ * PRIV-2 (rig test 2026-11-27): so is a customer's or a partner's, worded "X gets a … bonus", when the bonus's own words
+ * say so, since a company's name reads like a person's: given to resellers or a channel partner ("Resellers get a partner
+ * bonus of 10% of first-year revenue"), paid in the product's terms after a colon too ("a volume bonus: 5% more credits"),
+ * or named for a deal or a plan with the product's terms or a partner's share of revenue in its sentence ("Northwind gets
+ * a volume bonus: 5% more credits above 10k renders"). Never with "he", "she" or a team in the sentence ("The sales team
+ * gets a partner bonus of 10%…"), nor an AE or an OTE; "Dana gets a volume bonus" alone is still pay.
  */
 const PRODUCT_BONUS: string[] = [
-  `\\b(?:give|gives|giving|gave|given|offer|offers|offering|offered|award|awards|awarded|awarding|grant|grants|granted|granting)\\s+(?:${BONUS_TAKERS})\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}`,
-  `\\b(?:${BONUS_TAKERS})(?:\\s+(?:who|that)(?:\\s+[\\w-]+){1,4}?)?(?:\\s+(?:also|each|all|now|then|still|already|always|automatically|instantly|will|can|could|would|should|may|might|do|does))*\\s+(?:get|gets|getting|got|earn|earns|earned|earning|receive|receives|received|receiving|unlock|unlocks|unlocked|claim|claims|claimed|qualify for|qualifies for|qualified for)\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}`,
-  `(?=bonus)${BONUS}\\s+(?:of|worth)\\s+(?:(?:up to|another|an extra)\\s+)?(?:\\d[\\d,.]*\\s*|(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|a few|several)\\s+)?(?:${BONUS_UNITS})`,
+  `\\b(?:${GIVE})\\s+(?:${BONUS_TAKERS})\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}`,
+  `\\b(?:${BONUS_TAKERS})(?:\\s+(?:who|that)(?:\\s+[\\w-]+){1,4}?)?${THEN}\\s+(?:${GET})\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}`,
+  `(?=bonus)${BONUS}(?:\\s+(?:of|worth)|\\s*[:=–—])\\s+(?:(?:up to|another|an extra)\\s+)?(?:\\d[\\d,.]*\\s*(?:%\\s*(?:(?:more|extra|additional)\\s+)?)?|(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|a few|several)\\s+)?(?:${BONUS_UNITS})`,
+  `\\b(?:${GIVE})\\s+(?:${PARTNERS})(?<!${NOT_THEIRS}${SENTENCE})\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}(?!${SENTENCE}${NOT_THEIRS})`,
+  `\\b(?:${PARTNERS})(?<!${NOT_THEIRS}${SENTENCE})${THEN}\\s+(?:${GET})\\s+(?:a|an)\\s+(?:[\\w-]+\\s+){0,2}?${BONUS}(?!${SENTENCE}${NOT_THEIRS})`,
+  `\\b(?=(?:${DEAL_BONUS})[\\s-]+bonus)(?<!${NOT_THEIRS}${SENTENCE})(?:${DEAL_BONUS})[\\s-]+${BONUS}(?=${SENTENCE}\\b(?:${DEAL_UNITS})\\b)(?!${SENTENCE}${NOT_THEIRS})`,
+  `\\b(?=(?:partner|reseller|channel|affiliate)[\\s-]+bonus)(?<!${NOT_THEIRS}${SENTENCE})(?:partner|reseller|channel|affiliate)[\\s-]+${BONUS}(?=${SENTENCE}${REVENUE_SHARE})(?!${SENTENCE}${NOT_THEIRS})`,
+];
+
+/**
+ * A commission that is someone's pay by whose it is: "my commission", "Dana's commission", "the sales team's commission
+ * plan", "Reps' commission". Not the company's, a platform's or a marketplace's own.
+ */
+const PAY_OWNER = "my|her|his|your|their|(?!(?:company|platform|marketplace|store|app|site)'s)[\\w-]+'s|[\\w-]+s'";
+/** "commission" itself, unless the word or two before it make it someone's, or its sentence has one of `STAFF_PAY`. */
+const COMMISSION = `(?<!\\b(?:${PAY_OWNER})\\s+(?:[\\w-]+\\s+)?)(?<!\\b(?:${STAFF_PAY})\\b${SENTENCE})commissions?\\b(?!${SENTENCE}\\b(?:${STAFF_PAY})\\b)(?!${SENTENCE}${PRONOUN})`;
+/** Who a marketplace or a partner program pays a commission to, or takes one from: its sellers, hosts, affiliates, partners. */
+const COMMISSION_TAKERS = `${BONUS_TAKERS}|${PARTNERS}|(?:(?:our|their|all|every|each|new)\\s+)*partners?`;
+/** What a marketplace takes a commission on: a booking, an order, a transaction, a listing, each sale. Never a deal. */
+const PER_SALE =
+  "(?:(?:each|every|a|an|per|the|all|our|its)\\s+)?(?:(?:marketplace|platform|in-app|app\\s?store|store|online|new|paid|completed|first)\\s+)?(?:bookings?|orders?|transactions?|listings?|purchases?|rentals?|rides?|deliver(?:y|ies)|reservations?|checkouts?|payments?|GMV)\\b" +
+  "|(?:each|every|a|an|per)\\s+(?:(?:marketplace|platform|in-app|app\\s?store|store|online|completed)\\s+)?sale\\b|(?:marketplace|platform|in-app|app\\s?store|store)\\s+sales\\b";
+/** Who earns a commission: before "commission on each booking", it's theirs, so only `COMMISSION_TAKERS` spare it. */
+const EARNS = "(?:earn|earns|earned|earning|make|makes|made|making|get|gets|got|getting|receive|receives|received|receiving|paid|keep|keeps|kept)\\s+(?:(?:a|an|the|their|its|up to|flat|\\d[\\d,.]*\\s?%|\\d[\\d,.]*\\s+percent)\\s+){0,3}(?:[\\w-]+\\s+)?";
+/** What a company commissions: a study, a test, a survey, a design. */
+const COMMISSIONED =
+  "tests?|study|studies|surveys?|reports?|research|audits?|analys[ie]s|reviews?|benchmarks?|pen-?tests?|penetration tests?|assessments?|evaluations?|experiments?|pilots?|prototypes?|" +
+  "designs?|illustrations?|artwork|art|videos?|photos?|photography|logos?|pieces?|translations?|agenc(?:y|ies)|vendors?|firms?|consultants?|briefs?|white ?papers?|decks?";
+/**
+ * PRIV-2 (rig test 2026-11-27): a commission that is a product's or a partner program's price, not anyone's pay: what the
+ * company or a platform takes ("We take a 15% commission on each marketplace sale"), what resellers, affiliates or a
+ * channel partner earn ("Resellers earn a 20% commission on renewals"), a marketplace's or a partner commission, and
+ * "commission-free". Review of the rig fix: and the price's own terms ("The commission rate for sellers is 12%", "the
+ * commission model for affiliates"), what it's taken on ("the commission on bookings", unless someone earns it), who pays
+ * it ("Hosts pay a 3% commission per booking"), and the company's own beside what it's taken from ("Our commission is 15%
+ * of each booking"). Never someone's own ("her commission", "the sales team's commission plan"), or with staff, a rep, an
+ * AE, a team, "he" or "she" in its sentence. The verb ("whether to commission that test") and a body or a machine out of
+ * commission ("the European Commission", "the build box is out of commission") aren't pay at all.
+ */
+const PRODUCT_COMMISSION: string[] = [
+  `\\b(?:take|takes|took|taking|charge|charges|charged|charging|collect|collects|collected|collecting|deduct|deducts|deducted|deducting|retain|retains|retained|withhold|withholds|withheld|levy|levies|levied|waive|waives|waived|waiving)\\s+(?:(?:a|an|the|our|its|no|any|zero|flat|small|smaller|lower|higher|standard|reduced|\\d[\\d,.]*\\s?%|\\d[\\d,.]*\\s+percent)\\s+){0,3}(?:[\\w-]+\\s+)?${COMMISSION}`,
+  `\\b(?:${COMMISSION_TAKERS})(?:\\s+(?:who|that)(?:\\s+[\\w-]+){1,4}?)?(?:\\s+(?:also|each|all|now|then|still|already|always|automatically|will|can|could|would|should|may|might|do|does))*\\s+(?:get|gets|getting|got|earn|earns|earned|earning|receive|receives|received|receiving|make|makes|made|keep|keeps|kept|are paid|is paid|get paid|gets paid)\\s+(?:(?:a|an|the|up to|flat|recurring|lifetime|one-time|standard|\\d[\\d,.]*\\s?%|\\d[\\d,.]*\\s+percent)\\s+){0,3}(?:[\\w-]+\\s+)?${COMMISSION}`,
+  `\\b(?:${COMMISSION_TAKERS})(?:\\s+(?:also|each|all|now|then|still|already|always|will|can|could|would|should|may|might|do|does))*\\s+(?:pay|pays|paid|paying|owe|owes|owed)\\s+(?:(?:a|an|the|our|its|up to|flat|\\d[\\d,.]*\\s?%|\\d[\\d,.]*\\s+percent)\\s+){0,3}(?:[\\w-]+\\s+)?${COMMISSION}`,
+  `(?=commission)${COMMISSION}\\s+(?:rates?|fees?|models?|structures?|tiers?|splits?|schedules?|percentages?)\\s+(?:for|on|from|per|charged to|paid by)\\s+(?:(?:the|our|all|every|each|new|a|an|its|their)\\s+)*(?:${COMMISSION_TAKERS}|${PER_SALE})`,
+  `(?=commission)(?<!\\b${EARNS})${COMMISSION}\\s+(?:(?:rates?|fees?)\\s+)?(?:on|per|from|of)\\s+(?:${PER_SALE})`,
+  `\\b(?:our|the company's|the platform's|the marketplace's|its)\\s+(?:(?:standard|current|new|flat|base|marketplace|platform)\\s+)?(?=commission)${COMMISSION}(?=${SENTENCE}\\b(?:${PER_SALE}))`,
+  `\\b(?:marketplace|platform|transaction|booking|listing|app\\s?store|affiliate|partner|reseller|channel|seller|merchant|host|creator)[\\s-]+${COMMISSION}`,
+  `(?=commission)${COMMISSION}(?=-free\\b)`, `\\b(?:zero|no)-${COMMISSION}`,
+  "\\b(?:to|will|would|could|should|might|may|can|must|let's|please)\\s+(?:(?:not|also|just|first|then|probably)\\s+)?commission\\b",
+  `\\bcommissions?\\s+(?:(?:a|an|the|that|this|these|those|some|another|one|two|three|new|our|outside|external|independent|third-party)\\s+)+(?:[\\w-]+\\s+){0,2}?(?:${COMMISSIONED})\\b`,
+  "\\b(?:out of|back in|back into|into)\\s+commission\\b",
+  "\\b(?:european|eu|federal|trade|communications|securities|exchange|election|electoral|planning|zoning|utilities|utility|public service|gaming|gambling|competition|law|charity|charities|insurance|energy|commerce|transport|transportation|water|data protection|information|human rights|fair work|financial conduct)\\s+commissions?\\b",
 ];
 
 /** The fixed topic rules, with plain-language labels and examples for `pmx explain`. */
@@ -189,16 +289,20 @@ export const TOPIC_RULES: Record<Topic, TopicRule> = {
   },
   compensation: {
     label: "Pay and compensation",
-    examples: ["salary", "comp band", "pay raise", "bonus", "equity grant", "equity refresh", "stock options", "RSUs", "severance", "payroll"],
+    examples: ["salary", "comp band", "pay raise", "bonus", "commission plan", "OTE", "equity grant", "equity refresh", "stock options", "RSUs", "severance", "payroll"],
     // A company's option pool (fundraising, the cap table) isn't one person's pay, so "option pool" alone isn't
     // cut here; a person's grant from it is ("option grant", "stock options", "vesting schedule", "strike price").
+    // PRIV-2 (rig test 2026-11-27): a commission, a comp plan and an OTE are pay like a bonus ("The sales team's
+    // commission plan changes next quarter"); a commission that is a price is spared below (`PRODUCT_COMMISSION`).
     patterns: [
       "salary", "salaries", "compensation", "comp bands?", "pay (raise|rise|band|grade|cut)s?", "raise for (me|him|her|them)",
-      "bonus(es)?", "equity (grant|refresh|package)(s|es)?", "stock grants?", "refresh(er)? grants?", "stock options?", "option grants?",
+      "bonus(es)?", "commissions?", "comp plans?", "on-target earnings", "variable (comp|pay)(?!-)",
+      "equity (grant|refresh|package)(s|es)?", "stock grants?", "refresh(er)? grants?", "stock options?", "option grants?",
       "(unvested|vested) (options|shares|equity|stock)", "(options|shares|equity|grants?) (\\w+ ){0,2}vest(s|ed|ing)?",
       "vesting (schedule|cliff|date|period|start)s?", "(vesting|one-year|1-year|one year|1 year|12-month) cliffs?", "strike prices?",
       "RSUs?", "severance", "payroll",
     ],
+    cased: ["\\bOTEs?\\b"],
     notWhen: [
       // PRIV-2 (end-to-end test 2026-11-27): a bonus a product gives its customers is marketing, not anyone's pay: "our
       // launch bonus campaign for creators", "bonus credits", "a bonus feature", "a welcome bonus for new users". A
@@ -207,8 +311,13 @@ export const TOPIC_RULES: Record<Topic, TopicRule> = {
       "\\bbonus(es)?\\s+(campaigns?|features?|content|credits?|points?|offers?|promos?|codes?|gifts?|rewards?|items?|tracks?|episodes?|chapters?|videos?|downloads?|materials?|packs?|templates?|assets?|seats?|storage|minutes|levels?|stages?|rounds?|questions?|sections?)\\b",
       "\\bbonus(es)?\\s+for\\s+(new\\s+|early\\s+|our\\s+|their\\s+)?(customers?|creators?|users?|subscribers?|buyers?|shoppers?|players?|sign-?ups?|readers?|viewers?|fans?)\\b",
       // "We give creators a sign-up bonus of 50 credits", "Teams on annual plans get a loyalty bonus" (`PRODUCT_BONUS`).
-      // "an employee referral bonus of $2k" and "the referral bonus for staff" stay pay.
+      // "an employee referral bonus of $2k" and "the referral bonus for staff" stay pay. Rig test 2026-11-27: a customer's and a
+      // partner's terms are spared too, "Northwind gets a volume bonus: 5% more credits above 10k renders" and "Resellers
+      // get a partner bonus of 10% of first-year revenue"; "The sales team gets a bonus if Northwind signs" stays pay.
       ...PRODUCT_BONUS,
+      // A commission that is a price: "We take a 15% commission on each marketplace sale", "Resellers earn a 20% commission
+      // on renewals", "whether to commission that test" (`PRODUCT_COMMISSION`). "Her commission" stays pay.
+      ...PRODUCT_COMMISSION,
     ],
   },
   health: {
@@ -866,12 +975,32 @@ const aboutAPerson = (topic: Screen, found: RegExpMatchArray[]) =>
   topic !== "fundraising" && topic !== "confidential" && (topic !== "hiring" || found.some((m) => !PLAN_TALK.test(m[0])));
 const ASIDE = new RegExp(`\\b(${HEALTH_ASIDES.join("|")})\\b`, "gi");
 /**
- * PRIV-2: whether a sentence's health matches are all short asides (`HEALTH_ASIDES`: "(doctor)", "out sick"), so only
- * that sentence and the ones after it still about the person are cut, never the work talk around it.
+ * PRIV-2 (rig test 2026-11-27): the speaker's own doctor, dentist, GP or physio, or their appointment ("my physio", "my
+ * dentist appointment"). An aside in a sentence that says when they're away (`AWAY`) and nothing more about it
+ * (`NOT_A_VISIT`). Never their therapist, which says more about someone's health than a visit does, and never someone
+ * else's ("her physio").
+ */
+const OWN_VISIT = /\bmy (?:doctor|dentist|physio|physiotherapist|GP)(?:'s|s)?\b(?:\s+(?:appointment|appt|visit|session|check-?up)s?\b)?/gi;
+/** That someone is away, or their visit moved: moved, out, off, back, leaving early, in late. */
+const AWAY = /\b(?:moved|moves|rescheduled|reschedules|cancell?ed|pushed|shifted|bumped|out|off|away|back|offline|ooo|leaving|leave|in late|unavailable|afk)\b/i;
+/** What a visit found or is for, or a family member's: "my physio says the tendon is torn", "my knee", "my dad". */
+const NOT_A_VISIT = new RegExp(
+  "\\b(?:says?|said|tells?|told|thinks?|thought|found|finds|wants me|recommend\\w*|advis\\w*|prescrib\\w*|diagnos\\w*|torn|tears?|broke|broken|fractur\\w*|sprain\\w*|strain(?:ed)?|" +
+    "injur\\w*|pain\\w*|hurts?|hurting|sore|swollen|surgery|operation|treatment|scans?|mri|x-?rays?|results?|blood|chronic|recover\\w*|rehab\\w*|condition)\\b|" +
+    "\\b(?:my|the|her|his)\\s+(?:back|knee|ankle|wrist|shoulder|hip|neck|spine|leg|arm|foot|feet|hand|elbow|tendon|ligament|tooth|teeth|jaw|eye|head|heart)s?\\b|" +
+    "\\bmy\\s+(?:dad|mum|mom|mother|father|parents?|son|daughter|kids?|child|children|baby|wife|husband|partner|brother|sister|grand\\w+|family)\\b",
+  "i",
+);
+/**
+ * PRIV-2: whether a sentence's health matches are all short asides (`HEALTH_ASIDES`: "(doctor)", "out sick"; rig test
+ * 2026-11-27: or the speaker's own visit, `OWN_VISIT`), so only that sentence and the ones after it still about the person
+ * are cut, never the work talk around it.
  */
 const asideOnly = (topic: Screen, text: string, found: RegExpMatchArray[]) => {
   if (topic !== "health" || !found.length) return false;
-  const spans = [...straight(text).matchAll(ASIDE)].map((x) => [x.index!, x.index! + x[0].length] as const);
+  const t = straight(text);
+  const visits = AWAY.test(t) && !NOT_A_VISIT.test(t) ? [...t.matchAll(OWN_VISIT)] : [];
+  const spans = [...t.matchAll(ASIDE), ...visits].map((x) => [x.index!, x.index! + x[0].length] as const);
   return found.every((m) => spans.some(([a, b]) => a <= m.index! && m.index! + m[0].length <= b));
 };
 /** F5: a sentence that gives a raise's figures: an amount, a multiple or a share ("Targeting $40M", "2x", "15%"). */

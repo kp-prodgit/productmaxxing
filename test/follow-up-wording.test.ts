@@ -2,11 +2,12 @@
 // "it", "this" or "that test" says what it stands for, or starts with what its item is about; a yes/no call reads as
 // "Decide whether …"; an unmarked question that names a group asks that group; an ask keeps the question as written;
 // an ask's why is a whole sentence; and a company's name keeps its capital.
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { services } from "../src/core/services.js";
 import { trackerGuard } from "../src/core/tracker-text.js";
 import type { Task } from "../src/core/types.js";
-import { followUpItems, plain } from "../src/review/draft-reader.js";
+import { followUpItems, norm, plain } from "../src/review/draft-reader.js";
 import { askText, askTodo, askWhy, followUpsOnAccept, followUpText, readFollowUps } from "../src/review/followups.js";
 import { draftComment } from "../src/run/comment.js";
 import { readProposals } from "../src/synth/proposals.js";
@@ -369,7 +370,7 @@ describe("the end-to-end test's lows on the re-read of older follow-ups (FOLLOW-
     expect(r.decisions.map((d) => d.text)).toEqual([
       "Decide whether we need a second region before the beta (PMX-14)",
       // Its "it" says nothing, so the question before the mark goes with it.
-      "Decide whether to offer it on the Team plan: Does the buyer need SSO? (PMX-14)",
+      "Decide whether to offer it on the Team plan, given the question: Does the buyer need SSO? (PMX-14)",
       "Decide how many seats the pilot covers (PMX-14)",
       "Decide what a retrain is worth to us (PMX-14)",
       "Decide what is blocking the beta (PMX-14)",
@@ -404,14 +405,14 @@ describe("the end-to-end test's lows on the re-read of older follow-ups, continu
   it("4. a thin call says what it's about: its label, else the question before it, else the task's subject; else its why names the task", () => {
     const one = (item: string, title = "PMX-34: Brief wait-state progress") => readFollowUps(draft(title, "Open questions", [item]), "PMX-34", NOW).decisions.map((d) => [d.text, d.why]);
     expect(one("Does a font change mid-run restart the job? [C26] **PM decides:** whether to warn users. Recommendation: confirm first."))
-      .toEqual([["Decide whether to warn users: Does a font change mid-run restart the job? (PMX-34)", "Recommendation: confirm first."]]);
+      .toEqual([["Decide whether to warn users, given the question: Does a font change mid-run restart the job? (PMX-34)", "Recommendation: confirm first."]]);
     expect(one("**Font restarts.** A font change may restart the job [C26]. **PM decides:** whether to warn users."))
       .toEqual([["Font restarts: decide whether to warn users (PMX-34)", ""]]);
     expect(one("A font change may restart the job [C26]. **PM decides:** whether to warn users.", "PMX-34: Spec the importer retry"))
       .toEqual([["Importer retry: decide whether to warn users (PMX-34)", ""]]);
     // A leaning word nothing resolves takes the question before it too.
     expect(one("Do the other four beta partners feel this? Only one account shows it. **PM decides:** whether to ask them during onboarding."))
-      .toEqual([["Decide whether to ask them during onboarding: Do the other four beta partners feel this? (PMX-34)", ""]]);
+      .toEqual([["Decide whether to ask them during onboarding, given the question: Do the other four beta partners feel this? (PMX-34)", ""]]);
     // Nothing more is known: the call stays, and its why names the task.
     const title = "PMX-34: Draft a problem brief on wait-state progress and cancel for long-running jobs";
     expect(one("A font change may restart the job [C26]. **PM decides:** whether to warn users. Recommendation: confirm first.", title))
@@ -532,5 +533,96 @@ describe("the end-to-end test's lows on the re-read of older follow-ups, last ro
     // Over the cap, they stay in the draft as what they are.
     expect(followUpText({ ...r, todos: r.todos.slice(0, 2), asks: [], moreDecisions: 1, moreActions: 2 }))
       .toBe("1 decision and 1 thing to do added to your to-dos; 1 more decision stays in the draft; 2 more things to do stay in the draft.");
+  });
+});
+
+describe("the end-to-end test's wording lows, fourth round (FOLLOW-1, 2026-11-27)", () => {
+  beforeEach(freshHome);
+  const doc = (items: string[]) => draft("PMX-6: Brief the pilot terms", "Open questions", items);
+  const ask = (item: string) => {
+    const q = readFollowUps(doc([item]), "PMX-6", NOW).questions[0]!;
+    return { role: q.ask?.role ?? null, text: askText(q.ask?.role ?? null, q.title, "PMX-6", q.about) };
+  };
+
+  it("11. who to ask is the role alone: how to ask them (directly, first, in person …) is no part of it", async () => {
+    expect(ask("**Is \"pause the pilot\" a firm position or negotiating?** — ask: the VP Brand directly"))
+      .toEqual({ role: "the VP Brand", text: "Ask the VP Brand: Is \"pause the pilot\" a firm position or negotiating? (PMX-6)" });
+    // Each way of asking, in the draft's mark and in its own sentence, and more than one.
+    for (const how of ["directly", "personally", "first", "again", "separately", "in person", "offline", "directly first"]) {
+      expect(ask(`Is the renewal date firm? — ask: the finance lead ${how}`).role).toBe("the finance lead");
+      expect(ask(`Is the renewal date firm? Ask the CFO ${how}.`).role).toBe("the CFO");
+      expect(ask(`Who signs the order at Globex? — ask: legal ${how}`).text).toBe("Ask legal: Who signs the order at Globex? (PMX-6)");
+    }
+    // A name stays out, with or without how to ask them.
+    expect(ask("Is the renewal date firm? — ask: Dana directly")).toEqual({ role: null, text: "Find out: Is the renewal date firm? (PMX-6)" });
+    // The item's own ask: the role without it, and the clause as the draft says it.
+    expect(readFollowUps(draft("PMX-18: Spec the approval step", "Open questions", ["**Is the other partners' need real?** Ask the other four beta partners directly whether they want the approve step on or off by default."]), "PMX-18", NOW).questions.map((q) => [q.ask?.role, askText(q.ask?.role ?? null, q.title, "PMX-18", q.about)]))
+      .toEqual([["the other four beta partners", "Ask the other four beta partners whether they want the approve step on or off by default (PMX-18)"]]);
+  });
+
+  it("11. the role the tracker rules check is the one the to-do says, and a cut one still never leaves a bare \"they\"", async () => {
+    const checked: string[] = [];
+    const q = readFollowUps(doc(["**Is \"pause the pilot\" a firm position or negotiating?** — ask: the VP Brand directly"]), "PMX-6", NOW).questions[0]!;
+    expect(askTodo(q, "PMX-6", (s) => { checked.push(s); return true; }).text).toBe("Ask the VP Brand: Is \"pause the pilot\" a firm position or negotiating? (PMX-6)");
+    expect(checked).toEqual(["the VP Brand"]);
+    // The role the rules cut, said with how to ask them: the company's team, and "they" are that team.
+    const guard = trackerGuard({ names: ["Dana Lee"] });
+    const cut = readFollowUps(draft("PMX-18: Spec the approval step", "Open questions", ["**Is the other partners' need real?** Ask Dana Lee's team at Globex directly whether they want the approve step on or off by default."]), "PMX-18", NOW).questions[0]!;
+    expect(askTodo(cut, "PMX-18", (s) => !guard.problem(s)).text).toBe("Ask Globex's team whether they want the approve step on or off by default (PMX-18)");
+    // Accepting counts it as one question to ask, in the role's words.
+    const r = await accept(doc(["**Is \"pause the pilot\" a firm position or negotiating?** — ask: the VP Brand directly"]), { id: "lin-6", identifier: "PMX-6", title: "Brief the pilot terms" });
+    expect(r.asks.map((a) => a.text)).toEqual(["Ask the VP Brand: Is \"pause the pilot\" a firm position or negotiating? (PMX-6)"]);
+    expect(followUpText(r)).toBe("1 question to ask added to your to-dos.");
+  });
+
+  it("12. a call that carries the question it hangs on reads as the call, never as a question; \"Find out: …\" stays a question", async () => {
+    const md = doc([
+      "What is the real cost of the workaround? **PM decides:** whether to ask.",
+      "Is the $360,000 conditional on dedicated capacity, and what does that cost? **PM decides:** how to package.",
+      "Is the quota per seat? **PM decides:** what to offer.",
+      "Does the import keep its history? **PM decides:** when to ask.",
+      "How long does a CSV import take an admin today? PM decides: pursue.",
+      "Can a designer be freed for the plugin UI in December?",
+    ]);
+    const r = readFollowUps(md, "PMX-6", NOW);
+    expect(r.decisions.map((d) => [d.text, d.action ?? false])).toEqual([
+      // The question is what the call is on.
+      ["Decide whether to ask the question: What is the real cost of the workaround? (PMX-6)", false],
+      // The question is what the call turns on.
+      ["Decide how to package, given the question: Is the $360,000 conditional on dedicated capacity, and what does that cost? (PMX-6)", false],
+      ["Decide what to offer, given the question: Is the quota per seat? (PMX-6)", false],
+      ["Decide when to ask the question: Does the import keep its history? (PMX-6)", false],
+      ["Decide whether to pursue the question: How long does a CSV import take an admin today? (PMX-6)", false],
+    ]);
+    // Never "Decide how to package: Is …?": the question comes after the call, said as the question.
+    for (const d of r.decisions) expect(d.text).toMatch(/^Decide [^:]+ the question: \p{Lu}[^:]*\? \(PMX-6\)$/u);
+    expect(r.questions.map((q) => askText(q.ask?.role ?? null, q.title, "PMX-6", q.about))).toEqual(["Find out: Can a designer be freed for the plugin UI in December? (PMX-6)"]);
+    // No quotation marks: the tracker rules read those as someone quoted, and the to-do could never go to Linear.
+    const guard = trackerGuard({});
+    for (const d of r.decisions) expect(guard.problem(d.text)).toBeNull();
+    expect(guard.problem("Decide whether to ask \"What is the real cost of the workaround?\" (PMX-6)")).toBe("quote");
+    // Accepting makes them calls that are the PM's, and the question one to ask.
+    const a = await accept(md, { id: "lin-6", identifier: "PMX-6", title: "Brief the pilot terms" });
+    expect(a.todos.map((t) => t.action ?? false)).toEqual([false, false, false, false, false]);
+    expect(followUpText(a)).toBe("5 decisions and 1 question to ask added to your to-dos.");
+    // The same key as the words 0.40.2 gave it ("whether to ask: What is …?"), so a draft accepted then and again now
+    // makes none twice.
+    const key040 = (core: string) => createHash("sha256").update(`d\n${norm(core)}`).digest("hex").slice(0, 12);
+    expect(r.decisions.slice(0, 2).map((d) => d.key)).toEqual([
+      key040("whether to ask: What is the real cost of the workaround?"),
+      key040("how to package: Is the $360,000 conditional on dedicated capacity, and what does that cost?"),
+    ]);
+    const again = await accept(md, { id: "lin-6", identifier: "PMX-6", title: "Brief the pilot terms" });
+    expect([again.todos.length, again.repeated]).toEqual([0, 6]);
+  });
+
+  it("12. a question too long to say after its call keeps 0.40.2's words, so it stays on its call with the same key", () => {
+    const key040 = (core: string) => createHash("sha256").update(`d\n${norm(core)}`).digest("hex").slice(0, 12);
+    // 164 characters: "Decide whether to ask: <Q>? (PMX-90)" is 196, "… ask the question: <Q>? (PMX-90)" would be 209.
+    const q = "What does it cost the support team each week to rebuild the import mapping by hand for every large account that renews on the older plan, week after week, all year?";
+    expect(q.length).toBe(164);
+    const r = readFollowUps(draft("PMX-90: Brief the import costs", "Open questions", [`${q} **PM decides:** whether to ask.`]), "PMX-90", NOW);
+    expect(r.decisions.map((d) => [d.text, d.key])).toEqual([[`Decide whether to ask: ${q} (PMX-90)`, key040(`whether to ask: ${q}`)]]);
+    expect(r.decisions[0]!.text.length).toBeLessThanOrEqual(200);
   });
 });

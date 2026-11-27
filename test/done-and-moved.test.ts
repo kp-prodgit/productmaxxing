@@ -303,9 +303,10 @@ describe("taking work back from the team (R16b, R16c, TODO-5, LINEAR-2)", () => 
     expect(made.identifier).toMatch(/^PENDING-[0-9A-F]{6}$/);
     expect((await readOutbox()).ops.map((o) => o.kind)).toEqual(["create-task"]);
     const back = await move(made.identifier!, "private");
-    expect(back.message).toBe(`Now your private to-do: Spec the bulk role editor. ${made.identifier} hadn't reached Linear yet, so nothing of it goes there.`);
+    // TODO-5 (R16b): the to-do it came from is back as it was, not a new one.
+    expect(back.message).toBe(`"Spec the bulk role editor" is your private to-do again, as it was before you moved it. ${made.identifier} hadn't reached Linear yet, so nothing of it goes there.`);
     expect((await readOutbox()).ops).toEqual([]);
-    expect((await loadTodos()).items.map((x) => x.text)).toEqual(["Spec the bulk role editor"]);
+    expect((await loadTodos()).items).toEqual([t]);
 
     // The same for a to-do sent to Linear as your own and taken back before the sync.
     const c = await addTodo({ text: "Book the design review" }, NOW);

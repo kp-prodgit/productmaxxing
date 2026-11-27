@@ -169,7 +169,7 @@ describe("reading a draft's follow-ups (FOLLOW-1)", () => {
     expect(r.decisions.map((d) => d.text)).toEqual([
       "Decide whether to include SCIM in every plan (PMX-14)",
       "Decide whether SCIM ships in the first release (PMX-14)",
-      "Decide whether to pursue: How long does a CSV import take an admin today? (PMX-14)",
+      "Decide whether to pursue the question: How long does a CSV import take an admin today? (PMX-14)",
       "Decide whether to offer SCIM on the free plan (PMX-14)",
     ]);
     // The recommendation rides along in the draft's own words; only a stated deadline becomes a due date.
@@ -318,7 +318,7 @@ describe("accepting a draft makes its follow-ups (FOLLOW-1)", () => {
     expect(todos.map((t) => [t.text, t.due, t.source.title])).toEqual([
       ["Decide whether to include SCIM in every plan (PMX-14)", "2026-12-08", "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
       ["Decide whether SCIM ships in the first release (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
-      ["Decide whether to pursue: How long does a CSV import take an admin today? (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
+      ["Decide whether to pursue the question: How long does a CSV import take an admin today? (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
       ["Decide whether to offer SCIM on the free plan (PMX-14)", null, "From PMX-14's accepted draft, outputs/spec/PMX-14.md"],
     ]);
     expect(todos.every((t) => t.status === "open" && t.source.keys.length === 0)).toBe(true);

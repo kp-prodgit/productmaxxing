@@ -15,9 +15,15 @@ export async function writeJson(path: string, value: unknown, mode = 0o600): Pro
   await writeText(path, JSON.stringify(value, null, 2) + "\n", mode);
 }
 
+let writes = 0;
+/**
+ * The temp file is this write's own (process and a count), never one per process: PMX's servers answer several
+ * requests at once and each builds a context that writes the same settings files, and two writes of one file that
+ * shared a temp file lost it to whichever renamed first (the other failed with ENOENT, or left a mix of both).
+ */
 export async function writeText(path: string, text: string, mode = 0o644): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
+  const tmp = `${path}.${process.pid}.${++writes}.tmp`;
   await writeFile(tmp, text, { mode });
   await rename(tmp, path);
 }

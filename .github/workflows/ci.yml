@@ -1,12 +1,37 @@
 name: CI
+# What this costs: a macOS runner is billed at ten times a Linux one. So a pull request runs its tests on Linux, and the
+# Mac run is kept for what ships: every push to main, a run started by hand, and a pull request labelled `mac`.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
+  workflow_dispatch:
 permissions:
   contents: read
+# A newer push to the same pull request replaces the run before it. Runs on main always finish.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # `pmx init` commits to the repo it sets up. A runner has no git identity, and on Linux git can't make one up.
+      - run: git config --global user.email ci@example.com && git config --global user.name ci
+      - run: npm test
+      - run: npm run build
+  # PMX is a Mac product, so main is always tested on a Mac. Label a pull request `mac` when it touches what only a Mac
+  # has (the background job, the keychain, the Claude app) and should be tested there before it merges.
+  test-macos:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'mac')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,6 +41,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # `pmx init` commits to the repo it sets up. A runner has no git identity, and on Linux git can't make one up.
+      - run: git config --global user.email ci@example.com && git config --global user.name ci
       - run: npm test
       - run: npm run build
   # The PMX repo's run-record check installs the packaged CLI on Linux; prove that works, on the oldest Node PMX supports.

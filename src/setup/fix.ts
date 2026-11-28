@@ -12,7 +12,7 @@ import { updateState } from "../core/state.js";
 import { installTeamVersion, isDevInstall, type UpdateOutcome } from "../core/update.js";
 import { packageRoot } from "../core/skills.js";
 import { ENGINE_PACKAGE, installEnginePackage, PMX_PACKAGE, prefixOf } from "./install.js";
-import { AUTO_STEPS, type AutoStep } from "../core/upgrade.js";
+import { AUTO_STEPS, StepWaits, type AutoStep } from "../core/upgrade.js";
 import { currentVersion } from "../core/version.js";
 import { startJob } from "../flow/jobs.js";
 import { installMcp, mcpInstalled } from "../mcp/server.js";
@@ -66,7 +66,14 @@ async function installJob(d: FixDeps): Promise<string> {
 
 /** An update step (UPGRADE-1) done now, and recorded the way an update records it, so the checklist shows it done. */
 async function autoStep(step: AutoStep, d: FixDeps): Promise<string> {
-  const did = (await step.run({ exec: d.ctx.exec, launchd: d.ctx.launchd, cliPath: cliOf(d), interactive: true, now: d.ctx.now, devInstall: d.devInstall })) ?? "nothing to do";
+  let did: string;
+  try {
+    did = (await step.run({ exec: d.ctx.exec, launchd: d.ctx.launchd, cliPath: cliOf(d), interactive: true, now: d.ctx.now, devInstall: d.devInstall })) ?? "nothing to do";
+  } catch (e) {
+    // Not a failure: PMX finishes it by itself (the background job reloads once the run in progress ends).
+    if (e instanceof StepWaits) return `Not yet: ${e.message}. Nothing more for you to do.`;
+    throw e;
+  }
   const at = d.ctx.now().toISOString(), v = currentVersion();
   await updateState((st) => { if (st.upgrade) st.upgrade.applied[step.since === null ? `${step.id}@${v}` : step.id] = { at, did }; });
   return did === "nothing to do" ? `${step.title}: nothing needed doing.` : `Done: ${did}.`;
@@ -156,6 +163,7 @@ export const FIXES: Record<string, Fix> = {
   "update.mcp-entry": { asks: never, run: (d) => autoStep(AUTO("mcp-entry"), d) },
   "update.background-job": { asks: ask("rewrite PMX's background job with this PMX, today's Node and Claude Code"), run: (d) => autoStep(AUTO("background-job"), d) },
   "update.evidence-backfill": { asks: never, run: (d) => autoStep(AUTO("evidence-backfill"), d) },
+  "update.task-hours-always": { asks: never, run: (d) => autoStep(AUTO("task-hours-always"), d) },
 };
 
 export interface FixResult { status: number; message: string; done?: boolean }

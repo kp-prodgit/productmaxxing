@@ -11,7 +11,7 @@ export const TEAM_SYNC_STALE_MS = 24 * 3600000;
 
 /**
  * Keeps this Mac's checkout of the team's PMX repo current (JOB-10), so every PM works from the same kinds of work,
- * size rubric and settings soon after a pull request merges, whether or not the team turned on automatic updates.
+ * size rubric and settings soon after a pull request merges, whether or not the team left automatic updates on.
  * At most every ten minutes, and only a fast-forward of the default branch with no changes to tracked files: it never
  * merges, rebases or touches a branch the PM is working on, and never takes a team config that wouldn't load. The
  * pass that pulls still runs on what it loaded; the next one uses the new files.

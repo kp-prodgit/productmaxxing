@@ -1,0 +1,31 @@
+{"family": "salary-equity", "text": "My salary hasn't moved in two years.", "expect": "cut", "topic": "compensation", "why": "A salary is pay."}
+{"family": "salary-equity", "text": "The salary bands for PMs were published.", "expect": "cut", "topic": "compensation", "why": "Salary bands are pay."}
+{"family": "salary-equity", "text": "She asked for a pay raise before the launch.", "expect": "cut", "topic": "compensation", "why": "A pay raise is pay."}
+{"family": "salary-equity", "text": "Is there a raise for him in the plan?", "expect": "cut", "topic": "compensation", "why": "A raise for a person is pay."}
+{"family": "salary-equity", "text": "His equity grant vests over four years.", "expect": "cut", "topic": "compensation", "why": "An equity grant is pay."}
+{"family": "salary-equity", "text": "My RSUs vest in March.", "expect": "cut", "topic": "compensation", "why": "RSUs are pay."}
+{"family": "salary-equity", "text": "The stock options have a one-year cliff.", "expect": "cut", "topic": "compensation", "why": "Stock options are pay."}
+{"family": "salary-equity", "text": "Her equity refresh was approved.", "expect": "cut", "topic": "compensation", "why": "An equity refresh is pay."}
+{"family": "salary-equity", "text": "Payroll runs on the 25th.", "expect": "cut", "topic": "compensation", "why": "Payroll is pay."}
+{"family": "salary-equity", "text": "They offered severance of three months.", "expect": "cut", "topic": "compensation", "why": "Severance is pay."}
+{"family": "salary-equity", "text": "Compensation review is next month.", "expect": "cut", "topic": "compensation", "why": "Compensation is pay."}
+{"family": "salary-equity", "text": "What's the strike price on the new grants?", "expect": "cut", "topic": "compensation", "why": "A strike price is equity pay."}
+{"family": "salary-equity", "text": "We raised the price of the Team plan by 10%.", "expect": "kept", "topic": null, "why": "Raising a price is pricing, not a raise."}
+{"family": "salary-equity", "text": "The payroll integration ships in the spring release.", "expect": "cut", "topic": "compensation", "why": "A payroll product feature is still cut: the pay rule has no exception for it.", "known_gap": {"want": "kept", "why": "A product feature, not anyone's pay."}}
+{"family": "salary-equity", "text": "Customers want the report to raise an alert at 80% usage.", "expect": "kept", "topic": null, "why": "To raise an alert is product talk."}
+{"family": "salary-equity", "text": "Brand equity is what the redesign protects.", "expect": "kept", "topic": null, "why": "Brand equity is not anyone's pay."}
+{"family": "salary-equity", "text": "The variable pay piece is 20% this year.", "expect": "cut", "topic": "compensation", "why": "Variable pay is pay."}
+{"family": "salary-equity", "text": "Is my equity refresh coming this cycle?", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "Equity refreshes go out in March.", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "She asked about a refresh grant.", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "His stock options vest in March.", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "Her options vest monthly after that.", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "The option grant is 10,000 shares.", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "What's the vesting schedule for new hires?", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "There's a one-year cliff.", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "The strike price is set by the board.", "expect": "cut", "topic": "compensation", "why": "Pay (F4): equity refreshes, options, vesting. A company's option pool is fundraising, not one person's pay."}
+{"family": "salary-equity", "text": "My salary: it's late again. The dashboard loads in four seconds on a good day. Admins want it under two. Caching would help most.", "expect": "cut", "topic": "compensation", "why": "Cuts the whole turn when it also names someone on the do-not-read list, or its speaker label matches."}
+{"family": "salary-equity", "text": "The new comp plan lands in January.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "salary-equity", "text": "Her OTE is 200k.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "salary-equity", "text": "OTE for the new AE role is set.", "expect": "cut", "topic": "compensation", "why": "Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE."}
+{"family": "salary-equity", "text": "Variable comp for the field team is 40%.", "expect": "cut", "topic": "compensation", "why": "Variable comp is a team's pay."}

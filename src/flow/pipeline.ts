@@ -103,7 +103,12 @@ export interface PipelineData {
   level: PipelineLevel;
   at: string;
   hours: number;
-  freshness: { linearSyncedAt: string | null; lastTick: string | null; lastCollect: string | null };
+  /**
+   * `linearSyncedAt`: the Claude app's last Linear sync, on a Mac that goes through it. LINEAR-2 (0.41.0): on a Mac with
+   * its own Linear API key it is null (nothing waits for a sync there), `linearVia` is "direct" and `linearReadAt` is
+   * PMX's own last read. A page from before 0.41.0 reads only the first, and so says nothing waits, which is right.
+   */
+  freshness: { linearSyncedAt: string | null; lastTick: string | null; lastCollect: string | null; linearVia?: "direct" | "relay" | "none"; linearReadAt?: string | null };
   sources: { id: string; label: string; connected: boolean; n: number; last: string | null }[];
   edges: Record<EdgeId, PipelineEdge>;
   /** `heldOver` (SIG-9): needs the last synthesis run found past the team's task limit; they come back in the next run. */
@@ -224,7 +229,7 @@ export interface PipelineRules {
   todosToLinear?: boolean;
   /** APPROVE-3 (0.36.0): whether the team offers Start now on proposed tasks. A board without it offers Approve only. */
   startNow?: boolean;
-  /** CLAUDE-6 (0.36.0): when PMX's Claude tasks do their work, a PMX setting. A board without it can't change it. */
+  /** CLAUDE-6 (0.36.0): when PMX's Claude tasks do their work, a PMX setting ("always" unless the PM chose "weekdays", from 0.41.0). A board without it can't change it. */
   taskHours?: "weekdays" | "always";
   /**
    * INSTALL-4 (0.36.0): the team's product lead by PMX handle, or null, a team setting; `productLeadIsYou` when that's
@@ -256,6 +261,8 @@ export interface PipelineInputs {
   /** Linear as PMX sees it (relay snapshot with queued changes, or the API). */
   issues: { identifier: string; title: string; url?: string; createdAt?: string; status: string | null; meeting: boolean; category?: string | null; agent?: string | null }[];
   linearSyncedAt: string | null;
+  /** How this Mac reaches Linear, for the page's wording (LINEAR-2). Absent: as before 0.41.0. */
+  linearVia?: "direct" | "relay" | "none";
   collectReports: { at: string; connector: string | null; saved: number; inputs?: { id: string; shape: "calls" | "channels"; saved: number }[] }[];
   todosCreated: string[];
   /** Open to-dos on this Mac. */
@@ -479,7 +486,10 @@ export function buildPipeline(i: PipelineInputs): PipelineData {
 
   const data: PipelineData = {
     v: 1, level: i.level, at: until, hours,
-    freshness: { linearSyncedAt: i.linearSyncedAt, lastTick: i.lastTick, lastCollect: latest(i.collectReports.map((c) => c.at)) },
+    freshness: {
+      linearSyncedAt: i.linearVia === "direct" ? null : i.linearSyncedAt, lastTick: i.lastTick, lastCollect: latest(i.collectReports.map((c) => c.at)),
+      ...(i.linearVia ? { linearVia: i.linearVia, linearReadAt: i.linearVia === "direct" ? i.linearSyncedAt : null } : {}),
+    },
     sources, edges,
     needs: { proposals: i.proposals.length, drafts: review.length, todos: (i.openTodos ?? []).length, ...(i.heldOver ? { heldOver: i.heldOver } : {}) },
     // A proposal the PM hasn't approved stays theirs, so only this Mac's page shows it.

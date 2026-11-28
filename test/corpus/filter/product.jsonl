@@ -1,0 +1,37 @@
+{"family": "product", "text": "The Team plan is $12 a seat, billed annually.", "expect": "kept", "topic": null, "why": "Pricing. Plain product talk is never cut."}
+{"family": "product", "text": "Can we get a discount if we commit to 200 seats?", "expect": "kept", "topic": null, "why": "Seats and a discount. Plain product talk is never cut."}
+{"family": "product", "text": "Credits roll over for one month on the Pro plan.", "expect": "kept", "topic": null, "why": "Credits. Plain product talk is never cut."}
+{"family": "product", "text": "A 4K render costs three credits.", "expect": "kept", "topic": null, "why": "Renders and credits. Plain product talk is never cut."}
+{"family": "product", "text": "Renders queue for ten minutes at peak.", "expect": "kept", "topic": null, "why": "Render queue. Plain product talk is never cut."}
+{"family": "product", "text": "The roadmap has SSO in Q1 and SCIM in Q2.", "expect": "kept", "topic": null, "why": "Roadmap. Plain product talk is never cut."}
+{"family": "product", "text": "Churn in the starter tier was 4% last month.", "expect": "kept", "topic": null, "why": "Churn. Plain product talk is never cut."}
+{"family": "product", "text": "We lost two accounts to a cheaper rival.", "expect": "kept", "topic": null, "why": "Churn to a rival. Plain product talk is never cut."}
+{"family": "product", "text": "Annual plans get two months free.", "expect": "kept", "topic": null, "why": "Plan pricing. Plain product talk is never cut."}
+{"family": "product", "text": "The price increase lands with the January invoice.", "expect": "kept", "topic": null, "why": "A price increase. Plain product talk is never cut."}
+{"family": "product", "text": "Overage is billed at $0.02 a render.", "expect": "kept", "topic": null, "why": "Overage pricing. Plain product talk is never cut."}
+{"family": "product", "text": "They want to pause seats over the summer.", "expect": "kept", "topic": null, "why": "Seats. Plain product talk is never cut."}
+{"family": "product", "text": "Usage-based pricing would fit agencies better.", "expect": "kept", "topic": null, "why": "Pricing model. Plain product talk is never cut."}
+{"family": "product", "text": "The export times out after ten minutes.", "expect": "kept", "topic": null, "why": "A bug. Plain product talk is never cut."}
+{"family": "product", "text": "Admins spend two hours on SSO setup.", "expect": "kept", "topic": null, "why": "Setup time. Plain product talk is never cut."}
+{"family": "product", "text": "The pilot needs 25 seats and a signed order form.", "expect": "kept", "topic": null, "why": "Pilot terms. Plain product talk is never cut."}
+{"family": "product", "text": "We need the launch copy by Friday.", "expect": "kept", "topic": null, "why": "A deadline. Plain product talk is never cut."}
+{"family": "product", "text": "Onboarding takes 14 days and it should take three.", "expect": "kept", "topic": null, "why": "Onboarding. Plain product talk is never cut."}
+{"family": "product", "text": "Their legal team wants the DPA before the renewal.", "expect": "kept", "topic": null, "why": "Procurement. Plain product talk is never cut."}
+{"family": "product", "text": "The free tier caps at 50 renders a month.", "expect": "kept", "topic": null, "why": "Free tier limits. Plain product talk is never cut."}
+{"family": "product", "text": "Enterprise wants a dedicated render queue.", "expect": "kept", "topic": null, "why": "A feature ask. Plain product talk is never cut."}
+{"family": "product", "text": "The upgrade prompt shows too early in the trial.", "expect": "kept", "topic": null, "why": "Trial flow. Plain product talk is never cut."}
+{"family": "product", "text": "Renewal is in March and they want a two-year term.", "expect": "kept", "topic": null, "why": "Renewal terms. Plain product talk is never cut."}
+{"family": "product", "text": "The API rate limit is 60 requests a minute.", "expect": "kept", "topic": null, "why": "API limits. Plain product talk is never cut."}
+{"family": "product", "text": "Top-up credits should not expire.", "expect": "kept", "topic": null, "why": "Credit top-ups. Plain product talk is never cut."}
+{"family": "product", "text": "Support tickets doubled after the pricing change.", "expect": "kept", "topic": null, "why": "Support load. Plain product talk is never cut."}
+{"family": "product", "text": "We should A/B test the annual discount.", "expect": "kept", "topic": null, "why": "An experiment. Plain product talk is never cut."}
+{"family": "product", "text": "The reseller portal needs bulk seat assignment.", "expect": "kept", "topic": null, "why": "A partner feature. Plain product talk is never cut."}
+{"family": "product", "text": "Net revenue retention is 108% this quarter.", "expect": "kept", "topic": null, "why": "A business metric. Plain product talk is never cut."}
+{"family": "product", "text": "The team plan should include five guest seats.", "expect": "kept", "topic": null, "why": "Plan packaging. Plain product talk is never cut."}
+{"family": "product", "text": "The Team plan is $12 a seat, billed annually.", "expect": "kept", "topic": null, "why": "Said by the customer.", "context": {"speaker": "outside"}}
+{"family": "product", "text": "We'd pay more for a dedicated render queue.", "expect": "kept", "topic": null, "why": "A customer's willingness to pay.", "context": {"speaker": "outside"}}
+{"family": "product", "text": "Lee Park: Credits run out by the 20th every month.\n\nDana Ruiz: Would a top-up at 80% usage help?\n\nLee Park: Yes, if it's one click.", "expect": "kept", "topic": null, "why": "A three-turn exchange about credits."}
+{"family": "product", "text": "The Team plan is $12 a seat. Churn is highest in month two. The roadmap has SSO next.", "expect": "kept", "topic": null, "why": "A multi-sentence passage of product talk."}
+{"family": "product", "text": "Partners resell seats at a 20% discount.", "expect": "kept", "topic": null, "why": "A partner discount."}
+{"family": "product", "text": "Export options are in the settings menu.", "expect": "kept", "topic": null, "why": "F5: and fundraising is held from team work by its own rule."}
+{"family": "product", "text": "We need more options for the date picker.", "expect": "kept", "topic": null, "why": "F5: and fundraising is held from team work by its own rule."}

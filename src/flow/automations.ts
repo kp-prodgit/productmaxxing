@@ -127,7 +127,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   out.push({
     id: "collect", group: "in", name: "Collect your meetings", by: "auto", where: "Claude app", tab: "flow",
     what: "Claude copies new transcripts from your meeting app into a private folder on this Mac. Nothing leaves the Mac here.",
-    cadence: c?.when ?? "weekdays at 12:30 and 17:30", last: c?.last ?? collect?.at ?? null, next: c?.next ?? null,
+    cadence: c?.when ?? "every day at 12:30 and 17:30", last: c?.last ?? collect?.at ?? null, next: c?.next ?? null,
     ...(!c ? { status: "setup", statusText: "Not set up", fix: { text: "Type /pmx-schedule in the Claude app to set up the collection task.", cmd: "/pmx-schedule" } }
       : c.ok ? ok("On schedule") : { status: c.detail === "not set up" ? "setup" : "attention", statusText: c.detail === "not set up" ? "Not set up" : "Needs a look", fix: { text: c.detail === "not set up" ? "Type /pmx-schedule in the Claude app." : `It ${c.detail}. Open the Claude app and check its Scheduled tasks.`, cmd: "/pmx-schedule" } }),
     result: collect ? `${plural(collect.saved, "meeting")} saved${skipped ? `, ${skipped} skipped` : ""}` : null,
@@ -147,7 +147,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   out.push({
     id: "synthesize", group: "work", name: "Suggest tasks from customer calls", by: "auto", where: synthHere ? "This Mac and Claude" : "The team's synthesis Mac",
     what: `Claude reads customer calls${i.synthesizer ? " and approved Slack threads" : " you collected"}, with private details removed, and suggests sized tasks. Nothing goes to Linear until you approve.${i.synthesizer ? "" : " With no synthesis Mac chosen, each Mac does this for its own calls; your team can pick one Mac to do it for everyone under Sources."}`,
-    cadence: "every 30 minutes for new calls; Slack every 6 hours", last: synthHere ? latest([i.lastSynthAt, synthR?.at]) : synthR?.at ?? null, next: synthHere ? nextPass : null, tab: "today",
+    cadence: "every 30 minutes for new calls; channel threads every 6 hours, when one changed", last: synthHere ? latest([i.lastSynthAt, synthR?.at]) : synthR?.at ?? null, next: synthHere ? nextPass : null, tab: "today",
     ...(!i.tracker ? { status: "off" as const, statusText: "No task tracker set up", fix: null } : synthHere ? (viaJob("synthesize") ?? ok()) : ok("Runs on another Mac")),
     result: synthR?.synth ? `${plural(synthR.synth.tasks.length, "task")} suggested from ${plural(synthR.sources.filter((s) => s.decision === "used").length, "source")}` : null,
     run: synthHere && i.tracker && !i.killSwitch.on ? "synthesize" : null, runNote: synthHere ? null : `Runs on ${i.synthesizer ? `${i.synthesizer}'s Mac` : "the team's synthesis Mac"}, from the calls shared with your team, so each is read once for everyone.`,
@@ -161,12 +161,17 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   });
   out.push({
     id: "linear", group: "work", name: "Keep Linear in sync", by: "auto", where: i.linear.mode === "relay" ? "Claude app" : "Linear",
-    what: i.linear.mode === "relay" ? "Claude reads your PMX project in Linear and applies the changes PMX queued: new tasks, labels and comments. PMX itself holds no Linear key." : i.linear.mode === "none" ? "PMX isn't connected to Linear." : "PMX reads and updates your PMX project in Linear directly, as it works.",
-    cadence: i.linear.mode === "relay" ? (sched(/linear/i)?.when ?? "hourly on weekdays, 8:00–18:00") : "as PMX works", last: i.linear.syncedAt, next: sched(/linear/i)?.next ?? null, tab: "flow",
+    // LINEAR-2 (0.41.0): with the PM's own API key, the usual way, PMX syncs itself with every background run.
+    what: i.linear.mode === "relay" ? "Claude reads your PMX project in Linear and applies the changes PMX queued: new tasks, labels and comments. PMX itself holds no Linear key."
+      : i.linear.mode === "none" ? "PMX isn't connected to Linear."
+      : i.linear.mode === "key" ? "PMX reads and updates your PMX project in Linear itself, with your own Linear API key, kept in this Mac's keychain. Each background run asks Linear only what changed since the last."
+      : "PMX reads and updates your PMX project in Linear directly, as it works.",
+    cadence: i.linear.mode === "relay" ? (sched(/linear/i)?.when ?? "every hour, every day") : i.linear.mode === "key" ? "every background run, and at once when you approve or move something" : "as PMX works", last: i.linear.syncedAt, next: sched(/linear/i)?.next ?? null, tab: "flow",
     ...(i.linear.mode === "none" ? { status: "setup" as const, statusText: "Not connected", fix: { text: "Connect Linear so approved tasks have somewhere to go.", cmd: "/pmx-setup" } }
       : i.linear.mode === "relay" && !sched(/linear/i) ? { status: "setup" as const, statusText: "Not set up", fix: { text: "Type /pmx-schedule in the Claude app to set up the Linear sync.", cmd: "/pmx-schedule" } }
       : i.linear.mode === "relay" && !sched(/linear/i)!.ok ? { status: "attention" as const, statusText: "Behind", fix: { text: `It ${sched(/linear/i)!.detail}. Open the Claude app and check its Scheduled tasks.`, cmd: "/pmx-schedule" } }
       : i.linear.mode === "relay" && i.linear.ok === false ? { status: "attention" as const, statusText: i.linear.syncedAt ? `Last synced ${Math.round((i.now.getTime() - Date.parse(i.linear.syncedAt)) / 3600000)} h ago` : "Not synced yet", fix: { text: i.linear.problem ?? "The Linear sync is behind. Open the Claude app and check its Scheduled tasks.", cmd: "/pmx-schedule" } }
+      : i.linear.mode === "key" && i.linear.ok === false ? { status: "attention" as const, statusText: /no longer accepts/.test(i.linear.problem ?? "") ? "Key no longer works" : "Needs a look", fix: { text: i.linear.problem ?? "PMX couldn't read Linear with this Mac's key." } }
       : ok(i.linear.mode === "relay" ? "On schedule" : "Connected")),
     result: i.linear.mode === "relay" ? (i.linear.waiting ? `${plural(i.linear.waiting, "change")} waiting for the next sync` : "Nothing waiting to send") : null,
     run: null, runNote: i.linear.mode === "relay" ? "Runs inside the Claude app, which reaches Linear for PMX." : null,
@@ -243,7 +248,7 @@ export function buildAutomations(i: AutomationInputs): Automation[] {
   });
   out.push({
     id: "update", group: "upkeep", name: "Keep PMX up to date", by: "both", where: "This Mac",
-    what: i.autoUpdate.on ? "PMX installs the version your team requires, at most once an hour, and tells you what's new." : "Your team hasn't turned on automatic updates. PMX tells you when your team requires a newer version.",
+    what: i.autoUpdate.on ? "PMX installs the PMX version your team's repo carries, at most once an hour, and tells you what's new." : "Your team turned automatic updates off. PMX tells you when your team requires a newer version.",
     cadence: i.autoUpdate.on ? "hourly" : "off", last: i.autoUpdate.state?.checkedAt ?? null,
     next: i.autoUpdate.on && nextPass ? new Date(Math.max(Date.parse(nextPass), i.autoUpdate.state ? Date.parse(i.autoUpdate.state.checkedAt) + 60 * MIN : 0)).toISOString() : null, tab: null,
     ...(i.autoUpdate.on && !i.jobInstalled ? { status: "off" as const, statusText: "Waits for automatic runs", fix: null } : i.autoUpdate.state && ["needs-sudo", "failed"].includes(i.autoUpdate.state.result) ? { status: "attention" as const, statusText: "Update waiting", fix: { text: `Your team is on pmx ${i.autoUpdate.state.version ?? "a newer version"}, but it couldn't install on its own.`, step: "cli.auto-update", label: "Update PMX" } } : ok(i.autoUpdate.on ? "On" : "Off")),

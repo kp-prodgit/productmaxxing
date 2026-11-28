@@ -1,0 +1,23 @@
+{"family": "fundraising", "text": "We're raising a Series B in the spring.", "expect": "cut", "topic": "fundraising", "why": "The company's own raise."}
+{"family": "fundraising", "text": "The term sheet came in on Friday.", "expect": "cut", "topic": "fundraising", "why": "A term sheet."}
+{"family": "fundraising", "text": "Our investors want monthly numbers.", "expect": "cut", "topic": "fundraising", "why": "The company's investors."}
+{"family": "fundraising", "text": "The valuation doubled since the seed round.", "expect": "cut", "topic": "fundraising", "why": "A valuation and a round."}
+{"family": "fundraising", "text": "We closed the round last week. Targeting $40M next time.", "expect": "kept", "topic": null, "why": "A raise and its figures.", "known_gap": {"want": "cut", "why": "The company's own raise. \"Round\" alone is a common word (a round of tests), so a fix must need money or raise words beside it, like the figure here."}}
+{"family": "fundraising", "text": "The cap table needs cleaning up before the raise.", "expect": "cut", "topic": "fundraising", "why": "The cap table."}
+{"family": "fundraising", "text": "Draft the investor update by Friday.", "expect": "cut", "topic": "fundraising", "why": "An investor update."}
+{"family": "fundraising", "text": "Northwind just raised a Series C, so they're hiring fast.", "expect": "cut", "topic": "fundraising", "why": "A customer's raise is cut too: the rule can't tell whose round it is."}
+{"family": "fundraising", "text": "We just closed our Series A, so budget is not the problem.", "expect": "cut", "topic": "fundraising", "why": "A customer's own raise, said by the customer.", "context": {"speaker": "outside"}}
+{"family": "fundraising", "text": "This is a big investment for us, so the model has to be right.", "expect": "kept", "topic": null, "why": "An investment, not investors.", "context": {"speaker": "outside"}}
+{"family": "fundraising", "text": "The investor portal needs two-factor login.", "expect": "kept", "topic": null, "why": "A product's own investors: the investor portal."}
+{"family": "fundraising", "text": "Retail investors use the mobile app most.", "expect": "kept", "topic": null, "why": "A product's users who are investors."}
+{"family": "fundraising", "text": "The asset valuation report is slow to export.", "expect": "kept", "topic": null, "why": "A valuation the product computes."}
+{"family": "fundraising", "text": "Their data room has the vendor questionnaire.", "expect": "kept", "topic": null, "why": "Someone else's data room, for a vendor review."}
+{"family": "fundraising", "text": "Procurement wants our SOC 2 report in a data room.", "expect": "kept", "topic": null, "why": "Procurement's data room."}
+{"family": "fundraising", "text": "Put the onboarding deck in the data room.", "expect": "kept", "topic": null, "why": "A data room with no fundraising around it."}
+{"family": "fundraising", "text": "Put the Series B deck in the data room.", "expect": "cut", "topic": "fundraising", "why": "A data room beside a round."}
+{"family": "fundraising", "text": "The next round of usability tests starts Monday.", "expect": "kept", "topic": null, "why": "A round of tests."}
+{"family": "fundraising", "text": "We're raising a Series B in the spring.", "expect": "kept", "topic": null, "why": "The PM's own to-dos may read fundraising.", "context": {"scope": "own"}}
+{"family": "fundraising", "text": "A series of five onboarding emails goes out in week one.", "expect": "kept", "topic": null, "why": "A series of emails."}
+{"family": "fundraising", "text": "Dilution from the option pool is 8%.", "expect": "cut", "topic": "fundraising", "why": "Dilution and the option pool."}
+{"family": "fundraising", "text": "The term sheet asks for a 10% option pool.", "expect": "cut", "topic": "fundraising", "why": "F5: and fundraising is held from team work by its own rule."}
+{"family": "fundraising", "text": "Kim: Ship it. We are raising a Series B round from three new investors early next quarter, right after the launch. Thanks.", "expect": "cut", "topic": "fundraising", "why": "Keeps the size rule for other health talk, other topics, and an aside beside one."}

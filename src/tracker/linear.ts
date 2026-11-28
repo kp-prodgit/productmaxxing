@@ -25,6 +25,69 @@ export interface LinearOpts {
   teamKey: string;
   projectId: string;
   fetch?: Fetch;
+  /**
+   * LINEAR-2 (0.41.0): this Mac's own copy of the project. With one, a read asks Linear only for the issues that changed
+   * since the last read, and for the whole project once a day; each change PMX makes is written into the copy at once.
+   */
+  copy?: IssueCopy;
+  /** LINEAR-2 (0.41.0): told of every answer, so a rejected key or a rate limit is remembered and waited out. */
+  watch?: LinearWatch;
+  now?: () => Date;
+}
+
+/** This Mac's copy of the project's issues, in the Linear API's own shape (src/linear/direct.ts keeps it on disk). */
+export interface IssueCopy {
+  /** What this Mac holds, or null when it holds nothing it can build on (no copy, another project's, one PMX didn't read itself). */
+  load(): Promise<{ issues: any[]; fullAt: string; through: string } | null>;
+  save(c: { issues: any[]; fullAt: string; through: string }): Promise<void>;
+  /** Issues PMX just created or changed, as Linear returned them. */
+  patch(nodes: any[]): Promise<void>;
+}
+
+/** Why Linear turned a request down, where PMX can say what to do about it. */
+export type LinearFailure = "key-rejected" | "rate-limited" | "forbidden";
+
+/** A request Linear refused for a reason PMX names: never carries the key, only what to do. */
+export class LinearError extends Error {
+  constructor(message: string, readonly failure: LinearFailure, readonly retryAt: Date | null = null, /** Linear's own reason, for a refused change. */ readonly detail: string | null = null) {
+    super(message);
+    this.name = "LinearError";
+  }
+}
+
+export interface LinearWatch {
+  /** Before a request: throws while PMX is waiting out a rate limit, or just saw the key rejected. */
+  before(): Promise<void>;
+  failed(e: LinearError): Promise<void>;
+  ok(o: { mutation: boolean }): Promise<void>;
+}
+
+/** How far before the last read a changes-only read asks from, so nothing falls between two reads or two clocks. */
+const OVERLAP_MS = 10 * 60000;
+
+/** What PMX says for each refusal. `pmx linear key` is the one place a key is pasted. */
+export const LINEAR_KEY_REJECTED = "Linear no longer accepts this Mac's API key: it was revoked, or it was never a key. Nothing reaches Linear until you paste a new one (pmx linear key) or go back to the Claude app's sync (pmx linear key --remove, then /pmx-schedule in the Claude app).";
+const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+export const linearSlowDown = (until: Date) => `Linear asked PMX to slow down (its rate limit). PMX asks again after ${hhmm(until)}; nothing is lost, it waits.`;
+export const linearForbidden = (teamKey: string, why: string) => `This Mac's Linear key isn't allowed to do that in team ${teamKey} (${why}). PMX needs a key with Read and Write on that team: create one in Linear (Settings → Account → Security & access) and paste it with pmx linear key.`;
+
+/** When a rate-limited answer says to ask again: its Retry-After or reset header, else in 15 minutes; never under a minute or over an hour. */
+export function retryTime(headers: { get(name: string): string | null } | undefined, now: Date): Date {
+  const after = Number(headers?.get?.("retry-after"));
+  const reset = Number(headers?.get?.("x-ratelimit-requests-reset") ?? headers?.get?.("x-ratelimit-complexity-reset"));
+  const at = Number.isFinite(after) && after > 0 ? now.getTime() + after * 1000 : Number.isFinite(reset) && reset > now.getTime() ? reset : now.getTime() + 15 * 60000;
+  return new Date(Math.min(Math.max(at, now.getTime() + 60000), now.getTime() + 3600000));
+}
+
+/**
+ * LINEAR-2 (0.41.0): a copy with the issues that changed since, as a read of the whole project would have them: a
+ * changed issue replaces its older self in place and a new one follows the rest. Canceled issues stay, as a read of
+ * the whole project returns them; `list` leaves them out.
+ */
+export function mergeIssues(base: any[], changed: any[]): any[] {
+  const fresh = new Map<string, any>(changed.map((n) => [String(n.id), n]));
+  const had = new Set(base.map((n) => String(n.id)));
+  return [...base.map((n) => fresh.get(String(n.id)) ?? n), ...changed.filter((n) => !had.has(String(n.id)))];
 }
 
 const ISSUE_FIELDS = `id identifier title description url priority createdAt
@@ -91,9 +154,23 @@ export function toMeeting(n: any): MeetingEntry {
   };
 }
 
-export function linearTracker(o: LinearOpts): Tracker {
+/** What the switch from the Claude app's sync needs beside the tracker: its queued changes applied as they were written. */
+export interface LinearDirect extends Tracker {
+  /** Sets (or with null removes) the label in one of PMX's label groups, by the group's own name, like pmx-theme. */
+  setGroupLabel(id: string, group: string, value: string | null): Promise<void>;
+  /** Adds a line to the end of the description, as written. */
+  appendLine(id: string, line: string): Promise<void>;
+  /** A processed-meeting marker with the title and description as written. */
+  lodgeAs(m: { title: string; description: string; agent: string }): Promise<MeetingEntry>;
+  /** Creates the labels among these ("group/name") that the team lacks, and returns the ones it created. */
+  ensureLabels(labels: string[]): Promise<string[]>;
+}
+
+export function linearTracker(o: LinearOpts): LinearDirect {
   const f = o.fetch ?? fetch;
-  const auth = o.token.startsWith("lin_api_") ? o.token : `Bearer ${o.token}`;
+  const clock = o.now ?? (() => new Date());
+  const personalKey = o.token.startsWith("lin_api_");
+  const auth = personalKey ? o.token : `Bearer ${o.token}`;
   let teamId: string | null = null;
   let labels: Label[] | null = null;
   // Looked up once per run (TASK-7, TASK-9): the team's workflow states, and the user this key acts as.
@@ -101,14 +178,32 @@ export function linearTracker(o: LinearOpts): Tracker {
   let me: string | null | undefined;
 
   async function gql<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    await o.watch?.before();
     const res = await f("https://api.linear.app/graphql", {
       method: "POST",
       headers: { authorization: auth, "content-type": "application/json" },
       body: JSON.stringify({ query, variables }),
     });
-    const body: any = await res.json();
-    if (body.errors?.length) throw new Error(`Linear: ${body.errors.map((e: any) => e.message).join("; ")}`);
-    if (!res.ok) throw new Error(`Linear: HTTP ${res.status}`);
+    const body: any = await res.json().catch(() => null);
+    const errors: any[] = Array.isArray(body?.errors) ? body.errors : [];
+    const codes = errors.map((e) => String(e?.extensions?.code ?? e?.extensions?.type ?? "").toUpperCase());
+    const said = errors.map((e: any) => e?.message).filter(Boolean).join("; ");
+    // LINEAR-2: the three answers PMX can say something useful about. Never the key itself, in any of them. What to do
+    // about a rejected or under-allowed key is said only for a personal API key; a sign-in or a hosted token keeps
+    // Linear's own words, as before.
+    const refused: LinearError | null = personalKey && (res.status === 401 || codes.some((c) => c.includes("AUTHENTICATION"))) ? new LinearError(LINEAR_KEY_REJECTED, "key-rejected")
+      : res.status === 429 || codes.some((c) => c.includes("RATELIMIT")) ? (() => { const at = retryTime(res.headers, clock()); return new LinearError(linearSlowDown(at), "rate-limited", at); })()
+      : personalKey && (res.status === 403 || codes.some((c) => c === "FORBIDDEN")) ? new LinearError(linearForbidden(o.teamKey, said || "forbidden"), "forbidden", null, (said || "forbidden").slice(0, 200))
+      : null;
+    const mutation = /^\s*mutation\b/.test(query);
+    if (refused) {
+      // A read Linear forbids is that read's own failure (another team's project); only a refused change is remembered.
+      if (refused.failure !== "forbidden" || mutation) await o.watch?.failed(refused).catch(() => {});
+      throw refused;
+    }
+    if (errors.length) throw new Error(`Linear: ${said}`);
+    if (!res.ok || !body) throw new Error(`Linear: HTTP ${res.status}`);
+    await o.watch?.ok({ mutation }).catch(() => {});
     return body.data as T;
   }
 
@@ -129,9 +224,10 @@ export function linearTracker(o: LinearOpts): Tracker {
   }
 
   /** Finds or creates the label `name` inside group `g` (and the group itself). */
-  async function label(g: Group, name: string): Promise<string> {
+  const label = (g: Group, name: string) => labelIn(GROUPS[g], name);
+
+  async function labelIn(groupName: string, name: string): Promise<string> {
     const all = await allLabels();
-    const groupName = GROUPS[g];
     const hit = all.find((l) => l.group === groupName && l.name === name);
     if (hit) return hit.id;
     const tid = await team();
@@ -151,20 +247,56 @@ export function linearTracker(o: LinearOpts): Tracker {
     return created.id;
   }
 
-  async function allIssues(): Promise<any[]> {
+  /** The project's issues, every page: all of them, or with `since` only those Linear changed after it. */
+  async function fetchIssues(since: string | null): Promise<any[]> {
     const out: any[] = [];
     let after: string | null = null;
     do {
-      const d: any = await gql(
-        `query($id: String!, $after: String) { project(id: $id) { issues(first: 100, after: $after) { nodes { ${ISSUE_FIELDS} } pageInfo { hasNextPage endCursor } } } }`,
-        { id: o.projectId, after },
-      );
+      const d: any = since
+        ? await gql(
+          `query($id: String!, $after: String, $since: DateTimeOrDuration!) { project(id: $id) { issues(first: 100, after: $after, filter: { updatedAt: { gt: $since } }) { nodes { ${ISSUE_FIELDS} } pageInfo { hasNextPage endCursor } } } }`,
+          { id: o.projectId, after, since },
+        )
+        : await gql(
+          `query($id: String!, $after: String) { project(id: $id) { issues(first: 100, after: $after) { nodes { ${ISSUE_FIELDS} } pageInfo { hasNextPage endCursor } } } }`,
+          { id: o.projectId, after },
+        );
       const page = d.project.issues;
       out.push(...page.nodes);
       after = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
     } while (after);
     return out;
   }
+
+  /**
+   * LINEAR-2 (0.41.0): with a copy on this Mac, only what Linear changed since the last read, less an overlap, merged
+   * into it; the whole project on a Mac's first read, at the first read of each day (so an issue deleted or moved out
+   * of the project leaves the copy within a day) and when the clock went back. Without a copy, the whole project.
+   */
+  async function allIssues(): Promise<any[]> {
+    if (!o.copy) return fetchIssues(null);
+    const now = clock();
+    const had = await o.copy.load().catch(() => null);
+    const fullAt = Date.parse(had?.fullAt ?? ""), through = Date.parse(had?.through ?? "");
+    let whole = !had || Number.isNaN(fullAt) || Number.isNaN(through) || fullAt > now.getTime() || through > now.getTime() || new Date(fullAt).toDateString() !== now.toDateString();
+    let issues: any[] | null = null;
+    if (!whole) {
+      try {
+        issues = mergeIssues(had!.issues, await fetchIssues(new Date(through - OVERLAP_MS).toISOString()));
+      } catch (e: any) {
+        // A refusal PMX names (the key, the rate limit) or an outage is the caller's to hear. Anything else Linear
+        // says about the changes-only question itself falls back to the whole project, which is what PMX read before.
+        if (e instanceof LinearError || !/^Linear: (?!HTTP \d)/.test(String(e?.message ?? ""))) throw e;
+        whole = true;
+      }
+    }
+    issues ??= await fetchIssues(null);
+    await o.copy.save({ issues, fullAt: whole ? now.toISOString() : had!.fullAt, through: now.toISOString() }).catch(() => {});
+    return issues;
+  }
+
+  /** PMX's own change, written into this Mac's copy at once, so its page shows it before the next read. */
+  const copied = async (node: any) => { if (node?.id && o.copy) await o.copy.patch([node]).catch(() => {}); };
 
   async function teamStates(): Promise<(WorkflowState & { id: string })[]> {
     if (states) return states;
@@ -216,7 +348,20 @@ export function linearTracker(o: LinearOpts): Tracker {
     await update(id, { labelIds: await labelsWith(issue, { [g]: value }) });
   }
 
-  const update = (id: string, i: Record<string, unknown>) => gql(`mutation($id: String!, $i: IssueUpdateInput!) { issueUpdate(id: $id, input: $i) { success } }`, { id, i });
+  const update = async (id: string, i: Record<string, unknown>) => {
+    const d = await gql(`mutation($id: String!, $i: IssueUpdateInput!) { issueUpdate(id: $id, input: $i) { success issue { ${ISSUE_FIELDS} } } }`, { id, i });
+    await copied(d?.issueUpdate?.issue);
+  };
+  const create = async (i: Record<string, unknown>) => {
+    const d = await gql(`mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { ${ISSUE_FIELDS} } } }`, { i });
+    await copied(d.issueCreate.issue);
+    return d.issueCreate.issue;
+  };
+
+  async function lodge(m: { title: string; description: string; agent: string }): Promise<MeetingEntry> {
+    const labelIds = [await label("kind", "meeting"), await label("status", "running"), await label("agent", m.agent)];
+    return toMeeting(await create({ teamId: await team(), projectId: o.projectId, title: m.title, description: m.description, labelIds }));
+  }
 
   return {
     kind: "linear",
@@ -238,10 +383,7 @@ export function linearTracker(o: LinearOpts): Tracker {
       const target = STATE_FOR[status]!;
       const stateId = pickState(await teamStates(), target)?.id;
       const labelIds = [await label("status", status), ...(stateId ? [await label("state", typeOf(target))] : []), await label("category", t.category), await label("size", t.size), ...(t.theme ? [await label("theme", t.theme)] : [])];
-      const d = await gql(`mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { ${ISSUE_FIELDS} } } }`, {
-        i: { teamId: await team(), projectId: o.projectId, title: t.title, description: t.description, labelIds, ...(stateId ? { stateId } : {}) },
-      });
-      return toTask(d.issueCreate.issue);
+      return toTask(await create({ teamId: await team(), projectId: o.projectId, title: t.title, description: t.description, labelIds, ...(stateId ? { stateId } : {}) }));
     },
     async setStatus(id, status) {
       const issue = await inProject(id);
@@ -284,23 +426,46 @@ export function linearTracker(o: LinearOpts): Tracker {
     },
     async setPriority(id, priority) {
       await inProject(id);
-      await gql(`mutation($id: String!, $i: IssueUpdateInput!) { issueUpdate(id: $id, input: $i) { success } }`, { id, i: { priority } });
+      await update(id, { priority });
     },
     async addNote(id, note) {
       const issue = await inProject(id);
       const description = `${issue.description ?? ""}\npmx:note ${note.replace(/\s+/g, " ").trim()}`;
-      await gql(`mutation($id: String!, $i: IssueUpdateInput!) { issueUpdate(id: $id, input: $i) { success } }`, { id, i: { description } });
+      await update(id, { description });
     },
     async listMeetings() {
       return (await allIssues()).filter((n) => kindOf(n) === "meeting").map(toMeeting);
     },
     async lodgeMeeting(m) {
       if (hasCanary(JSON.stringify(m))) throw new Error(CANARY_REFUSAL);
-      const labelIds = [await label("kind", "meeting"), await label("status", "running"), await label("agent", m.agent)];
-      const d = await gql(`mutation($i: IssueCreateInput!) { issueCreate(input: $i) { issue { ${ISSUE_FIELDS} } } }`, {
-        i: { teamId: await team(), projectId: o.projectId, title: meetingTitle(m), description: meetingDescription(m), labelIds },
-      });
-      return toMeeting(d.issueCreate.issue);
+      return lodge({ title: meetingTitle(m), description: meetingDescription(m), agent: m.agent });
+    },
+    async lodgeAs(m) {
+      if (hasCanary(JSON.stringify(m))) throw new Error(CANARY_REFUSAL);
+      return lodge(m);
+    },
+    async setGroupLabel(id, group, value) {
+      // Only PMX's own groups: a queued change never touches a team's other labels.
+      if (!Object.values(GROUPS).includes(group as (typeof GROUPS)[Group])) throw new Error(`Refusing to change the label group ${group}: it isn't one of PMX's.`);
+      const issue = await inProject(id);
+      const keep = issue.labels.nodes.filter((l: any) => l.parent?.name !== group).map((l: any) => l.id);
+      await update(id, { labelIds: [...keep, ...(value ? [await labelIn(group, value)] : [])] });
+    },
+    async appendLine(id, line) {
+      if (hasCanary(line)) throw new Error(CANARY_REFUSAL);
+      const issue = await inProject(id);
+      await update(id, { description: `${issue.description ?? ""}\n${line}` });
+    },
+    async ensureLabels(wanted) {
+      const all = await allLabels();
+      const made: string[] = [];
+      for (const w of wanted) {
+        const [group, name] = w.split("/") as [string, string];
+        if (!group || !name || all.some((l) => l.group === group && l.name === name)) continue;
+        await labelIn(group, name);
+        made.push(w);
+      }
+      return made;
     },
     async rewrite(id, r) {
       await inProject(id);

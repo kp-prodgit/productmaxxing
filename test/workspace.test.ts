@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it } from "vitest";
-import { withLock } from "../src/core/fsutil.js";
+import { readJson, withLock, writeJson } from "../src/core/fsutil.js";
 import { pipelineAct, type PipelineActions } from "../src/flow/pipeline-act.js";
 import { buildLogbook } from "../src/flow/pipeline.js";
 import { pipelineHandlers } from "../src/flow/pipeline-handlers.js";
@@ -27,6 +27,18 @@ describe("0.23.0: stores take a lock (BOARD-6)", () => {
     const old = new Date(Date.now() - 120000);
     await utimes(`${f}.lock`, old, old);
     expect(await withLock(f, async () => "ran")).toBe("ran");
+  });
+
+  it("two writes of one file at the same moment both finish, and the file is one of them whole", async () => {
+    // PMX's servers build a context per request, and each writes the same settings files (the board's preview of a
+    // do-not-read entry and its Save, sent together): neither may fail, and no file may be a mix of two.
+    const f = `${process.env.PMX_HOME}/same.json`;
+    const values = Array.from({ length: 8 }, (_, n) => ({ n, pad: "x".repeat(n * 4000) }));
+    for (let round = 0; round < 25; round++) {
+      await Promise.all(values.map((v) => writeJson(f, v)));
+      expect(values).toContainEqual(await readJson(f));
+    }
+    expect((await readdir(process.env.PMX_HOME!)).filter((x) => x.endsWith(".tmp"))).toEqual([]);
   });
 
   it("a to-do ticked while another write is under way isn't lost", async () => {

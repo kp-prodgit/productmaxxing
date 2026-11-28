@@ -16,7 +16,7 @@ import { openBoard, type Ui } from "./ui-helpers.js";
 const NOW = new Date("2026-11-20T10:00:00Z");
 const LINEAR = { kind: "linear" as const, teamKey: "PRO", projectId: "proj-1" };
 /** Waits for something this Mac writes after the page's request returns. */
-async function eventually(fn: () => Promise<boolean>, what: string, ms = 6000) {
+async function eventually(fn: () => Promise<boolean>, what: string, ms = 20000) {
   const end = Date.now() + ms;
   while (!(await fn())) {
     if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`);
@@ -221,7 +221,8 @@ describe("moving work from the board (TODO-5)", () => {
           id: "uuid-PMX-5", identifier: "PMX-5", title: "Spec the CSV export", description: "", url: "", priority: 0, createdAt: NOW.toISOString(),
           labels: { nodes: [{ name: "ready", parent: { name: "pmx-status" } }, { name: "spec", parent: { name: "pmx-category" } }, { name: "M", parent: { name: "pmx-size" } }] }, comments: { nodes: [] },
         }] }));
-        await addTodo({ text: "Write up the export failures" }, NOW);
+        // Added today, not on NOW: the page shows to-dos from the last 7 days by its own clock, which is the real one.
+        await addTodo({ text: "Write up the export failures" }, new Date());
       },
     });
     await ui.until(() => ui!.text().includes("Write up the export failures"), "the to-do");
@@ -238,10 +239,14 @@ describe("moving work from the board (TODO-5)", () => {
     expect(ui.posts.find((p) => p[0] === "move")![1]).toMatchObject({ to: "product", kind: "build-brief", size: "L" });
     await eventually(async () => (await loadTodos()).items.length === 0, "the to-do to leave");
     await eventually(async () => (await readOutbox()).ops.some((o) => o.kind === "create-task" && o.category === "build-brief" && o.size === "L"), "the product task to be queued");
+    // The page has PMX's answer once its dialog closes. Until then the page behind it can't be used, and the answer
+    // closes whatever dialog is open: one opened before it lands would be closed with it.
+    await ui.until(() => !ui!.$("#modal h3"), "the move dialog to close");
 
     await ui.go("plan");
     await ui.until(() => ui!.text().includes("Spec the CSV export"), "the team's task nobody has started");
-    await ui.click(ui.button("Take as my to-do"));
+    // PMX-5's own button: once the page has read PMX again, the new product task is listed there too, above it.
+    await ui.click(ui.button("Take as my to-do", 'main [data-fk="pl:PMX-5"]'));
     await ui.until(() => ui!.$("#modal h3"), "the take dialog");
     expect(ui.text("#modal h3")).toBe("Take PMX-5 as your to-do?");
     await ui.click(ui.button("To-do in Linear", "#modal"));

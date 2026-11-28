@@ -1,0 +1,33 @@
+{"family": "hiring", "text": "We have three candidates for the PM role.", "expect": "cut", "topic": "hiring", "why": "Candidates for a role."}
+{"family": "hiring", "text": "The recruiter sent two profiles yesterday.", "expect": "cut", "topic": "hiring", "why": "A recruiter."}
+{"family": "hiring", "text": "The offer letter went out on Friday.", "expect": "cut", "topic": "hiring", "why": "An offer letter."}
+{"family": "hiring", "text": "Reference checks came back clean.", "expect": "cut", "topic": "hiring", "why": "Reference checks."}
+{"family": "hiring", "text": "The interview debrief is at 4.", "expect": "cut", "topic": "hiring", "why": "An interview debrief."}
+{"family": "hiring", "text": "I'm not getting headcount this half.", "expect": "cut", "topic": "hiring", "why": "The company's own headcount.", "context": {"speaker": "inside"}}
+{"family": "hiring", "text": "We have a headcount freeze until March.", "expect": "kept", "topic": null, "why": "A customer's own headcount is news about their business.", "context": {"speaker": "outside"}}
+{"family": "hiring", "text": "We recruited 12 participants for the usability study.", "expect": "kept", "topic": null, "why": "Research recruiting."}
+{"family": "hiring", "text": "The release candidate goes to QA on Tuesday.", "expect": "kept", "topic": null, "why": "A release candidate is a build."}
+{"family": "hiring", "text": "The customer interview with Northwind is on Thursday.", "expect": "kept", "topic": null, "why": "A customer interview is research."}
+{"family": "hiring", "text": "Their design team has a headcount freeze.", "expect": "kept", "topic": null, "why": "Someone else's headcount."}
+{"family": "hiring", "text": "We're opening two reqs on the platform team.", "expect": "kept", "topic": null, "why": "Not a gap: the rule knows \"open reqs\", not \"opening two reqs\", and cutting more headcount talk cost product content before."}
+{"family": "hiring", "text": "I'm recruiting for the PM role.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "The recruiter sent two profiles.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "We recruited Lee from a competitor last spring.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "Recruiting users for the diary study starts Monday.", "expect": "kept", "topic": null, "why": "Research participants, a release candidate or someone else's headcount isn't the company's hiring."}
+{"family": "hiring", "text": "User research recruiting is slow this month.", "expect": "kept", "topic": null, "why": "Research participants, a release candidate or someone else's headcount isn't the company's hiring."}
+{"family": "hiring", "text": "We have three candidates for the role.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "Two candidates for the senior designer position dropped out.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "There are two candidates for the default template.", "expect": "kept", "topic": null, "why": "Research participants, a release candidate or someone else's headcount isn't the company's hiring."}
+{"family": "hiring", "text": "Candidate feedback is due Friday.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "The release candidate feedback came back clean.", "expect": "kept", "topic": null, "why": "Research participants, a release candidate or someone else's headcount isn't the company's hiring."}
+{"family": "hiring", "text": "I'm not getting headcount.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "Our headcount plan for next year is flat.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "We have two open reqs on the data team.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "They said we need more headcount.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "They won't give us headcount until the round closes.", "expect": "cut", "topic": "hiring", "why": "A role, a candidate or the company's own headcount is hiring."}
+{"family": "hiring", "text": "Their brand team has a headcount freeze until March.", "expect": "kept", "topic": null, "why": "Research participants, a release candidate or someone else's headcount isn't the company's hiring."}
+{"family": "hiring", "text": "The market is in a headcount freeze, so customers buy fewer seats.", "expect": "kept", "topic": null, "why": "Research participants, a release candidate or someone else's headcount isn't the company's hiring."}
+{"family": "hiring", "text": "Raj: Our hiring plan is frozen. The dashboard loads in four seconds on a good day and in twelve on a bad one. Admins want it under two. We are adding two open reqs next quarter. Caching would help most.", "expect": "Raj: [HELD] The dashboard loads in four seconds on a good day and in twelve on a bad one. Admins want it under two. [HELD] Caching would help most.", "topic": "hiring", "why": "Marks each cut in a turn, and keeps the speaker's name when the first sentence goes."}
+{"family": "hiring", "text": "Kim: The import fix shipped on Tuesday and works for every file type. Admins are happy with it. Bob Smith asked about headcount. The export is next.", "expect": "cut", "topic": "hiring", "why": "Cuts the whole turn when it also names someone on the do-not-read list, or its speaker label matches.", "context": {"never": ["Bob Smith"]}}
+{"family": "hiring", "text": "Ana: I'm not getting headcount.\n\nKim: Yeah, that's fair.", "expect": "Kim: Yeah, that's fair.", "topic": "hiring", "why": "Starts no follow-up after a cut about a plan rather than a person."}
+{"family": "hiring", "text": "The candidate in the interview asked about the roadmap.", "expect": "kept", "topic": null, "why": "The hiring rule knows \"candidates for the role\" and \"job interview\", not a candidate in an interview.", "known_gap": {"want": "cut", "why": "A candidate in an interview is hiring."}}

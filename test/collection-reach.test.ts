@@ -247,7 +247,7 @@ describe("without a synthesis Mac, no channel is read, and PMX says so (F7)", ()
     const root = await tmp();
     const repo = join(root, "pmx");
     const out = quietOut();
-    await runInit({ ask: answers(repo, root), keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude as any, out, now: () => NOW, cliPath: "/x/cli.js" });
+    await runInit({ askAll: true, ask: answers(repo, root), keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude as any, out, now: () => NOW, cliPath: "/x/cli.js" });
     expect((await loadTeamConfig(repo)).synthesizer).toBe("ana");
     expect(JSON.parse(await readFile(join(repo, "pmx.config.json"), "utf8")).synthesizer).toBe("ana");
     expect(out.lines.join("\n")).toMatch(/Synthesis Mac {2}this one \(ana\), as your team's first/);
@@ -256,7 +256,7 @@ describe("without a synthesis Mac, no channel is read, and PMX says so (F7)", ()
     const { repo: joined } = await pmxRepo({ synthesizer: "bo" });
     await freshHome();
     const again = quietOut();
-    await runInit({ ask: answers(joined, root), keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude as any, out: again, now: () => NOW, cliPath: "/x/cli.js" });
+    await runInit({ askAll: true, ask: answers(joined, root), keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude as any, out: again, now: () => NOW, cliPath: "/x/cli.js" });
     expect((await loadTeamConfig(joined)).synthesizer).toBe("bo");
     expect(again.lines.join("\n")).not.toMatch(/Synthesis Mac/);
   });

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Exec } from "./exec.js";
 import { paths } from "./paths.js";
 import { loadState, updateState } from "./state.js";
-import { compareVersions, currentVersion } from "./version.js";
+import { compareVersions, currentVersion, isPrerelease } from "./version.js";
 
 /**
  * What's new, per release (NEW-1). Every version PMX ships has an entry here; a test fails the build without
@@ -343,6 +343,15 @@ const newer = (a: string, b: string) => (compareVersions(a, b) ?? 0) > 0;
 /** Notes for versions after `after` up to and including `upTo`, newest first. `after` null means just `upTo`'s own. */
 export function notesBetween(after: string | null, upTo = currentVersion()): ReleaseNote[] {
   return RELEASE_NOTES.filter((n) => !newer(n.version, upTo) && (after ? newer(n.version, after) : n.version === upTo));
+}
+
+/**
+ * A test build (0.41.0-next.2) has no entry of its own above: the release it tests gets one when it ships. Until then
+ * its changes are the "Unreleased" notes of the CHANGELOG at that build's tag.
+ */
+export function testBuildNote(version = currentVersion()): string | null {
+  if (!isPrerelease(version)) return null;
+  return `pmx ${version} is a test build of ${version.replace(/-.*$/, "")}, not a release. What it changes is under "Unreleased" in https://github.com/kp-prodgit/productmaxxing/blob/v${version}/CHANGELOG.md; the release's own notes come with the release.`;
 }
 
 export function formatNotes(notes: ReleaseNote[]): string {

@@ -30,7 +30,7 @@ PMX turns a PM's customer meetings into small, sized, cited tasks. Agents draft 
 
 | Step | What happens | Where | Who |
 |---|---|---|---|
-| 1. Collect | A Claude app scheduled task saves new meeting transcripts from the PM's meeting app (Granola, Fireflies, Google Meet through Drive…) into `~/.pmx/transcripts`. A Mac's first collection reaches back 14 days (7 for the team's channels); later ones start where the last left off. On the team's **synthesis Mac** it also saves the meetings shared with the team, and the threads from the team's approved channels: no other Mac reads channels. Nothing leaves the Mac. | Claude app, weekdays 12:30 and 17:30 | automatic |
+| 1. Collect | A Claude app scheduled task saves new meeting transcripts from the PM's meeting app (Granola, Fireflies, Google Meet through Drive…) into `~/.pmx/transcripts`. A Mac's first collection reaches back 14 days (7 for the team's channels); later ones start where the last left off. On the team's **synthesis Mac** it also saves the meetings shared with the team, and the threads from the team's approved channels: no other Mac reads channels. Nothing leaves the Mac. | Claude app, every day at 12:30 and 17:30 | automatic |
 | 2. Suggest | On PMX's background run, every 30 minutes (reading meetings from a day before the last run, 14 days the first time; `pmx synthesize` by hand reads the same, or from `--since`), PMX applies the **privacy rules** (internal-only meetings, except the team's approved meeting series, one-on-ones, hiring, pay, fundraising, the team's investors and more are held back), then asks Claude, with no tools, to suggest sized tasks that cite the meetings the rules let through. | this Mac | automatic |
 | 3. **Approve** (privacy gate) | New tasks wait on the Mac until the PM decides each one: **Start now**, **Later** or **Drop**. **Nothing reaches Linear before that.** A task goes to Linear with a summary that may name the customer or partner company, the deal stage and deadlines, and its sources in words ("a customer call with Acme (Nov 20)") above the source IDs PMX reads back (`pmx:source T14`); never people's names, quotes, meeting titles or fundraising. See "What a task in Linear says". | PMX's page (Needs you) or `pmx proposals start` / `approve` / `drop` | the PM |
 | 4. Backlog | A task approved for later (Later, or Approve when Start now is off) lands in the team's **backlog** in Linear: Linear's Backlog status, label `pmx-status/inbox`. No agent touches the backlog. | Linear | |
@@ -49,13 +49,14 @@ Alongside the flow:
 
 | Part | Runs | Set up by | How to see it |
 |---|---|---|---|
-| **Background job** (launchd `com.productmaxxing.pmx`, `pmx tick`) | every 30 minutes **while the Mac is awake**. Each run updates the team repo, suggests tasks from calls, finds to-dos, starts an agent run on a Ready task, frees tasks an agent stopped working on, and saves the checklist. | `pmx init` (say yes) | `pmx status`; `~/.pmx/logs/tick.log` |
-| **Claude app scheduled tasks** | the Claude app starts them every day: meeting collection at 12:30 and 17:30, and on Linear teams the Linear sync every hour. Each run asks PMX first and stops at once outside the PM's working hours (weekdays, the sync 8:00–18:00, by default; `pmx schedule --hours always`, or the page's Schedule buttons, for every day). The hours are PMX's own setting from 0.36.0: changing them needs nothing in the Claude app. They run while the Claude app is open and the Mac is awake. | `/pmx-schedule` in the Claude app | Code tab → Scheduled; `pmx schedule` |
-| **Linear sync** ("the relay") | PMX writes to an outbox; the sync task applies it to Linear and copies the project back. PMX sees Linear only as of the last sync. `pmx linear outbox` lists what's waiting and what Linear refused (said once at the sync, and counted in `pmx status`); `pmx linear outbox drop <ID>` removes a change before it reaches Linear (dropping a task a to-do of yours became gives you the to-do back, as it was), and a task taken back with `pmx move` before the sync never reaches it (a to-do it came from comes back as it was, as with a drop). With `pmx linear key` (advanced), PMX writes to Linear directly instead. | `/pmx-schedule` | the checklist's Linear section |
-| **PMX's page** | the PM's workspace. It opens on **Needs you**: every decision waiting for them, in the order that unblocks the most (drafts to review first, since the agent waits for them), with who acts and how long each has waited. Then **Work** (the team's tasks by state, agents, the digest), **Health** (status, what's running now and its memory, setup, activity, the flow, Settings) and **My to-dos**. Each setup step PMX can do itself is a button there. It runs in Claude (`/pmx-flow`) or on this Mac (`pmx open`). From 0.36.0 the page in Claude updates itself after a PMX update; the page on this Mac stops by itself after 4 hours unused. | `pmx flow --install-skill`, then `/pmx-flow` | Health → Running |
-| **Team board** | the team's Linear project, read through each viewer's own Linear connector | `/pmx-board` | |
-| **PMX's server for the Claude app** (`pmx mcp`) | started by the Claude app, so PMX's page in Claude can reach this Mac | `pmx mcp --install` | the checklist's Claude app section |
-| **`/pmx-setup`** (this guide) | when the PM asks | `pmx init`, or `pmx checklist --install-skill` | |
+| **Background job** (launchd `com.productmaxxing.pmx`, `pmx tick`) | every 30 minutes **while the Mac is awake**. Each run updates the team repo, installs the team's PMX package when it's newer, suggests tasks from calls, finds to-dos, starts an agent run on a Ready task, frees tasks an agent stopped working on, and saves the checklist. A run with nothing new asks Claude nothing: channel threads are read again only when one changed, the daily company roll-up only when a team's tasks did, and the brain only when the board did or a new day began. A step skipped that way says so in the log ("skipped, nothing changed … so no model call"). | `pmx init` (its one yes) | `pmx status`; `~/.pmx/logs/tick.log` |
+| **Claude app scheduled tasks** | the Claude app starts them every day: meeting collection at 12:30 and 17:30, and, only on a Mac that reaches Linear through the Claude app (no Linear API key), the Linear sync every hour. Every run does its work, the default from 0.41.0. A PM can choose working hours only (`pmx schedule --hours weekdays`, or the page's Schedule buttons): then each run asks PMX first and stops at once outside them (weekdays, the sync 8:00 to 19:00 with its last run at 18:00). The hours are PMX's own setting from 0.36.0: changing them needs nothing in the Claude app. A Linear sync with nothing to carry asks Linear only what changed since the last one; the day's first sync, and any sync with changes for Linear's issues, brings back the whole project. They run while the Claude app is open and the Mac is awake. | `/pmx-setup` in the Claude app (one chat with the page and the board), or `/pmx-schedule` for the tasks alone | Code tab → Scheduled; `pmx schedule` |
+| **Linear, with the PM's own API key** (the default from 0.41.0) | PMX reads and writes the team's PMX project itself: a change is in Linear at once, and every background run asks Linear for what changed since the last (the whole project once a day). Working hours don't apply. The key is asked for once by `pmx init`, pasted by the PM in Terminal (`pmx linear key`), checked before it's saved, and kept in the keychain only. A key Linear rejects is said plainly everywhere, with `pmx linear key` (a new one) or `pmx linear key --remove` (back to the Claude app's sync); PMX never falls back by itself. | `pmx init`, or `pmx linear key` | `pmx linear status`; the checklist's Linear section |
+| **Linear sync through the Claude app** ("the relay", the fallback for a PM without a key) | PMX writes to an outbox; the sync task applies it to Linear and copies the project back. PMX sees Linear only as of the last sync. `pmx linear outbox` lists what's waiting and what Linear refused (said once at the sync, and counted in `pmx status`); `pmx linear outbox drop <ID>` removes a change before it reaches Linear (dropping a task a to-do of yours became gives you the to-do back, as it was), and a task taken back with `pmx move` before the sync never reaches it (a to-do it came from comes back as it was, as with a drop). `pmx linear key` moves the Mac to a key: everything in the outbox is sent straight to Linear, and the sync task is then safe to delete. | `/pmx-schedule` | the checklist's Linear section |
+| **PMX's page** | the PM's workspace. It opens on **Needs you**: every decision waiting for them, in the order that unblocks the most (drafts to review first, since the agent waits for them), with who acts and how long each has waited. Then **Work** (the team's tasks by state, agents, the digest), **Health** (status, what's running now and its memory, setup, activity, the flow, Settings) and **My to-dos**. Each setup step PMX can do itself is a button there. It runs in Claude (`/pmx-flow`) or on this Mac (`pmx open`). From 0.36.0 the page in Claude updates itself after a PMX update; the page on this Mac stops by itself after 4 hours unused. | `/pmx-setup`, or `/pmx-flow` for the page alone | Health → Running |
+| **Team board** | the team's Linear project, read through each viewer's own Linear connector | `/pmx-setup`, or `/pmx-board` for the board alone | |
+| **PMX's server for the Claude app** (`pmx mcp`) | started by the Claude app, so PMX's page in Claude can reach this Mac | `pmx init` (its one yes), or `pmx mcp --install` | the checklist's Claude app section |
+| **`/pmx-setup`** (this guide, and the Claude app's part of setup in one chat: `pmx setup --prompt`) | when the PM asks | the install, `pmx init`, or `pmx checklist --install-skill` | |
 
 **A sleeping Mac runs nothing.** The background job, the Claude tasks and the Linear sync all stop while the Mac sleeps. The checklist reports stretches with no run.
 
@@ -63,7 +64,7 @@ Alongside the flow:
 
 - `~/.pmx`: private to the PM (mode 0700). Settings (`config.json`), state, transcripts, new tasks waiting for the PM, to-dos, run receipts, logs, the checklist history (`checklist.json`). Never synced.
 - **The team repo** (`~/pmx` by default): `pmx.config.json` (team settings), `.claude/skills` (each kind of work's instructions), `memory/` (team memory agents read), `CLAUDE.md`, the team package `.pmx/cli/productmaxxing.tgz`, digests, and agents' pull requests. The branch `pmx/runlog` holds the hash-chained run log, `refs/pmx/evidence/<task>` the quotes approved tasks cite (below), and `refs/pmx/task-state/<task>` each task's last step (a draft in review, done, rejected, dropped or back in Ready, with when and which agent; no task text), so a Mac whose Linear sync is behind doesn't draft a task twice. It needs a git remote (GitHub) for teammates to share it.
-- **The macOS keychain**: tokens (GitHub, optional Linear key, Slack). PMX reads them without showing them.
+- **The macOS keychain**: tokens (GitHub, the PM's Linear API key, Slack). PMX reads them without showing them, and they are nowhere else: not in `~/.pmx`, the team repo, a log or an error.
 - `~/.claude`: PMX's commands for the Claude app (`/pmx-schedule`, `/pmx-setup`, `/pmx-flow`, `/pmx-board`), the scheduled tasks, and the always-allow rules for `pmx`.
 - **Linear**: one project. PMX keeps its own record of each task's status in a `pmx-status/*` label, and Linear's own status follows it (below).
 
@@ -211,20 +212,25 @@ Work on getting a release out (a security questionnaire due, partner paperwork, 
 - **The team package** in the repo: what teammates install with `pmx update`.
 - **The team minimum** `cli.min`: a Mac below it keeps its personal work but stops shared work until it updates.
 
-The team lead moves the team to a newer PMX version with `pmx update --latest`, then `pmx vendor --require`, with every file it names committed in a pull request. With `cli.autoUpdate` on, every Mac installs the team package within the hour.
+The team lead moves the team to a newer PMX version with one command, `pmx vendor --latest`. It downloads the newest release and checks it against the release's SHA256SUMS, puts it in the team's repo with the bridge for older Macs, raises `cli.min`, and sends it as a pull request: one commit on a branch of its own (`pmx/update-<version>`) that touches only `.pmx/cli/*` and `pmx.config.json`. It asks once before it pushes (`--yes` skips the question), never pushes to the default branch, refuses while those paths have uncommitted changes, works off the remote's default branch so the team lead's own checkout isn't touched, and never changes a git setting. With `gh` installed and signed in it opens the pull request; otherwise it prints the link to open it. It installs nothing on the team lead's Mac, which gets the version like every other Mac once the pull request merges. The older way still works: `pmx update --latest`, then `pmx vendor --require`, with every file it names committed in a pull request. Every Mac's background job then installs the team package within the hour of the merge, unless the team turned that off (`"cli": { "autoUpdate": false }`, set with `pmx vendor --require --no-auto-update`); unset means on. It installs only the package the team's repo carries, never one straight from npm or a release, so the team lead still decides the version. With no package in the repo there's nothing to install.
 
-**What an update does by itself** (on the first pmx command after it; the background job reloads itself only from a command someone runs):
+**What an update does by itself** (on the first background run after it, or the first pmx command, whichever comes first):
 - refreshes PMX's commands in the Claude app, and adds new ones such as `/pmx-setup`;
 - points the Claude app's PMX server at the new pmx;
-- refreshes the background job with today's Node and Claude Code paths.
+- refreshes the background job with today's Node and Claude Code paths. Usually they are where they were and the job needs nothing. When one moved, the job has to be reloaded, and a run can't reload its own job (launchd would stop the run before it could load the job again): so the run asks for the reload to happen once it has ended, nothing changes meanwhile, and the next run records it. The same happens when a command someone runs finds a run in progress;
+- republishes PMX's pages in Claude, for a page published once with a pmx that can: the workspace page from 0.36.0, and the team board from 0.41.0 where the Claude app has PMX's server. Each publishes PMX's newer page over itself the next time its owner opens it in the Claude app on this Mac.
 
-**What an update can't do**, because it needs Claude or the PM:
-- republish PMX's pages in Claude: from 0.36.0 the workspace page does it itself the next time it's opened, so only a page from before 0.36.0 (once), and the team board when an update changes its page, need it;
-- update the scheduled tasks;
-- restart the Claude app;
-- commit the team package.
+**One line says what's left.** The first background run on the new version works out what the update still needs from a person and says it once, in the job's log and in one notification: "Nothing to do." when nothing does, otherwise "Still to do by hand: …" with only those steps. `pmx migrate` (which `pmx update` runs) and `pmx checklist` say the same; a PM who updated by hand isn't notified again.
 
-`pmx update` prints these at the end (`pmx migrate`), and the checklist lists them under "Still to do after updating" until they're done.
+**What an update can't do**, because it needs Claude or a person:
+- republish a page published before it could update itself: a workspace page from before 0.36.0 needs `/pmx-flow` once, and a team board from before 0.41.0 (or published where the Claude app had no PMX server) needs `/pmx-board` once when an update changes its page. Only Claude can publish an artifact, and a page can't give itself the capability to republish;
+- open the team board: a board that updates itself does it when its owner opens it in the Claude app on their Mac, and until then teammates see the older page. The checklist asks the owner to open it, only when an update changed the board's page;
+- update the scheduled tasks, when their stored prompts change;
+- restart the Claude app, for a Mac that came from before 0.25.1;
+- install PMX Engine's newer version (see PMX Engine below);
+- merge the team's pull request.
+
+The checklist lists these under "Still to do after updating" until they're done.
 
 ### Money, safety, failures
 
@@ -232,7 +238,7 @@ The team lead moves the team to a newer PMX version with `pmx update --latest`, 
 - **Practice mode**: for the first 7 days after install, the agent only says which task it would take, without running it (`pmx pull --live` runs one now).
 - **Kill switch**: a `pmx.stop` file on the repo's main branch stops every agent; a local one stops just this Mac.
 - **Failures**: a task that fails twice in a row moves to Blocked with a comment saying why, so it stops holding up the queue. With team features, a kind of work whose last 3 runs, across 2 or more tasks, all failed is paused. So is one whose accept rate falls below 30%; a redo or reject of a draft whose run went wrong (it failed or was cut short, or a web run got no web) doesn't count toward it.
-- **The brain** (team features, optional): triages the backlog on one of the team's Macs. It's off unless `pmx.config.json` or the org's admin policy turns it on.
+- **The brain** (team features, optional): triages the backlog on one of the team's Macs. It's off unless `pmx.config.json` or the org's admin policy turns it on. It asks Claude only when the board or its limits changed since its last pass, and once at the start of each day.
 
 ### PMX Engine
 
@@ -244,6 +250,7 @@ PMX Engine (`pmxe`) is a separate tool. The head of product uses it to publish w
 - `pmx install --engine` installs it for anyone, on purpose: a team changing its product lead, say. Only suggest it when the user asks for PMX Engine.
 - In the checklist, the product lead without Engine has **Install PMX Engine** (`engine.installed`, todo); everyone else's says it's the product lead's tool (skip). With nobody named, it says the team hasn't named one: only the team names its product lead, so send that to the team lead, as a pull request or the page's setting.
 - `pmx update` updates PMX Engine too, where it's installed, with Engine's own updater (`pmxe update`). Engine doesn't update while a release is being sent; PMX says so in one sentence, and PMX's own update still counts.
+- The background run never installs PMX Engine. Unattended, PMX installs only the package the team's repo carries, which code owners reviewed; `pmxe update` installs whatever npm calls the latest, checked only against npm's own hash. So after PMX updates itself, its first run asks Engine's updater whether a newer Engine is out (`pmxe update --check`, which installs nothing) and, when one is, says so once in the log, the notification and the checklist (`engine.update`): "PMX Engine 0.x is out: run pmxe update". On a Mac without Engine nothing is asked or said.
 
 PMX reads only what `pmxe` prints as versioned JSON (its doctor checks, what's new, checklist and status), never its files, and PMX Engine's workspace denies every `pmx` command. Help with PMX Engine happens in its own workspace, with `pmxe guide`.
 
@@ -259,7 +266,7 @@ Rules for you:
 ## 2. Rules for you
 
 1. **A person must be at the keyboard.** If a scheduled task started this session, stop.
-2. **Auto mode off.** Before installing or changing anything, ask the user to switch auto mode off for this session (Shift+Tab, or the app's mode menu). In auto mode, installing a global npm package, writing the keychain, registering the background job and creating scheduled tasks can be denied without a reason.
+2. **Auto mode off, when it's on.** If this session is in auto mode, ask the user to switch it off for this session (Shift+Tab, or the app's mode menu) before you install or change anything: in auto mode, installing a global npm package, writing the keychain, registering the background job and creating scheduled tasks can be denied without a reason. If it isn't in auto mode, don't ask.
 3. **Commands only the user runs**, in their own Terminal, because they ask questions, open a browser or read tokens:
    - `pmx init`
    - `pmx claude login`
@@ -277,17 +284,23 @@ Rules for you:
    - `pmx flow --install-skill`
    - `pmx update`
    - creating scheduled tasks
+
+   Typing `/pmx-setup`, `/pmx-schedule`, `/pmx-flow` or `/pmx-board` is the user's yes to what that command does (creating or updating PMX's scheduled tasks, publishing PMX's pages), so don't ask again for those. It is never a yes to anything else on this list: `pmx schedule --allow` and `pmx mcp --install` still get their own question.
 5. **Team decisions belong to the team lead:**
+   - `pmx vendor --latest` (it pushes a branch to the team's repo and opens a pull request, after asking once)
    - `pmx update --latest`
    - `pmx vendor --require`
    - adding a git remote
    - editing `pmx.config.json`
 
    Say what they do and who should run them.
+
+   `pmx update --next` installs a test build (a version like `0.41.0-next.2`), for people testing PMX before a release. Never suggest or run it unless the user asks for a test build; `pmx update --latest` and `pmx vendor --latest` never install one.
 6. **Never run `pmx uninstall`.** It deletes `~/.pmx`: settings, to-dos, transcripts, drafts and receipts. Installing over an old version keeps all of them.
 7. **Don't move PMX's scheduled tasks to the cloud.** They run `pmx` on this Mac.
 8. **Never change Linear on the user's behalf.** No moving tasks, no comments, no labels. Tell them, or the teammate who decides, what to move.
-9. **Restarting the Claude app comes last.** Quitting it (⌘Q) ends this session if you're running inside it.
+9. **Restarting the Claude app comes last, and once.** Quitting it (⌘Q) ends this session if you're running inside it. Never ask for a restart in the middle of a chat, and never when `pmx setup --prompt` says none is needed.
+10. **Never save a question for the user that PMX already answers.** `pmx init` asks only what it can't work out and takes one yes for everything it changes; don't walk the user through answers it doesn't ask for. `pmx init --ask` is there for someone who wants to be asked everything.
 
 ---
 
@@ -308,18 +321,20 @@ engine = { format: 1, tool: "pmxe", version, at, where, next: { id, title } | nu
 - `engine`'s steps are PMX Engine's, not PMX's: they never change `where`, `next` or `counts`. See §1, PMX Engine.
 - Each run is recorded in `~/.pmx/checklist.json`, with the date each step was first done. The background job refreshes it on every run.
 
+**First, the Claude app's part, in one chat.** When the user typed `/pmx-setup`, or any of `claude.tasks`, `claude.page` and `claude.board` is open, run `pmx setup --prompt` and do what it prints: PMX's scheduled tasks, then PMX's page, then the team's board, each with that part's own steps (the ones `/pmx-schedule`, `/pmx-flow` and `/pmx-board` follow, so those three still work by themselves), without the parts this Mac already has. It ends with exactly what's left for the user: Run now and Always allow on each new or updated task, and quitting and reopening the Claude app once, last, only when PMX's server is new in the app's settings. Where `pmx init`'s one question never got its yes, the list starts with that instead: the user runs `pmx init` in Terminal and answers its one question (never you), and a part it marks "waits for pmx init" isn't yours to do until they have. `pmx setup` without `--prompt` says the same to a person in Terminal. Then go on with the loop for whatever else is open.
+
 **The loop:**
 
 1. Run `pmx checklist --json`.
 2. **Tell the user where they stand**, in a short paragraph:
    - `where`;
    - what's done, by section ("This Mac ✔, setup ✔, background job ✔ (last run 10:30)…");
-   - what's running and what's off ("Linear syncs hourly on weekdays; agents are in practice mode until Nov 27; the brain is off");
+   - what's running and what's off ("Linear syncs with every background run; agents are in practice mode until Nov 27; the brain is off");
    - what's missing, with the next step.
 
    Use the PM's words, not step IDs.
 3. **Do or hand over `next`**, by its `who` and `how`:
-   - `who: claude`, `how: claude`: you do it, such as `/pmx-schedule`, `/pmx-flow` or `/pmx-board`. If this session can't use the needed tool (scheduled tasks, artifacts), ask the user to type the command in a new Code-tab session in the Claude app with auto mode off.
+   - `who: claude`, `how: claude`: you do it. For the tasks, the page and the board that's `pmx setup --prompt`, above (each also has its own command: `/pmx-schedule`, `/pmx-flow`, `/pmx-board`). If this session can't use the needed tool (scheduled tasks, artifacts), ask the user to type the command in a new Code-tab session in the Claude app with auto mode off.
    - `who: you`, `how: terminal`: ask the user to run the exact `do` command. If it's on your list in rule 4 and they agree, run it yourself. When the step's `fix.kind` is `pmx`, PMX can do it itself: offer `pmx checklist --fix <step id>` (it asks before changing the background job or the Claude app's settings), or point them to the button on PMX's page.
    - `how: app`: give the exact clicks in `do`, such as Code tab → Scheduled → the task → its last run → Always allow.
    - `who: teammate` or `team-lead`: tell the user who does it and what to send them.
@@ -345,29 +360,31 @@ Don't skip ahead. Don't call something done that the checklist doesn't show as d
 | `os.macos` | macOS | n/a | Person | PMX is macOS-only for now. |
 | `mac.node` | Node 22.12+ or 24+ | `brew install node`, reinstall pmx, `pmx init` | Claude (`/pmx-setup`) | Under nvm, removing that Node version breaks the background job. |
 | `claude.installed` | Claude Code is installed | https://code.claude.com | Person, with the link | |
-| `mac.pmx` | at the team's version | `pmx update`; the team lead uses `pmx update --latest` + `pmx vendor --require` | PMX ⌘ "Update PMX" (below the minimum); Person (the team lead's newer version) | |
+| `mac.pmx` | at the team's version | nothing when updates arrive by themselves (within the hour), or `pmx update` to do it now; the team lead uses `pmx vendor --latest` | PMX ⌘ "Update PMX" (below the minimum); Person (the team lead's newer version) | |
 | `profile.signed-in` | PMX's own Claude profile is signed in | the user runs `pmx claude login` | Person (`/pmx-setup` shows how) | Without it, every agent run fails with "Not logged in". |
-| `setup.config` | PMX is set up | the user runs `pmx init` | Claude (`/pmx-setup`) | It shows a summary and saves nothing until they confirm. |
+| `setup.config` | PMX is set up | the user runs `pmx init` (the install runs it by itself in Terminal) | Claude (`/pmx-setup`) | It asks only what it can't work out (about 2 questions joining a team, 5 starting one), shows a summary with everything it will change, and saves nothing until they say yes. `pmx init --ask` asks everything. |
 | `config.team` | team settings readable | fix `pmx.config.json`, or `pmx init` | Claude (`/pmx-setup`) | |
 | `setup.remote` | the team repo has a remote | team lead: an empty private GitHub repo, then `git remote add origin <url> && git push -u origin main` | Person (team lead), with a link | Without a remote: no teammates, team changes become local branches, and digests and the run log stay on this Mac. |
-| `setup.package` | the team package matches this pmx | team lead: `pmx vendor --require`, committed | PMX ⌘ "Update PMX" (package newer); Person (team lead) | Teammates who run `pmx update` get the package's version. |
+| `setup.package` | the team package matches this pmx | team lead: `pmx vendor --require`, committed | PMX ⌘ "Update PMX" (package newer); Person (team lead) | Teammates' Macs install the package's version by themselves, unless the team turned automatic updates off; then teammates who run `pmx update` get it. |
 | `setup.privacy` | company domains set; test meetings held | `pmx init` adds domains | Page (Who counts as a customer) | |
 | `setup.names` | a customer name list, optional | the PM saves their customers' contacts in a text file, one full name per line (an export from their CRM works), and sets `"crmNamesFile"` to its full path in `~/.pmx/config.json`. With their OK you may write that line; never copy the names anywhere else | Claude (`/pmx-setup`) | A suggestion, never required: PMX swaps the people it finds in a task's sources itself, and the list also catches a contact it can't tell from an ordinary word. Doctor's check is `privacy.crm-names`, a warning only. |
 | `setup.memory` | `memory/product.md` describes the product | fill it in and commit; you can help draft it | Claude (`/pmx-setup`) | Agents draft without context otherwise. |
 | `setup.confidential` | the team lists its investors' and other confidential contacts' domains | team lead: `pmx domains confidential add <domain>`, a pull request a teammate approves | Claude (`/pmx-setup`) | Optional, a warning only. Fundraising meetings are held by title and content anyway; this also holds an investor's call about anything else. |
 | `setup.home.private` | PMX's folders are private | `chmod 700` them | PMX "Make them private" | |
-| `job.installed` | the background job is registered | `pmx init` (say yes), or the button on PMX's page | PMX ⌘ "Turn on automatic runs" | Before 0.36.0 this step had its doctor check's ID, `schedule.launchd`. |
+| `job.installed` | the background job is registered | `pmx init` (its one yes), or the button on PMX's page | PMX ⌘ "Turn on automatic runs" | Before 0.36.0 this step had its doctor check's ID, `schedule.launchd`. |
 | `job.paths` | the job finds Node and Claude Code | `pmx checklist --fix` | PMX ⌘ "Refresh the background job" | It breaks when Node or Claude Code move. |
 | `job.passes` | PMX's background runs are happening | keep the Mac awake during work hours | PMX "Run now" (no run yet); Claude (failing runs); Person (keep it awake) | A warning shows the stretch with no run. |
-| `cli.auto-update` | updates arrive | `pmx update` | PMX ⌘ "Update PMX" | |
-| `claude.setup` | `/pmx-setup` is in the Claude app | `pmx checklist --install-skill`, then reopen the app | PMX "Add /pmx-setup" | |
-| `claude.allow` | scheduled tasks may run `pmx` without asking | `pmx schedule --allow` | PMX ⌘ "Let PMX's tasks run" | |
-| `claude.tasks` | the scheduled tasks exist, are current and ran | `/pmx-schedule`. Then, in the Claude app, open each new task, click Run now, open the run and choose **Always allow** for its connector. | Claude (`/pmx-schedule`); Person (Always allow) | A run waiting on an approval blocks that task's later runs. After the update to 0.36.0, one more `/pmx-schedule`; never again for an hours change. |
-| `claude.mcp` | the Claude app reaches this pmx | `pmx mcp --install`, then quit (⌘Q) and reopen the app | PMX "Repair the connection" (⌘ when the app has no entry yet); Person (restart the app) | |
-| `claude.page` | PMX's page in Claude is current | `/pmx-flow` (first time: `pmx flow --install-skill`) | Claude (`/pmx-flow`); PMX "Add /pmx-flow" when it's missing | From 0.36.0 the page updates itself after a PMX update; a page from before needs `/pmx-flow` once more. |
-| `claude.board` | the team board is current | `/pmx-board` | Claude (`/pmx-board`); PMX "Add /pmx-board" when it's missing | Linear teams only. Needed again only when an update changes the board's page. |
-| `linear.connected` | PMX reaches Linear | `/pmx-schedule` creates the sync | Claude (`/pmx-schedule`); before this Mac's first sync, "Open Running" | It says how old PMX's copy of Linear is. Until this Mac's first sync (at the top of the hour) it waits rather than fails: each Mac needs its own sync before it sees the team's tasks. |
-| `linear.hours` | Linear syncs every day | the page's Schedule buttons, or `pmx schedule --hours always` | PMX "Sync whenever PMX runs"; Claude (`/pmx-schedule`, once, for a task from before 0.36.0) | The hours are PMX's own setting from 0.36.0. |
+| `cli.auto-update` | updates arrive | `pmx update` | PMX ⌘ "Update PMX" | On unless the team set `"cli": { "autoUpdate": false }`. Skipped when the team turned it off or its repo carries no PMX package. |
+| `claude.setup` | `/pmx-setup` is in the Claude app | `pmx checklist --install-skill`, then reopen the app | PMX "Add /pmx-setup" | Required, and the Claude app's only step, when PMX has put nothing in the Claude app at all: `pmx init`'s one question got no yes (nobody could answer, or the user said no). The user runs `pmx init` and answers it. |
+| `claude.allow` | scheduled tasks may run `pmx` without asking | `pmx init` (its one yes), or `pmx schedule --allow` | PMX ⌘ "Let PMX's tasks run" | |
+| `claude.mcp` | the Claude app reaches this pmx | `pmx init` (its one yes) or `pmx mcp --install`, then quit (⌘Q) and reopen the app, once | PMX "Repair the connection" (⌘ when the app has no entry yet); Person (restart the app) | |
+| `claude.tasks` | the scheduled tasks exist, are current and ran | `/pmx-setup` on a first setup (one chat with the page and the board), `/pmx-schedule` after an update. Then, in the Claude app, open each new task, click Run now, open the run and choose **Always allow** for its connector. | Claude (`/pmx-schedule`); Person (Always allow) | A run waiting on an approval blocks that task's later runs. After the update to 0.36.0, one more `/pmx-schedule`; never again for an hours change. |
+| `claude.page` | PMX's page in Claude is current | `/pmx-setup` the first time, `/pmx-flow` for the page alone (`pmx flow --install-skill` if the command is missing) | Claude (`/pmx-flow`); PMX "Add /pmx-flow" when it's missing | From 0.36.0 the page updates itself after a PMX update; a page from before needs `/pmx-flow` once more. |
+| `claude.board` | the team board is current | `/pmx-setup` the first time, `/pmx-board` for the board alone | Claude (`/pmx-board`); PMX "Add /pmx-board" when it's missing | Linear teams only. A board published with 0.41.0 or later updates itself when its owner opens it; then the step asks only that (Person). An older one needs `/pmx-board` once more when an update changes its page. |
+| `linear.connected` | PMX reaches Linear | with a key: nothing, unless Linear rejected it, then the user runs `pmx linear key` in Terminal (or `pmx linear key --remove`). Without a key: `/pmx-schedule` creates the sync | Person (the key, in Terminal); Claude (`/pmx-schedule`); before a Mac's first sync through the app, "Open Running" | With a key it says when PMX last read Linear. "Linear no longer accepts this Mac's API key" is a required todo: only the user can paste a new one, into PMX's own prompt. Never ask for the key in chat. Without a key it says how old PMX's copy is, and until this Mac's first sync (at the top of the hour) it waits rather than fails. |
+| `linear.hours` | when Linear syncs | with a key: nothing, it syncs with every background run and working hours don't apply. Without one: nothing, every day is the default from 0.41.0 | Claude (`/pmx-schedule`, once, for a sync task from before 0.36.0) | With a key, a "PMX: sync Linear through Claude" task still in the Claude app is named here as safe to delete: it's not a problem, and if it runs it does nothing. Without a key, a PM who chose working hours only sees that stated here as their choice, done, with where to change it back. |
+| `linear.key` | PMX syncs Linear itself, with the PM's own key | optional: the user runs `pmx linear key` in Terminal; Return there keeps the Claude app's sync and the step goes away | Person (Terminal) | Shown only on a Mac that goes through the Claude app and whose PM was never asked. Say it once; don't press. |
+| `linear.rollup` | the company roll-up reads the other teams' projects | the user creates a key with Read on the teams it names and pastes it with `pmx linear key` | Person (Terminal) | Only on the Mac that runs the roll-up (the head of product's). It names the teams the last roll-up couldn't read. |
 | `work.meetings` | meetings arrive | `/pmx-schedule` (the collection task) | Claude (`/pmx-schedule`) | The first collection reaches back 14 days. |
 | `work.channels` | a Mac reads the team's approved channels | choose a synthesis Mac on PMX's page: Settings → Sources → Who reads them ("Use this Mac"); it goes to the team for review | Page (Sources) | A todo only when the team approved channels and chose no synthesis Mac: "No Mac reads your team's channels: choose a synthesis Mac". `pmx init` makes a new team repo's first Mac its synthesis Mac. Never change `synthesizer` in `pmx.config.json` for them: it's a team setting. |
 | `work.approve` | new tasks wait for the PM | Start now, Later or Drop each in the page's Needs you, or `pmx proposals start` / `approve` / `drop` | Page (Needs you) | |
@@ -378,37 +395,44 @@ Don't skip ahead. Don't call something done that the checklist doesn't show as d
 | `work.brain` | automatic triage | off unless the team turns it on | Claude (`/pmx-setup`) or Page | |
 | `engine.installed` | PMX Engine, the product lead's tool | Without Engine: for the team's product lead (`productLead`), a todo, **Install PMX Engine**: `pmx install --engine`, or the button. For anyone else, a skip: "PMX Engine is your product lead's tool." With nobody named: a skip, "Your team hasn't named its product lead." With Engine: done (its version), or "installed at … but didn't start": run `pmxe --version` in Terminal to see why; reinstalling PMX Engine usually fixes it | PMX ⌘ "Install PMX Engine" (the product lead only); Person (Engine didn't start) | Never suggest Engine to someone who isn't the product lead unless they ask. PMX installs it where PMX is installed. PMX runs Engine with its own Node, so a Node only a login shell knows doesn't matter. Engine's own steps are in `engine`, after PMX's: on the page, one done in the studio has "Open in the studio", one Claude does its slash command, a terminal one `/pmxe-setup` in Engine's workspace. |
 | `engine.link` | PMX links to the PMs' page in PMX Engine | team lead: `"roadmap": { "url": "<the PMs' page link>" }` in `pmx.config.json`, in a pull request | Person (team lead) | Open only where Engine is installed and the link is missing. |
-| `update.*` | what the last update did and still needs | `pmx checklist --fix` for the automatic ones; the rest as listed | PMX "Do it now" (⌘ for the background job) | |
+| `engine.update` | PMX Engine is at its newest version | `pmxe update` | Claude (`/pmxe-setup`) | Only on a Mac with PMX Engine, and only when a newer Engine is out: PMX asks Engine's updater after its own background update, and never installs Engine by itself. |
+| `update.*` | what the last update did and still needs | nothing: PMX finishes an open one at its next background run (`pmx checklist --fix` does it now) | PMX "Do it now" (⌘ for the background job) | An open one isn't a step for a person, unless the background job was asked to reload itself 3 times and never did. |
 
 ---
 
 ## 5. Installing, updating, troubleshooting
 
 ### A new install
-The order:
+Four steps, about five questions (INSTALL.md has them for the user):
 
-1. **Install:** `npx --yes productmaxxing@latest install` (INSTALL.md step 2). It checks the Mac, installs PMX where npm can write without `sudo` (npm's own folder, else `~/.local`), and makes sure a new Terminal window finds `pmx`: from your session it has no terminal to ask in, so when PATH needs a line it prints it and exits 3; ask the user, and on yes run it again with `--yes`. Exit 0 means installed and found. It's safe to run again: on a set-up Mac it changes nothing and says so.
-2. The user runs `pmx init` in Terminal. Tell them beforehand what it asks:
-   - the team repo (accept `~/pmx`, or give the team's clone);
-   - for a new team, the Linear team and project;
-   - their handle, kinds of work, daily cap, company email domains, transcript folders and do-not-read lists.
+1. **One command in Terminal, by the user:** `npx --yes productmaxxing@latest install` (with `--repo <their team's repo URL>` when they have it). It checks the Mac, installs PMX where npm can write without `sudo` (npm's own folder, else `~/.local`), makes sure a new Terminal window finds `pmx`, and in a terminal goes straight on to `pmx init`. It's safe to run again: on a set-up Mac it changes nothing and says so. From your session it has no terminal, so it installs only: when PATH needs a line it prints it and exits 3 (ask the user, and on yes run it again with `--yes`), and it never starts setup. Exit 0 means installed and found.
+2. **The user answers `pmx init`'s few questions.** It asks only what it can't work out:
+   - joining a team: where the team's repo is (its git URL, which PMX clones into `~/pmx`, or the folder they cloned it to), then one yes, and on a Linear team their Linear API key: 3 questions at most, 2 with `--repo` or when PMX finds the clone;
+   - starting a team: Return for a new repo in `~/pmx`, the team's name, its Linear team and project, then one yes and their Linear API key: 6 questions;
+   - only when PMX can't tell: their company's email domain, and a GitHub token (the repo is on GitHub and `gh` isn't signed in).
 
-   Tell them to say yes to the background job, to `/pmx-schedule` and `/pmx-setup`, and to the always-allow rules, and to sign in when the browser opens.
-3. Then work through the checklist (§3).
-4. **The product lead only:** where the team names this user its product lead, the install asked about PMX Engine (or the checklist's Install PMX Engine step does). Engine's own setup is then in its own workspace: `pmxe guide`, `pmxe checklist`, or `/pmxe-setup`.
+   **The Linear API key** (from 0.41.0 the default way PMX reaches Linear). Before it asks, `pmx init` says where to create it (Linear → Settings → Account → Security & access → Personal API keys → New API key) and what to choose: permissions Read and Write (never Admin; "Create issues" and "Create comments" alone aren't enough), team access only the team that holds the PMX project, plus Read on the roll-up's teams on the Mac that runs the company roll-up. The user pastes it into PMX's own prompt, which doesn't show it; PMX checks it with one read, says what it found, and keeps it in the keychain only. A key that can't see the project, or can't write, is refused with what's missing and nothing is saved. Return means "use the Claude app instead": PMX remembers that and doesn't ask again, and `/pmx-setup` then creates the hourly Linear sync task too. `pmx linear key` changes it later, either way. **Never ask for, read or repeat the key in chat.**
+
+   Everything else it works out and shows in its summary (handle, Claude plan, kinds of work, cap, folders, an empty do-not-read list); `pmx init --ask` asks about each. **The one yes** covers what it changes outside `~/.pmx`, listed together with what each changes and where: the background job, PMX's commands in the Claude app, the always-allow rules and PMX's server in the desktop app's settings. `yes` does all, `pick` asks about each, `no` saves nothing. Then the browser opens once to sign in PMX's own Claude profile. A default is never a yes: run with no terminal and no `--yes` (from your session, say), `pmx init` makes none of those changes and opens no browser, which is one more reason the user runs it themselves.
+3. **The user quits and reopens the Claude app once and types `/pmx-setup`.** You then run `pmx setup --prompt` and do the Claude app's part in that one chat (§3).
+4. **The user clicks Run now and chooses Always allow** on each PMX task, as the end of that chat tells them.
+5. **The product lead only:** where the team names this user its product lead, the install asked about PMX Engine (or the checklist's Install PMX Engine step does). Engine's own setup is then in its own workspace: `pmxe guide`, `pmxe checklist`, or `/pmxe-setup`.
+
+Whatever is missing after that (Node, Claude Code, a step the user left off the list) is in the checklist, with its fix: work through it (§3).
 
 ### An update
-1. `pmx update` (or `pmx update --latest` for the team lead). It installs the new version and runs `pmx migrate`, which says what it did and what's left. Where PMX Engine is installed, it then runs Engine's own update, and says in one sentence how that went; a refusal while a release is being sent doesn't undo PMX's update. `pmx update --check` only compares.
+1. Usually nothing: the background job installs the team's version within the hour of the merge, and its next run says what's new and what's left, or "Nothing to do." To do it now: `pmx update`. It installs the new version and runs `pmx migrate`, which says what it did and what's left. (The team lead sends the team a new version with `pmx vendor --latest`.) Where PMX Engine is installed, it then runs Engine's own update, and says in one sentence how that went; a refusal while a release is being sent doesn't undo PMX's update. `pmx update --check` only compares.
 2. Work through the checklist. Its "Still to do after updating" list holds each remaining step for the version this Mac came from:
    - From **0.14.0 or older** (Product Git): the first command moves keychain items and the job to the new names.
    - From **before 0.25.1**: quit and reopen the Claude app once, so it starts PMX's new server.
    - From **before 0.35.0**:
      - `/pmx-schedule` (scheduled task descriptions changed);
      - `/pmx-flow` (new page);
-     - on weekday-only Linear syncs, consider `pmx schedule --hours always`.
+     - on weekday-only Linear syncs, consider `pmx schedule --hours always` (the default from 0.41.0).
    - From **before 0.36.0**:
      - `/pmx-schedule` once more (the tasks now run every day and ask PMX whether it's inside the PM's hours; changing the hours never needs it again);
      - `/pmx-flow` once more (the page gets the `artifact` capability, and from then on updates itself the next time it's opened after a PMX update).
+   - From **before 0.41.0**: nothing for the user to do. PMX's Claude tasks now work around the clock by default: a Mac that never chose its hours moves to that by itself and says so once (`pmx schedule --hours weekdays` goes back); a Mac where the PM chose working hours keeps them. The Linear sync's cheaper runs come with the update, with no `/pmx-schedule`: the task in the Claude app only asks `pmx` for its instructions.
    - **Any update**: republish PMX's pages if the checklist says they're older (from 0.36.0 the workspace page does it itself; the team board only when its page changed).
 3. `pmx whats-new --since <old version>` tells the user what changed. Summarize it in a few lines.
 
@@ -420,12 +444,16 @@ Check the checklist in this order:
 3. `work.approve`: new tasks wait for the PM.
 4. `work.ready`: nothing is Ready. With Start now on, the PM starts new tasks from Needs you; otherwise a teammate moves tasks there.
 5. `work.kinds`: the Ready tasks are of a kind this PM's agent doesn't take yet (`pmx pull --dry-run` says "you don't accept <kind>"). `pmx jobs` shows which kinds it takes; `pmx categories add <kind>` turns one on.
-6. `linear.connected`: PMX's copy of Linear is old.
+6. `linear.connected`: Linear no longer accepts this Mac's API key (the user pastes a new one with `pmx linear key`, or goes back to the Claude app's sync with `pmx linear key --remove`), or, on a Mac without a key, PMX's copy of Linear is old.
 7. `work.agents`: tasks are Blocked, or the budget is spent.
 
 ### Other common ones
 - **"Not logged in" in runs**: `pmx claude login`.
 - **A scheduled task never finishes**: its run waits for an approval. Open the run in the Claude app and choose Always allow.
+- **"Linear no longer accepts this Mac's API key"** (the run log, a notification, `pmx status`, `pmx doctor`, the checklist, PMX's page): the key was revoked in Linear or its access changed. Nothing reaches Linear until the user runs `pmx linear key` and pastes a new one, or `pmx linear key --remove` and then `/pmx-schedule` to go back to the Claude app's sync. PMX never falls back by itself, and nothing is lost meanwhile.
+- **"Linear asked PMX to slow down"**: Linear's rate limit. PMX waits until the time Linear gave and asks again; nothing to do.
+- **A "PMX: sync Linear through Claude" task on a Mac that has a key**: left from before the key. It's safe to delete (Code tab → Scheduled), and if it still runs it does nothing. Don't recreate it and don't call it a problem.
+- **The user's workspace doesn't let members create API keys** (an admin setting in Linear: Settings → Administration → API): they press Return at the key question, and PMX goes through the Claude app's Linear connector, once an hour.
 - **Team settings "sent for approval" but nothing changes**: the repo has no remote, so apply the local branch on PMX's page, or add a remote.
 - **Drafts fail their checklist**: read the failure comment on the task in Linear. What the agent wrote is on `pmx/failed/<task>` on the Mac that ran it. Once the task is fixed, Try again in Needs you (or `pmx review --retry <id>`).
 - **`pmx review` says "No terminal here"**: it was run from a script or a pipe, where it can't ask. Decide by task id instead: `pmx review --accept PMX-12`, `--redo PMX-12 --note "…"` or `--reject PMX-12 --note "…"`.

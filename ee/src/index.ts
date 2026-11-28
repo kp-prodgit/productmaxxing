@@ -18,6 +18,8 @@ import { applyPolicy, BRAIN_ACTIONS, BRAIN_OFF, getPolicy, type BrainPolicy, typ
 import { brainPass, formatBrain, listBrainReceipts, queueSize, readBrainReceipt, reviewQueue } from "./brain/brain.js";
 import { services } from "../../src/core/services.js";
 import { loadState } from "../../src/core/state.js";
+import { gateTime } from "../../src/core/gates.js";
+import type { TickStep } from "../../src/commands/tick.js";
 import { machineId } from "../../src/commands/init.js";
 
 const cloudFor = (team: TeamConfig, keychain: Keychain, f: typeof fetch = fetch) =>
@@ -95,6 +97,21 @@ const isBrainMachine = (ctx: Ctx, b: BrainPolicy) => {
   return m === ctx.agent || m === ctx.personal.handle;
 };
 
+/**
+ * The brain's step of the background run: every `everyHours` on the brain's Mac. BRAIN-4: when the board, the limits
+ * and the day are the same as at its last pass, it makes no model call and the log says so.
+ */
+export const brainTickStep: TickStep = async (ctx) => {
+  const access = await brainAccess(ctx).catch(() => null);
+  if (!access || access.brain.level === "off" || !isBrainMachine(ctx, access.brain)) return null;
+  const s = await loadState();
+  if (s.lastBrainAt && ctx.now().getTime() - Date.parse(s.lastBrainAt) < access.brain.everyHours * 3600000) return null;
+  const r = await brainPass(ctx, await services(ctx), { policy: access.brain, policyVersion: access.policy.version, skipUnchanged: true });
+  if (r.unchanged) return `brain (${r.level}): skipped, nothing changed: the board and the limits are as they were at the last pass (${gateTime(r.unchanged)}), so no model call`;
+  const n = (m: string) => r.decisions.filter((d) => d.mode === m && !d.error).length;
+  return `brain (${r.level}): ${n("executed")} done, ${n("queued")} waiting for approval, ${n("recommended")} suggested`;
+};
+
 /** Team features (source-visible, commercial). Registered once at CLI start-up. */
 export function registerEe(): Command[] {
   registerServices({ paused: autoPaused, tracker: brokeredTracker, lease: cloudLeaseFor, project: brokeredProject });
@@ -107,18 +124,7 @@ export function registerEe(): Command[] {
   });
 
   // The brain runs before pull, so tasks it makes ready can be pulled in the same pass.
-  tickSteps.splice(Math.max(0, tickSteps.findIndex(([n]) => n === "pull")), 0, [
-    "brain",
-    async (ctx) => {
-      const access = await brainAccess(ctx).catch(() => null);
-      if (!access || access.brain.level === "off" || !isBrainMachine(ctx, access.brain)) return null;
-      const s = await loadState();
-      if (s.lastBrainAt && ctx.now().getTime() - Date.parse(s.lastBrainAt) < access.brain.everyHours * 3600000) return null;
-      const r = await brainPass(ctx, await services(ctx), { policy: access.brain, policyVersion: access.policy.version });
-      const n = (m: string) => r.decisions.filter((d) => d.mode === m && !d.error).length;
-      return `brain (${r.level}): ${n("executed")} done, ${n("queued")} waiting for approval, ${n("recommended")} suggested`;
-    },
-  ]);
+  tickSteps.splice(Math.max(0, tickSteps.findIndex(([n]) => n === "pull")), 0, ["brain", brainTickStep]);
 
   setAfterLogin(async (ctx) => {
     if (!ctx.team.controlPlane) return;

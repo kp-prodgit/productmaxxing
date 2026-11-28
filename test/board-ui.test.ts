@@ -18,6 +18,8 @@ async function save(u: Ui, o: { confirm?: boolean; expect?: RegExp } = {}) {
   if (o.confirm) await u.click(u.$("#review input[type=checkbox]")!);
   await u.click(u.button(/^(Save|Send to your team|Save mine and send the team's)$/, "#review"));
   await u.until(() => !/Saving/.test(u.text("#review")) && /Saved|couldn't|Couldn't/.test(u.text("#review")), "the save to finish");
+  // A save PMX couldn't do says why here, rather than as a setting that didn't change further down the test.
+  expect(u.text("#review")).not.toMatch(/Couldn't save:/);
   if (o.expect) expect(u.text("#review")).toMatch(o.expect);
 }
 const checked = (u: Ui, label: string) => u.switchFor(label).getAttribute("aria-checked");

@@ -22,7 +22,8 @@ import type { EngineSource } from "../flow/strategy.js";
  *
  * Any Claude chat on this Mac can call it. Without a key it answers at the "shared" level only: held items are a rule
  * and a number, never a title, file, hash or detail; private to-dos are a count; its one write only tightens the PM's
- * do-not-read list. With a key from `pair`, which the PM allows on this Mac in a native dialog, `board` and `board_act`
+ * do-not-read list. `board_page` (0.41.0) is for the team board's own page: it gives only the board page /pmx-board
+ * would publish, to the board this Mac published, and records nothing but which page that board now runs. With a key from `pair`, which the PM allows on this Mac in a native dialog, `board` and `board_act`
  * are the PM's full board, as `pmx flow --web` serves it (PRIV-7). PMX's own agent runs use `--strict-mcp-config` with
  * no servers, so they never see it.
  */
@@ -82,10 +83,16 @@ export const MCP_TOOLS = [
     },
     annotations: { title: "Act on the PMX board (paired page)", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
+  {
+    name: "board_page",
+    description: "For the PMX team board's own page (/pmx-board), never a chat: given the Linear project the page shows and the hash of the page it runs, answers with PMX's newer board page when this Mac published that board and its page changed, so the board updates itself after a PMX update. Otherwise it answers only that the page is current, or that the board isn't this Mac's.",
+    inputSchema: { type: "object", additionalProperties: false, required: ["project"], properties: { project: { type: "string", maxLength: 200, description: "The Linear project ID the board's page shows." }, have: { type: "string", maxLength: 64, description: "The hash of the page that's asking." } } },
+    annotations: { title: "PMX team board page", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
 ] as const;
 
-const INSTRUCTIONS = "ProductMaxxing (PMX) for the PM's /pmx-flow page. In a chat, use only pipeline, flow_graph and flow_what_if (counts and metadata). pair, board and board_act are for the page itself: never call pair from a chat, and never ask the user for a key. When you talk with the user about PMX, use the words its page uses: task (not proposal or issue), backlog (not pool), draft, run (PMX's background run every 30 minutes, or an agent run on one task), page (not hub), release (not edition) and audience (not group).";
-const REPUBLISH = "PMX's workspace page in Claude, once published with pmx 0.36.0 or later, updates itself after a PMX update the next time the PM opens it. An older workspace page, and the team board when its page changed, keep running the older code until Claude publishes them again. When the pipeline tool's health problems say a PMX page in Claude was published with an older pmx, tell the user and offer to update it now with the pmx-flow skill (the workspace) or the pmx-board skill (the team board); each keeps its link.";
+const INSTRUCTIONS = "ProductMaxxing (PMX) for the PM's /pmx-flow page. In a chat, use only pipeline, flow_graph and flow_what_if (counts and metadata). pair, board and board_act are for the page itself: never call pair from a chat, and never ask the user for a key. board_page is for the team board's own page, never a chat. When you talk with the user about PMX, use the words its page uses: task (not proposal or issue), backlog (not pool), draft, run (PMX's background run every 30 minutes, or an agent run on one task), page (not hub), release (not edition) and audience (not group).";
+const REPUBLISH = "PMX's workspace page in Claude, once published with pmx 0.36.0 or later, updates itself after a PMX update the next time the PM opens it. The team board, once published with pmx 0.41.0 or later where the Claude app has this server, does the same the next time its owner opens it. An older workspace page, and an older team board when its page changed, keep running the older code until Claude publishes them again. When the pipeline tool's health problems say a PMX page in Claude was published with an older pmx, tell the user and offer to update it now with the pmx-flow skill (the workspace) or the pmx-board skill (the team board); each keeps its link.";
 
 /**
  * What the Claude app tells Claude about this server when it starts it. After an update, it names the pages this Mac
@@ -154,6 +161,13 @@ export async function handleMcp(msg: Msg, ctx: () => Promise<Ctx>, deps: McpDeps
           const { kind, value } = checkNeverIngest(String(args.kind), args.value);
           const r = await addNeverIngest((await ctx()).personal, kind, value, "flow");
           return result({ added: r.added, message: r.added ? "Added to your do-not-read list. PMX applies it from the next run." : "Already on your do-not-read list." });
+        }
+        if (name === "board_page") {
+          // BOARD-1 (0.41.0): the team board's own page asks for PMX's newer page. No key: it gets only the page
+          // /pmx-board would publish, and only for the board this Mac published for the project it names.
+          const c = await ctx();
+          const { boardPage } = await import("../claude/board.js");
+          return result(await boardPage(c.team, c.personal, { project: args.project, have: args.have }, c.now()));
         }
         if (name === "pair") {
           const key = await pair(deps.confirm ?? macConfirm, new Date());

@@ -3,7 +3,8 @@
 // `productmaxxing`) are the same file, which npm takes as one command (and `productmaxxing` matches the package's name
 // besides), so `npx productmaxxing install` runs this. It checks the Mac, installs PMX where npm can write without sudo,
 // puts its folder on PATH when a new Terminal window wouldn't find `pmx`, and, for the team's product lead only, offers
-// PMX Engine. Everything it runs or writes goes through `InstallDeps`, so tests install nothing.
+// PMX Engine. In a terminal on a Mac not set up yet it then goes straight on to `pmx init` (INSTALL-3), so installing and
+// setting up are one command. Everything it runs or writes goes through `InstallDeps`, so tests install nothing.
 import { access, constants, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 import type { Asker } from "../core/ask.js";
@@ -171,6 +172,13 @@ export interface InstallDeps {
   setupSkill(): Promise<boolean>;
   /** After updating an installed PMX: the version it came from, so the new one says what's new (NEW-1). */
   updatedFrom?(version: string): Promise<void>;
+  /**
+   * INSTALL-3: runs `pmx init` with the pmx just installed (`pmx`, its full path; never the copy npx fetched), in this
+   * terminal, and resolves with its exit code. Used only where a person can answer (`tty`) on a Mac not set up yet.
+   */
+  init?(pmx: string, args: string[]): Promise<number>;
+  /** `--repo <folder or git URL>`: the team's PMX repo, handed to `pmx init` so it doesn't ask. */
+  repo?: string;
 }
 
 const tilde = (p: string, home: string) => (p === home || p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p);
@@ -289,7 +297,18 @@ export async function runInstall(d: InstallDeps): Promise<number> {
   }
   const setup = d.personal ? false : await d.setupSkill().catch(() => false);
   d.say("");
-  if (!d.personal) d.say(`Next: ${pathAdded ? "open a new Terminal window, then " : ""}run pmx init${setup ? ", or in the Claude app type /pmx-setup and Claude sets PMX up with you" : ""}.`);
+  // INSTALL-3: one command. In a terminal, on a Mac not set up yet, setup follows at once, run by the pmx that was just
+  // installed (by its full path, so a PATH this window doesn't have yet is no obstacle). Its questions need a person,
+  // so without a terminal (Claude running this, a script) the next step is said instead.
+  if (!d.personal && d.tty && d.init) {
+    d.say("Now setting PMX up on this Mac (pmx init): a few questions, then one yes for everything it changes.");
+    d.say("");
+    const code = await d.init(join(bin, "pmx"), d.repo ? ["--repo", d.repo] : []).catch(() => 1);
+    if (code !== 0) d.say(`\nPMX is installed, but setup stopped before it finished. ${pathAdded ? "Open a new Terminal window and run" : "Run"} pmx init to go on: it's safe to run again.`);
+    else if (pathAdded) d.say("\nOpen a new Terminal window before you type pmx yourself: this one was open before PMX's folder was on your PATH.");
+    return 0;
+  }
+  if (!d.personal) d.say(`Next: ${pathAdded ? "open a new Terminal window, then " : ""}run pmx init${d.repo ? ` --repo ${d.repo}` : ""}${setup ? ", or in the Claude app type /pmx-setup and Claude sets PMX up with you" : ""}.`);
   else if (updated) d.say(`PMX is set up on this Mac. ${pathAdded ? "Open a new Terminal window: the" : "The"} next pmx command finishes the update, and pmx checklist shows what's left.`);
   else if (changed) d.say(`PMX is set up on this Mac: nothing else to do${pathAdded ? " but open a new Terminal window" : ""}.`);
   else d.say("Nothing changed: PMX is installed and set up on this Mac.");

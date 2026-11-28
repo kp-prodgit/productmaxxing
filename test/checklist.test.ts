@@ -91,7 +91,7 @@ describe("the install checklist (SETUP-1)", () => {
       checks: [...HEALTHY.filter((c) => c.id !== "claude.task.collect"), warn("claude.task.collect", "Claude scheduled task \"Collect meetings\" has an older prompt: type /pmx-schedule in the Claude app"), warn("flow.page", "your /pmx-flow page is from pmx 0.34.0: type /pmx-flow in the Claude app to update it to 0.35.0")],
     }));
     expect(cl.upgrade).toMatchObject({ from: "0.34.0", to: "0.35.0", applied: [{ id: "app-skills", did: "updated /pmx-schedule" }, { id: "mcp-entry", did: "nothing to do" }] });
-    expect(cl.upgrade!.pending.map((s) => s.id)).toEqual(["claude.tasks", "claude.page", "linear.hours", "update.background-job", "update.evidence-backfill", "update.evidence-names-3", "update.follow-ups-requeue"]);
+    expect(cl.upgrade!.pending.map((s) => s.id)).toEqual(["claude.tasks", "claude.page", "linear.hours", "update.background-job", "update.evidence-backfill", "update.evidence-names-3", "update.follow-ups-requeue", "update.task-hours-always"]);
     expect(find(cl, "update.background-job")).toMatchObject({ status: "warn", do: "pmx checklist --fix" });
     // RUN-5: a one-off step for a Mac from before 0.37.0, which PMX does on its next run (or now, from the checklist).
     expect(find(cl, "update.evidence-backfill")).toMatchObject({ status: "warn", title: "This Mac's open tasks share their quotes with your team", detail: "PMX will do it on its next run" });
@@ -109,6 +109,18 @@ describe("the install checklist (SETUP-1)", () => {
     expect(find(cl, "setup.package")).toMatchObject({ status: "warn", who: "team-lead", do: expect.stringMatching(/^pmx vendor --require/) });
     expect(find(cl, "setup.memory")).toMatchObject({ status: "warn", how: "claude" });
     expect(cl.where).toMatch(/3 optional steps left\.$/);
+  });
+
+  it("never asks a tester to share a test build with the team: a team's repo carries releases", () => {
+    const behind = warn("cli.team-package", "the team package is pmx 0.40.3; teammates who run pmx update get it. Team lead: run `pmx vendor --require` and merge it");
+    const cl = buildChecklist(inputs({ version: "0.41.0-next.1", checks: [...HEALTHY.filter((c) => c.id !== "cli.team-package"), behind] }));
+    expect(find(cl, "setup.package")).toMatchObject({ status: "skip", detail: expect.stringMatching(/test build \(0\.41\.0-next\.1\); your team's repo carries releases/) });
+    expect(find(cl, "setup.package").do).toBeUndefined();
+    // On the release itself, the lead is asked as before.
+    expect(find(buildChecklist(inputs({ version: "0.41.0", checks: [...HEALTHY.filter((c) => c.id !== "cli.team-package"), behind] })), "setup.package")).toMatchObject({ status: "warn", who: "team-lead" });
+    // And a test build older than the team's package is still told to update.
+    const older = warn("cli.team-package", "the team package is pmx 0.42.0, newer than this Mac: run `pmx update`");
+    expect(find(buildChecklist(inputs({ version: "0.41.0-next.1", checks: [...HEALTHY.filter((c) => c.id !== "cli.team-package"), older] })), "setup.package")).toMatchObject({ status: "warn", do: "pmx update" });
   });
 
   it("a required step that's off makes PMX set up but not yet able to do its job", () => {

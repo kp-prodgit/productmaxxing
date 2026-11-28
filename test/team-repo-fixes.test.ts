@@ -131,6 +131,12 @@ describe("pmx vendor names every file it wrote (R10)", () => {
     const req = vendorMessage({ repo: "/r", version: "0.37.1", config: "pmx.config.json", autoUpdate: true });
     expect(req).toContain("Set cli.min to 0.37.1 in pmx.config.json");
     expect(req).toContain("Auto-update is on");
+    // COMPAT-6: on unless the team turned it off, so a team that never chose is told its Macs install it by themselves.
+    expect(vendorMessage({ repo: "/r", version: "0.37.1", config: "pmx.config.json" })).toContain("Auto-update is on: each machine's background job installs it within the hour of the merge (--no-auto-update turns that off).");
+    expect(plain).toContain("Once it merges, teammates' Macs install it by themselves within the hour; `pmx update` does it at once.");
+    const off = vendorMessage({ repo: "/r", version: "0.37.1", config: "pmx.config.json", autoUpdate: false });
+    expect(off).toContain("Auto-update is off for your team (cli.autoUpdate is false): each teammate runs `pmx update` (--auto-update turns it back on).");
+    expect(off).toContain("Teammates update with `pmx update`.");
     expect(req).toContain("Commit all three files (.pmx/cli/productmaxxing.tgz, .pmx/cli/productgit.tgz and pmx.config.json) in a PR of its own.");
   });
 });

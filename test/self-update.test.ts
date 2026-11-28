@@ -46,7 +46,7 @@ describe("PMX's page updates itself (FLOW-8)", () => {
     expect((await loadPersonalConfig()).flow).toMatchObject({ url: URL0, version: currentVersion() });
     // Another read of the board in this page doesn't publish again.
     await ui.go("#health/settings/schedule");
-    await ui.click(ui.button("Sync whenever PMX runs", "#task-hours"));
+    await ui.click(ui.button("Working hours only", "#task-hours")); // 0.41.0: the button that changes the setting, so the page reads the board again
     await sleep(500);
     expect(a.published).toHaveLength(1);
   }, 30000);
@@ -56,7 +56,7 @@ describe("PMX's page updates itself (FLOW-8)", () => {
     ui = await openBoard({ app: true, pageVersion: OLD, caps: true, head: `<style>${RESET}</style>`, uses: { artifact: a.ns }, personal: flow });
     await ui.until(() => a.published.length === 1, "the one try");
     await ui.go("#health/settings/schedule");
-    await ui.click(ui.button("Sync whenever PMX runs", "#task-hours"));
+    await ui.click(ui.button("Working hours only", "#task-hours")); // 0.41.0: the button that changes the setting, so the page reads the board again
     await sleep(500);
     expect(a.published).toHaveLength(1);
     expect(ui.posts.some((p) => p[0] === "page-published")).toBe(false);

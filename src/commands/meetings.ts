@@ -5,6 +5,7 @@ import { savePersonalConfig } from "../core/config.js";
 import type { Ctx } from "../core/context.js";
 import { services } from "../core/services.js";
 import { loadState, markTaskRun } from "../core/state.js";
+import { gateTime } from "../core/gates.js";
 import { localDay, REACH } from "../meetings/ledger.js";
 import { moveWork, sendCommitment, type Place } from "../todo/move.js";
 import { completeTodo, editTodo, formatTodos, loadTodos, refreshTodos, TODO_BATCH, TODO_DAYS, TODO_MAX_DAYS, todoPeriod, todosInPeriod } from "../todo/todo.js";
@@ -40,7 +41,7 @@ export const meetingCommands: Command[] = [
       const s = await loadState();
       console.log([
         "PMX doesn't hold connector access. A scheduled task in your Claude app does the collecting, with the connectors you already have:",
-        '  "Every day at 12:30 and 17:30: run `pmx collect --prompt` and follow its instructions." (On weekdays only, unless you choose around the clock.)',
+        '  "Every day at 12:30 and 17:30: run `pmx collect --prompt` and follow its instructions." (Every day, unless you choose working hours only: then on weekdays.)',
         collectScope(ctx) === "team"
           ? "This is your team's synthesis Mac, so it also collects the meetings shared with your team, not just yours: it suggests tasks from them for everyone."
           : "On your team's synthesis Mac it also collects the meetings shared with your team. (`--team` asks for them on any Mac.)",
@@ -170,6 +171,10 @@ export const companyStep: TickStep = async (ctx: Ctx) => {
   if (machine !== ctx.agent && machine !== ctx.personal.handle) return null;
   const s = await loadState();
   if (s.lastRollupAt && ctx.now().getTime() - Date.parse(s.lastRollupAt) < 24 * 3600000) return null;
-  const r = await rollup(ctx, await services(ctx));
-  return `company roll-up: ${r.posted.length} theme(s) posted`;
+  const r = await rollup(ctx, await services(ctx), { reuseUnchanged: true });
+  // COMPANY-1: the same tasks as last time make no model call; the log says so, so nobody takes it for a missed run.
+  if (r.unchanged) return `company roll-up: skipped, nothing changed: the teams' ${r.unchanged.tasks} open task(s) are as they were at the last roll-up (${gateTime(r.unchanged.since)}), so no model call and its themes stand${r.posted.length ? `; ${r.posted.length} theme(s) from it posted now` : ""}`;
+  // COMPANY-1 (0.41.0): a team this Mac's key couldn't read is said in the run's log, with what the key needs.
+  const unread = r.teams.filter((t) => t.error);
+  return `company roll-up: ${r.posted.length} theme(s) posted${unread.length ? `; couldn't read ${unread.map((t) => t.name).join(", ")}: ${unread[0]!.error}` : ""}`;
 };

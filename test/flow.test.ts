@@ -216,7 +216,7 @@ describe("0.11.0: the local server for the artifact (FLOW-4)", () => {
     expect(await call("initialize", { protocolVersion: "2025-06-18" })).toMatchObject({ result: { protocolVersion: "2025-06-18", serverInfo: { name: "pmx" }, capabilities: { tools: {} } } });
     expect(await handleMcp({ jsonrpc: "2.0", method: "notifications/initialized" }, async () => ctx)).toBeNull();
     const tools = ((await call("tools/list")) as any).result.tools;
-    expect(tools.map((t: any) => [t.name, t.annotations.readOnlyHint])).toEqual([["pipeline", true], ["checklist", true], ["flow_graph", true], ["flow_what_if", true], ["never_ingest_add", false], ["pair", false], ["board", true], ["board_act", false]]);
+    expect(tools.map((t: any) => [t.name, t.annotations.readOnlyHint])).toEqual([["pipeline", true], ["checklist", true], ["flow_graph", true], ["flow_what_if", true], ["never_ingest_add", false], ["pair", false], ["board", true], ["board_act", false], ["board_page", false]]);
     const g = ((await call("tools/call", { name: "flow_graph", arguments: { hours: 48 } })) as any).result;
     expect(g.structuredContent).toMatchObject({ level: "shared", summary: { read: 2, held: 1 } });
     expect(JSON.stringify(g)).not.toMatch(/cccc3333|acme\.com|\/Users\/ana/);

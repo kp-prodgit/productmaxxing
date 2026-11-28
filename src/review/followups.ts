@@ -20,6 +20,7 @@ import { CHECKED, stageProposals, readProposals, type Proposal } from "../synth/
 import { STRATEGY_SOURCE, SOURCES_LINE, strategyFiles } from "../synth/synthesize.js";
 import { keepTodo, loadTodos } from "../todo/todo.js";
 import { cut, deadlineIn, norm, readFollowUps, statements, type DraftQuestion } from "./draft-reader.js";
+import { legacyKeys } from "./legacy/follow-up-keys.js";
 import type { ReviewItem } from "./queue.js";
 
 export { deadlineIn, readFollowUps, type DraftDecision, type DraftQuestion } from "./draft-reader.js";
@@ -128,11 +129,40 @@ export function followUpKind(
 }
 
 /**
- * Which follow-ups this Mac already made from each accepted draft (`made`), and which it left in the draft over the caps
- * (`left`), so accepting it again neither doubles them nor makes the ones left behind.
+ * One follow-up this Mac made from an accepted draft, by its fixed ID (FOLLOW-1): the item of the draft it was read
+ * from (src/review/follow-up-id.ts), never its wording. With what it became: a call of the PM's (`decision`), a thing to
+ * do as written (`action`) or a question to ask (`ask`), each with its to-do's ID (`todo`); or work, with its suggested
+ * task's ID (`proposal`). `already`: an open to-do or task with the same words was there, so nothing new was made
+ * (`todo`: that to-do). `legacy`: a PMX before 0.41.0 made it, and recorded only this wording key, not what it became.
+ * `predates`: a PMX before 0.41.0 accepted this draft and recorded keys no reader gives back any more, so the item is
+ * taken as made then, and nothing was made now (`followUpsOnAccept`). A follow-up read from two items (`ids`) has one
+ * entry for each, with the same to-do.
  */
-interface Ledger { v: 1; drafts: Record<string, { at: string; made: string[]; left?: string[]; requeued?: Requeued[] }> }
+export interface Made { id: string; as: "decision" | "action" | "ask" | "work"; todo?: string; proposal?: string; already?: true; legacy?: string; predates?: true; at: string }
+
+/**
+ * What this Mac made from each accepted draft, so accepting it again neither makes a follow-up twice nor makes the ones
+ * left behind. `followUps`: each one made, by its fixed ID, with what it became. `leftIds`: the ones left in the draft
+ * over the caps, by their IDs. A later accept, and the re-read of older follow-ups (D2-8), find a follow-up by its ID,
+ * whatever PMX's wording rules have become since.
+ *
+ * LEGACY, `made` and `left`: the wording-based keys PMX 0.40.3 and earlier recorded instead. They are kept as that PMX
+ * left them, and never added to. Accepting a draft again reads them once more through the frozen 0.40.3 reader
+ * (./legacy/follow-up-keys.ts): an item whose old key is here was made already, and gets its fixed ID in `followUps`.
+ * `made` stays an array, empty for a new draft, because an older PMX reading this file expects one. `bridged`: when the
+ * first accept by a PMX with IDs settled those old keys, giving every item of the draft its ID; from then on the IDs
+ * alone say what was made.
+ */
+interface DraftLedger { at: string; made: string[]; left?: string[]; bridged?: string; followUps?: Made[]; leftIds?: string[]; requeued?: Requeued[] }
+interface Ledger { v: 1; drafts: Record<string, DraftLedger> }
 export const followUpsFile = () => join(paths.staging(), "follow-ups.json");
+
+/** The follow-ups made, with the new ones: the first record of an ID stands. */
+const withMade = (have: Made[] | undefined, more: Made[]): Made[] => {
+  const out = [...(have ?? [])];
+  for (const m of more) if (!out.some((x) => x.id === m.id)) out.push(m);
+  return out;
+};
 
 /**
  * D2-8: one waiting follow-up an older PMX made from this draft, read again by today's rules (src/review/requeue.ts):
@@ -145,19 +175,21 @@ export const followUpsFile = () => join(paths.staging(), "follow-ups.json");
 export interface Requeued { at: string; proposal: string; was: string; as: "ask" | "decision" | "action" | "work" | "dropped"; now: string; todo?: string; category?: string; why?: string }
 
 /**
- * Records in the ledger what reading a draft's older follow-ups again did (D2-8), with the follow-ups it now made, so
- * accepting that draft again makes none of them twice.
+ * Records in the ledger what reading a draft's older follow-ups again did (D2-8), with the follow-ups it now made, each
+ * by its fixed ID with its to-do (`made`), so accepting that draft again makes none of them twice.
  */
-export async function recordRequeued(identifier: string, path: string, changes: Requeued[], keys: string[], now: Date): Promise<void> {
+export async function recordRequeued(identifier: string, path: string, changes: Requeued[], made: Made[], now: Date): Promise<void> {
   if (!changes.length) return;
   const key = `${identifier} ${path}`;
   await privateDir(paths.staging());
   await withLock(followUpsFile(), async () => {
     const l = (await readJson<Ledger>(followUpsFile())) ?? { v: 1, drafts: {} };
-    const d = l.drafts[key] ?? { at: now.toISOString(), made: [] };
-    d.made = [...new Set([...d.made, ...keys])];
-    d.left = d.left?.filter((k) => !d.made.includes(k));
-    if (!d.left?.length) delete d.left;
+    const d: DraftLedger = l.drafts[key] ?? { at: now.toISOString(), made: [] };
+    d.made ??= [];
+    const followUps = withMade(d.followUps, made);
+    if (followUps.length) d.followUps = followUps;
+    d.leftIds = d.leftIds?.filter((id) => !followUps.some((m) => m.id === id));
+    if (!d.leftIds?.length) delete d.leftIds;
     d.requeued = [...(d.requeued ?? []), ...changes];
     l.drafts[key] = d;
     await writeJson(followUpsFile(), l, 0o600);
@@ -296,23 +328,65 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
   const found = readFollowUps(draft.content, task.identifier, now, { title: task.title });
   const out = EMPTY(null, draft.path);
   const draftKey = `${task.identifier} ${draft.path}`;
-  const ledger = (await readJson<Ledger>(followUpsFile())) ?? { v: 1, drafts: {} };
-  const made = new Set(ledger.drafts[draftKey]?.made ?? []);
-  const leftBefore = new Set(ledger.drafts[draftKey]?.left ?? []);
-  const done: string[] = [];
+  const at = now.toISOString();
+  const before = ((await readJson<Ledger>(followUpsFile())) ?? { v: 1, drafts: {} }).drafts[draftKey];
+  // What an earlier accept made or left, each follow-up by its fixed ID: first, and by itself enough.
+  const madeBefore = before?.followUps ?? [];
+  const leftBefore = new Set(before?.leftIds ?? []);
+  // LEGACY: what a PMX before 0.41.0 made or left, by the wording keys it recorded. Read only when this draft's ledger
+  // has some, through the frozen 0.40.3 reader, which says which of them each item of the draft had.
+  const oldMade = new Set(before?.made ?? []);
+  const oldLeft = new Set(before?.left ?? []);
+  const old = oldMade.size || oldLeft.size ? legacyKeys(draft.content, task.identifier, now, { title: task.title }) : new Map<string, string[]>();
+  const oldKeys = (x: { ids: string[] }) => x.ids.flatMap((id) => old.get(id) ?? []);
+  // LEGACY, the first accept of this draft by a PMX with IDs (`settle`). The frozen reader gives back the keys of
+  // 0.40.x. A draft accepted on an older PMX (0.37, 0.38 …) has keys from wording that no reader gives back ("Decide: :
+  // Deletion window", for today's "Decide on the deletion window"), and its to-dos are on the PM's list under those
+  // older words, so no check by words knows them either. An old key that no item of this draft gives (an orphan) is
+  // the proof: the wording moved since. Then an item with no old key of its own can't be told from one made under the
+  // older words, so it is taken as handled then, and nothing is made: as made (`predates`) while the ledger has an
+  // orphan among its made keys, as left in the draft when its only orphans are among those left; with orphans among
+  // both, as made up to that accept's cap for its kind, and left after it, as that accept went. With no orphan, every
+  // old key is accounted for, so such an item is new, and made. Once only: this accept gives every item its ID, the
+  // ledger says so (`bridged`), and from then on a new item in the draft is always made.
+  const settle = !!before && !before.bridged && (oldMade.size > 0 || oldLeft.size > 0);
+  const given = new Set([...old.values()].flat());
+  const orphanMade = settle && [...oldMade].some((k) => !given.has(k));
+  const orphanLeft = settle && [...oldLeft].some((k) => !given.has(k));
+  const caps = { todo: FOLLOW_TODOS, ask: FOLLOW_ASKS, work: FOLLOW_TASKS };
+  const had = { todo: 0, ask: 0, work: 0 };
+  const capOf = (as: Made["as"]) => (as === "ask" || as === "work" ? as : "todo");
+  const done: Made[] = [];
   const stay: string[] = [];
+  /** Made now, or there already: recorded under each item it was read from, with what it became. */
+  const record = (x: { ids: string[] }, as: Made["as"], what: Pick<Made, "todo" | "proposal" | "already" | "legacy" | "predates"> = {}) => { for (const id of x.ids) done.push({ id, as, ...what, at }); };
   /** Made by an earlier accept: counted, not made again. Left in the draft then: still left there. */
-  const fresh = <T extends { key: string }>(list: T[], more: (x: T) => "moreQuestions" | "moreDecisions" | "moreActions") => list.filter((x) => {
-    if (made.has(x.key)) { out.repeated++; return false; }
-    if (leftBefore.has(x.key)) { out[more(x)]++; stay.push(x.key); return false; }
+  const fresh = <T extends { ids: string[] }>(list: T[], as: (x: T) => Made["as"], more: (x: T) => "moreQuestions" | "moreDecisions" | "moreActions") => list.filter((x) => {
+    const made = madeBefore.find((m) => x.ids.includes(m.id));
+    const cap = capOf(as(x));
+    if (made) {
+      out.repeated++;
+      had[cap]++;
+      // Read from one more item than then (two calls PMX now reads as one): that item is made too.
+      for (const id of x.ids) if (!madeBefore.some((m) => m.id === id)) done.push({ ...made, id });
+      return false;
+    }
+    // LEGACY: made by a PMX before 0.41.0. Its fixed ID is recorded now, so its old key is never needed again.
+    const key = oldKeys(x).find((k) => oldMade.has(k));
+    if (key) { out.repeated++; had[cap]++; record(x, as(x), { legacy: key }); return false; }
+    if (x.ids.some((id) => leftBefore.has(id)) || oldKeys(x).some((k) => oldLeft.has(k))) { out[more(x)]++; stay.push(...x.ids); return false; }
+    // LEGACY: no old key of its own, in a draft whose ledger has keys from older wording (`settle`): handled then.
+    if (orphanMade && (!orphanLeft || had[cap] < caps[cap])) { out.repeated++; had[cap]++; record(x, as(x), { predates: true }); return false; }
+    if (orphanMade || orphanLeft) { out[more(x)]++; stay.push(...x.ids); return false; }
     return true;
   });
   /** A call over the cap is a decision or, worded as something to do, a thing to do (FOLLOW-1). */
   const moreCall = (d: { action?: true }) => (d.action ? "moreActions" : "moreDecisions");
-  const decisions = fresh(found.decisions, moreCall);
+  const callAs = (d: { action?: true }) => (d.action ? "action" : "decision");
+  const decisions = fresh(found.decisions, callAs, moreCall);
   // Blocking questions first, then the open ones, each in the draft's order. One a person can answer is a to-do to ask
   // them (R2); one that needs research or a document, a suggested task.
-  const questions = fresh([...found.questions.filter((q) => q.where === "blocking"), ...found.questions.filter((q) => q.where !== "blocking")], () => "moreQuestions");
+  const questions = fresh([...found.questions.filter((q) => q.where === "blocking"), ...found.questions.filter((q) => q.where !== "blocking")], (q) => (q.ask ? "ask" : "work"), () => "moreQuestions");
   const asks = questions.filter((q) => q.ask);
   const work = questions.filter((q) => !q.ask);
 
@@ -326,15 +400,16 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
   }
   const provenance = { title: `From ${task.identifier}'s accepted draft, ${draft.path}`, at: now.toISOString().slice(0, 10), keys: [] as string[], ...(out.suggestedBy ? { suggestedBy: out.suggestedBy } : {}) };
 
-  // The PM's calls: private to-dos, on this Mac only.
-  const open = new Set((await loadTodos()).items.filter((t) => t.status === "open").map((t) => norm(t.text)));
+  // The PM's calls: private to-dos, on this Mac only. The net under the IDs: an open to-do with the same words is the
+  // same to-do, whichever draft or PMX it came from. A second check only: what identifies a follow-up is its ID.
+  const open = new Map((await loadTodos()).items.filter((t) => t.status === "open").map((t) => [norm(t.text), t.id]));
   for (const d of decisions) {
-    if (out.todos.length >= FOLLOW_TODOS) { out[moreCall(d)]++; stay.push(d.key); continue; }
-    if (open.has(norm(d.text))) { out.duplicates++; done.push(d.key); continue; }
+    if (out.todos.length >= FOLLOW_TODOS) { out[moreCall(d)]++; stay.push(...d.ids); continue; }
+    if (open.has(norm(d.text))) { out.duplicates++; record(d, callAs(d), { todo: open.get(norm(d.text)), already: true }); continue; }
     const t = await keepTodo({ text: d.text, due: d.due, why: d.why, source: provenance }, now);
-    open.add(norm(t.text));
+    open.set(norm(t.text), t.id);
     out.todos.push({ id: t.id, text: t.text, ...(d.action ? { action: true as const } : {}) });
-    done.push(d.key);
+    record(d, callAs(d), { todo: t.id });
   }
 
   if (questions.length) {
@@ -370,17 +445,17 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
     // The questions to put to someone: the PM's private to-dos, on this Mac only, in the draft's words like its decision
     // to-dos. Linear's quote rule isn't theirs (R2a): moving one to Linear later checks it there.
     for (const q of asks) {
-      if (out.asks.length >= FOLLOW_ASKS) { out.moreQuestions++; stay.push(q.key); continue; }
+      if (out.asks.length >= FOLLOW_ASKS) { out.moreQuestions++; stay.push(...q.ids); continue; }
       // A role, never a person: one the tracker rules would cut (a name, a placeholder) is left out, and an ask that
       // leaned on it says whom else to ask (`askTodo`). Its why: a whole sentence that says where the question comes
       // from, when the draft says nothing more about it; a question the draft left beside it ("Has a reviewer been
       // asked?") is no reason (FOLLOW-1).
       const { text, why } = askTodo(q, task.identifier, (s) => !tracker.problem(s));
-      if (open.has(norm(text))) { out.duplicates++; done.push(q.key); continue; }
+      if (open.has(norm(text))) { out.duplicates++; record(q, "ask", { todo: open.get(norm(text)), already: true }); continue; }
       const t = await keepTodo({ text, due: deadlineIn([q.question, ...q.rest].join(" "), now), why, source: provenance }, now);
-      open.add(norm(t.text));
+      open.set(norm(t.text), t.id);
       out.asks.push({ id: t.id, text: t.text });
-      done.push(q.key);
+      record(q, "ask", { todo: t.id });
     }
 
     // The open work: suggested tasks, staged like synthesis's and held to the same tracker-text rules (PRIV-6).
@@ -392,12 +467,13 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
         .map((s) => ({ id: s.id!, title: s.title ?? s.id!, at: s.at!, why: `A source of ${task.identifier}` }));
       const staged: { q: DraftQuestion; p: Omit<Proposal, "id"> }[] = [];
       for (const q of work) {
-        if (staged.length >= FOLLOW_TASKS) { out.moreQuestions++; stay.push(q.key); continue; }
+        if (staged.length >= FOLLOW_TASKS) { out.moreQuestions++; stay.push(...q.ids); continue; }
         // Not recorded as made, so accepting again says the same.
         if (!ok(q.question) || !ok(q.title)) { out.leftOut++; continue; }
         // R2: the question whole, never a fragment of it.
         const title = cut(q.title.replace(/\s+/g, " "), 120);
-        if (taken.has(norm(title))) { out.duplicates++; done.push(q.key); continue; }
+        // The net under the IDs, as for to-dos: a task open or waiting under the same title is the same task.
+        if (taken.has(norm(title))) { out.duplicates++; record(q, "work", { already: true }); continue; }
         const kind = followUpKind(q.question + " " + q.rest.join(" "), task.category, kinds, stages, { needs: q.needs, question: `${q.title} ${q.question}` });
         if (!kind) continue;
         taken.add(norm(title));
@@ -419,19 +495,27 @@ export async function followUpsOnAccept(ctx: Ctx, svc: Services, item: Pick<Revi
         const p = added.find((x) => x.title === s.p.title);
         if (p) out.proposals.push({ id: p.id, title: p.title, category: p.category });
         else out.duplicates++;
-        done.push(s.q.key);
+        record(s.q, "work", p ? { proposal: p.id } : { already: true });
       }
     }
   }
 
-  if (done.length || stay.length) {
+  if (done.length || stay.length || settle) {
     await privateDir(paths.staging());
     await withLock(followUpsFile(), async () => {
       const l = (await readJson<Ledger>(followUpsFile())) ?? { v: 1, drafts: {} };
-      const all = new Set([...(l.drafts[draftKey]?.made ?? []), ...done]);
-      const left = [...new Set([...(l.drafts[draftKey]?.left ?? []), ...stay])].filter((k) => !all.has(k));
-      const requeued = l.drafts[draftKey]?.requeued;
-      l.drafts[draftKey] = { at: now.toISOString(), made: [...all], ...(left.length ? { left } : {}), ...(requeued?.length ? { requeued } : {}) };
+      const was = l.drafts[draftKey];
+      const followUps = withMade(was?.followUps, done);
+      const leftIds = [...new Set([...(was?.leftIds ?? []), ...stay])].filter((id) => !followUps.some((m) => m.id === id));
+      l.drafts[draftKey] = {
+        at,
+        // LEGACY: an older PMX's keys, as it left them. Nothing is added to them.
+        made: was?.made ?? [], ...(was?.left?.length ? { left: was.left } : {}),
+        // Settled by this accept, or an earlier one: every item of the draft has its ID from then on.
+        ...(was?.bridged ? { bridged: was.bridged } : settle ? { bridged: at } : {}),
+        ...(followUps.length ? { followUps } : {}), ...(leftIds.length ? { leftIds } : {}),
+        ...(was?.requeued?.length ? { requeued: was.requeued } : {}),
+      };
       await writeJson(followUpsFile(), l, 0o600);
     });
   }

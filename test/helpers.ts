@@ -1,5 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_TEAM, type PersonalConfig, type TeamConfig } from "../src/core/config.js";
 import { makeCtx, type Ctx, type Out } from "../src/core/context.js";
@@ -10,10 +9,10 @@ import { writeProfile } from "../src/core/profile.js";
 import { scaffoldRepo } from "../src/core/scaffold.js";
 import type { AgentRuntime } from "../src/runtime/types.js";
 import { mockRuntime } from "../src/runtime/mock.js";
+import { tmp } from "./tmp.js";
 
-export async function tmp(prefix = "pmx-"): Promise<string> {
-  return mkdtemp(join(tmpdir(), prefix));
-}
+// A fresh temp folder for a test. It is removed when the test file ends (test/tmp.ts, test/setup-tmp.ts).
+export { tmp };
 
 /** Points PMX_HOME at a fresh temp dir so tests never touch ~/.pmx. */
 export async function freshHome(): Promise<string> {

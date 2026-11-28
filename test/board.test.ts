@@ -31,7 +31,10 @@ describe("the Claude board (BOARD-1)", () => {
     const used = new Set([...page.matchAll(/(?:callTool|watchTool)\(LINEAR, "([a-z_]+)"/g)].map((m) => m[1]));
     expect([...used].sort()).toEqual([...BOARD_TOOLS].sort());
     expect(boardCapabilities()).toEqual({ mcp: { servers: [{ server: "Linear", tools: [...BOARD_TOOLS] }] } });
-    expect(page).not.toMatch(/<!doctype|<html|<body/i); // the Artifact tool adds the skeleton
+    // The Artifact tool adds the skeleton. 0.41.0: the page's script names that skeleton, to publish PMX's newer page
+    // over itself in the same shape, so the page's own markup is what's checked.
+    expect(page.replace(/<script>[\s\S]*?<\/script>/g, "")).not.toMatch(/<!doctype|<html|<body/i);
+    expect(page).toMatch(/<script type="application\/json" id="pmx-config">/);
   });
 
   it("is offered only where Claude and Linear are both in use", () => {

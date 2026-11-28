@@ -133,7 +133,7 @@ describe("a kind of work a teammate added reaches every PM (R7, JOB-11)", () => 
 
   it("a PM who leaves a kind out at setup has chosen; nobody is asked about a required kind", async () => {
     const root = await tmp();
-    const p = await runInit({
+    const p = await runInit({ askAll: true,
       ask: scriptedAsker({ "PMX repo checkout": join(root, "pmx"), "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), "email domains": "acme.com", "Categories your agent accepts": "spec, problem-brief" }),
       keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date("2026-11-26T00:00:00Z"), cliPath: "/x/cli.js",
     });

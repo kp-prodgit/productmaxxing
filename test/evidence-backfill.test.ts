@@ -4,7 +4,7 @@
 // says who suggested it.
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CANARY_MARKER } from "../src/core/canary.js";
 import { execOk } from "../src/core/exec.js";
 import { Git } from "../src/core/git.js";
@@ -26,6 +26,12 @@ import { keepTodo, loadTodos } from "../src/todo/todo.js";
 import { memoryTracker, type Tracker } from "../src/tracker/types.js";
 import { freshHome, git, pmxRepo, testCtx, tmp, writeTranscript } from "./helpers.js";
 import { openBoard, type Ui } from "./ui-helpers.js";
+
+// Every test here works on real git repos through git's own commands: the longest one (21 packs, each pushed to the
+// team repo) starts about 900 git processes. That takes 7 seconds on an idle Mac and several times longer when the
+// processors are shared (three suites at once took it past 30 seconds, and a busier Mac past 120). A test that runs out
+// of time doesn't stop: it goes on writing, into the home folder the next test has just been given, and fails that one too.
+vi.setConfig({ testTimeout: 300_000 });
 
 /** A spec that passes its checklist and leaves one call to the PM. */
 const SPEC = (id: string) => `# Spec SCIM provisioning

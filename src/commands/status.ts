@@ -7,7 +7,8 @@ import { unsharedWork } from "../core/host.js";
 import { tickHealth } from "./tick.js";
 import { budget, usageLine } from "../budget/provider.js";
 import { linearAccess } from "../linear/access.js";
-import { relayHealth } from "../tracker/relay.js";
+import { readOutbox, relayHealth } from "../tracker/relay.js";
+import { directHealth } from "../linear/direct.js";
 import { syncDueCron } from "../claude/tasks.js";
 import { join } from "node:path";
 import { VENDORED_CLI } from "../core/vendor.js";
@@ -62,7 +63,11 @@ export async function runStatus(ctx: Ctx, extra: string[] = [], o: { engine?: En
   if (access === "relay") {
     const h = await relayHealth(team, ctx.now(), { cron: await syncDueCron(ctx.personal.taskHours) }).catch(() => null);
     if (h) lines.push(`Linear: ${h.ok ? "" : "✘ "}${h.detail.replace(/^Linear through Claude: /, "through Claude, ")}`);
-  } else if (access !== "none") lines.push(`Linear: direct (${access === "key" ? "API key" : access})`);
+  } else if (access === "key") {
+    // LINEAR-2 (0.41.0): how the key is doing, from PMX's own record of its reads. A key Linear rejects is said here.
+    const h = await directHealth(team, ctx.now(), { waiting: (await readOutbox().catch(() => ({ ops: [] }))).ops.length }).catch(() => null);
+    lines.push(h ? `Linear: ${h.ok ? "" : "✘ "}${h.detail.replace(/^Linear with your API key: /, "with your API key, ")}` : "Linear: direct (API key)");
+  } else if (access !== "none") lines.push(`Linear: direct (${access})`);
 
   // PULL-9 (#14): the first week only says what an agent would take.
   const practice = practiceUntil(personal, ctx.now());

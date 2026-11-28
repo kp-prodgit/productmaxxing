@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { analyticsOn, cloudTarget } from "../src/cloud/account.js";
 import { Cloud, CloudError } from "../src/cloud/client.js";
 import { pipelineEvents, toEvents } from "../src/cloud/events.js";
-import { loadPersonalConfig, loadTeamConfig } from "../src/core/config.js";
+import { autoUpdateOn, loadPersonalConfig, loadTeamConfig } from "../src/core/config.js";
 import { memoryKeychain } from "../src/core/keychain.js";
 import { paths } from "../src/core/paths.js";
 import { readReceipt } from "../src/core/receipt.js";
@@ -98,7 +98,10 @@ describe("reading what 0.5.0 wrote (COMPAT-4)", () => {
     const repo = await tmp("compat05-");
     await copyFile(join(V05, "pmx.config.json"), join(repo, "pmx.config.json"));
     const team = await loadTeamConfig(repo);
-    expect(team.cli).toEqual({ min: "0.5.0" }); // no autoUpdate: off, as before
+    expect(team.cli).toEqual({ min: "0.5.0" }); // no autoUpdate written: nothing is added to the file, and unset now reads as on (COMPAT-6)
+    expect(autoUpdateOn(team)).toBe(true);
+    expect(autoUpdateOn({ cli: { min: "0.5.0", autoUpdate: false } })).toBe(false);
+    expect(autoUpdateOn({ cli: null })).toBe(true);
     await copyFile(join(V05, "config.json"), paths.config());
     const p = await loadPersonalConfig();
     expect(analyticsOn(p)).toBe(true);
@@ -176,7 +179,7 @@ describe("team minimum version (COMPAT-2)", () => {
   it("stops shared team work on an older machine but keeps personal work going", async () => {
     const { repo } = await pmxRepo();
     const ctx = await testCtx({ repo, team: { cli: { min: "9.0.0" } } });
-    await expect(services(ctx)).rejects.toThrow(/runs pmx \d+\.\d+\.\d+, and your team needs 9\.0\.0.*pmx update/);
+    await expect(services(ctx)).rejects.toThrow(/runs pmx \d+\.\d+\.\d+(-next\.\d+)?, and your team needs 9\.0\.0.*pmx update/); // a test build says its whole version
     await expect(refreshTodos(ctx)).resolves.toMatchObject({ added: [] });
 
     const ok = await testCtx({ repo, team: { cli: { min: "0.5.0" } } });

@@ -60,12 +60,22 @@ export function ttyAsker(nonInteractive = !process.stdin.isTTY): Asker {
       for (;;) {
         const a = await ask(`${q} (${options.join("/")}) [${def}]: `);
         if (!a) return def;
-        const hit = options.find((o) => o === a.toLowerCase());
+        const hit = pickOption(options, a);
         if (hit) return hit;
         console.warn(`Pick one of ${options.join(", ")}.`);
       }
     },
   };
+}
+
+/** The option an answer names: the option itself, or the only one it starts ("y" for yes, "p" for pick). */
+export function pickOption<T extends string>(options: T[], answer: string): T | undefined {
+  const a = answer.trim().toLowerCase();
+  if (!a) return undefined;
+  const exact = options.find((o) => o === a);
+  if (exact) return exact;
+  const starts = options.filter((o) => o.startsWith(a));
+  return starts.length === 1 ? starts[0] : undefined;
 }
 
 /** Scripted answers for tests. Unanswered questions take their default. */

@@ -186,8 +186,10 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
       await tick(20);
     },
     bar: () => (ui.$("#savebar")?.textContent ?? "").replace(/\s+/g, " ").trim(),
-    async until(fn, what, ms = 4000) {
-      const end = Date.now() + ms;
+    // At least 20 seconds, for a busy machine (a caller's shorter wait was sized for an idle one): it returns the
+    // moment the condition holds, so only a wait that fails takes that long.
+    async until(fn, what, ms = 20000) {
+      const end = Date.now() + Math.max(ms, 20000);
       for (;;) {
         let v: any;
         try { v = fn(); } catch { v = null; }

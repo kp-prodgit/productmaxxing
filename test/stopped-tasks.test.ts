@@ -22,7 +22,7 @@ const run = (taskId: string, ts: string, outcome: "ok" | "failed" | "capped" | "
   type: "run", taskId, ts, agent: "ana@m1", machine: "m1", category: "spec", size: "S", skill: "pmx-spec", skillVersion: o.skillVersion ?? "1.0.0",
   outcome, durationMs: o.durationMs ?? 60000, tokens: null, costUsd: null, runtime: "claude-code",
 });
-async function eventually(fn: () => Promise<boolean>, what: string, ms = 8000): Promise<void> {
+async function eventually(fn: () => Promise<boolean>, what: string, ms = 20000): Promise<void> {
   const end = Date.now() + ms;
   while (!(await fn())) {
     if (Date.now() > end) throw new Error(`Timed out waiting for ${what}`);

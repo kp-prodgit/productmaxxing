@@ -1,0 +1,120 @@
+{
+  "churn-analysis.md": {
+    "identifier": "PMX-88",
+    "title": "Why starter accounts leave in month two",
+    "now": "2026-11-26",
+    "follow_ups": [
+      {
+        "id": "f1-0591e5516c4086cf",
+        "kind": "decision",
+        "wording": "Decide whether to ship it to every starter account or test it on half first (PMX-88)"
+      },
+      {
+        "id": "f1-bde0935c051b289b",
+        "kind": "action",
+        "wording": "Check the top-up email copy with legal before it goes out (PMX-88)"
+      },
+      {
+        "id": "f1-de2d9e39b0b2f7b7",
+        "kind": "ask",
+        "wording": "Ask the billing team: When does the billing team plan to change the invoice date? (PMX-88)"
+      },
+      {
+        "id": "f1-567e156cbf1702c1",
+        "kind": "ask",
+        "wording": "Ask the growth lead: Which message got the most upgrades in the spring test? (PMX-88)"
+      },
+      {
+        "id": "f1-c1c65bc9cdbe36cd",
+        "kind": "work",
+        "wording": "What would a credit rollover cost per account?"
+      }
+    ]
+  },
+  "pilot-terms.md": {
+    "identifier": "PMX-52",
+    "title": "Brief the Northwind pilot terms",
+    "now": "2026-11-26",
+    "follow_ups": [
+      {
+        "id": "f1-03f060349fdfb253",
+        "kind": "decision",
+        "wording": "Decide whether to hold the pilot price at $12 a seat (PMX-52)",
+        "due": "2026-12-08"
+      },
+      {
+        "id": "f1-85a057abe6f5f689",
+        "kind": "decision",
+        "wording": "Decide whether the dedicated capacity price is a separate line or bundled (PMX-52)"
+      },
+      {
+        "id": "f1-693097ee8b954bfe",
+        "kind": "decision",
+        "wording": "Decide on the seat minimum: 25 or 50 seats (PMX-52)"
+      },
+      {
+        "id": "f1-7531d8f2118a57a9",
+        "kind": "decision",
+        "wording": "Decide whether to offer a 60-day exit clause (PMX-52)"
+      },
+      {
+        "id": "f1-edfc2fd42c3e141e",
+        "kind": "decision",
+        "wording": "Decide whether to warn admins, given the question: Does a seat change mid-term restart the billing period? (PMX-52)"
+      },
+      {
+        "id": "f1-41c2885a4554a573",
+        "kind": "ask",
+        "wording": "Ask Northwind's procurement: Who signs the order form at Northwind, and who is the procurement contact? (PMX-52)"
+      },
+      {
+        "id": "f1-9b30280b7b36ef8a",
+        "kind": "work",
+        "wording": "Which plan do accounts of Northwind's size usually start on?"
+      },
+      {
+        "id": "f1-993a00533a649a44",
+        "kind": "work",
+        "wording": "Would a second design partner pay for dedicated capacity?"
+      },
+      {
+        "id": "f1-8997d5b2d9a5a9db",
+        "kind": "ask",
+        "wording": "Ask the security lead: Is the security review scheduled? (PMX-52)"
+      }
+    ]
+  },
+  "render-queue-spec.md": {
+    "identifier": "PMX-71",
+    "title": "Spec the priority render queue",
+    "now": "2026-11-26",
+    "follow_ups": [
+      {
+        "id": "f1-ea182d6f9d968d12",
+        "kind": "decision",
+        "wording": "Decide whether priority rendering is part of the Pro plan or a paid add-on (PMX-71)",
+        "due": "2026-12-15"
+      },
+      {
+        "id": "f1-c538e386616bdce6",
+        "kind": "decision",
+        "wording": "Decide whether free accounts should see their place in the queue (PMX-71)"
+      },
+      {
+        "id": "f1-c9e05ec61af90e78",
+        "kind": "ask",
+        "wording": "Ask the infrastructure lead: What does a priority render cost us in GPU time? (PMX-71)"
+      },
+      {
+        "id": "f1-28d61275906ce22f",
+        "kind": "work",
+        "wording": "How many agencies would pay for priority rendering?"
+      },
+      {
+        "id": "f1-930ffd8010507fd3",
+        "kind": "work",
+        "wording": "Do competitors charge for faster renders?"
+      }
+    ]
+  }
+}

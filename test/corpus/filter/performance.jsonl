@@ -1,0 +1,17 @@
+{"family": "performance", "text": "His performance review is next week.", "expect": "cut", "topic": "performance", "why": "A performance review."}
+{"family": "performance", "text": "She's on a PIP since October.", "expect": "cut", "topic": "performance", "why": "A PIP is about one person's performance."}
+{"family": "performance", "text": "Sam is underperforming on the migration.", "expect": "cut", "topic": "performance", "why": "A person underperforming."}
+{"family": "performance", "text": "He got a written warning last month.", "expect": "cut", "topic": "performance", "why": "A written warning."}
+{"family": "performance", "text": "Calibration meetings start on the 3rd.", "expect": "cut", "topic": "performance", "why": "Calibration."}
+{"family": "performance", "text": "The model underperforms on serif fonts.", "expect": "kept", "topic": null, "why": "A model that underperforms is product talk."}
+{"family": "performance", "text": "Page performance dropped after the last release.", "expect": "kept", "topic": null, "why": "A page's performance is product talk."}
+{"family": "performance", "text": "Variant B has been underperforming all week.", "expect": "kept", "topic": null, "why": "A variant underperforming is an experiment result."}
+{"family": "performance", "text": "Render performance is the top complaint.", "expect": "kept", "topic": null, "why": "Render performance is product talk."}
+{"family": "performance", "text": "Sam is underperforming on the team.", "expect": "cut", "topic": "performance", "why": "Performance: a person, not a model."}
+{"family": "performance", "text": "His performance has slipped since the reorg.", "expect": "cut", "topic": "performance", "why": "Performance: a person, not a model."}
+{"family": "performance", "text": "I think that he underperforms when he's rushed.", "expect": "cut", "topic": "performance", "why": "Performance: a person, not a model."}
+{"family": "performance", "text": "Variant B still underperforms on mobile.", "expect": "kept", "topic": null, "why": "Performance: a person, not a model."}
+{"family": "performance", "text": "It underperforms the baseline by 4 points.", "expect": "kept", "topic": null, "why": "Performance: a person, not a model."}
+{"family": "performance", "text": "Jane: SSO is slow.\n\nKim: The import fix shipped. Lee is underperforming. He missed two deadlines.", "expect": "Jane: SSO is slow.", "topic": "performance", "why": "Cuts the whole turn, as before, when more than half of it would go."}
+{"family": "performance", "text": "Kim: Fine. Okay. Lee has been underperforming on every project this quarter and the team has noticed it. Sure.", "expect": "cut", "topic": "performance", "why": "Cuts the whole turn, as before, when more than half of it would go."}
+{"family": "performance", "text": "Kim: Sam's bonus is late. The dashboard loads in four seconds on a good day and in twelve on a bad one.\nAdmins want it under two, and my performance\nreview is next week. Caching would help most, and so would a smaller first page.", "expect": "cut", "topic": "performance", "why": "Cuts the whole turn when a phrase runs across a line break."}

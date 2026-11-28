@@ -25,7 +25,7 @@ describe("pmx init and doctor (CLI-2, CLI-3)", () => {
     const keychain = memoryKeychain();
     const launchd = fakeLaunchd();
     const out = quietOut();
-    const p = await runInit({
+    const p = await runInit({ askAll: true,
       ask: scriptedAsker({ "PMX repo checkout": repo, "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), "email domains": "acme.com" }),
       keychain, launchd, exec: withClaude, out, now: () => new Date("2026-11-03T00:00:00Z"), cliPath: "/x/cli.js",
     });
@@ -36,7 +36,7 @@ describe("pmx init and doctor (CLI-2, CLI-3)", () => {
     expect(listing.stdout).toContain("package/skills/pmx-spec/SKILL.md");
     const workflow = await readFile(join(repo, ".github/workflows/pmx-run-record.yml"), "utf8");
     expect(workflow).not.toContain("{{PMX_VERSION}}");
-    expect(workflow).toMatch(/npm install -g "https:\/\/github\.com\/kp-prodgit\/productmaxxing\/releases\/download\/v(\d+\.\d+\.\d+)\/productmaxxing-\1\.tgz"/);
+    expect(workflow).toMatch(/npm install -g "https:\/\/github\.com\/kp-prodgit\/productmaxxing\/releases\/download\/v(\d+\.\d+\.\d+(?:-next\.\d+)?)\/productmaxxing-\1\.tgz"/);
     expect(workflow).toContain('git show "origin/$BASE:.pmx/cli/productmaxxing.tgz"');
     expect(launchd.plist).toContain("<string>tick</string>");
     expect(launchd.plist).toContain("<integer>1800</integer>");
@@ -56,7 +56,7 @@ describe("pmx init and doctor (CLI-2, CLI-3)", () => {
     const repo = join(root, "pmx");
     const keychain = memoryKeychain();
     const launchd = fakeLaunchd();
-    const p = await runInit({
+    const p = await runInit({ askAll: true,
       ask: scriptedAsker({ "PMX repo checkout": repo, "Model plan": "max", transcripts: join(root, "t") }),
       keychain, launchd, exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x",
     });
@@ -72,7 +72,7 @@ describe("pmx init and doctor (CLI-2, CLI-3)", () => {
     const root = await tmp();
     const repo = join(root, "pmx");
     const keychain = memoryKeychain();
-    const p = await runInit({
+    const p = await runInit({ askAll: true,
       ask: scriptedAsker({ "PMX repo checkout": repo, transcripts: join(root, "t") }),
       keychain, launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x",
     });
@@ -87,7 +87,7 @@ describe("pmx init and doctor (CLI-2, CLI-3)", () => {
     const root = await tmp();
     const repo = join(root, "pmx");
     const keychain = memoryKeychain();
-    const p = await runInit({
+    const p = await runInit({ askAll: true,
       ask: scriptedAsker({ "PMX repo checkout": repo, transcripts: join(root, "t"), "background job": false }),
       keychain, launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x",
     });

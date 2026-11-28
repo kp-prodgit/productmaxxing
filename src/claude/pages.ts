@@ -39,8 +39,10 @@ export const selfUpdating = (v: string | null | undefined) => !!v && (compareVer
 
 /**
  * The pages this Mac published that Claude has to publish again: the workspace from before 0.36.0 with a pmx other
- * than `version` (a newer one updates itself the next time it's opened), and the team board when its page changed. The team board counts only when this Mac published it:
- * a board someone else shared in pmx.config.json is theirs to update.
+ * than `version` (a newer one updates itself the next time it's opened), and the team board when its page changed and
+ * it can't take the newer page itself (one published before 0.41.0, or where the Claude app had no PMX server; a later
+ * one updates itself when its owner opens it, BOARD-1). The team board counts only when this Mac published it: a board
+ * someone else shared in pmx.config.json is theirs to update.
  */
 export function stalePages(team: Pick<TeamConfig, "board"> | null, personal: Pick<PersonalConfig, "flow" | "board"> | null, version = installedVersion()): StalePage[] {
   const out: StalePage[] = [];

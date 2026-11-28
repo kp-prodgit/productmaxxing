@@ -5,6 +5,7 @@ import { Git } from "../core/git.js";
 import { RunLogStore } from "../core/runlog-store.js";
 import { services, type Services } from "../core/services.js";
 import { loadState } from "../core/state.js";
+import { gateTime } from "../core/gates.js";
 import { claim, isDryRunDefault, pull, releaseStale } from "../pull/pull.js";
 import { compareReports, neutralityRun, type NeutralityReport } from "../run/neutrality.js";
 import { runTask } from "../run/run.js";
@@ -247,14 +248,16 @@ function sinceDate(v: string | undefined, now: Date): Date {
 
 /**
  * Polls every tick on the synthesizer machine (MEET-3): today's meetings not yet in the team's ledger
- * are processed at once. With nothing new it makes no model call. Slack still runs every 6 hours.
+ * are processed at once. With nothing new it makes no model call. The channel and email threads are looked at every
+ * 6 hours, and read again only when at least one changed since the model last read them; otherwise the log says so.
  */
 export const synthStep: TickStep = async (ctx: Ctx) => {
   if (!synthesizesHere(ctx.team, ctx.personal, ctx.agent)) return null;
   const s = await loadState();
   const slackDue = !s.lastSynthAt || ctx.now().getTime() - new Date(s.lastSynthAt).getTime() >= 6 * 3600000;
   const w = synthWindow(s.lastSynthAt, ctx.now());
-  const r = await synthesize(ctx, await services(ctx), { ...w, skipIfNothingNew: !slackDue });
+  const r = await synthesize(ctx, await services(ctx), { ...w, skipIfNothingNew: !slackDue, skipUnchangedThreads: true });
+  if (r.unchanged) return `skipped, nothing changed: ${r.unchanged.threads === 1 ? "the 1 channel or email thread is" : `the ${r.unchanged.threads} channel and email threads are`} as the model last read ${r.unchanged.threads === 1 ? "it" : "them"} (${gateTime(r.unchanged.since)}), so no model call`;
   if (!r.meetings.processed.length && !r.staged.length && !r.updated?.length) return null;
   return `${r.meetings.processed.length} meeting(s) processed, ${r.staged.length} new task(s) waiting for your approval (pmx proposals)${(r.updated ?? []).map((u) => `; ${updatedLine(u, false)}`).join("")}${r.heldOver ? `; ${heldOverLine(r.heldOver)!.replace(/\.$/, "")}` : ""}${(r.waiting ?? []).map((k) => `; ${kindLine(k)} (pmx jobs add ${k.kind})`).join("")}`;
 };

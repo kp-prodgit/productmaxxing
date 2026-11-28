@@ -2,6 +2,8 @@
 // It runs the `pmxe` command and reads only its versioned JSON: checks, release notes, the checklist and, for the
 // Strategy area (BOARD-11), where Engine stands as labels; never content. It never reads Engine's files. The one command
 // that changes anything is Engine's own updater, `pmxe update` with no other arguments, which `pmx update` runs (COMPAT-7).
+// The background run only asks that updater whether a newer Engine is out (`pmxe update --check --json`, which installs
+// nothing), so PMX can say so; it never installs Engine.
 // Only commands import it (doctor, flow, index): they hand what it reads to the board by injection (src/flow/strategy.ts),
 // and to `pmx install` the same way (src/setup/install.ts), never to anything Claude reads in a chat. Tests hold these
 // rules (test/engine-bridge.test.ts, test/join-gate.test.ts).
@@ -11,7 +13,11 @@ import { join } from "node:path";
 import { commandFile, onPath } from "../core/bin.js";
 import type { Exec } from "../core/exec.js";
 import type { EngineUpdate } from "../core/update.js";
+import { compareVersions } from "../core/version.js";
 import { engineViewOf, everyMinute, isStudioPlace, readEngineChecklist, type EngineChecklist, type EngineSource, type EngineView, type StudioPlace } from "../flow/strategy.js";
+
+/** A PMX Engine version as `pmxe --version` prints it: a release, or a test build of one ("0.18.0-next.2", RELEASING.md). */
+const ENGINE_VERSION = /^\d+\.\d+\.\d+(?:-next\.\d+)?$/;
 
 /** The JSON format PMX understands from `pmxe doctor`, `whats-new`, `checklist` and `status`, each with `--json`. */
 export const ENGINE_FORMAT = 1;
@@ -70,7 +76,7 @@ export async function locatePmxe(exec: Exec, o: { candidates?: string[] } = {}):
       const started = Date.now();
       const r = await exec(p.cmd, argv(p, ["--version"]), { timeoutMs: VERSION_MS });
       const v = r.code === 0 ? r.stdout.trim() : "";
-      if (/^\d+\.\d+\.\d+$/.test(v)) return { pmxe: { ...p, version: v, ...(f ? { path: name } : {}) } };
+      if (ENGINE_VERSION.test(v)) return { pmxe: { ...p, version: v, ...(f ? { path: name } : {}) } };
       problem ??= { path: name, reason: why(r, Date.now() - started) };
     }
   }
@@ -79,7 +85,7 @@ export async function locatePmxe(exec: Exec, o: { candidates?: string[] } = {}):
     const started = Date.now();
     const r = await exec("pmxe", ["--version"], { timeoutMs: VERSION_MS });
     const v = r.code === 0 ? r.stdout.trim() : "";
-    if (/^\d+\.\d+\.\d+$/.test(v)) return { pmxe: { cmd: "pmxe", version: v } };
+    if (ENGINE_VERSION.test(v)) return { pmxe: { cmd: "pmxe", version: v } };
     if (!/ENOENT/.test(r.stderr)) problem = { path: "pmxe", reason: why(r, Date.now() - started) };
   }
   return problem ? { problem } : null;
@@ -194,11 +200,46 @@ export async function runEngineUpdate(exec: Exec): Promise<EngineUpdate | null> 
   if (!p) return null;
   const r = await exec(p.cmd, argv(p, ["update"]), { timeoutMs: UPDATE_MS });
   const out = `${r.stdout}\n${r.stderr}`;
-  const updated = out.match(/Updated pmx-engine from (\d+\.\d+\.\d+) to (\d+\.\d+\.\d+)/);
+  const updated = out.match(/Updated pmx-engine from (\d+\.\d+\.\d+(?:-next\.\d+)?) to (\d+\.\d+\.\d+(?:-next\.\d+)?)/);
   if (r.code === 0 && updated) return { result: "updated", from: updated[1]!, to: updated[2]! };
   if (r.code === 0) return { result: "current", version: out.match(/pmx-engine (\d+\.\d+\.\d+) is the latest/)?.[1] ?? p.version };
   if (/Not updating while a release is being sent/i.test(out)) return { result: "refused" };
   return { result: "failed", error: why(r, 0) };
+}
+
+/** How `pmxe update --check --json` answered: the newest PMX Engine, and whether this Mac's is behind it. */
+export interface EngineLatest {
+  current: string;
+  latest: string;
+  newer: boolean;
+  /** Engine wouldn't update right now: a release is approved or being sent. */
+  busy: boolean;
+}
+
+/** Before 0.5.2, `pmxe update --json` installed after reporting. PMX asks no older Engine. */
+const ASKS_ONLY_SINCE = [0, 5, 2];
+const parts = (v: string) => v.replace(/-.*$/, "").split(".").map(Number);
+const cmp = (a: number[], b: number[]) => { for (let i = 0; i < 3; i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0); return 0; };
+
+/**
+ * COMPAT-7: whether a newer PMX Engine is out, for the background run's first pass after a PMX update. It asks Engine's
+ * own updater with `--check`, which only reports and installs nothing, in every Engine that has the command. PMX's
+ * background run never installs Engine: `pmxe update` installs whatever npm calls the latest, checked only against
+ * npm's own hash, with no review by the team, and the run installs nothing but the package the team's repo carries. So
+ * PMX says a newer Engine is out and a person runs `pmxe update` (or `pmx update`, which runs it). Null where Engine
+ * isn't on this Mac, is too old to ask, or didn't answer in a shape PMX knows.
+ */
+export async function engineLatest(exec: Exec): Promise<EngineLatest | null> {
+  const p = await findPmxe(exec);
+  if (!p || cmp(parts(p.version), ASKS_ONLY_SINCE) < 0) return null;
+  const r = await exec(p.cmd, argv(p, ["update", "--check", "--json"]), { timeoutMs: 60000 });
+  try {
+    const j = JSON.parse(r.stdout) as { ok?: unknown; latest?: unknown; busy?: unknown };
+    if (!j || j.ok !== true || typeof j.latest !== "string" || !/^\d+\.\d+\.\d+$/.test(j.latest)) return null;
+    return { current: p.version, latest: j.latest, newer: (compareVersions(j.latest, p.version) ?? 0) > 0, busy: Array.isArray(j.busy) && j.busy.length > 0 };
+  } catch {
+    return null;
+  }
 }
 
 /**

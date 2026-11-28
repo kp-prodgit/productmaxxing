@@ -60,6 +60,21 @@ export interface State {
   whatsNew: { seen: string | null; since: string | null } | null;
   /** UPGRADE-1: the pmx that last ran here, the version it came from, and each update step done (src/core/upgrade.ts). */
   upgrade?: import("./upgrade.js").UpgradeRecord | null;
+  /**
+   * UPGRADE-1: a reload of the background job that a run asked for, to happen once that run has ended: when it last
+   * asked, and how many times since the job was last seen reloaded. Cleared when the job runs with what was asked.
+   */
+  jobReload?: { at: string; tries: number } | null;
+  /**
+   * UPGRADE-1: the version whose "what's left for you" line this Mac was told, by the background run's first pass on
+   * it or by `pmx migrate` (which `pmx update` runs), so it's said once.
+   */
+  updateTold?: string | null;
+  /**
+   * COMPAT-7: the newest PMX Engine its own updater reported when PMX last asked (the first background run after a PMX
+   * update, where Engine is on this Mac). PMX never installs it unattended; the checklist says when it's out.
+   */
+  engineUpdate?: { latest: string; current: string; at: string; busy?: boolean } | null;
   /** RUN-5: when this Mac last removed the evidence packs of finished or dropped tasks from the team repo. */
   evidenceTidyAt?: string | null;
   /**
@@ -80,6 +95,13 @@ export interface State {
    * (`due`); the next background run does it once and says what it did (`did`), when (`at`).
    */
   followUpRequeue?: { due: boolean; at: string | null; did?: string | null } | null;
+  /**
+   * LINEAR-2 (0.41.0): the PM was asked for a Linear API key and chose the Claude app's sync instead, so setup doesn't
+   * ask again. Null or absent: never asked, or a key was saved since.
+   */
+  linearChoice?: { via: "claude-app"; at: string } | null;
+  /** COMPANY-1 (0.41.0): the teams the last company roll-up couldn't read with this Mac's Linear key, and why. */
+  rollupUnread?: { at: string; teams: { name: string; teamKey: string; why: string }[] } | null;
   /** When this Mac's pmx started tracking task runs. Older runs left no record, so "never ran" counts from here. */
   taskRunsSince: string | null;
 }

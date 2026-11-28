@@ -72,9 +72,15 @@ async function main(argv: string[]): Promise<number> {
   if (cmd.name !== "mcp" && cmd.name !== "uninstall" && cmd.name !== "install" && cmd.name !== "hook") {
     const handed = await migrateFromProductGit({ exec, launchd: macLaunchd(), cli: fileURLToPath(import.meta.url), argv, say: (s) => process.stderr.write(`${s}\n`) });
     if (handed !== null) return handed;
-    // UPGRADE-1: after an update, what this Mac needs from the new version, once (the background job reloads itself
-    // only from a command someone runs). Never stops the command: a step that fails waits for the next one.
+    // UPGRADE-1: after an update, what this Mac needs from the new version, once. The background run does all of it
+    // too: a job that has to be reloaded is reloaded once the run has ended, never under it. Never stops the command:
+    // a step that fails waits for the next one.
     const up = await upgradeOnStart({ exec, launchd: macLaunchd(), cliPath: fileURLToPath(import.meta.url), interactive: cmd.name !== "tick" }).catch(() => null);
+    // The background run's log says what the update steps did, and what isn't done yet and why.
+    if (cmd.name === "tick" && up) {
+      const said = [...up.did.filter((x) => x.did !== "nothing to do").map((x) => x.did), ...up.waiting.map((w) => `${w.self ? "not yet" : "couldn't yet"}: ${w.why}`)];
+      if (said.length) console.log(`${new Date().toISOString()} update steps for pmx ${up.to}: ${said.join("; ")}`);
+    }
     if (up?.did.some((x) => x.did !== "nothing to do") && cmd.name !== "tick" && cmd.name !== "migrate" && !QUIET_COMMANDS.has(cmd.name))
       process.stderr.write(`Updated this Mac for pmx ${up.to}: ${up.did.filter((x) => x.did !== "nothing to do").map((x) => x.did).join("; ")}. What's left: pmx checklist\n`);
   }

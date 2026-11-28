@@ -1,4 +1,4 @@
-import { appliedSchedule, neededTasks, nextCronTime, syncDueCron, taskRunHealth, taskState, workingTimes } from "../claude/tasks.js";
+import { appliedSchedule, DEFAULT_TASK_HOURS, neededTasks, nextCronTime, syncDueCron, taskRunHealth, taskState, workingTimes } from "../claude/tasks.js";
 import { checklistForPage, pageWords, readHistory } from "../setup/checklist.js";
 import { webServerStatus } from "./web-server.js";
 import { budget, budgetBlock } from "../budget/provider.js";
@@ -12,10 +12,11 @@ import { parseRubric } from "../core/skillcheck.js";
 import { loadSkill, skillInventory } from "../core/skills.js";
 import { loadState } from "../core/state.js";
 import { SIZES, type Size } from "../core/types.js";
-import { followUpsOn, isProductLead, kindsToChoose, startsNow } from "../core/config.js";
+import { autoUpdateOn, followUpsOn, isProductLead, kindsToChoose, startsNow } from "../core/config.js";
 import { privacyRules } from "../digest/gather.js";
 import { meetingSeries } from "../inputs/inputs.js";
 import { linearAccess } from "../linear/access.js";
+import { directHealth } from "../linear/direct.js";
 import { readProposals } from "../synth/proposals.js";
 import { choiceLine, heldOverCount, kindLine, kindsWaiting, kindWords } from "../synth/held-over.js";
 import { openThemes } from "../synth/themes.js";
@@ -144,6 +145,17 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   });
   const access = await linearAccess(ctx.team, o.keychain).catch(() => "none" as const);
   let relay: { ok: boolean; problem?: string } = { ok: true };
+  // LINEAR-2 (0.41.0): with a key, how PMX's own reads are doing, from its record; the page asks Linear nothing. A key
+  // Linear no longer accepts is said first, in words the page may show: the key itself is pasted in Terminal only.
+  if (access === "key") {
+    const h = await directHealth(ctx.team, now, { waiting: outbox.ops.length }).catch(() => null);
+    if (h && !h.ok) {
+      const text = h.problem?.kind === "key-rejected" ? "Linear no longer accepts this Mac's API key, so nothing reaches Linear and PMX can't see your team's changes. Paste a new key in Terminal, or go back to the Claude app's sync. Health, then Setup, says how."
+        : "This Mac's Linear key can read your team's project but can't change it, so nothing PMX does reaches Linear. It needs Read and Write. Health, then Setup, says how to paste a new one.";
+      problems.push({ text, fix: "tab:health/setup" });
+      relay = { ok: false, problem: text };
+    }
+  }
   if (access === "relay") {
     const r = await relayHealth(ctx.team, now, { cron: await syncDueCron(ctx.personal.taskHours) });
     if (!r.ok) {
@@ -162,7 +174,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   if (!rules0.internalDomains.length) problems.push({ text: "PMX doesn't know your company's email domain yet, so it keeps every meeting private and can't spot customer calls. Add your domain under Who counts as a customer.", fix: "rule:domains" });
   const collect = state.collectReports.at(-1)?.at ?? null;
   if (collect) facts.push(`collection ${hm(collect)}`);
-  if (snap) facts.push(`Linear synced ${hm(snap.syncedAt)}`);
+  if (snap) facts.push(`Linear ${access === "key" ? "read" : "synced"} ${hm(snap.syncedAt)}`);
   if (state.lastTick) facts.push(`background job ${hm(state.lastTick.at)}`);
 
   // Skills, with how often each ran in the window.
@@ -190,7 +202,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
     schedules, collectReports: state.collectReports, receipts, runlog: log, tracker: ctx.team.tracker.kind !== "none", synthesizer: ctx.team.synthesizer,
     company: ctx.team.company?.teams.length ? { machine: ctx.team.company.machine } : null, lastSynthAt: state.lastSynthAt, lastRollupAt: state.lastRollupAt,
     lastEventSyncAt: state.lastEventSyncAt, analytics: !!cloudTarget(ctx.team, ctx.personal) && analyticsOn(ctx.personal),
-    autoUpdate: { on: !!ctx.team.cli?.autoUpdate, state: state.autoUpdate, version: currentVersion() },
+    autoUpdate: { on: autoUpdateOn(ctx.team), state: state.autoUpdate, version: currentVersion() },
     linear: { mode: access, syncedAt: snap?.syncedAt ?? null, waiting: outbox.ops.length, ...relay },
     proposals: proposals.length, drafts: tasksNow.filter((x) => x.status === "review").length, reviewCap: ctx.team.reviewQueueCap, todos: todos.filter((t) => t.status === "open").length,
     paused: [...paused.keys()], digest, pendingTeam: 0, killSwitch: ks, jobs, startNow: startsNow(ctx.team), followUps: followUpsOn(ctx.team),
@@ -207,6 +219,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
   if (unplugged.length) problems.push({ text: `${unplugged.map((r) => r.connector).join(" and ")} ${unplugged.length === 1 ? "isn't" : "aren't"} connected in your Claude app, so PMX can't read ${unplugged.length === 1 ? "it" : "them"}. Add ${unplugged.length === 1 ? "it" : "them"} under Settings → Connectors in the Claude app.`, fix: "tab:sources" });
   return buildPipeline({
     level: o.level, now, hours, agent: ctx.agent, receipts, runlog: log, issues, linearSyncedAt: snap?.syncedAt ?? null,
+    linearVia: access === "none" ? "none" : access === "relay" ? "relay" : access === "key" ? "direct" : undefined,
     collectReports: state.collectReports, todosCreated: todos.map((t) => t.createdAt), proposals, heldOver: await heldOverCount().catch(() => 0),
     openTodos: todos.filter((t) => t.status === "open"), pendingTeam,
     // N1: a kind of work synthesis suggestions wait for; its card is replaced by the team change once that's sent.
@@ -239,7 +252,7 @@ export async function loadPipeline(ctx: Pick<Ctx, "team" | "personal" | "repo" |
       budget: { dailyUsd: ctx.personal.budget.dailyUsd, teamCap: ctx.team.caps.perDayUsd, spentUsd: b.spentUsd, tokens: b.tokens },
       todosToLinear: !!ctx.personal.todosToLinear,
       // CLAUDE-6: when PMX's Claude tasks do their work; a PMX setting from 0.36.0.
-      taskHours: ctx.personal.taskHours ?? "weekdays",
+      taskHours: ctx.personal.taskHours ?? DEFAULT_TASK_HOURS,
       startNow: startsNow(ctx.team),
       productLead: ctx.team.productLead ?? null,
       productLeadIsYou: isProductLead(ctx.team, ctx.personal),

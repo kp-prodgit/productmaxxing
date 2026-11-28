@@ -9,6 +9,7 @@ import { trackerGuard } from "../src/core/tracker-text.js";
 import type { Task } from "../src/core/types.js";
 import { followUpItems, norm, plain } from "../src/review/draft-reader.js";
 import { askText, askTodo, askWhy, followUpsOnAccept, followUpText, readFollowUps } from "../src/review/followups.js";
+import { legacyKeys } from "../src/review/legacy/follow-up-keys.js";
 import { draftComment } from "../src/run/comment.js";
 import { readProposals } from "../src/synth/proposals.js";
 import { loadTodos } from "../src/todo/todo.js";
@@ -605,12 +606,14 @@ describe("the end-to-end test's wording lows, fourth round (FOLLOW-1, 2026-11-27
     const a = await accept(md, { id: "lin-6", identifier: "PMX-6", title: "Brief the pilot terms" });
     expect(a.todos.map((t) => t.action ?? false)).toEqual([false, false, false, false, false]);
     expect(followUpText(a)).toBe("5 decisions and 1 question to ask added to your to-dos.");
-    // The same key as the words 0.40.2 gave it ("whether to ask: What is …?"), so a draft accepted then and again now
-    // makes none twice.
+    // The key 0.40.2 recorded for it, from the words it gave it then ("whether to ask: What is …?"), is still the one
+    // found for its item, so a draft accepted then and again now makes none twice. Since 0.41.0 the reader gives a
+    // follow-up a fixed ID and no wording key: the old key comes from the frozen 0.40.3 reader, by the item's ID.
     const key040 = (core: string) => createHash("sha256").update(`d\n${norm(core)}`).digest("hex").slice(0, 12);
-    expect(r.decisions.slice(0, 2).map((d) => d.key)).toEqual([
-      key040("whether to ask: What is the real cost of the workaround?"),
-      key040("how to package: Is the $360,000 conditional on dedicated capacity, and what does that cost?"),
+    const old = legacyKeys(md, "PMX-6", NOW);
+    expect(r.decisions.slice(0, 2).map((d) => d.ids.flatMap((id) => old.get(id) ?? []))).toEqual([
+      [key040("whether to ask: What is the real cost of the workaround?")],
+      [key040("how to package: Is the $360,000 conditional on dedicated capacity, and what does that cost?")],
     ]);
     const again = await accept(md, { id: "lin-6", identifier: "PMX-6", title: "Brief the pilot terms" });
     expect([again.todos.length, again.repeated]).toEqual([0, 6]);
@@ -621,8 +624,10 @@ describe("the end-to-end test's wording lows, fourth round (FOLLOW-1, 2026-11-27
     // 164 characters: "Decide whether to ask: <Q>? (PMX-90)" is 196, "… ask the question: <Q>? (PMX-90)" would be 209.
     const q = "What does it cost the support team each week to rebuild the import mapping by hand for every large account that renews on the older plan, week after week, all year?";
     expect(q.length).toBe(164);
-    const r = readFollowUps(draft("PMX-90: Brief the import costs", "Open questions", [`${q} **PM decides:** whether to ask.`]), "PMX-90", NOW);
-    expect(r.decisions.map((d) => [d.text, d.key])).toEqual([[`Decide whether to ask: ${q} (PMX-90)`, key040(`whether to ask: ${q}`)]]);
+    const md = draft("PMX-90: Brief the import costs", "Open questions", [`${q} **PM decides:** whether to ask.`]);
+    const r = readFollowUps(md, "PMX-90", NOW);
+    const old = legacyKeys(md, "PMX-90", NOW);
+    expect(r.decisions.map((d) => [d.text, d.ids.flatMap((id) => old.get(id) ?? [])])).toEqual([[`Decide whether to ask: ${q} (PMX-90)`, [key040(`whether to ask: ${q}`)]]]);
     expect(r.decisions[0]!.text.length).toBeLessThanOrEqual(200);
   });
 });

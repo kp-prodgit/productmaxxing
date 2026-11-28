@@ -216,7 +216,7 @@ describe("0.16.1: pmx init offers the /pmx-flow server (FLOW-4)", () => {
       const a = scriptedAsker(answers);
       return { ...a, confirm: async (q: string, def?: boolean) => { asked.push(q); return a.confirm(q, def); } };
     };
-    const init = (answers: Record<string, string | boolean>) => runInit({
+    const init = (answers: Record<string, string | boolean>) => runInit({ askAll: true,
       ask: ask({ "PMX repo checkout": join(root, "pmx"), "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), "email domains": "acme.com", ...answers }),
       keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude as any, out: { info() {}, warn() {}, error() {} } as any, now: () => new Date("2026-11-07T15:00:00Z"), cliPath: "/x/cli.js",
     });

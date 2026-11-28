@@ -1,15 +1,19 @@
-import { formatTasks, LINEAR_SYNC_TASK, outsideHours, setTaskHours, taskDue, TASK_HOURS, tasksJson, type TaskHours } from "../claude/tasks.js";
+import { DEFAULT_TASK_HOURS, formatTasks, LINEAR_SYNC_TASK, outsideHours, setTaskHours, taskDue, TASK_HOURS, tasksJson, type TaskHours } from "../claude/tasks.js";
 import { boardJson, checkBoard, formatBoard, renderBoard, setBoardUrl, boardUrl } from "../claude/board.js";
 import { appSkillInstalled, appSkillTarget, BOARD_SKILL, installAppSkill } from "../claude/skill.js";
 import { addAllowRules, claudeSettingsFile } from "../claude/permissions.js";
 import { exec } from "../core/exec.js";
 import { macKeychain } from "../core/keychain.js";
 import { markTaskRun } from "../core/state.js";
-import { linearAccess } from "../linear/access.js";
+import { choseClaudeApp, linearAccess, rememberClaudeApp } from "../linear/access.js";
+import { directHealth } from "../linear/direct.js";
+import { adoptKey, checkLinearKey, directFor, drainOutbox, keyHelp, KEY_QUESTION, leftoverTaskOnce, removeKey, rollupTeams } from "../linear/switch.js";
 import { linearLogin, linearLogout, readGrant } from "../linear/oauth.js";
 import { removePackNow, shareEvidence, unstageShares } from "../run/share.js";
 import { giveBackTodos } from "../todo/move.js";
-import { checkRelay, dropOps, formatOutbox, opWords, pendingIdentifier, readOutbox, readSnapshot, relayPrompt, relayTracker } from "../tracker/relay.js";
+import { checkRelay, closeRelayRun, dropOps, formatOutbox, opWords, pendingIdentifier, readOutbox, readSnapshot, relayPrompt, relayRunUnderWay, relayTracker, resultsWaiting, takeResults } from "../tracker/relay.js";
+import type { TickStep } from "./tick.js";
+import { assertTeamVersion } from "../core/version.js";
 import { markTask, tendMarks } from "../lease/marks.js";
 import type { Command } from "./index.js";
 import { services } from "../core/services.js";
@@ -24,7 +28,7 @@ async function openUrl(url: string) {
 export async function linearMode(ctx: import("../core/context.js").Ctx): Promise<string> {
   const access = await linearAccess(ctx.team, ctx.keychain);
   if (access === "none") return "no Linear project in pmx.config.json";
-  if (access === "key") return "Linear API key in the keychain";
+  if (access === "key") return (await directHealth(ctx.team, ctx.now(), { waiting: (await readOutbox()).ops.length })).detail.replace(/^Linear with your API key: /, "with your API key (in this Mac's keychain): ");
   if (access === "signed-in") {
     const g = await readGrant(ctx.keychain);
     return `signed in to Linear${g?.user ? ` as ${g.user}` : ""}${g ? ` (renews itself; access valid to ${g.expiresAt.slice(0, 16).replace("T", " ")})` : ""}`;
@@ -32,15 +36,40 @@ export async function linearMode(ctx: import("../core/context.js").Ctx): Promise
   if (access === "hosted") return "through the hosted app's Linear connection";
   const snap = await readSnapshot();
   const pending = (await readOutbox()).ops.length;
-  return `through your Claude app: ${snap ? `last synced ${snap.syncedAt}` : "not synced yet"}, ${pending} change(s) waiting for the next sync`;
+  return `through your Claude app: ${snap ? `last synced ${snap.syncedAt}` : "not synced yet"}, ${pending} change(s) waiting for the next sync${(await choseClaudeApp()) ? "" : ". PMX's usual way is your own Linear API key, which syncs with every background run: pmx linear key"}`;
 }
+
+/** What a Linear sync task still in the Claude app is told once this Mac has its own key: nothing to do, and safe to remove. */
+export const RELAY_NOT_NEEDED = `PMX: this Mac reaches Linear with its own API key now, and syncs with every background run, so this task has nothing to do. Stop here: report "PMX syncs Linear itself now; this task is no longer needed and is safe to delete." and do nothing else. Don't use the Linear connector, and don't write any file.`;
+
+/**
+ * LINEAR-2 (0.41.0): the background run's own Linear step, on a Mac with a key. One read (what changed since the last
+ * run, or the day's first whole read), which also keeps PMX's copy for its page; then anything still queued from the
+ * Claude app's sync, sent directly. A key Linear rejects, or its rate limit, is thrown to the run, which says it once.
+ */
+export const linearStep: TickStep = async (ctx) => {
+  if ((await linearAccess(ctx.team, ctx.keychain)) !== "key") return null;
+  const key = await ctx.keychain.get("linear-token");
+  if (!key) return null;
+  const t = directFor(ctx, key);
+  await t.list();
+  const said: string[] = [];
+  if ((await readOutbox()).ops.length && !(await relayRunUnderWay(ctx.now()))) {
+    // Shared team work, like every write to the tracker (COMPAT-2).
+    assertTeamVersion(ctx.team);
+    said.push(...(await drainOutbox(ctx, t)).lines);
+  }
+  const left = await leftoverTaskOnce(ctx.now());
+  if (left) said.push(left);
+  return said.join(" ") || null;
+};
 
 export const linearCommands: Command[] = [
   {
     name: "linear",
-    summary: "How PMX reaches Linear: through your Claude app's Linear connector (no key or sign-in) by default",
-    usage: "pmx linear status | pmx linear written [--json] | pmx linear tidy [--yes] | pmx linear withdraw <PMX-12 …> [--yes] | pmx linear outbox [drop <ID …>] | pmx linear relay --prompt | --check | pmx linear key (advanced: store a Linear API key)",
-    options: { prompt: { type: "boolean" }, check: { type: "boolean" }, json: { type: "boolean" }, yes: { type: "boolean", short: "y" } },
+    summary: "How PMX reaches Linear: with your own Linear API key by default, or through your Claude app's Linear connector",
+    usage: "pmx linear status | pmx linear key (paste or replace your Linear API key; it says where to create one) | pmx linear key --remove (back to the Claude app's sync) | pmx linear written [--json] | pmx linear tidy [--yes] | pmx linear withdraw <PMX-12 …> [--yes] | pmx linear outbox [drop <ID …>] | pmx linear relay --prompt | --check",
+    options: { prompt: { type: "boolean" }, check: { type: "boolean" }, json: { type: "boolean" }, yes: { type: "boolean", short: "y" }, remove: { type: "boolean" } },
     async run(a) {
       const sub = a.positionals[0] ?? "status";
       if (sub === "login") {
@@ -52,16 +81,44 @@ export const linearCommands: Command[] = [
         console.log((await linearLogout(macKeychain())) ? "Signed out of Linear and revoked PMX's access." : "Not signed in to Linear.");
         return 0;
       }
+      // LINEAR-2 (0.41.0): the key is the default way to Linear. Pasted here and only here, checked before it's saved,
+      // kept in the keychain; a Mac that was on the Claude app's sync is moved over with nothing lost.
       if (sub === "key") {
-        const v = (await a.ask.secret("Linear API key with access to the PMX project (blank to cancel)")).trim();
-        if (!v) return 0;
-        await macKeychain().set("linear-token", v);
-        console.log("Saved the Linear API key in the keychain. PMX now talks to Linear directly; the Claude sync task is no longer needed on this Mac.");
+        const ctx = await a.ctx();
+        if (ctx.team.tracker.kind !== "linear") throw new Error("Your team has no Linear project in pmx.config.json, so there's nothing for a key to reach.");
+        if (a.values.remove) { console.log((await removeKey(ctx)).join("\n")); return 0; }
+        const had = !!(await ctx.keychain.get("linear-token"));
+        const rollup = rollupTeams(ctx.team, { handle: ctx.personal.handle, agent: ctx.agent });
+        console.log(keyHelp(ctx.team, { rollup }).join("\n"));
+        if (had) console.log("  A key is stored already: paste another to replace it, or press Return to keep it. To go back to the Claude app's sync: pmx linear key --remove.");
+        const v = (await a.ask.secret(had ? "Linear API key (Return to keep the one stored)" : KEY_QUESTION)).trim();
+        if (!v) {
+          if (had) { console.log("Nothing changed: the key in the keychain stays."); return 0; }
+          await rememberClaudeApp(ctx.now());
+          console.log("No key saved. PMX reaches Linear through your Claude app's Linear connector, once an hour, and won't ask again. To use a key later: pmx linear key.");
+          return 0;
+        }
+        const check = await checkLinearKey(ctx, v, { rollup });
+        console.log(check.lines.join("\n"));
+        if (!check.ok) return 1;
+        const r = await adoptKey(ctx, v);
+        console.log(r.lines.join("\n"));
+        // RUN-5, PULL-14: tasks that just got their identifiers can have their quotes shared, and this Mac's steps landed.
+        if (r.drained?.applied) {
+          const key = await ctx.keychain.get("linear-token");
+          if (key) await tendMarks(ctx, directFor(ctx, key)).catch(() => 0);
+          const shared = await shareEvidence(ctx, { say: "answer" }).catch(() => null);
+          for (const n of shared?.notices ?? []) console.log(n);
+        }
         return 0;
       }
       // R16b: what waits for the Claude sync, what Linear refused, and dropping one before it reaches Linear.
       if (sub === "outbox") {
-        if (!a.positionals[1]) { console.log(await formatOutbox()); return 0; }
+        if (!a.positionals[1]) {
+          const c = await a.ctx().catch(() => null);
+          console.log(await formatOutbox({ direct: !!c && (await linearAccess(c.team, c.keychain).catch(() => "none")) === "key" }));
+          return 0;
+        }
         if (a.positionals[1] !== "drop") throw new Error("Use pmx linear outbox, or pmx linear outbox drop <ID …>.");
         const ids = a.positionals.slice(2);
         if (!ids.length) throw new Error("Say which: pmx linear outbox drop <ID>, from `pmx linear outbox`.");
@@ -77,6 +134,20 @@ export const linearCommands: Command[] = [
       }
       const ctx = await a.ctx();
       if (sub === "relay") {
+        // LINEAR-2 (0.41.0): with a key this Mac syncs Linear itself. A sync task left in the Claude app does nothing:
+        // its first step says so, and its last only takes in what a run that began before the key had already applied.
+        if ((await linearAccess(ctx.team, ctx.keychain)) === "key" && (a.values.check || a.values.prompt)) {
+          if (a.values.check && (await resultsWaiting())) {
+            console.log((await takeResults(ctx.now())).out.join("\n"));
+            await closeRelayRun();
+            const shared = await shareEvidence(ctx, { say: "notify" }).catch(() => null);
+            for (const n of shared?.notices ?? []) console.log(n);
+          }
+          console.log(RELAY_NOT_NEEDED);
+          if (a.values.prompt) await markTaskRun(LINEAR_SYNC_TASK.id, "start", ctx.now());
+          await markTaskRun(LINEAR_SYNC_TASK.id, "finish", ctx.now());
+          return 0;
+        }
         if (a.values.check) {
           console.log((await checkRelay(ctx.team, ctx.now())).join("\n"));
           // PULL-14: this Mac's steps the sync just applied in Linear have landed, so other Macs' copies can show them.
@@ -89,7 +160,8 @@ export const linearCommands: Command[] = [
           return 0;
         }
         if (a.values.prompt) {
-          // CLAUDE-6: the app starts the sync every hour; outside the PM's hours its run stops here, and counts as run.
+          // CLAUDE-6: the app starts the sync every hour; for a PM on working hours only, a run outside them stops here,
+          // and counts as run.
           const due = taskDue(LINEAR_SYNC_TASK, ctx.personal.taskHours, ctx.now());
           if (!due.due) {
             console.log(outsideHours(due.why));
@@ -97,11 +169,11 @@ export const linearCommands: Command[] = [
             await markTaskRun(LINEAR_SYNC_TASK.id, "finish", ctx.now());
             return 0;
           }
-          console.log(await relayPrompt(ctx.team));
+          console.log(await relayPrompt(ctx.team, ctx.now()));
           await markTaskRun(LINEAR_SYNC_TASK.id, "start", ctx.now());
           return 0;
         }
-        console.log("The Claude relay runs from a scheduled task in your Claude app. See which tasks this machine needs with `pmx schedule`.");
+        console.log("The Claude app's Linear sync runs from a scheduled task in your Claude app, for a Mac without its own Linear API key. See which tasks this machine needs with `pmx schedule`.");
         return 0;
       }
       if (sub === "status") {
@@ -156,18 +228,21 @@ export const linearCommands: Command[] = [
   {
     name: "schedule",
     summary: "The scheduled tasks PMX needs in your Claude app and whether each exists; type /pmx-schedule in the Claude app to create them",
-    usage: "pmx schedule [--json] | pmx schedule --hours weekdays|always | pmx schedule --install-skill | pmx schedule --allow",
+    usage: "pmx schedule [--json] | pmx schedule --hours always|weekdays | pmx schedule --install-skill | pmx schedule --allow",
     options: { json: { type: "boolean" }, "install-skill": { type: "boolean" }, allow: { type: "boolean" }, hours: { type: "string" } },
     async run(a) {
-      // CLAUDE-6: when PMX's Claude tasks do their work on this Mac. A PMX setting from 0.36.0: each run asks PMX first.
+      // CLAUDE-6: when PMX's Claude tasks do their work on this Mac: around the clock (the default from 0.41.0) or in
+      // working hours only. A PMX setting from 0.36.0: each run asks PMX first.
       if (a.values.hours !== undefined) {
         const hours = String(a.values.hours).toLowerCase() as TaskHours;
         if (!TASK_HOURS.includes(hours)) throw new Error(`--hours takes ${TASK_HOURS.join(" or ")}.`);
         const ctx = await a.ctx();
-        console.log(await setTaskHours(ctx.personal, hours));
-        if (hours === "always") console.log("For agents that run unattended, `pmx linear key` lets PMX reach Linear directly, with no Claude task in between.");
+        const direct = (await linearAccess(ctx.team, ctx.keychain)) === "key";
+        console.log(await setTaskHours(ctx.personal, hours, { direct }));
+        if (hours === "always") { if (!direct && ctx.team.tracker.kind === "linear" && !(await choseClaudeApp())) console.log("With your own Linear API key PMX syncs Linear itself with every background run, and no Claude task is in between: pmx linear key."); }
+        else console.log("To go back to around the clock, PMX's usual setting: pmx schedule --hours always");
         console.log("");
-        console.log(await formatTasks(ctx.team, macKeychain(), hours));
+        console.log(await formatTasks(ctx.team, ctx.keychain, hours));
         return 0;
       }
       if (a.values.allow) {
@@ -186,8 +261,8 @@ export const linearCommands: Command[] = [
         return r === "kept-yours" ? 1 : 0;
       }
       const ctx = await a.ctx().catch(() => null);
-      const hours = ctx?.personal.taskHours ?? "weekdays";
-      console.log(a.values.json ? JSON.stringify(await tasksJson(ctx?.team ?? null, macKeychain()), null, 2) : await formatTasks(ctx?.team ?? null, macKeychain(), hours));
+      const hours = ctx?.personal.taskHours ?? DEFAULT_TASK_HOURS;
+      console.log(a.values.json ? JSON.stringify(await tasksJson(ctx?.team ?? null, ctx?.keychain ?? macKeychain()), null, 2) : await formatTasks(ctx?.team ?? null, ctx?.keychain ?? macKeychain(), hours));
       return 0;
     },
   },

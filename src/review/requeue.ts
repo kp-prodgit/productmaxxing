@@ -10,7 +10,7 @@ import { privateNames } from "../run/run.js";
 import { dropProposals, readProposals, requeueProposals, type Proposal } from "../synth/proposals.js";
 import { keepTodo } from "../todo/todo.js";
 import { cut, deadlineIn, followUpItems, norm, type FollowUpItem } from "./draft-reader.js";
-import { askTodo, followUpKind, inWords, recordRequeued, type Requeued } from "./followups.js";
+import { askTodo, followUpKind, inWords, recordRequeued, type Made, type Requeued } from "./followups.js";
 
 /**
  * D2-8 (FOLLOW-1, UPGRADE-1): the follow-ups an older PMX left waiting for approval, read again by today's rules.
@@ -30,7 +30,10 @@ import { askTodo, followUpKind, inWords, recordRequeued, type Requeued } from ".
  *   plan.") stays as it is.
  *
  * A follow-up whose draft can't be read any more, or whose item the draft no longer has, stays as it is. Each change is
- * recorded with its draft in the follow-ups ledger, and the to-do says where it came from.
+ * recorded with its draft in the follow-ups ledger, and the to-do says where it came from. A follow-up that became a
+ * to-do is recorded there by its fixed ID, the item of the draft it was read from, exactly as accepting records it
+ * (src/review/follow-up-id.ts): so accepting that draft again finds it by that ID and makes none twice, however PMX
+ * words it by then.
  */
 
 /** Staged by a PMX before 0.38.0: a follow-up to an accepted draft that no tracker-rules version checked. */
@@ -93,7 +96,7 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
   const retitle: { id: string; title: string; category: string }[] = [];
   const drop: string[] = [];
   /** What each one becomes, decided before anything changes. */
-  const plans = new Map<string, { p: Proposal; as: "ask" | "decision" | "action"; text: string; due: string | null; why: string; key: string } | { p: Proposal; as: "work"; title: string; category: string }>();
+  const plans = new Map<string, { p: Proposal; as: "ask" | "decision" | "action"; text: string; due: string | null; why: string; ids: string[] } | { p: Proposal; as: "work"; title: string; category: string }>();
   for (const p of older) {
     const f = p.follows!;
     const path = f.path;
@@ -110,11 +113,11 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
       continue;
     }
     if (d) {
-      plans.set(p.id, { p, as: d.action ? "action" : "decision", text: d.text, due: d.due, why: d.why, key: d.key });
+      plans.set(p.id, { p, as: d.action ? "action" : "decision", text: d.text, due: d.due, why: d.why, ids: d.ids });
       take.push(p.id);
     } else if (q?.ask) {
       const { text, why } = askTodo(q, f.identifier, (s) => !guard.problem(s));
-      plans.set(p.id, { p, as: "ask", text, due: deadlineIn([q.question, ...q.rest].join(" "), at), why, key: q.key });
+      plans.set(p.id, { p, as: "ask", text, due: deadlineIn([q.question, ...q.rest].join(" "), at), why, ids: q.ids });
       take.push(p.id);
     } else if (q) {
       // Still work: the whole question as its title, and the kind of work it asks for. The task's own kind is the
@@ -131,12 +134,13 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
 
   // Off the list first, so one approved or dropped meanwhile never becomes a to-do as well.
   const { taken, retitled } = await requeueProposals({ take, retitle });
-  const byDraft = new Map<string, { identifier: string; path: string; changes: Requeued[]; keys: string[] }>();
-  const record = (p: Proposal, r: Requeued, key?: string) => {
+  const byDraft = new Map<string, { identifier: string; path: string; changes: Requeued[]; made: Made[] }>();
+  /** `made`: the follow-up it became a to-do of, under each item of the draft it was read from (its fixed IDs). */
+  const record = (p: Proposal, r: Requeued, made: Made[] = []) => {
     const k = `${p.follows!.identifier} ${p.follows!.path}`;
-    const e = byDraft.get(k) ?? { identifier: p.follows!.identifier, path: p.follows!.path, changes: [], keys: [] };
+    const e = byDraft.get(k) ?? { identifier: p.follows!.identifier, path: p.follows!.path, changes: [], made: [] };
     e.changes.push(r);
-    if (key) e.keys.push(key);
+    e.made.push(...made);
     byDraft.set(k, e);
   };
   for (const p of taken) {
@@ -151,7 +155,7 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
     }, now);
     const r: Requeued = { at: now.toISOString(), proposal: p.id, was: p.title, as: plan.as, now: t.text, todo: t.id };
     (plan.as === "ask" ? out.asks : plan.as === "action" ? out.actions : out.decisions).push(r);
-    record(p, r, plan.key);
+    record(p, r, plan.ids.map((id) => ({ id, as: plan.as, todo: t.id, at: r.at })));
   }
   for (const id of retitled) {
     const plan = plans.get(id);
@@ -170,7 +174,7 @@ export async function requeueFollowUps(ctx: Ctx): Promise<RequeueResult> {
     out.dropped.push(r);
     record(p, r);
   }
-  for (const e of byDraft.values()) await recordRequeued(e.identifier, e.path, e.changes, e.keys, now).catch(() => {});
+  for (const e of byDraft.values()) await recordRequeued(e.identifier, e.path, e.changes, e.made, now).catch(() => {});
   return out;
 }
 

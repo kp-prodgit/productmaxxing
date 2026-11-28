@@ -1192,7 +1192,9 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
   const drafts = () => ((D && D.drafts) || []).filter((d) => shown(`r:${d.identifier}`));
   // APPROVE-3: Start now only when PMX on this Mac says the team offers it, so an older server is never sent "start".
   const startOn = () => !!(D && D.rules && D.rules.startNow === true);
-  const relayOn = () => !!(D && D.freshness && D.freshness.linearSyncedAt);
+  // LINEAR-2 (0.41.0): with the PM's own Linear API key PMX writes to Linear at once; only through the Claude app's sync does a change wait.
+  const linearDirect = () => !!(D && D.freshness && D.freshness.linearVia === "direct");
+  const relayOn = () => !linearDirect() && !!(D && D.freshness && D.freshness.linearSyncedAt);
   // PULL-12: tasks PMX stopped after failed runs in a row.
   const stoppedList = () => ((D && D.stopped) || []).filter((t) => shown(`st:${t.identifier}`));
   // TODO-4: to-dos from meetings in a period, the last 7 days unless the PM picks another; remembered on this browser.
@@ -2187,7 +2189,7 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
     else if (fx.length) { kind = "warn"; title = fx.length === 1 ? "One thing needs a fix." : `${fx.length} things need a fix.`; }
     else if (autos.length) { kind = "warn"; title = `${plural(autos.length, "automation needs", "automations need")} a look.`; }
     const f = D.freshness || {};
-    const sub = [f.lastCollect ? `Last collection ${ago(f.lastCollect)}` : "No collection yet", f.linearSyncedAt ? `Linear synced ${ago(f.linearSyncedAt)}` : null, `Updated ${hm(D.at)}`].filter(Boolean).join(" · ");
+    const sub = [f.lastCollect ? `Last collection ${ago(f.lastCollect)}` : "No collection yet", f.linearSyncedAt ? `Linear synced ${ago(f.linearSyncedAt)}` : f.linearReadAt ? `Linear read ${ago(f.linearReadAt)}` : null, `Updated ${hm(D.at)}`].filter(Boolean).join(" · ");
     return h("div", { class: `statusline ${kind}` }, h("span", { class: "bigic" }, ic(kind === "ok" ? "check" : "warn")),
       h("div", null, h("b", null, title), h("small", null, sub)),
       fx.length ? btn("Fix in Needs you", { cls: "sm", on: () => go("needs") }) : null);
@@ -3241,15 +3243,23 @@ details.why summary { cursor: pointer; font-size: 13px; color: var(--fg-2) }
       ];
     }],
   };
-  // CLAUDE-6: when PMX's Claude tasks do their work. PMX's own setting: one click, and nothing changes in the Claude app.
+  // CLAUDE-6: when PMX's Claude tasks do their work: around the clock, the usual setting (the default from 0.41.0), or
+  // working hours only. PMX's own setting: one click, and nothing changes in the Claude app.
   const HOURS = [["always", "Sync whenever PMX runs"], ["weekdays", "Working hours only"]];
   function hoursCard() {
     const cur = D.rules && D.rules.taskHours;
     if (!cur) return null;
-    return card("When PMX's Claude tasks work", "The Linear sync and meeting collection in the Claude app.", h("div", { class: "sr", id: "task-hours" },
-      h("div", { class: "nm" }, cur === "always" ? "Whenever PMX runs: the Linear sync every hour, every day, and meeting collection every day at 12:30 and 17:30." : "Working hours: the Linear sync every hour from 8:00 to 18:00 on weekdays, and meeting collection at 12:30 and 17:30 on weekdays.",
-        h("small", null, "Outside working hours each run starts briefly and stops. They run only while the Claude app is open and this Mac is awake. Changing this needs nothing in the Claude app.")),
-      h("div", { class: "theme", role: "group", "aria-label": "When PMX's Claude tasks work" }, HOURS.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": cur === v ? "true" : "false", "data-fk": `hours-${v}`, onclick: (ev) => setHours(v, ev.currentTarget) }, l)))), { badge: scopeChip("me") });
+    // LINEAR-2 (0.41.0): with a Linear API key the hours are meeting collection's only; Linear syncs with every background run.
+    const direct = linearDirect();
+    const HOURS_HERE = direct ? [["always", "Collect every day"], ["weekdays", "Working hours only"]] : HOURS;
+    return card("When PMX's Claude tasks work", direct ? "Meeting collection in the Claude app. Linear isn't one of them on this Mac." : "The Linear sync and meeting collection in the Claude app.", h("div", { class: "sr", id: "task-hours" },
+      h("div", { class: "nm" }, direct
+        ? (cur === "always" ? "Every day: meeting collection at 12:30 and 17:30. This is PMX's usual setting." : "Working hours only, as you chose: meeting collection at 12:30 and 17:30 on weekdays.")
+        : cur === "always" ? "Whenever PMX runs: the Linear sync every hour, every day, and meeting collection every day at 12:30 and 17:30. This is PMX's usual setting." : "Working hours only, as you chose: the Linear sync every hour on weekdays from 8:00 to 19:00 (the last run starts at 18:00), and meeting collection at 12:30 and 17:30 on weekdays.",
+        h("small", null, direct
+          ? `${cur === "always" ? "" : "On other days each run starts briefly and stops. "}Linear isn't affected by this setting: with your API key PMX syncs it with every background run, every 30 minutes while this Mac is awake. Changing this needs nothing in the Claude app.`
+          : `${cur === "always" ? "" : "Outside working hours each run starts briefly and stops. "}They run only while the Claude app is open and this Mac is awake. Changing this needs nothing in the Claude app.`)),
+      h("div", { class: "theme", role: "group", "aria-label": "When PMX's Claude tasks work" }, HOURS_HERE.map(([v, l]) => h("button", { type: "button", class: "btn sm", "aria-pressed": cur === v ? "true" : "false", "data-fk": `hours-${v}`, onclick: (ev) => setHours(v, ev.currentTarget) }, l)))), { badge: scopeChip("me") });
   }
   async function setHours(v, b) {
     if (D.rules.taskHours === v) return;

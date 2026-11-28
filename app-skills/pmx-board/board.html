@@ -543,6 +543,44 @@ header .sub code { font-family: var(--mono); font-size: 12px }
     await S.mcp.invalidate(LINEAR).catch(() => {});
   });
 
+  // ---- The board updates itself after a PMX update (BOARD-1), as PMX's workspace page does (FLOW-8).
+  // Only for the board's owner, in the Claude app on the Mac where PMX runs: the page asks PMX there (host:pmx) for the
+  // board page /pmx-board would publish now and, when PMX is newer and its page differs, publishes it over itself, once,
+  // in the document shape the Artifact tool publishes, with the platform's own reset taken from this page's live head.
+  // Everyone else, and a page published without these capabilities, never asks. It shows nothing and changes nothing
+  // on the board: a viewer who can't write it, a conflict, or a page whose capabilities would change leaves it as it is.
+  const PMX = "host:pmx";
+  const SELF_SKELETON = (reset, html) => `<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${reset}</style></head><body>${html}</body></html>`;
+  const verN = (v) => String(v || "").split(".").map((n) => parseInt(n, 10) || 0);
+  const older = (a, b) => { const x = verN(a), y = verN(b); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
+  const session = { get(k) { try { return sessionStorage.getItem(k); } catch { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch {} } };
+  let selfTried = false;
+  async function selfUpdate(mcp) {
+    if (selfTried || !CFG.template || !CFG.caps || !CFG.version) return;
+    selfTried = true;
+    let user = null;
+    try { user = await window.claude.use("user"); } catch { user = null; }
+    let owner = false;
+    try { owner = !!user && typeof user.canEdit === "function" && (await user.canEdit()) === true; } catch { owner = false; }
+    if (!owner) return;
+    let page = null;
+    try { const r = await mcp.callTool(PMX, "board_page", { project: CFG.projectId, have: CFG.template }, { cache: false }); page = r ? r.payload : null; } catch { return; }
+    if (!page || page.yours !== true || page.current !== false || typeof page.html !== "string" || !page.template || page.template === CFG.template) return;
+    // Never an older PMX's page over a newer one, and never a page with other capabilities: /pmx-board does that.
+    if (!older(CFG.version, page.version) || JSON.stringify(page.capabilities) !== CFG.caps) return;
+    const key = "pmx-board-selfpub:" + page.template;
+    if (session.get(key) || store.get(key) === "no") return;
+    const first = document.head && document.head.querySelector("style");
+    const reset = first ? first.textContent : null;
+    if (reset == null) return;
+    let art = null;
+    try { art = await window.claude.use("artifact"); } catch { art = null; }
+    if (!art || typeof art.publish !== "function") return;
+    session.set(key, "1");
+    try { await art.publish(SELF_SKELETON(reset, page.html)); }
+    catch (e) { const c = e && e.code; if (c === "not_writer" || c === "not_granted" || c === "consent_required") store.set(key, "no"); }
+  }
+
   render();
   if (!CFG.projectId) return;
   const use = window.claude && typeof window.claude.use === "function" ? window.claude.use("mcp") : Promise.resolve(null);
@@ -552,6 +590,7 @@ header .sub code { font-family: var(--mono); font-size: 12px }
     if (!mcp) return;
     mcp.watchTool(LINEAR, "list_issue_labels", LABELS_INPUT, onLabels, { cache: { staleTime: 600000, gcTime: 86400000 }, refetchInterval: 600000 });
     mcp.watchTool(LINEAR, "list_issues", ISSUES_INPUT, onIssues, { cache: { staleTime: 30000, gcTime: 86400000 }, refetchInterval: 60000 });
+    setTimeout(() => { selfUpdate(mcp); }, 0);
   }, () => { S.mcp = null; render(); });
 })();
 </script>

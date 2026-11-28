@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { appliedSchedule, LINEAR_SYNC_TASK } from "../claude/tasks.js";
+import { appliedSchedule, LINEAR_SYNC_TASK, taskState } from "../claude/tasks.js";
 import { appSkillCurrent, appSkillInstalled, BOARD_SKILL, claudePresent, FLOW_SKILL, SETUP_SKILL, skillInstalledByPmx } from "../claude/skill.js";
 import { mcpInstalled } from "../mcp/server.js";
 import type { DoctorCheck } from "../commands/doctor.js";
@@ -13,7 +13,11 @@ import { RunLogStore } from "../core/runlog-store.js";
 import { packageRoot } from "../core/skills.js";
 import { loadState } from "../core/state.js";
 import { currentVersion } from "../core/version.js";
-import { linearAccess } from "../linear/access.js";
+import { agentHandle } from "../core/config.js";
+import { choseClaudeApp, linearAccess } from "../linear/access.js";
+import { rollupTeams } from "../linear/switch.js";
+import { kindOf, toTask } from "../tracker/linear.js";
+import { readSnapshot } from "../tracker/relay.js";
 import { readProposals } from "../synth/proposals.js";
 import { COMMITMENT } from "../todo/todo.js";
 import { relayTracker } from "../tracker/relay.js";
@@ -57,7 +61,12 @@ export async function gatherChecklist(d: GatherDeps): Promise<Checklist> {
   const relay = team?.tracker.kind === "linear" && access === "relay";
   // JOB-11: Ready tasks by kind too, so the checklist can say how many wait for a kind this PM's agent skips.
   const readyByKind: Record<string, number> = {};
-  const tasks = relay ? await relayTracker(team!).list().then((ts) => {
+  // LINEAR-2 (0.41.0): with a key PMX keeps the same copy of the project by its own reads, so the counts come from it
+  // too, and the checklist never asks Linear anything.
+  const copy = team?.tracker.kind === "linear" && access === "key"
+    ? readSnapshot().then((s) => (s && Array.isArray(s.issues) && String(s.projectId) === (team.tracker as { projectId: string }).projectId ? s.issues.filter((n) => kindOf(n) !== "meeting" && n.state?.type !== "canceled").map(toTask) : Promise.reject(new Error("no copy yet"))))
+    : null;
+  const tasks = relay || copy ? await (copy ?? relayTracker(team!).list()).then((ts) => {
     const work = ts.filter((t) => t.category !== COMMITMENT);
     for (const t of work) if (t.status === "ready" && t.category) readyByKind[t.category] = (readyByKind[t.category] ?? 0) + 1;
     return { pool: work.filter((t) => t.status === "inbox").length, ready: work.filter((t) => t.status === "ready").length, blocked: work.filter((t) => t.status === "blocked").length };
@@ -75,6 +84,10 @@ export async function gatherChecklist(d: GatherDeps): Promise<Checklist> {
     tasks, readyByKind: tasks ? readyByKind : null, practiceUntil: practiceUntil(personal, d.now),
     lastRun: last ? { taskId: last.taskId, outcome: last.outcome, ts: last.ts } : null,
     setupSkill, linearCron: relay ? (await appliedSchedule(LINEAR_SYNC_TASK).catch(() => null))?.cron ?? null : null,
+    // With no task file, appliedSchedule answers with the weekday schedule of a task from before 0.35.0: not this Mac's.
+    linearTaskMissing: relay && (await taskState(LINEAR_SYNC_TASK).catch(() => null)) === "missing",
+    linearChoseClaude: relay ? await choseClaudeApp().catch(() => true) : undefined,
+    rollup: team && personal ? ((teams) => (teams.length ? { teams, unread: state.rollupUnread?.teams ?? [], at: state.rollupUnread?.at ?? null } : null))(rollupTeams(team, { handle: personal.handle, agent: agentHandle(personal) })) : null,
     engine: d.engine ? await d.engine().catch(() => null) : null, extra,
     appSkills: claude ? { flow: await appSkillInstalled(FLOW_SKILL), board: await appSkillInstalled(BOARD_SKILL) } : undefined,
     mcpRegistered: await mcpInstalled().catch(() => false),

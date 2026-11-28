@@ -16,26 +16,30 @@ import { nextSteps, runInit, type InviteFile } from "./init.js";
 import { runStatus } from "./status.js";
 import { digestStep, recordTick, runTick, type TickStep } from "./tick.js";
 import { runUninstall } from "./uninstall.js";
-import { VENDORED_CLI, vendorCli, vendorMessage } from "../core/vendor.js";
-import { atLeast, compareVersions, currentVersion, isVersion, vendoredVersion } from "../core/version.js";
-import { formatNotes, markSeen, markUpdatingFrom, newVersionNotes, notesBetween, RELEASE_NOTES } from "../core/whats-new.js";
-import { engineChecklist, engineNotes, engineSource, findPmxe, formatEngineNotes, pmxeCandidates, runEngineUpdate } from "../engine/bridge.js";
+import { setTeamMinimum, VENDORED_CLI, vendorCli, vendorMessage } from "../core/vendor.js";
+import { teamUpdate, teamUpdateMessage } from "../core/team-update.js";
+import { atLeast, compareVersions, currentVersion, isPrerelease, isVersion, vendoredVersion } from "../core/version.js";
+import { formatNotes, markSeen, markUpdatingFrom, newVersionNotes, notesBetween, RELEASE_NOTES, testBuildNote } from "../core/whats-new.js";
+import { engineChecklist, engineLatest, engineNotes, engineSource, findPmxe, formatEngineNotes, pmxeCandidates, runEngineUpdate } from "../engine/bridge.js";
 import { formatEngineChecklist } from "../flow/strategy.js";
-import { installLatestRelease, installTeamVersion, updateEngineToo, type UpdateOutcome } from "../core/update.js";
+import { installLatestRelease, installNextRelease, installTeamVersion, latestRelease, nextRelease, updateEngineToo, type UpdateOutcome } from "../core/update.js";
 import { canWrite, runInstall } from "../setup/install.js";
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { Git } from "../core/git.js";
-import { loadState } from "../core/state.js";
+import { loadState, updateState } from "../core/state.js";
 import { writeJson } from "../core/fsutil.js";
 import { TEAM_CONFIG_FILE } from "../core/paths.js";
 import { join } from "node:path";
 import { listReceipts, readReceipt } from "../core/receipt.js";
 import { packageRoot, skillInventory, teamSkillPath } from "../core/skills.js";
 import { claudePresent, installAppSkill, SETUP_SKILL } from "../claude/skill.js";
-import { AUTO_STEPS } from "../core/upgrade.js";
+import { AUTO_STEPS, StepWaits } from "../core/upgrade.js";
 import { requeueStep } from "../review/requeue.js";
-import { formatChecklist, type Checklist, type Step } from "../setup/checklist.js";
+import { formatChecklist, leftForPeople, leftLine, type Checklist, type Step } from "../setup/checklist.js";
 import { gatherChecklist } from "../setup/gather.js";
+import { formatSetup, initYesLeft, serverRunning, setupPrompt, type AppFacts } from "../setup/claude-setup.js";
+import { desktopAppPresent, mcpInstalled } from "../mcp/server.js";
 import { syncOrgSkills, validateOrgSkill } from "../core/org-skills.js";
 import { checkChange, describe as describeChange, proposeTeamChanges } from "../flow/actions.js";
 import { rememberTeamPr } from "../flow/team-prs.js";
@@ -51,9 +55,10 @@ import { cloudCommands } from "./cloud.js";
 import { companyStep, meetingCommands, todoStep } from "./meetings.js";
 import { teamSyncStep } from "./team-sync.js";
 import { updateStep } from "./autoupdate.js";
+import { afterUpdate } from "./after-update.js";
 import { stalePages } from "../claude/pages.js";
 import { afterUpdateNote } from "../mcp/handoff.js";
-import { linearCommands } from "./linear.js";
+import { linearCommands, linearStep } from "./linear.js";
 import { flowCommands } from "./flow.js";
 import { settingsCommands } from "./settings.js";
 import { jobsCommands } from "./jobs.js";
@@ -86,6 +91,12 @@ export const tickSteps: [string, TickStep][] = [
   // The team's repo first (JOB-10), so this Mac picks up merged kinds of work and settings; then its version (COMPAT-6).
   ["team", teamSyncStep],
   ["update", updateStep],
+  // UPGRADE-1: the first run on a new version says once what the update left for a person, or that nothing is; and
+  // where PMX Engine is on this Mac, whether a newer one is out (COMPAT-7: asked, never installed).
+  ["updated", (ctx) => afterUpdate(ctx, { checklist: () => checklistNow(ctx), engine: () => engineLatest(ctx.exec) })],
+  // LINEAR-2: with a key, this run's read of Linear, and anything left queued from the Claude app's sync, before the
+  // steps that work from it.
+  ["linear", linearStep],
   ["digest", digestStep],
   ["todo", todoStep],
   // D2-8: once after an update, the follow-ups an older PMX left waiting, read again by today's rules.
@@ -109,6 +120,41 @@ async function showNewNotes(version: string): Promise<void> {
     if (note) console.log(`\n${note}`);
   }
   if (text) await markSeen(version);
+}
+
+/** What `pmx update --next` says: a test build is always called one, with how this Mac gets back to releases. */
+export function nextUpdateMessage(r: UpdateOutcome & { test?: boolean }, running: string): string {
+  const base = (v: string) => v.replace(/-.*$/, "");
+  switch (r.result) {
+    case "updated":
+      return r.test
+        ? `Installed pmx ${r.version}, a test build of ${base(r.version)}. It isn't a release: your team gets it only if someone puts it in your team's repo (pmx vendor), and pmx update --latest and pmx vendor --latest never pick it. Once ${base(r.version)} is released, pmx update --next or pmx update --latest moves this Mac to it.`
+        : `Installed pmx ${r.version}, the newest release: no test build is newer.`;
+    case "current":
+      return isPrerelease(running)
+        ? `pmx ${running} is a test build, and no newer build is out${r.version !== running ? ` (the newest is ${r.version})` : ""}.`
+        : `pmx ${running} is a release, and no test build is newer${r.version !== running ? ` (the newest is ${r.version})` : ""}.`;
+    case "dev-install": return "This pmx runs from a source checkout, so it isn't replaced. Pull and rebuild the checkout instead.";
+    case "needs-sudo": return `npm can't write to its global folder. Install Node with Homebrew (brew install node), or run:\n  ${r.command}`;
+    case "failed": return `Update failed: ${r.error}`;
+    case "no-package": return "";
+  }
+}
+
+/** What `pmx update --latest` says when nothing newer is out. A tester's Mac on a test build of the next release is ahead of the latest one, and isn't moved back unasked. */
+const latestCurrentMessage = (latest: string, running: string): string => isPrerelease(running)
+  ? `pmx ${running} is a test build, newer than the latest release (${latest}), so nothing was installed. To go back to that release: pmx update --latest --force`
+  : `pmx ${running} is the latest release.`;
+
+/**
+ * What `pmx update --next --check` and `pmx update --latest --check` say: what is out, what this Mac runs, and that
+ * nothing was installed. `--check` only compares versions, on every channel.
+ */
+export function releaseCheckMessage(channel: "next" | "latest", found: { version: string; test?: boolean }, running: string): string {
+  if ((compareVersions(found.version, running) ?? 0) <= 0) return channel === "next" ? nextUpdateMessage({ result: "current", version: found.version, test: found.test }, running) : latestCurrentMessage(found.version, running);
+  const what = found.test ? `pmx ${found.version}, a test build of ${found.version.replace(/-.*$/, "")}, is out`
+    : channel === "next" ? `pmx ${found.version}, a release, is the newest build` : `pmx ${found.version} is the latest release`;
+  return `${what}, and this Mac runs pmx ${running}. Nothing was installed: pmx update --${channel} installs it.`;
 }
 
 /**
@@ -170,22 +216,55 @@ export async function checklistFor(ctx: Ctx, engine: ReturnType<typeof engineChe
   });
 }
 
+/**
+ * What `pmx migrate` says (UPGRADE-1): what the update did on this Mac, what PMX still finishes by itself, and what's
+ * left for a person, or that nothing is. Whoever reads it (a person, or `pmx update` for them) has then been told, so
+ * the background run's first pass on this version doesn't notify them again (src/commands/after-update.ts).
+ */
+export async function migrateReport(cl: Checklist, o: { json?: boolean } = {}): Promise<string> {
+  const u = cl.upgrade;
+  if (u && u.from !== cl.version) await updateState((st) => { st.updateTold = cl.version; }).catch(() => {});
+  const left = leftForPeople(u?.pending ?? []);
+  if (o.json) return JSON.stringify({ format: 1, from: u?.from ?? null, to: cl.version, at: u?.at ?? null, applied: u?.applied ?? [], pending: u?.pending ?? [], left: u?.left ?? leftLine([]), next: cl.next }, null, 2);
+  const waiting = cl.sections.find((s) => s.id === "update")?.steps.filter((s) => s.status === "warn") ?? [];
+  return [
+    `pmx ${cl.version}${u?.from && u.from !== cl.version ? `, updated from ${u.from}` : ""}.`,
+    u?.applied.length ? `PMX did:\n${u.applied.map((x) => `  ✔ ${x.title}: ${x.did}`).join("\n")}` : "PMX had nothing to change on this Mac.",
+    ...(waiting.length ? [`${waiting.every((s) => s.auto) ? "PMX finishes by itself" : "Waiting"}:\n${waiting.map((s) => `  ! ${s.title}: ${s.detail}`).join("\n")}`] : []),
+    left.length ? `Still to do for this update:\n${left.map((s) => `  ✘ ${s.title}: ${s.do ?? s.detail}`).join("\n")}` : "Nothing else to do for this update.",
+    cl.next ? `Next: ${cl.next.title}. ${cl.next.do ?? ""}`.trim() : "",
+    "The full list: pmx checklist",
+  ].filter(Boolean).join("\n\n");
+}
+
+/** What the Claude desktop app has of PMX's server on this Mac, for when it needs a restart (SETUP-1). */
+async function appFacts(): Promise<AppFacts> {
+  return { desktopApp: await desktopAppPresent(), mcpRegistered: await mcpInstalled(), serverRunning: await serverRunning() };
+}
+
 export const commands: Command[] = [
   {
     name: "init",
-    summary: "Set up this Mac: PMX repo, clean profile, skills, keychain, background job",
-    usage: "pmx init [--invite pmx-invite.json] [--yes]",
-    options: { ...yes, invite: { type: "string" } },
+    summary: "Set up this Mac: PMX repo, clean profile, skills, keychain, background job. Asks only what PMX can't work out; --ask asks everything",
+    usage: "pmx init [--repo <folder or git URL>] [--ask] [--invite pmx-invite.json] [--yes]\n\n  --repo  your team's PMX repo: the folder you cloned it to, or its git URL (PMX clones it), so init doesn't ask\n  --ask   ask every question, each with what PMX worked out as its default\n  --yes   take every default without asking (also the yes to the changes init lists)\n\nSafe to run again: it asks nothing it already knows, and changes nothing that's in place.",
+    options: { ...yes, invite: { type: "string" }, ask: { type: "boolean" }, repo: { type: "string" } },
     async run(a) {
       const invite = a.values.invite ? await readJson<InviteFile>(a.values.invite) : null;
       const personal = await runInit({
         ask: a.ask, keychain: macKeychain(), launchd: macLaunchd(), exec, out: consoleOut, now: () => new Date(),
-        cliPath: a.cliPath, invite, onInvite: inviteHook,
+        cliPath: a.cliPath, invite, onInvite: inviteHook, askAll: a.values.ask === true, repo: a.values.repo,
+        // INIT-1: a default isn't a person's yes. Without a terminal and without --yes, init changes nothing outside ~/.pmx.
+        unattended: !(a.tty ?? !!process.stdin.isTTY) && a.values.yes !== true,
+        // LINEAR-2: --yes answers nothing about a Linear key, and without a terminal there's no prompt to paste one into.
+        yes: a.values.yes === true || !(a.tty ?? !!process.stdin.isTTY),
       });
       const r = formatDoctor(await doctorChecks());
       console.log("\n" + r.text);
       const team = await loadTeamConfig(personal.repoPath).catch(() => null);
-      if (team) console.log("\n" + (await nextSteps(team, personal)));
+      // What init's one question would still make here (nobody could answer, or the answer was no) comes first in what's next.
+      const facts = await appFacts();
+      const yesLeft = team ? initYesLeft(await checklistNow(await a.ctx().catch(() => null)), facts) : null;
+      if (team) console.log("\n" + (await nextSteps(team, personal, facts, yesLeft)));
       return 0;
     },
   },
@@ -213,12 +292,24 @@ export const commands: Command[] = [
       if (a.positionals[0]) throw new Error(`pmx checklist takes a step only with --fix, like pmx checklist --fix job.installed.`);
       // --fix: the steps an update does by itself (UPGRADE-1), now, whatever was recorded.
       if (a.values.fix) for (const s of AUTO_STEPS) {
-        const did = await s.run({ exec, launchd: macLaunchd(), cliPath: a.cliPath, interactive: true }).catch((e: any) => `couldn't: ${e?.message ?? e}`);
+        const did = await s.run({ exec, launchd: macLaunchd(), cliPath: a.cliPath, interactive: true }).catch((e: any) => (e instanceof StepWaits ? `not yet: ${e.message}` : `couldn't: ${e?.message ?? e}`));
         console.error(`${s.title}: ${did ?? "nothing to do"}`);
       }
       const engine = engineChecklist(exec);
       const cl = await checklistNow(await a.ctx().catch(() => null), engine);
       console.log(checklistOutput(cl, await engine.catch(() => null), { json: a.values.json, all: a.values.all }));
+      return 0;
+    },
+  },
+  {
+    name: "setup",
+    summary: "The Claude app's part of setup (PMX's scheduled tasks, its page, your team's board) and what's left of it; /pmx-setup does it in one chat from --prompt",
+    usage: "pmx setup [--prompt]\n\n  --prompt  the instructions /pmx-setup follows in the Claude app: every part in order, without the ones this Mac has",
+    options: { prompt: { type: "boolean" } },
+    async run(a) {
+      // SETUP-1: worked out from the checklist each time, so a part this Mac has is never done twice.
+      const cl = await checklistNow(await a.ctx().catch(() => null));
+      console.log(a.values.prompt ? await setupPrompt(cl, await appFacts()) : formatSetup(cl, await appFacts()));
       return 0;
     },
   },
@@ -239,21 +330,7 @@ export const commands: Command[] = [
     options: { json: { type: "boolean" } },
     async run(a) {
       // The update steps already ran before this command started (src/cli.ts); this says what they did and what's left.
-      const cl = await checklistNow(await a.ctx().catch(() => null));
-      const u = cl.upgrade;
-      if (a.values.json) {
-        console.log(JSON.stringify({ format: 1, from: u?.from ?? null, to: cl.version, at: u?.at ?? null, applied: u?.applied ?? [], pending: u?.pending ?? [], next: cl.next }, null, 2));
-        return 0;
-      }
-      const waiting = cl.sections.find((s) => s.id === "update")?.steps.filter((s) => s.status === "warn") ?? [];
-      console.log([
-        `pmx ${cl.version}${u?.from && u.from !== cl.version ? `, updated from ${u.from}` : ""}.`,
-        u?.applied.length ? `PMX did:\n${u.applied.map((x) => `  ✔ ${x.title}: ${x.did}`).join("\n")}` : "PMX had nothing to change on this Mac.",
-        ...(waiting.length ? [`Waiting:\n${waiting.map((s) => `  ! ${s.title}: ${s.detail}`).join("\n")}`] : []),
-        u?.pending.length ? `Still to do for this update:\n${u.pending.map((s) => `  ✘ ${s.title}: ${s.do ?? s.detail}`).join("\n")}` : "Nothing else to do for this update.",
-        cl.next ? `Next: ${cl.next.title}. ${cl.next.do ?? ""}`.trim() : "",
-        "The full list: pmx checklist",
-      ].filter(Boolean).join("\n\n"));
+      console.log(await migrateReport(await checklistNow(await a.ctx().catch(() => null)), { json: a.values.json }));
       return 0;
     },
   },
@@ -426,7 +503,7 @@ export const commands: Command[] = [
         if (reasons.length) throw new Error(`Can't publish "${name}": ${reasons.join("; ")}`);
         const access = await linearAccess(ctx.team, ctx.keychain);
         if (access !== "relay") {
-          console.log(`Publishing with a Linear key or sign-in isn't wired yet; you're on "${access}". For now org-skill publish rides the Claude relay (the default).`);
+          console.log(`Publishing with a Linear key or sign-in isn't wired yet; you're on "${access}". For now sharing a skill through Linear goes through the Claude app's Linear sync only, on a Mac without a key.`);
           return 1;
         }
         await enqueueSkillDoc(name, text, ctx.now);
@@ -465,28 +542,34 @@ export const commands: Command[] = [
   },
   {
     name: "vendor",
-    summary: "Put this CLI's package in the PMX repo, so teammates and CI install the same version; --require makes it the team minimum",
-    usage: "pmx vendor [--require [--auto-update | --no-auto-update]] [--repo <PMX repo path>]",
-    options: { repo: { type: "string" }, require: { type: "boolean" }, "auto-update": { type: "boolean" }, "no-auto-update": { type: "boolean" } },
+    summary: "Put this CLI's package in the PMX repo, so teammates and CI install the same version; --require makes it the team minimum; --latest does the whole team update in one go, as a pull request",
+    usage: "pmx vendor [--require [--auto-update | --no-auto-update]] [--repo <PMX repo path>]\n       pmx vendor --latest [--yes] [--auto-update | --no-auto-update] [--repo <PMX repo path>]\n\n  --latest  for your team's admin: gets the newest PMX release (checked against its SHA256SUMS), puts it in your team's repo,\n            raises the team minimum, and opens a pull request with it. It asks once before it pushes (--yes skips that),\n            pushes only a branch of its own, and never touches your checkout or your git settings.",
+    options: { ...yes, repo: { type: "string" }, require: { type: "boolean" }, latest: { type: "boolean" }, "auto-update": { type: "boolean" }, "no-auto-update": { type: "boolean" } },
     async run(a) {
       const repo = a.values.repo ?? (await loadPersonalConfig()).repoPath;
-      const version = await vendorCli(repo, exec);
-      if (a.values.require) {
-        const file = join(repo, TEAM_CONFIG_FILE);
-        const raw = (await readJson<Record<string, unknown>>(file)) ?? {};
-        const prev = (raw.cli ?? {}) as { autoUpdate?: boolean };
-        const autoUpdate = a.values["auto-update"] ? true : a.values["no-auto-update"] ? false : prev.autoUpdate;
-        await writeJson(file, { ...raw, cli: { min: version, ...(autoUpdate !== undefined ? { autoUpdate } : {}) } }, 0o644);
+      const autoUpdate = a.values["auto-update"] ? true : a.values["no-auto-update"] ? false : undefined;
+      if (a.values.latest) {
+        // COMPAT-2 (0.41.0): one command for the team's admin, where it took three and a hand-made pull request.
+        const r = teamUpdateMessage(await teamUpdate(repo, {
+          exec, autoUpdate, say: (l) => console.log(l),
+          confirm: async (q) => a.values.yes === true || a.ask.confirm(q, false),
+        }));
+        console.log(r.text);
+        return r.code;
       }
-      console.log(vendorMessage({ repo, version, config: a.values.require ? TEAM_CONFIG_FILE : null, autoUpdate: a.values["auto-update"] === true }));
+      const version = await vendorCli(repo, exec);
+      if (a.values.require) await setTeamMinimum(repo, version, autoUpdate);
+      // What the team's settings say now, after --require wrote them: on unless they say false (COMPAT-6).
+      const cli = ((await readJson<Record<string, unknown>>(join(repo, TEAM_CONFIG_FILE)).catch(() => null))?.cli ?? {}) as { autoUpdate?: boolean };
+      console.log(vendorMessage({ repo, version, config: a.values.require ? TEAM_CONFIG_FILE : null, autoUpdate: cli.autoUpdate !== false }));
       return 0;
     },
   },
   {
     name: "install",
     summary: "Install PMX so a new Terminal window finds it (before PMX is installed: npx --yes productmaxxing@latest install); --engine adds PMX Engine",
-    usage: "pmx install [--yes] [--engine]\n\nBefore PMX is installed: npx --yes productmaxxing@latest install\n  --yes     add PMX's folder to your PATH without asking (never installs PMX Engine)\n  --engine  install PMX Engine too: your team's product lead's tool. Your product lead is asked without it.",
-    options: { ...yes, engine: { type: "boolean" } },
+    usage: "pmx install [--repo <folder or git URL>] [--yes] [--engine]\n\nBefore PMX is installed: npx --yes productmaxxing@latest install\nIn Terminal, on a Mac not set up yet, it goes straight on to pmx init, so this one command installs PMX and sets it up.\n  --repo    your team's PMX repo (its git URL, or the folder you cloned it to), handed to pmx init so it doesn't ask\n  --yes     add PMX's folder to your PATH without asking (never installs PMX Engine)\n  --engine  install PMX Engine too: your team's product lead's tool. Your product lead is asked without it.",
+    options: { ...yes, engine: { type: "boolean" }, repo: { type: "string" } },
     async run(a) {
       // INSTALL-3, INSTALL-4. It may run from npx's copy, so it changes nothing PMX's own commands set up from where they
       // run (src/cli.ts skips the update steps for it): it installs PMX, then PATH, then Engine for the product lead.
@@ -511,15 +594,50 @@ export const commands: Command[] = [
           return true;
         },
         updatedFrom: (v) => markUpdatingFrom(v),
+        repo: a.values.repo,
+        // INSTALL-3: the installed pmx, with this Node, in this terminal. npx's own folders come off PATH first, so
+        // nothing init looks up finds the copy npx fetched.
+        init: (pmx, args) => new Promise((done) => {
+          const PATH = (process.env.PATH ?? "").split(":").filter((dir) => !/\/_npx\//.test(dir)).join(":");
+          const child = spawn(process.execPath, [pmx, "init", ...args], { stdio: "inherit", env: { ...process.env, PATH } });
+          child.on("exit", (code) => done(code ?? 1));
+          child.on("error", () => done(1));
+        }),
       });
     },
   },
   {
     name: "update",
-    summary: "Install your team's pmx version from the PMX repo (pulls the repo first), and update PMX Engine where it's installed; --check only compares versions; --latest installs the newest public release",
-    usage: "pmx update [--check] [--force] [--latest]",
-    options: { check: { type: "boolean" }, force: { type: "boolean" }, latest: { type: "boolean" } },
+    summary: "Install your team's pmx version from the PMX repo (pulls the repo first), and update PMX Engine where it's installed; --check only compares versions; --latest installs the newest public release; --next installs the newest test build (testers only)",
+    usage: "pmx update [--check] [--force] [--latest | --next]\n\n  --latest  the newest release, checked against its SHA256SUMS. Never a test build.\n  --next    for a tester's Mac: the newest build, test builds (like 0.41.0-next.2) included, checked the same way.\n            A test build isn't a release: --latest and pmx vendor --latest never pick one.",
+    options: { check: { type: "boolean" }, force: { type: "boolean" }, latest: { type: "boolean" }, next: { type: "boolean" } },
     async run(a) {
+      if (a.values.latest && a.values.next) throw new Error("Choose one: --latest (the newest release) or --next (the newest test build).");
+      if (a.values.check && (a.values.latest || a.values.next)) {
+        // --check only compares versions: it asks GitHub what is out, downloads nothing and installs nothing, and
+        // leaves PMX Engine as it is.
+        const channel = a.values.next ? "next" : "latest";
+        const found = channel === "next" ? await nextRelease() : await latestRelease();
+        if ("error" in found) {
+          console.log(`Check failed: ${found.error}`);
+          return 1;
+        }
+        console.log(releaseCheckMessage(channel, found, currentVersion()));
+        const engine = await findPmxe(exec);
+        if (engine) console.log(`PMX Engine:    ${engine.version} on this Mac`);
+        return 0;
+      }
+      if (a.values.next) {
+        // The `next` channel: a tester's Mac takes a build before it's a release.
+        const r = await installNextRelease(exec, { force: a.values.force });
+        if (r.result === "updated") {
+          await showNewNotes(r.version);
+          await showMigrate();
+        }
+        console.log(nextUpdateMessage(r, currentVersion()));
+        await updateEngine();
+        return r.result === "current" || r.result === "updated" ? 0 : 1;
+      }
       if (a.values.latest) {
         const r = await installLatestRelease(exec, { force: a.values.force });
         if (r.result === "updated") {
@@ -527,7 +645,7 @@ export const commands: Command[] = [
           await showMigrate();
         }
         console.log({
-          current: `pmx ${currentVersion()} is the latest release.`,
+          current: latestCurrentMessage("version" in r ? r.version : "", currentVersion()),
           updated: `Installed pmx ${"version" in r ? r.version : ""}. Team lead: run \`pmx vendor --require\` and merge it, so your team gets it too.`,
           "dev-install": "This pmx runs from a source checkout, so it isn't replaced. Pull and rebuild the checkout instead.",
           "needs-sudo": `npm can't write to its global folder. Install Node with Homebrew (brew install node), or run:\n  ${r.result === "needs-sudo" ? r.command : ""}`,
@@ -552,10 +670,10 @@ export const commands: Command[] = [
       const cloud = (await loadState()).cloudVersions;
       const engine = await findPmxe(exec);
       console.log([
-        `This machine:  pmx ${current}`,
+        `This machine:  pmx ${current}${isPrerelease(current) ? " (a test build, not a release)" : ""}`,
         `Team package:  ${vendored ? `pmx ${vendored} (${VENDORED_CLI})` : "none in the PMX repo"}`,
         `Team minimum:  ${min ?? "none set"}${min && !atLeast(current, min) ? "  ← this machine is too old for shared work" : ""}`,
-        ...(cloud?.latest ? [`Latest release: pmx ${cloud.latest}`] : []),
+        ...(cloud?.latest && !isPrerelease(cloud.latest) ? [`Latest release: pmx ${cloud.latest}`] : []),
         // COMPAT-7: where PMX Engine is on this Mac, `pmx update` updates it too. --check only says its version.
         ...(engine ? [`PMX Engine:    ${engine.version} on this Mac${a.values.check ? "" : ", updated next"}`] : []),
       ].join("\n"));
@@ -600,9 +718,11 @@ export const commands: Command[] = [
       // On a Mac with PMX Engine, its notes this Mac hasn't seen follow PMX's (phase 2 of the join). Nothing changes without it.
       const engine = await engineNotes(exec);
       const engineText = formatEngineNotes(engine);
+      // On a test build, said first: it has no notes of its own, and "Nothing new." would be wrong.
+      const testBuild = testBuildNote();
       console.log(a.values.json
-        ? JSON.stringify({ version: currentVersion(), notes, pagesToUpdate: pages, ...(engine ? { engine } : {}) }, null, 2)
-        : `${formatNotes(notes)}${note ? `\n\n${note}` : ""}${engineText ? `\n\n${engineText}` : ""}`);
+        ? JSON.stringify({ version: currentVersion(), ...(testBuild ? { testBuild: true } : {}), notes, pagesToUpdate: pages, ...(engine ? { engine } : {}) }, null, 2)
+        : `${[testBuild, notes.length || !testBuild ? formatNotes(notes) : null].filter(Boolean).join("\n\n")}${note ? `\n\n${note}` : ""}${engineText ? `\n\n${engineText}` : ""}`);
       return 0;
     },
   },

@@ -1,0 +1,53 @@
+{"family": "commission", "text": "My commission on the Northwind deal is late.", "expect": "cut", "topic": "compensation", "why": "A person's commission is pay."}
+{"family": "commission", "text": "Her commission plan changes next quarter.", "expect": "cut", "topic": "compensation", "why": "Her commission plan is pay."}
+{"family": "commission", "text": "The sales team's commission plan changes next quarter.", "expect": "cut", "topic": "compensation", "why": "A team's commission plan is pay."}
+{"family": "commission", "text": "Reps' commission is capped at 150% of quota.", "expect": "cut", "topic": "compensation", "why": "Reps' commission is pay."}
+{"family": "commission", "text": "The AEs are unhappy with the new comp plan.", "expect": "cut", "topic": "compensation", "why": "A comp plan is pay."}
+{"family": "commission", "text": "His OTE is $180k with a 50/50 split.", "expect": "cut", "topic": "compensation", "why": "An OTE is pay."}
+{"family": "commission", "text": "On-target earnings for the new role are still open.", "expect": "cut", "topic": "compensation", "why": "On-target earnings are pay."}
+{"family": "commission", "text": "We take a 15% commission on each marketplace sale.", "expect": "kept", "topic": null, "why": "A marketplace's commission is its price."}
+{"family": "commission", "text": "The marketplace commission is 12% for sellers.", "expect": "kept", "topic": null, "why": "A marketplace commission is a price."}
+{"family": "commission", "text": "Hosts pay a 3% commission per booking.", "expect": "kept", "topic": null, "why": "What hosts pay per booking is a price."}
+{"family": "commission", "text": "Resellers earn a 20% commission on renewals.", "expect": "kept", "topic": null, "why": "What resellers earn is a partner term."}
+{"family": "commission", "text": "The partner commission is 20% in year one.", "expect": "kept", "topic": null, "why": "A partner commission is a partner term."}
+{"family": "commission", "text": "Sellers want a lower commission rate on bulk orders.", "expect": "cut", "topic": "compensation", "why": "A commission rate on orders is a price.", "known_gap": {"want": "kept", "why": "A marketplace's price: the commission rate its sellers pay on orders."}}
+{"family": "commission", "text": "The app is commission-free for the first year.", "expect": "kept", "topic": null, "why": "Commission-free is a pricing term."}
+{"family": "commission", "text": "We should commission a study on render times.", "expect": "kept", "topic": null, "why": "To commission a study is a verb, not pay."}
+{"family": "commission", "text": "Let's commission an outside pen test before launch.", "expect": "kept", "topic": null, "why": "To commission a test is a verb, not pay."}
+{"family": "commission", "text": "They commissioned a brand survey last spring.", "expect": "kept", "topic": null, "why": "'Commissioned' as a verb, past tense."}
+{"family": "commission", "text": "The build server is out of commission until Monday.", "expect": "kept", "topic": null, "why": "Out of commission: a machine, not pay."}
+{"family": "commission", "text": "The staging box is back in commission.", "expect": "kept", "topic": null, "why": "Back in commission: a machine, not pay."}
+{"family": "commission", "text": "The European Commission opened a review of the rule.", "expect": "kept", "topic": null, "why": "A body named a commission is not pay."}
+{"family": "commission", "text": "Dana earns a commission on each booking she closes.", "expect": "cut", "topic": "compensation", "why": "A person who earns a commission: pay."}
+{"family": "commission", "text": "She makes 8% commission on every renewal.", "expect": "cut", "topic": "compensation", "why": "Her commission: pay."}
+{"family": "commission", "text": "Our commission is 15% of each booking.", "expect": "kept", "topic": null, "why": "The company's own commission on bookings is its price."}
+{"family": "commission", "text": "What's the commission on enterprise deals?", "expect": "cut", "topic": "compensation", "why": "A commission on deals reads as sales pay."}
+{"family": "commission", "text": "Affiliates get a recurring 10% commission.", "expect": "kept", "topic": null, "why": "What affiliates get is a partner term."}
+{"family": "commission", "text": "My commission check is late.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "Dana's commission this quarter is late.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "Reps' commission this quarter is late.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "Reps earn a 10% commission on each deal.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "AEs get commission on renewals.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "Dana earns a 10% commission on each deal.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "Commissions are paid on the 15th.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "Resellers earn a 20% commission, and so do the reps who sourced them.", "expect": "cut", "topic": "compensation", "why": "A team's or a person's commission plan, comp plan or OTE is pay."}
+{"family": "commission", "text": "Affiliates get 30% commission on the first year.", "expect": "kept", "topic": null, "why": "A commission that is the product's price or a partner program's rate is a commercial term."}
+{"family": "commission", "text": "The app store charges a 30% commission.", "expect": "kept", "topic": null, "why": "A commission that is the product's price or a partner program's rate is a commercial term."}
+{"family": "commission", "text": "The marketplace commission drops to 12% in March.", "expect": "kept", "topic": null, "why": "A commission that is the product's price or a partner program's rate is a commercial term."}
+{"family": "commission", "text": "Commission-free trading is the hook.", "expect": "kept", "topic": null, "why": "A commission that is the product's price or a partner program's rate is a commercial term."}
+{"family": "commission", "text": "PM decides: whether to commission that test before Dec 8.", "expect": "kept", "topic": null, "why": "Not pay at all: the verb, a body, a machine out of commission."}
+{"family": "commission", "text": "We should commission a pen test.", "expect": "kept", "topic": null, "why": "Not pay at all: the verb, a body, a machine out of commission."}
+{"family": "commission", "text": "We commissioned a study last year.", "expect": "kept", "topic": null, "why": "Not pay at all: the verb, a body, a machine out of commission."}
+{"family": "commission", "text": "The European Commission guidance lands in March.", "expect": "kept", "topic": null, "why": "Not pay at all: the verb, a body, a machine out of commission."}
+{"family": "commission", "text": "The build box is out of commission.", "expect": "kept", "topic": null, "why": "Not pay at all: the verb, a body, a machine out of commission."}
+{"family": "commission", "text": "The commission rate for sellers is 12% this quarter.", "expect": "kept", "topic": null, "why": "Review of the rig fix: a marketplace's rate, what it's taken on, who pays it and the company's own take are prices."}
+{"family": "commission", "text": "We're lowering the marketplace fee and the commission on bookings.", "expect": "kept", "topic": null, "why": "Review of the rig fix: a marketplace's rate, what it's taken on, who pays it and the company's own take are prices."}
+{"family": "commission", "text": "Is the commission model for affiliates fair?", "expect": "kept", "topic": null, "why": "Review of the rig fix: a marketplace's rate, what it's taken on, who pays it and the company's own take are prices."}
+{"family": "commission", "text": "Reps' commission is moving to quarterly.", "expect": "cut", "topic": "compensation", "why": "Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE."}
+{"family": "commission", "text": "Her commission was late.", "expect": "cut", "topic": "compensation", "why": "Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE."}
+{"family": "commission", "text": "Our AEs' commission on each deal goes up.", "expect": "cut", "topic": "compensation", "why": "Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE."}
+{"family": "commission", "text": "Dana earns a 10% commission on each booking.", "expect": "cut", "topic": "compensation", "why": "Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE."}
+{"family": "commission", "text": "Our commission check is late.", "expect": "cut", "topic": "compensation", "why": "Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE."}
+{"family": "commission", "text": "The commission structure for the sales team changes.", "expect": "cut", "topic": "compensation", "why": "Still pay: someone's own, a team's or a rep's, one someone earns, and an OTE."}
+{"family": "commission", "text": "Kim: We take a 15% commission on each marketplace sale. Resellers earn a 20% commission on renewals.\n\nLee: The sales team's commission plan changes next quarter.\n\nKim: The pricing page goes live Monday.", "expect": "Kim: We take a 15% commission on each marketplace sale. Resellers earn a 20% commission on renewals.\n\nKim: The pricing page goes live Monday.", "topic": "compensation", "why": "Cuts the team's commission plan from team work, and keeps the marketplace's and the resellers' rates."}
+{"family": "commission", "text": "The sales team earns a commission on the marketplace sales.", "expect": "cut", "topic": "compensation", "why": "An accepted trade-off, not a gap: a team that earns a commission is pay, even on marketplace sales."}

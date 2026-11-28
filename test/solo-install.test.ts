@@ -13,7 +13,8 @@ import { memoryKeychain } from "../src/core/keychain.js";
 import { fakeLaunchd } from "../src/core/launchd.js";
 import { paths } from "../src/core/paths.js";
 import { installLatestRelease, releaseAsset } from "../src/core/update.js";
-import { currentVersion } from "../src/core/version.js";
+import { currentVersion, isPrerelease } from "../src/core/version.js";
+import { RELEASE_NOTES } from "../src/core/whats-new.js";
 import { freshHome, pmxRepo, quietOut, tmp } from "./helpers.js";
 
 const withClaude: Exec = async (cmd, args, o) => (cmd === "claude" ? { stdout: "2.1.300 (Claude Code)", stderr: "", code: 0 } : exec(cmd, args, o));
@@ -80,7 +81,7 @@ describe("0.10.0: a solo install that works", () => {
     const repo = join(dir, "pmx");
     const out = quietOut();
     const asked: string[] = [];
-    const personal = await runInit({
+    const personal = await runInit({ askAll: true,
       ask: sequenceAsker({
         "PMX repo checkout": ["/pmx-schedule", "pmx schedule --install-skill", repo],
         "Git URL": ["/pmx-schedule", ""],
@@ -109,7 +110,7 @@ describe("0.10.0: a solo install that works", () => {
 
   it("gives up after three wrong answers and saves nothing", async () => {
     const dir = await tmp();
-    await expect(runInit({
+    await expect(runInit({ askAll: true,
       ask: sequenceAsker({ "PMX repo checkout": [join(dir, "pmx")], "Daily cap": ["ten"], transcripts: [join(dir, "t")] }),
       keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x",
     })).rejects.toThrow(/after three tries\. Nothing was saved/);
@@ -120,7 +121,7 @@ describe("0.10.0: a solo install that works", () => {
     const dir = await tmp();
     const repo = join(dir, "pmx");
     const launchd = fakeLaunchd();
-    await expect(runInit({
+    await expect(runInit({ askAll: true,
       ask: sequenceAsker({ "PMX repo checkout": [repo], "Save this setup": [false], transcripts: [join(dir, "t")] }),
       keychain: memoryKeychain(), launchd, exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x",
     })).rejects.toThrow(/Nothing was saved/);
@@ -144,7 +145,7 @@ describe("0.10.0: a solo install that works", () => {
       return withClaude(cmd, args, o);
     };
     const dir = await tmp();
-    const p = await runInit({
+    const p = await runInit({ askAll: true,
       ask: sequenceAsker({ "PMX repo checkout": [join(dir, "pmx")], "Git URL": [team], transcripts: [join(dir, "t")] }),
       keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: spy, out: quietOut(), now: () => new Date(), cliPath: "/x",
     });
@@ -174,13 +175,19 @@ describe("0.10.0: a solo install that works", () => {
     delete process.env.PMX_INSTALL_ROOT_FOR_TESTS;
   });
 
-  it("INSTALL.md pins this release, starts with auto mode off, and the export publishes it", async () => {
+  it("INSTALL.md pins this release, starts with the one Terminal command, and the export publishes it", async () => {
     const guide = await readFile(join(root, "INSTALL.md"), "utf8");
-    const v = currentVersion();
+    // A test build (0.41.0-next.2) isn't a release: the guides keep naming the newest one (scripts/prepare-release.mjs).
+    const v = isPrerelease(currentVersion()) ? RELEASE_NOTES[0]!.version : currentVersion();
     expect(guide).toContain(`releases/download/v${v}/productmaxxing-${v}.tgz`);
     expect(guide).toContain(`releases/download/v${v}/SHA256SUMS`);
-    expect(guide.indexOf("auto mode off")).toBeLessThan(guide.indexOf("Step 1"));
-    // SETUP-1: from step 4 on, the guide this pmx ships and its checklist drive the install (the checklist holds every doctor check).
+    // INSTALL-3: the person runs step 1 themselves in Terminal, so nothing comes before it. Auto mode matters only where
+    // Claude creates scheduled tasks (step 3) or installs for them, and is said there.
+    const step1 = guide.indexOf("### Step 1: one command in Terminal");
+    expect(guide.indexOf("npx --yes productmaxxing@latest install")).toBeGreaterThan(step1);
+    expect(guide.slice(0, step1)).not.toMatch(/auto mode/);
+    expect(guide.slice(guide.indexOf("### Step 3"), guide.indexOf("### Step 4"))).toMatch(/If the session is in auto mode, Claude asks you to switch it off first/);
+    // SETUP-1: for Claude, the guide this pmx ships and its checklist drive the rest (the checklist holds every doctor check).
     expect(guide).toContain("pmx guide");
     expect(guide).toContain("pmx checklist --json");
     // The README's manual install and its update steps name this release too.

@@ -4,12 +4,13 @@
 // and `pmx update --check` only reports. `pmxe` here is a stand-in script; nothing is installed.
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { updateStep } from "../src/commands/autoupdate.js";
 import { commands } from "../src/commands/index.js";
 import { savePersonalConfig } from "../src/core/config.js";
 import { exec, execOk, type Exec } from "../src/core/exec.js";
 import { engineUpdateLine, updateEngineToo, type EngineUpdate } from "../src/core/update.js";
+import { currentVersion } from "../src/core/version.js";
 import { runEngineUpdate } from "../src/engine/bridge.js";
 import { freshHome, pmxRepo, testCtx, tmp } from "./helpers.js";
 
@@ -61,7 +62,7 @@ async function runUpdate(values: Record<string, unknown> = {}): Promise<{ code: 
 
 describe("one update (COMPAT-7)", () => {
   beforeEach(freshHome);
-  afterEach(() => { process.env.PMX_PMXE = "none"; });
+  afterEach(() => { process.env.PMX_PMXE = "none"; vi.unstubAllGlobals(); });
 
   it("runs Engine's update only from a command a person runs, and only where Engine is installed", async () => {
     let ran = 0;
@@ -122,6 +123,37 @@ describe("one update (COMPAT-7)", () => {
     const pm = await runUpdate();
     expect(pm.code).toBe(0);
     expect(pm.out).not.toMatch(/Engine/);
+  }, 30000);
+
+  it("--next --check and --latest --check only compare versions: nothing is downloaded or installed, and Engine isn't updated", async () => {
+    const p = await fakePmxe("updated");
+    process.env.PMX_PMXE = p.cmd;
+    // GitHub as a stand-in that has a newer test build and a newer release, and no files to download.
+    const asked: string[] = [];
+    vi.stubGlobal("fetch", async (url: unknown) => {
+      asked.push(String(url));
+      if (String(url).endsWith("/releases/latest")) return new Response(JSON.stringify({ tag_name: "v99.0.0", prerelease: false }));
+      if (/\/releases\?per_page=\d+$/.test(String(url))) return new Response(JSON.stringify([{ tag_name: "v99.1.0-next.2", prerelease: true }, { tag_name: "v99.0.0" }]));
+      return new Response("", { status: 404 });
+    });
+    const next = await runUpdate({ next: true, check: true });
+    expect(next.code).toBe(0);
+    expect(next.out).toBe(`pmx 99.1.0-next.2, a test build of 99.1.0, is out, and this Mac runs pmx ${currentVersion()}. Nothing was installed: pmx update --next installs it.\nPMX Engine:    0.12.0 on this Mac`);
+    const latest = await runUpdate({ latest: true, check: true });
+    expect(latest.code).toBe(0);
+    expect(latest.out).toContain(`pmx 99.0.0 is the latest release, and this Mac runs pmx ${currentVersion()}. Nothing was installed: pmx update --latest installs it.`);
+    // --force doesn't turn a check into an install.
+    expect((await runUpdate({ next: true, check: true, force: true })).out).toContain("Nothing was installed");
+    // Three questions to GitHub's API, and neither a package nor its SHA256SUMS was fetched.
+    expect(asked).toHaveLength(3);
+    expect(asked.every((u) => u.startsWith("https://api.github.com/"))).toBe(true);
+    expect(await p.log()).not.toContain("update");
+
+    // GitHub can't be reached: said in a line, and the command fails.
+    vi.stubGlobal("fetch", async () => new Response("", { status: 503 }));
+    const down = await runUpdate({ next: true, check: true });
+    expect(down).toEqual({ code: 1, out: "Check failed: couldn't read the releases from GitHub (HTTP 503)" });
+    expect(await p.log()).not.toContain("update");
   }, 30000);
 
   it("the background job's update never runs Engine's", async () => {

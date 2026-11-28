@@ -69,7 +69,8 @@ export interface TeamConfig {
   /** Company roll-up (COMPANY-1): this repo's tracker is the company project; these are the teams it merges. */
   /**
    * The oldest pmx allowed to do shared team work (COMPAT-2), set with `pmx vendor --require`, and whether
-   * every machine's background job installs the team's version by itself (COMPAT-6, `--auto-update`).
+   * every machine's background job installs the team's version by itself (COMPAT-6): it does unless `autoUpdate` is
+   * false (`pmx vendor --require --no-auto-update`). See `autoUpdateOn`.
    */
   cli?: { min: string; autoUpdate?: boolean } | null;
   /**
@@ -146,6 +147,12 @@ export const SYNTH_TASKS = { default: 15, max: 30 } as const;
 export const maxTasks = (team: Pick<TeamConfig, "synthesis">): number => team.synthesis?.maxTasks ?? SYNTH_TASKS.default;
 /** FOLLOW-1: whether accepting a draft makes its follow-ups. On unless the team turned it off. */
 export const followUpsOn = (team: Pick<TeamConfig, "followUps">): boolean => team.followUps !== false;
+
+/**
+ * COMPAT-6: whether each Mac's background job installs the PMX package the team's repo carries. On unless the team
+ * turned it off (`"cli": { "autoUpdate": false }`): a team that never set it gets updates by themselves.
+ */
+export const autoUpdateOn = (team: Pick<TeamConfig, "cli">): boolean => team.cli?.autoUpdate !== false;
 
 /** APPROVE-3: whether this team offers Start now on proposed tasks. On unless the team turned it off. */
 export const startsNow = (team: Pick<TeamConfig, "approve">): boolean => team.approve?.startNow !== false;
@@ -234,8 +241,11 @@ export interface PersonalConfig {
   companyDomains?: string[] | null;
   /** Who "me" is in a transcript, for individual to-dos (TODO-1). Learned from `pmx collect` or `pmx todo --me`. */
   identity?: { names: string[]; emails: string[] } | null;
-  /** The board this PM published from this Mac with /pmx-board, and with which pmx (BOARD-1). */
-  board?: { url: string; version: string; publishedAt: string; template?: string } | null;
+  /**
+   * The board this PM published from this Mac with /pmx-board, and with which pmx (BOARD-1). `template`: its page's
+   * hash (0.36.0). `caps` (0.41.0): a hash of the capabilities it was published with, when it can update itself.
+   */
+  board?: { url: string; version: string; publishedAt: string; template?: string; caps?: string } | null;
   /** The flow view this PM published from this Mac with /pmx-flow (FLOW-5). It reads this Mac only, so it's never a team setting. */
   flow?: { url: string; version: string; publishedAt: string } | null;
   /**
@@ -244,8 +254,9 @@ export interface PersonalConfig {
    */
   todosToLinear?: boolean;
   /**
-   * CLAUDE-5 (0.35.0): when PMX's Claude tasks run on this Mac. "weekdays" (the default) is working hours on weekdays;
-   * "always" runs the Linear sync every hour and collection every day, for a Mac that runs agents unattended.
+   * CLAUDE-5 (0.35.0): when PMX's Claude tasks work on this Mac. "always", the default from 0.41.0 (and what a Mac with
+   * none saved gets), is the Linear sync every hour and collection every day; "weekdays" is working hours only, saved
+   * only when the PM chose it (`pmx schedule --hours weekdays`, or the page's Schedule buttons).
    */
   taskHours?: "weekdays" | "always";
   /**

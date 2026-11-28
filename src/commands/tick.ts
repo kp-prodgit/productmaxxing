@@ -2,6 +2,8 @@ import { scriptedAsker } from "../core/ask.js";
 import { isoWeek, type Ctx } from "../core/context.js";
 import { killSwitchOn } from "../core/killswitch.js";
 import { loadState, updateState, TICK_GAP_MS } from "../core/state.js";
+import { readDirect, sayLinearProblem } from "../linear/direct.js";
+import { LinearError } from "../tracker/linear.js";
 import { runDigest } from "./digest.js";
 
 export type TickStep = (ctx: Ctx) => Promise<string | null>;
@@ -23,7 +25,7 @@ export async function runTick(ctx: Ctx, steps: [string, TickStep][]): Promise<st
   const ks = await killSwitchOn(ctx.repo).catch(() => ({ on: false, reason: null }));
   if (ks.on) return [`kill switch on (${ks.reason}): nothing ran`];
   const out: string[] = [];
-  let paused = false;
+  let paused = false, linearSaid = false;
   for (const [name, step] of steps) {
     try {
       const r = await step(ctx);
@@ -33,6 +35,17 @@ export async function runTick(ctx: Ctx, steps: [string, TickStep][]): Promise<st
       if (e?.budgetPaused) {
         if (!paused) out.push(`budget: ${e.message}`);
         paused = true;
+      } else if (e instanceof LinearError && e.failure !== "forbidden") {
+        // LINEAR-2: a key Linear no longer accepts, or its rate limit, stops every step that needs Linear. Said once per
+        // pass, in plain words with what to do (the key), or once in all (the rate limit, which PMX waits out); the
+        // key also as one notification. Never a step's failure, and never a quiet switch to the Claude app's sync.
+        if (!linearSaid) {
+          // Nothing on record (a tracker that keeps none): the refusal's own words, so it is never swallowed.
+          const recorded = await readDirect().then((r) => !!r.problem, () => false);
+          const line = recorded ? await sayLinearProblem().catch(() => e.message as string) : (e.message as string);
+          if (line) out.push(`linear: ${line}`);
+        }
+        linearSaid = true;
       } else out.push(`${name}: failed: ${e.message}`);
     }
   }

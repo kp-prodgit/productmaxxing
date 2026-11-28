@@ -2,6 +2,9 @@
 # downloads one file and builds nothing. INSTALL.md and `pmx update --latest` check it against SHA256SUMS.
 # The same file then goes to npm through trusted publishing: npm trusts this workflow in this repo (OIDC), so no npm
 # token is stored on any Mac or in the repo, and npm records where the package was built (provenance).
+# A tag with a suffix, v0.41.0-next.2, is a test build (the `next` channel): the same
+# steps, but GitHub marks the release as a prerelease and npm files it under the dist-tag `next`, so neither GitHub's
+# "latest release" nor `npm install productmaxxing` ever gives one. A plain vX.Y.Z tag runs exactly as before.
 name: Release
 on:
   push:
@@ -21,6 +24,25 @@ jobs:
           cache: npm
       - name: tag matches package.json
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      # Sets TEST_BUILD only for vX.Y.Z-next.N. Any tag that is neither that nor a plain vX.Y.Z stops here, before the
+      # tests run and before anything is published, with one line saying which rule it broke: a number written with a
+      # leading zero (next.01, 0.041.0), a suffix that isn't -next.N, or not three numbers at all (v0.41, v0.41.0.1,
+      # v1.2.3+build). A plain vX.Y.Z tag takes no branch, so the variable stays unset, nothing is printed, and the
+      # two steps that read the variable add nothing.
+      - name: a release, or a test build for the next channel
+        run: |
+          n='(0|[1-9][0-9]*)'
+          stop() { echo "Stopped before anything was published: the tag $GITHUB_REF_NAME $1" >&2; exit 1; }
+          if [[ "$GITHUB_REF_NAME" =~ ^v$n\.$n\.$n-next\.$n$ ]]; then
+            echo "TEST_BUILD=1" >> "$GITHUB_ENV"
+            echo "$GITHUB_REF_NAME is a test build: a GitHub prerelease, and npm's dist-tag next"
+          elif [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-next\.[0-9]+)?$ ]] && ! [[ "$GITHUB_REF_NAME" =~ ^v$n\.$n\.$n$ ]]; then
+            stop "has a number written with a leading zero, which npm refuses as a version. Write each number plainly: next.1, not next.01."
+          elif [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            stop "has a suffix that isn't -next.N. A release is vX.Y.Z, and a test build is vX.Y.Z-next.N."
+          elif ! [[ "$GITHUB_REF_NAME" =~ ^v$n\.$n\.$n$ ]]; then
+            stop "isn't a version of three numbers. A release is vX.Y.Z, and a test build is vX.Y.Z-next.N."
+          fi
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
@@ -41,7 +63,7 @@ jobs:
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release download "$GITHUB_REF_NAME" --clobber --pattern 'productmaxxing-*.tgz' --pattern SHA256SUMS
           else
-            gh release create "$GITHUB_REF_NAME" productmaxxing-*.tgz productgit-*.tgz SHA256SUMS --title "pmx ${GITHUB_REF_NAME#v}" \
+            gh release create "$GITHUB_REF_NAME" productmaxxing-*.tgz productgit-*.tgz SHA256SUMS --title "pmx ${GITHUB_REF_NAME#v}" ${TEST_BUILD:+--prerelease} \
               --notes "Install: follow INSTALL.md (https://github.com/${{ github.repository }}/blob/main/INSTALL.md). Changes: CHANGELOG.md."
           fi
       # The file npm gets is the one SHA256SUMS names. A rerun after npm already has the version skips this step.
@@ -52,4 +74,4 @@ jobs:
           v="${GITHUB_REF_NAME#v}"
           shasum -a 256 -c SHA256SUMS
           if [ "$(npm view "productmaxxing@$v" version 2>/dev/null)" = "$v" ]; then echo "npm already has productmaxxing $v"; exit 0; fi
-          npm publish "./productmaxxing-$v.tgz" --access public
+          npm publish "./productmaxxing-$v.tgz" --access public ${TEST_BUILD:+--tag next}

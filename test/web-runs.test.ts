@@ -233,7 +233,7 @@ describe("web runs get the web, and only they do (RUN-6, R17, R21)", () => {
     const root = await tmp();
     const repo = join(root, "pmx");
     const keychain = memoryKeychain(), launchd = fakeLaunchd();
-    const p = await runInit({
+    const p = await runInit({ askAll: true,
       ask: scriptedAsker({ "PMX repo checkout": repo, transcripts: join(root, "t"), "email domains": "us.example" }),
       keychain, launchd, exec: withClaude, out: quietOut(), now: () => new Date("2026-11-26T00:00:00Z"), cliPath: "/x/cli.js",
     });

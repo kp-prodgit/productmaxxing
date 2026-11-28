@@ -4,6 +4,8 @@ import type { LeaseProvider } from "../lease/types.js";
 import { linearTracker } from "../tracker/linear.js";
 import { relayTracker } from "../tracker/relay.js";
 import { linearAccessToken } from "../linear/oauth.js";
+import { directFor } from "../linear/switch.js";
+import { linearWatch } from "../linear/direct.js";
 import { memoryTracker, type Tracker } from "../tracker/types.js";
 import type { Ctx } from "./context.js";
 import type { PersonalConfig, TeamConfig } from "./config.js";
@@ -77,8 +79,9 @@ export async function projectTracker(ctx: Ctx, p: ProjectRef): Promise<Tracker> 
   const viaEe = await overrides.project?.(ctx, p);
   if (viaEe) return viaEe;
   const token = (await ctx.keychain.get("linear-token")) ?? (await linearAccessToken(ctx.keychain, ctx.fetch, ctx.now()));
-  if (!token) throw new Error("The company roll-up reads several Linear projects, which the Claude relay doesn't cover. Store a Linear API key on the company machine with `pmx linear key`.");
-  return linearTracker({ token, teamKey: p.teamKey, projectId: p.projectId, fetch: ctx.fetch });
+  if (!token) throw new Error("The company roll-up reads several Linear projects, which the Claude app's sync doesn't cover. Store a Linear API key with Read on those teams on the roll-up's Mac: pmx linear key.");
+  // No copy of another team's project is kept: the roll-up reads each once a day. A rejected key is remembered all the same.
+  return linearTracker({ token, teamKey: p.teamKey, projectId: p.projectId, fetch: ctx.fetch, watch: linearWatch(ctx.now), now: ctx.now });
 }
 
 async function defaultTracker(ctx: Ctx): Promise<Tracker> {
@@ -87,8 +90,12 @@ async function defaultTracker(ctx: Ctx): Promise<Tracker> {
     ctx.out.warn("No tracker configured in pmx.config.json; using an empty in-memory queue.");
     return memoryTracker();
   }
-  // LINEAR-1, LINEAR-2: an API key, else the PM's Linear sign-in, else Claude relays through its connector.
-  const token = (await ctx.keychain.get("linear-token")) ?? (await linearAccessToken(ctx.keychain, ctx.fetch, ctx.now()));
+  // LINEAR-1, LINEAR-2: an API key (the default from 0.41.0), else the PM's Linear sign-in, else Claude relays through
+  // its connector. With a key PMX keeps its own copy of the project, reads only what changed, and remembers a refusal.
+  // The relay is never a silent fallback for a key Linear rejects: that is said, and the PM chooses.
+  const key = await ctx.keychain.get("linear-token");
+  if (key) return directFor(ctx, key);
+  const token = await linearAccessToken(ctx.keychain, ctx.fetch, ctx.now());
   if (token) return linearTracker({ token, teamKey: t.teamKey, projectId: t.projectId, fetch: ctx.fetch });
   return relayTracker(ctx.team, (m) => ctx.out.warn(m), ctx.now);
 }

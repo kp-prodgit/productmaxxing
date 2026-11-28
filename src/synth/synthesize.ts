@@ -11,6 +11,7 @@ import { newReceiptId, readReceipt, refHash, writeReceipt, type RunReceipt, type
 import { parseRubric, type SizeRubric } from "../core/skillcheck.js";
 import { categoryMenu, loadSkill, skillBody, SKILL_USES } from "../core/skills.js";
 import { updateState } from "../core/state.js";
+import { gateKey, loadGates, saveGate } from "../core/gates.js";
 import { COMPANY_ROLES, SIZES, type CandidateTask, type CompanyRole, type SignalItem, type Size, type Task } from "../core/types.js";
 import { CANARY_REFUSAL } from "../core/canary.js";
 import { domainLabel } from "../core/filter.js";
@@ -52,6 +53,40 @@ export interface SynthResult {
   updated?: { identifier: string; title: string; how: "description" | "comment"; sources: number; changes: string[]; why?: string; queued?: boolean; figure?: boolean }[];
   /** The meeting ledger (MEET-2): lodged and finished now, already done by someone, claimed elsewhere, before the window. */
   meetings: { processed: { entry: string; tasks: string[] }[]; already: number; busy: number; before: number };
+  /**
+   * MEET-3: the background run's reread of the channel and email threads made no model call, because none of the
+   * `threads` in its window had changed since the model last read them (`since`).
+   */
+  unchanged?: { threads: number; since: string };
+}
+
+/** How long a thread's last-read state is remembered: past every window a run reads (REACH.most, 14 days). */
+const THREAD_MEMORY_DAYS = 30;
+
+/**
+ * A channel or email thread as the model would read it (its place, title and text after the privacy rules), as a hash.
+ * A new message, an edit or a change to what the rules cut gives another hash; saving the same thread again doesn't.
+ */
+export const threadPrint = (i: Pick<SignalItem, "kind" | "origin" | "place" | "title" | "text" | "orgs">): string =>
+  gateKey(i.origin?.source ?? i.kind, i.place ?? "", i.title, i.text, (i.orgs ?? []).join(","));
+
+/**
+ * MEET-3: when the model last read every one of these threads exactly as it is now, or null when at least one is new
+ * or changed, or nothing is remembered (a first run, or `~/.pmx/gates.json` missing or unreadable): then the run reads.
+ */
+export async function threadsUnchanged(threads: SignalItem[]): Promise<string | null> {
+  if (!threads.length) return null;
+  const seen = (await loadGates()).synth;
+  if (!seen || typeof seen.at !== "string" || !seen.threads || typeof seen.threads !== "object") return null;
+  return threads.every((t) => typeof seen.threads[threadPrint(t)] === "string") ? seen.at : null;
+}
+
+/** Remembers the threads a run's model call read, with the ones read before that a later window may still hold. */
+async function rememberThreads(threads: SignalItem[], now: Date): Promise<void> {
+  const before = (await loadGates()).synth?.threads;
+  const cutoff = new Date(now.getTime() - THREAD_MEMORY_DAYS * 86400000).toISOString();
+  const kept = Object.entries(before && typeof before === "object" ? before : {}).filter(([, at]) => typeof at === "string" && at >= cutoff);
+  await saveGate("synth", { at: now.toISOString(), threads: { ...Object.fromEntries(kept), ...Object.fromEntries(threads.map((t) => [threadPrint(t), now.toISOString()])) } });
 }
 
 /** Model output derived from source text stays on one line, so it can never start a `pmx:` control line. */
@@ -517,7 +552,14 @@ export function describe(c: CandidateTask, items: SignalItem[], receiptId?: stri
  */
 export async function synthesize(
   ctx: Ctx, svc: Services,
-  o: { days: number; dryRun?: boolean; since?: Date; skipIfNothingNew?: boolean },
+  o: {
+    days: number; dryRun?: boolean; since?: Date; skipIfNothingNew?: boolean;
+    /**
+     * MEET-3, the background run only: reread the channel and email threads only when at least one changed since the
+     * model last read them. A run a person starts (`pmx synthesize`) always reads.
+     */
+    skipUnchangedThreads?: boolean;
+  },
 ): Promise<SynthResult> {
   const g = await gather(ctx, { days: o.days, scope: "team" });
   // Without `since`, the whole `days` window counts; the CLI and the polling step pass `since` (MEET-3).
@@ -548,8 +590,11 @@ export async function synthesize(
   const kindOn = (heldFile?.waiting ?? []).filter((w) => Object.prototype.hasOwnProperty.call(ctx.team.categories, w.category)).map((w) => ({ ...w, kindOn: true }));
   const stillWaiting = (heldFile?.waiting ?? []).filter((w) => !Object.prototype.hasOwnProperty.call(ctx.team.categories, w.category));
 
+  // MEET-3: the threads of the reread, when the model has read each of them exactly as it is now. Needs the last run
+  // held over (SIG-9) are something to read for: the reread is the next run they wait for, so then it reads.
+  const readSince = o.skipUnchangedThreads && !o.skipIfNothingNew && !o.dryRun && !heldFile?.needs.length ? await threadsUnchanged(plan.other) : null;
   // Before anything is claimed or lodged, so a paused budget leaves no meeting half-processed (BUDGET-2).
-  if (plan.fresh.length || kindOn.length || (!o.skipIfNothingNew && plan.other.length)) await checkBudget(ctx);
+  if (plan.fresh.length || kindOn.length || (!o.skipIfNothingNew && plan.other.length && !readSince)) await checkBudget(ctx);
   // Nothing about a meeting goes to Linear: it's claimed with the lease while it's processed, and recorded in the
   // PMX repo once done (PRIV-7).
   const lodged: { item: SignalItem; lease: string }[] = [];
@@ -573,6 +618,12 @@ export async function synthesize(
   };
   // Polling (MEET-3): with nothing new, no model call and no receipt.
   if (o.skipIfNothingNew && !lodged.length && !(o.dryRun && plan.fresh.length) && !kindOn.length) return result0;
+  // The reread (MEET-3): no thread changed and no meeting is new, so no model call either. The check counts as the
+  // reread, so the next one is due when it would have been and the next run's window starts where it would have.
+  if (readSince && !lodged.length && !kindOn.length) {
+    await updateState((s) => (s.lastSynthAt = ctx.now().toISOString()));
+    return { ...result0, unchanged: { threads: plan.other.length, since: readSince } };
+  }
   if (!work.length && !kindOn.length) {
     await writeReceipt(receipt, ctx.now());
     return result0;
@@ -756,6 +807,8 @@ export async function synthesize(
   await writeReceipt(receipt, ctx.now());
   if (!o.dryRun) {
     await updateState((s) => (s.lastSynthAt = ctx.now().toISOString()));
+    // MEET-3: what each thread looked like at this read, so the next reread can tell whether any changed.
+    await rememberThreads(work.filter((i) => i.kind !== "transcript"), ctx.now());
     await new RunLogStore(ctx).record({
       type: "synthesize", agent: ctx.agent, machine: ctx.personal.machineId, receipt: receipt.id, posted: staged.length, held: totalHeld(g.held),
       durationMs: result.durationMs, tokens: result.tokens, costUsd: result.costUsd,

@@ -10,6 +10,8 @@ export const paths = {
   home: () => pmxHome(),
   config: () => join(pmxHome(), "config.json"),
   state: () => join(pmxHome(), "state.json"),
+  /** What the background run's model steps last read, so an unchanged input costs no model call (src/core/gates.ts). */
+  gates: () => join(pmxHome(), "gates.json"),
   policy: () => join(pmxHome(), "policy.json"),
   license: () => join(pmxHome(), "license.jwt"),
   /** The clean Claude Code profile (B1). */
@@ -34,7 +36,8 @@ export const paths = {
   /** Raw skill docs the Linear sync task exports for `pmx skills sync` to validate and materialize. */
   orgSkillsExport: () => join(pmxHome(), "linear", "skills"),
   logs: () => join(pmxHome(), "logs"),
-  launchAgent: () => join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
+  /** The background job's file. Tests point PMX_LAUNCH_AGENT_FOR_TESTS elsewhere, so none can write the user's own job file. */
+  launchAgent: () => process.env.PMX_LAUNCH_AGENT_FOR_TESTS ?? join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`),
 };
 
 export const LAUNCHD_LABEL = "com.productmaxxing.pmx";

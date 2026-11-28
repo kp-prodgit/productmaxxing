@@ -80,12 +80,29 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
   const posts: [string, any][] = [];
   let dom!: JSDOM;
 
+  // What the page still waits on from PMX. A window closed under an open request gets the answer afterwards, and the
+  // page's own code then runs in a closed window and throws after the test, which fails the whole run. So every
+  // request the page makes is counted, and the window closes once none is open (or after 5 seconds, for a test that
+  // leaves one open on purpose).
+  let waiting = 0;
+  const held = async <T>(f: () => Promise<T>): Promise<T> => { waiting++; try { return await f(); } finally { waiting--; } };
+  const shut = async () => {
+    if (!dom) return;
+    for (const end = Date.now() + 5000; Date.now() < end;) {
+      if (waiting) { await tick(15); continue; }
+      // The page acts on the answer in the same turn it arrives; one more look catches a request that started there.
+      await tick(5);
+      if (!waiting) break;
+    }
+    dom.window.close();
+  };
+
   let rpc = 0;
   const appPage = async () => (await readFile(pipelineTemplate(), "utf8"))
     .replace('{"mode":"artifact","version":"0.0.0"}', JSON.stringify({ mode: "artifact", version: o.pageVersion ?? currentVersion(), team: ctx.team.team, ...(o.caps ? { caps: JSON.stringify(flowCapabilities()) } : {}) }).replace(/</g, "\\u003c"));
 
   const loadApp = async (hash: string) => {
-    if (dom) dom.window.close();
+    await shut();
     dom = new JSDOM(`<!doctype html><html lang=en><head><meta charset=utf-8>${o.head ?? ""}</head><body>${await appPage()}</body></html>`, {
       url: `http://artifact.test/#${hash.replace(/^#/, "")}`, runScripts: "dangerously", pretendToBeVisual: true,
       beforeParse(w: any) {
@@ -95,7 +112,7 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
         w.CSS = { escape: (s: string) => String(s).replace(/[^a-zA-Z0-9_\u00A0-\uFFFF-]/g, (c) => `\\${c}`) };
         w.claude = {
           use: async (name: string) => name !== "mcp" ? (o.uses?.[name] ?? null) : {
-            async callTool(_server: string, tool: string, args: any) {
+            callTool: (_server: string, tool: string, args: any) => held(async () => {
               if (tool === "board_act") posts.push([args.path, args.body]);
               const out: any = await handleMcp({ jsonrpc: "2.0", id: ++rpc, method: "tools/call", params: { name: tool, arguments: args } }, freshCtx, { confirm, engine: o.engine });
               if (out.error) throw Object.assign(new w.Error(out.error.message), { code: out.error.code === -32602 ? "unknown_tool" : "tool_error" });
@@ -103,7 +120,7 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
               const payload = r.structuredContent ?? (r.content?.[0] ? JSON.parse(r.content[0].text) : null);
               if (r.isError) throw Object.assign(new w.Error(JSON.stringify(payload)), { code: "tool_error", result: { structuredContent: payload } });
               return { payload };
-            },
+            }),
           },
         };
       },
@@ -119,18 +136,18 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
 
   const load = async (hash: string) => {
     if (o.app) return loadApp(hash);
-    if (dom) dom.window.close();
+    await shut();
     const url = `${base.origin}${base.pathname}${base.hash}&tab=${hash.replace(/^#/, "")}`;
     dom = await JSDOM.fromURL(url, {
       runScripts: "dangerously", pretendToBeVisual: true,
       beforeParse(w: any) {
         // The page's two doors to PMX: reads and POSTs to this Mac's server.
-        w.fetch = async (path: string, init?: any) => {
+        w.fetch = (path: string, init?: any) => held(async () => {
           if (init?.method === "POST") posts.push([String(path).replace("/api/pipeline/", ""), JSON.parse(init.body)]);
           const r = await fetch(new URL(path, base.origin), init);
           const body = await r.text();
           return { ok: r.ok, status: r.status, json: async () => JSON.parse(body), text: async () => body };
-        };
+        });
         w.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
         w.scrollTo = () => {};
         // jsdom has no CSS namespace; the page uses CSS.escape to find rows by key.
@@ -186,8 +203,10 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
       await tick(20);
     },
     bar: () => (ui.$("#savebar")?.textContent ?? "").replace(/\s+/g, " ").trim(),
-    async until(fn, what, ms = 4000) {
-      const end = Date.now() + ms;
+    // At least 20 seconds, for a busy machine (a caller's shorter wait was sized for an idle one): it returns the
+    // moment the condition holds, so only a wait that fails takes that long.
+    async until(fn, what, ms = 20000) {
+      const end = Date.now() + Math.max(ms, 20000);
       for (;;) {
         let v: any;
         try { v = fn(); } catch { v = null; }
@@ -197,7 +216,7 @@ export async function openBoard(o: { team?: Partial<TeamConfig>; personal?: Part
       }
     },
     async reload(hash = "today") { await load(hash); },
-    async close() { dom?.window.close(); await server.close(); },
+    async close() { await shut(); await server.close(); },
   };
   await load(o.hash ?? "today");
   return ui;

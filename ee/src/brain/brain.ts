@@ -9,6 +9,7 @@ import { Cloud } from "../../../src/cloud/client.js";
 import { postEvents } from "../../../src/cloud/events.js";
 import type { Ctx } from "../../../src/core/context.js";
 import { privateDir, readJson, writeJson } from "../../../src/core/fsutil.js";
+import { gateKey, loadGates, saveGate } from "../../../src/core/gates.js";
 import { killSwitchOn } from "../../../src/core/killswitch.js";
 import { paths } from "../../../src/core/paths.js";
 import { RunLogStore } from "../../../src/core/runlog-store.js";
@@ -219,10 +220,26 @@ async function sendBrainEvents(ctx: Ctx, events: Record<string, unknown>[]): Pro
 }
 
 /**
+ * What a brain pass's answer depends on (BRAIN-4), as a hash: the model, the brain's settings, the day (UTC), the
+ * budget's settings and the whole prompt (the skill, the size rubric, the team's state, the review record and every open task),
+ * apart from two things that move by themselves: each task's age in days, which the day stands in for, and the dollars
+ * left today, which the brain's own pass spends. So the same key means the same board, limits and day as the last pass.
+ */
+export function brainKey(ctx: Pick<Ctx, "team" | "personal">, o: { policy: BrainPolicy; policyVersion: number }, prompt: string, now: Date): string {
+  const steady = prompt.replace(/ age_days="\d+"/g, "").replace(/(Today's remaining agent budget: )\$[^\s]+\./, "$1(left out).");
+  return gateKey(ctx.team.model, JSON.stringify(o.policy), String(o.policyVersion), now.toISOString().slice(0, 10), JSON.stringify([ctx.personal.budget, ctx.team.caps ?? null]), steady);
+}
+
+/**
  * One brain pass (BRAIN-2): read the board and the team's record, ask the model for proposals, run
  * each through the fixed rules, then carry out, queue or comment. Every decision is in the receipt.
+ *
+ * `skipUnchanged` (the background run only): when the board, the limits and the day are the same as at the last pass
+ * (`brainKey`), the model isn't asked again and nothing is done or commented twice; the answer carries `unchanged`,
+ * the time of that pass. A pass a person starts (`pmx brain`) always asks. Nothing remembered, or
+ * `~/.pmx/gates.json` unreadable, and the pass runs.
  */
-export async function brainPass(ctx: Ctx, svc: Services, o: { policy: BrainPolicy; policyVersion: number; dryRun?: boolean }): Promise<BrainReceipt> {
+export async function brainPass(ctx: Ctx, svc: Services, o: { policy: BrainPolicy; policyVersion: number; dryRun?: boolean; skipUnchanged?: boolean }): Promise<BrainReceipt & { unchanged?: string }> {
   const now = ctx.now();
   const [tasks, paused, ks, state] = await Promise.all([svc.tracker.list(), svc.paused(), killSwitchOn(ctx.repo), loadState()]);
   const open = tasks.filter((t) => t.status !== "done");
@@ -267,6 +284,16 @@ export async function brainPass(ctx: Ctx, svc: Services, o: { policy: BrainPolic
     block,
   ].join("\n");
 
+  const key = brainKey(ctx, o, prompt, now);
+  if (o.skipUnchanged && !o.dryRun) {
+    const last = (await loadGates()).brain;
+    if (last && last.key === key && typeof last.at === "string") {
+      // The check counts as the pass, so the next one is due when it would have been. No receipt: nothing was decided.
+      await updateState((s) => (s.lastBrainAt = now.toISOString()));
+      return { ...receipt, unchanged: last.at };
+    }
+  }
+
   await checkBudget(ctx);
   const result = await ctx.runtime.run({ team: ctx.team, cwd: ctx.personal.repoPath, prompt, tools: [], maxTurns: 1 });
   await updateState((s) => recordSpend(s, ctx.personal, now, result.costUsd, result.tokens));
@@ -304,6 +331,7 @@ export async function brainPass(ctx: Ctx, svc: Services, o: { policy: BrainPolic
     }
     await saveQueue(queue);
     await updateState((s) => (s.lastBrainAt = receipt.at));
+    await saveGate("brain", { at: receipt.at, key });
   }
   await writeBrainReceipt(receipt);
   if (!o.dryRun) await sendBrainEvents(ctx, eventsFor(receipt, receipt.decisions));

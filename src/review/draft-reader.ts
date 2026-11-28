@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { itemIds } from "./follow-up-id.js";
 
 /**
  * Reading a draft's Markdown: its title and sections, its words without Markdown, its sentences (TASK-10), and what it
@@ -80,7 +80,14 @@ export interface DraftDecision {
   why: string;
   /** A deadline the draft states ("before Dec 8"), as YYYY-MM-DD, or null. */
   due: string | null;
-  key: string;
+  /**
+   * The follow-up's fixed ID: the item of the draft it was read from (src/review/follow-up-id.ts), never its wording.
+   * `ids`: every item it was read from, `id` first: one call the draft marks twice, or two calls on one thing, are one
+   * follow-up read from two items. The ledger keeps each, so accepting the draft again makes it once however PMX
+   * words or joins its items then.
+   */
+  id: string;
+  ids: string[];
   /**
    * FOLLOW-1 (end-to-end test 2026-11-27): a call worded as something to do, a to-do as written ("Check the scope …"),
    * not a decision: the accept's answer, the re-read's notice and the draft-ready comment count it apart.
@@ -116,7 +123,14 @@ export interface DraftQuestion {
   ask: { role: string | null; by: "mark" | "words" } | null;
   /** The kind of work the draft's "— needs: <kind of work>" mark names, in its words ("a validation plan"), or null. */
   needs: string | null;
-  key: string;
+  /**
+   * The follow-up's fixed ID: the item of the draft it was read from (src/review/follow-up-id.ts), never its wording.
+   * `ids`: every item it was read from, `id` first: one call the draft marks twice, or two calls on one thing, are one
+   * follow-up read from two items. The ledger keeps each, so accepting the draft again makes it once however PMX
+   * words or joins its items then.
+   */
+  id: string;
+  ids: string[];
   /**
    * The task's title, when the title leans on something nothing in the item or the task says ("Is the other partners'
    * need real?"), so the ask's why names the task (FOLLOW-1).
@@ -177,15 +191,28 @@ const AROUND_HEADING = /^(?:(?:the\s+)?decision(?:\s+(?:needed|to make))?|option
 const RECOMMENDATION_HEADING = /^recommend(?:ation|ations|ed option)?$/i;
 
 export const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-const keyOf = (kind: string, text: string) => createHash("sha256").update(`${kind}\n${norm(text)}`).digest("hex").slice(0, 12);
 
-interface Block { text: string; list: boolean; sub?: boolean }
+/**
+ * What the reader finds before it knows which item it is from: `readAll` gives it its fixed ID, from the item alone.
+ * Nothing that words a follow-up (`decisionOf`, `questionOf`, `oneDecision`) sees an ID or makes one.
+ */
+type Unread<T> = Omit<T, "id" | "ids">;
+
+/**
+ * Within one reading of one draft, two items that read as the same call, or ask the same question, are one follow-up,
+ * as they always were ("PM decides" on the same choice in the summary and again in a list). This says only that, for
+ * this reading: it is never stored and identifies nothing later. A follow-up's identity is its `id`.
+ */
+const sameAs = (x: { core: string } | { question: string }) => ("core" in x ? `call\n${norm(x.core)}` : `question\n${norm(x.question)}`);
+
+/** One item of the draft, as its author wrote it, and its fixed ID (`partsOf`). */
+interface Block { text: string; list: boolean; sub?: boolean; id: string }
 
 /**
  * A section's lines as blocks: top-level list items (their nested lines folded in), paragraphs, and `###` sub-headings.
  * Tables and quotes are left out.
  */
-function blocksOf(s: Section): Block[] {
+function blocksOf(s: Section): Omit<Block, "id">[] {
   const out: { lines: string[]; list: boolean; sub?: boolean }[] = [];
   let open = false;
   for (const raw of s.lines) {
@@ -481,7 +508,7 @@ function worded(core: string, identifier: string, about: string | null = null): 
   const hangs = core.match(HANGS_ON);
   const reworded = hangs ? `${hangs[1]}${ASKS_IT.test(hangs[1]!) ? " the question" : ", given the question"}: ${hangs[2]}` : null;
   // Only when the question fits whole: a longer one keeps 0.40.2's "<call>: <Q>?" rather than lose its end, so whether a
-  // call takes its question (`decisionOf`, by this length) and its key stay what 0.40.2 decided (rig rerun 2026-11-27).
+  // call takes its question (`decisionOf`, by this length) stays what 0.40.2 decided (rig rerun 2026-11-27).
   const said = reworded && head.length + reworded.length + id.length <= 200 ? reworded : core;
   const body = cut(said.replace(/^./, (c) => (verb === "Decide " ? c.toLowerCase() : c)), 200 - head.length - id.length);
   return `${head}${body}${id}`;
@@ -744,7 +771,7 @@ function phraseOf(s: string | null | undefined, r: Reading): string | null {
 export const isPm = (role: string) => /^(?:the\s+)?(?:pm|product manager|accepting pm|you)$/i.test(role.trim());
 
 /** The decision a "PM decides" item or line asks for, worded as the decision to make, and what the draft says about it. */
-function decisionOf(text: string, identifier: string, now: Date, r: Reading): Call | null {
+function decisionOf(text: string, identifier: string, now: Date, r: Reading): Unread<Call> | null {
   const { text: p, mark } = unmark(plain(text), false);
   // R2b: a mark inside a label ("Price options (all PM decides): …") has no decision of its own.
   if (MARK_IN_LABEL.test(p)) return null;
@@ -851,8 +878,8 @@ function decisionOf(text: string, identifier: string, now: Date, r: Reading): Ca
   if (!about && !fromLead && (l ? !ref : THIN.test(core))) {
     // The item's nearest question before the mark, through its "?" ("Is the price conditional …? says pricing is …").
     const asked = [pre, ...ss.slice(0, at).reverse()].map((x) => x.match(/^(.*\?)/)?.[1]?.trim()).find(Boolean) ?? null;
-    // Kept as "<call>: <Question>?", so its key is the one an earlier accept recorded; `worded` says it as the call,
-    // the question after it (`HANGS_ON`).
+    // Kept as "<call>: <Question>?", as 0.40.2 worded it; `worded` says it as the call, the question after it
+    // (`HANGS_ON`).
     const withAsked = asked ? `${core}: ${capFirst(asked)}` : null;
     if (!l && topic) about = capFirst(topic);
     else if (withAsked && worded(withAsked, identifier).length <= 200 && !worded(withAsked, identifier).includes("…")) core = withAsked;
@@ -860,7 +887,7 @@ function decisionOf(text: string, identifier: string, now: Date, r: Reading): Ca
     else if (r.title) names = `The call is from ${identifier}, "${r.title}".`;
   }
   const said = [names, why ?? ownWhy(ss, withOptions), also].filter(Boolean).join(" ");
-  return { text: worded(core, identifier, about), why: cut(said, 400), due: deadlineIn(p, now), key: keyOf("d", core), how, core, about, at: 0, ...acted(core) };
+  return { text: worded(core, identifier, about), why: cut(said, 400), due: deadlineIn(p, now), how, core, about, at: 0, ...acted(core) };
 }
 
 /** A call worded as something to do (`isAction`) is a to-do as written, counted apart from the decisions (FOLLOW-1). */
@@ -909,7 +936,7 @@ interface Part { heading: string; blocks: Block[] }
  * section, no call marked in them, or nothing to word the decision with: then each call is read on its own, as in any
  * draft.
  */
-function oneDecision(parts: Part[], identifier: string, now: Date, r: Reading): (DraftDecision & { core: string }) | null {
+function oneDecision(parts: Part[], identifier: string, now: Date, r: Reading): Unread<DraftDecision & { core: string }> | null {
   const decision = parts.find((p) => DECISION_HEADING.test(plain(p.heading)));
   if (!decision) return null;
   const around = parts.filter((p) => AROUND_HEADING.test(plain(p.heading)));
@@ -943,7 +970,7 @@ function oneDecision(parts: Part[], identifier: string, now: Date, r: Reading): 
   // The date the Decision section states for it, then one beside a mark, then one among the Decision section's items.
   const dateIn = (bs: Block[]) => bs.map((b) => deadlineIn(plain(b.text), now)).find(Boolean) ?? null;
   const due = dateIn(decision.blocks.filter((b) => !b.list && !b.sub)) ?? dateIn(marked) ?? dateIn(decision.blocks.filter((b) => b.list));
-  return { text: worded(core, identifier), why: cut(why, 400), due, key: keyOf("d", core), core, ...acted(core) };
+  return { text: worded(core, identifier), why: cut(why, 400), due, core, ...acted(core) };
 }
 
 /**
@@ -1173,7 +1200,7 @@ function leaned(title: string, raw: string, ss: string[], r: Reading, prior: str
  * A question item: the question first (through its "?"), then the rest of what the draft says about it; its whole
  * title, with what it leans on said (`leaned`); and who answers it (R2): the draft's mark, else its words.
  */
-function questionOf(text: string, where: DraftQuestion["where"], r: Reading, prior: string | null = null): DraftQuestion | null {
+function questionOf(text: string, where: DraftQuestion["where"], r: Reading, prior: string | null = null): Unread<DraftQuestion> | null {
   const { text: p, mark } = unmark(plain(text).replace(/^(?:Q\d+|blocking|open)\s*[:.)-]\s*/i, ""));
   // A question ends at its "?": what the draft put after it in the same sentence (", via the account lead") is a
   // sentence of its own, never part of the question.
@@ -1230,7 +1257,7 @@ function questionOf(text: string, where: DraftQuestion["where"], r: Reading, pri
       } else from = r.title ?? null;
     }
   }
-  return { question, title, about, rest: kept, where, ask, needs: mark && !mark.ask ? mark.value || null : null, key: keyOf("q", question), ...(from ? { from } : {}), ...(unasked ? { unasked } : {}) };
+  return { question, title, about, rest: kept, where, ask, needs: mark && !mark.ask ? mark.value || null : null, ...(from ? { from } : {}), ...(unasked ? { unasked } : {}) };
 }
 
 /**
@@ -1290,9 +1317,10 @@ function subjectOfCall(core: string): CallSubject | null {
  * either side. Merged, the better-formed comes first and the other's choice joins it: "whether the dedicated capacity
  * price is a separate line or bundled, and whether it can be ready for the beta". A bare "on the price" beside a
  * worded call on it adds nothing, so the worded one stays; so does the better-formed when the two don't fit in one
- * to-do. The whys join, and the earlier due date stands. `merged`: each merged-away call's key, to the one it joined.
+ * to-do. The whys join, and the earlier due date stands. The one to-do is read from both calls' items: it keeps the IDs
+ * of both (`ids`), the earlier item's first.
  */
-function mergeCalls(calls: Call[], identifier: string, merged: Map<string, string>): Call[] {
+function mergeCalls(calls: Call[], identifier: string): Call[] {
   const out: Call[] = [];
   const rank = { whether: 0, and: 1, on: 2 } as const;
   for (const c of calls) {
@@ -1312,20 +1340,18 @@ function mergeCalls(calls: Call[], identifier: string, merged: Map<string, strin
     if (`${first.about ? `${first.about}: decide` : "Decide"} ${core} (${identifier})`.length > 200) core = first.core;
     const whys = [...new Set([first.why, second.why].filter(Boolean))].filter((x, _k, all) => !all.some((y) => y !== x && y.includes(x)));
     const dues = [first.due, second.due].filter((d): d is string => !!d).sort();
-    const key = keyOf("d", core);
-    for (const [k, v] of merged) if (v === o.key) merged.set(k, key);
-    merged.set(o.key, key);
-    merged.set(c.key, key);
-    out[i] = { ...first, core, text: worded(core, identifier, first.about), why: cut(whys.join(" "), 400), due: dues[0] ?? null, key, how: o.how === "clause" || c.how === "clause" ? "clause" : first.how, at: o.at };
+    const ids = [...new Set([...o.ids, ...c.ids])];
+    out[i] = { ...first, core, text: worded(core, identifier, first.about), why: cut(whys.join(" "), 400), due: dues[0] ?? null, id: ids[0]!, ids, how: o.how === "clause" || c.how === "clause" ? "clause" : first.how, at: o.at };
   }
   return out;
 }
 
 /**
- * One item a draft's follow-ups are read from, and what it became (FOLLOW-1): a call, a question, or neither. `junk`:
- * neither, and nothing someone can do either ("Written plan owed."): no follow-up at all (D2-8).
+ * One item a draft's follow-ups are read from, with its fixed ID (`id`), and what it became (FOLLOW-1): a call, a
+ * question, or neither. `junk`: neither, and nothing someone can do either ("Written plan owed."): no follow-up at all
+ * (D2-8).
  */
-export interface FollowUpItem { text: string; decision: DraftDecision | null; question: DraftQuestion | null; junk?: true }
+export interface FollowUpItem { text: string; id: string; decision: DraftDecision | null; question: DraftQuestion | null; junk?: true }
 
 /**
  * Something someone can do, by its first word: an action ("Send the plan", "Check with legal"), a choice's verb
@@ -1367,25 +1393,50 @@ export function followUpItems(markdown: string, identifier: string, now: Date, t
   return readAll(markdown, identifier, now, task).items;
 }
 
+/**
+ * A draft's items, section by section, each with its fixed ID (FOLLOW-1). The IDs are made here, from the items as the
+ * author wrote them and nothing else, before anything is read from them or worded: so no wording rule, now or later,
+ * can change one (src/review/follow-up-id.ts).
+ */
+function partsOf(doc: ReturnType<typeof sections>): Part[] {
+  const parts = [{ heading: "", blocks: blocksOf({ heading: "", lines: doc.intro }) }, ...doc.sections.map((s) => ({ heading: s.heading, blocks: blocksOf(s) }))];
+  const ids = itemIds(parts.flatMap((p) => p.blocks.map((b) => b.text)));
+  let n = 0;
+  return parts.map((p) => ({ heading: p.heading, blocks: p.blocks.map((b) => ({ ...b, id: ids[n++]! })) }));
+}
+
+/** Every item of a draft, in its order, with its fixed ID and its text as the author wrote it (FOLLOW-1). */
+export function draftItems(markdown: string): { id: string; text: string }[] {
+  return partsOf(sections(markdown)).flatMap((p) => p.blocks.map((b) => ({ id: b.id, text: b.text })));
+}
+
 function readAll(markdown: string, identifier: string, now: Date, task: { title?: string | null }): { decisions: DraftDecision[]; questions: DraftQuestion[]; items: FollowUpItem[] } {
   const doc = sections(markdown);
+  // First, and from the draft alone: each item's fixed ID.
+  const all = partsOf(doc);
   const title = plain(task.title ?? doc.title ?? "").replace(/^[A-Z][A-Z0-9]*-\d+\s*[:—–-]\s*/, "").replace(/[\s.]+$/, "") || null;
   const r: Reading = { ...properWords(markdown, task.title), subject: subjectOfTitle(task.title ?? doc.title), id: identifier, cites: /\[web:|https?:\/\//i.test(markdown), title };
   const decisions: Call[] = [];
   const questions: DraftQuestion[] = [];
-  const read: { text: string; key: string }[] = [];
-  const nothing: { text: string; junk: boolean }[] = [];
-  const seen = new Set<string>();
-  const add = <T extends { key: string }>(list: T[], x: T | null, from: Block, at: number) => {
+  const read: { text: string; id: string }[] = [];
+  const nothing: { text: string; id: string; junk: boolean }[] = [];
+  /** What this reading already has, by what it reads as (`sameAs`): a second item that reads the same joins it. */
+  const seen = new Map<string, { ids: string[] }>();
+  function add(list: Call[], x: Unread<Call> | null, from: Block, at: number): void;
+  function add(list: DraftQuestion[], x: Unread<DraftQuestion> | null, from: Block, at: number): void;
+  function add(list: (Call | DraftQuestion)[], x: Unread<Call> | Unread<DraftQuestion> | null, from: Block, at: number): void {
     if (!x) return;
-    read.push({ text: plain(from.text), key: x.key });
-    if (seen.has(x.key)) return;
-    seen.add(x.key);
-    list.push("core" in x ? { ...x, at } : x);
-  };
-  const all: Part[] = [{ heading: "", blocks: blocksOf({ heading: "", lines: doc.intro }) }, ...doc.sections.map((s) => ({ heading: s.heading, blocks: blocksOf(s) }))];
+    read.push({ text: plain(from.text), id: from.id });
+    const same = sameAs(x);
+    const first = seen.get(same);
+    // The same follow-up, read from one more item: it keeps that item's ID too.
+    if (first) { if (!first.ids.includes(from.id)) first.ids.push(from.id); return; }
+    const made = "core" in x ? { ...x, at, id: from.id, ids: [from.id] } : { ...x, id: from.id, ids: [from.id] };
+    seen.set(same, made);
+    list.push(made);
+  }
   const brief = oneDecision(all, identifier, now, r);
-  const one: Call | null = brief ? { ...brief, how: "clause", about: null, at: 0 } : null;
+  const one: Unread<Call> | null = brief ? { ...brief, how: "clause", about: null, at: 0 } : null;
   all.forEach((s, si) => {
     const areaOf = (h: string): DraftQuestion["where"] | null => (QUESTIONS.test(h) ? (/blocking/i.test(h) ? "blocking" : "open") : null);
     // A call in the Decision, Options or Recommendation section of a draft built around one decision is that decision.
@@ -1432,7 +1483,7 @@ function readAll(markdown: string, identifier: string, now: Date, task: { title?
           // D2-8: an item that is no follow-up by today's rules (R2c: no question, no call). One that isn't something
           // to do either ("Written plan owed.", not "Send the plan.") is no follow-up at all (`junk`).
           const first = sentencesOf(lead)[0] ?? "";
-          nothing.push({ text: plain(b.text), junk: !mark && !PM_DECIDES.test(q) && fragment(first) && !doable(first) });
+          nothing.push({ text: plain(b.text), id: b.id, junk: !mark && !PM_DECIDES.test(q) && fragment(first) && !doable(first) });
         }
       } else if (PM_DECIDES.test(b.text)) add(decisions, call(b.text), b, at);
     });
@@ -1440,14 +1491,14 @@ function readAll(markdown: string, identifier: string, now: Date, task: { title?
   // R2b: a draft that names its calls ("PM decides: …") gives those and the ones it words as a choice, never a lead
   // beside them, so marks with no decision of their own can't take the to-dos the named calls need.
   const named = decisions.some((d) => d.how === "clause");
-  const merged = new Map<string, string>();
-  const kept = mergeCalls(decisions.filter((d) => !named || d.how !== "lead"), identifier, merged);
+  const kept = mergeCalls(decisions.filter((d) => !named || d.how !== "lead"), identifier);
   const out = kept.map(({ how: _how, core: _core, about: _about, at: _at, ...d }) => d);
-  const byKey = new Map<string, DraftDecision>(out.map((d) => [d.key, d]));
-  const asked = new Map(questions.map((q) => [q.key, q]));
+  // Each item, by its ID, to the one call or question it was read as.
+  const called = new Map<string, DraftDecision>(out.flatMap((d) => d.ids.map((id) => [id, d] as const)));
+  const asked = new Map<string, DraftQuestion>(questions.flatMap((q) => q.ids.map((id) => [id, q] as const)));
   const items: FollowUpItem[] = [
-    ...read.map(({ text, key }) => ({ text, decision: byKey.get(merged.get(key) ?? key) ?? null, question: asked.get(key) ?? null })),
-    ...nothing.map((x) => ({ text: x.text, decision: null, question: null, ...(x.junk ? { junk: true as const } : {}) })),
+    ...read.map(({ text, id }) => ({ text, id, decision: called.get(id) ?? null, question: asked.get(id) ?? null })),
+    ...nothing.map((x) => ({ text: x.text, id: x.id, decision: null, question: null, ...(x.junk ? { junk: true as const } : {}) })),
   ];
   return { decisions: out, questions, items };
 }

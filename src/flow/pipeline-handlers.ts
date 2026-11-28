@@ -228,7 +228,9 @@ export function pipelineHandlers(ctx: Ctx, deps: HandlerDeps = {}): PipelineActi
     /** CLAUDE-6: the PM's working hours for PMX's Claude tasks. A PMX setting: nothing changes in the Claude app. */
     async taskHours(hours: string) {
       if (!(TASK_HOURS as readonly string[]).includes(hours)) return { status: 400, body: { error: "hours is weekdays or always" } };
-      return { status: 200, body: { message: await setTaskHours(ctx.personal, hours as TaskHours), taskHours: hours } };
+      // LINEAR-2 (0.41.0): with a Linear API key the hours are meeting collection's only, and the answer says so.
+      const direct = (await linearAccess(ctx.team, ctx.keychain).catch(() => "none" as const)) === "key";
+      return { status: 200, body: { message: await setTaskHours(ctx.personal, hours as TaskHours, { direct }), taskHours: hours } };
     },
     /** FLOW-8: exactly the page `pmx flow --publish-json` would have Claude publish, for the page to publish itself. */
     async pageHtml() {

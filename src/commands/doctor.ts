@@ -1,21 +1,22 @@
 import { stalePages } from "../claude/pages.js";
 import { neverSynthesized } from "../synth/status.js";
-import { agentHandle } from "../core/config.js";
+import { agentHandle, autoUpdateOn } from "../core/config.js";
 import { oldServerNote, oldServers } from "../mcp/handoff.js";
-import { neededTasks, syncDueCron, taskRunHealth, taskState } from "../claude/tasks.js";
+import { leftoverTasks, leftoverWhy, neededTasks, syncDueCron, taskRunHealth, taskState } from "../claude/tasks.js";
 import { nodeSupported, profileSignedIn, resolveClaude } from "../core/claude-bin.js";
 import { missingAllowRules } from "../claude/permissions.js";
 import { linearAccess } from "../linear/access.js";
-import { relayHealth } from "../tracker/relay.js";
-import { boardStale, boardUrl, checkBoard } from "../claude/board.js";
+import { readOutbox, relayHealth } from "../tracker/relay.js";
+import { directHealth } from "../linear/direct.js";
+import { boardStale, boardUrl, boardWaits, checkBoard } from "../claude/board.js";
 import { appSkillInstalled, BOARD_SKILL, claudePresent } from "../claude/skill.js";
 import { loadState } from "../core/state.js";
 import { VENDORED_CLI } from "../core/vendor.js";
-import { atLeast, compareVersions, currentVersion, vendoredVersion } from "../core/version.js";
+import { atLeast, compareVersions, currentVersion, isPrerelease, vendoredVersion } from "../core/version.js";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { PersonalConfig, TeamConfig } from "../core/config.js";
-import type { Exec } from "../core/exec.js";
+import { onMac, type Exec } from "../core/exec.js";
 import { Git } from "../core/git.js";
 import { parseGitHubRemote, unsharedWork } from "../core/host.js";
 import type { Keychain } from "../core/keychain.js";
@@ -83,7 +84,7 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   const out: DoctorCheck[] = [];
   const add = (id: string, ok: boolean, detail: string, level: "fail" | "warn" = "fail") => out.push({ id, ok, detail, level });
 
-  add("os.macos", process.platform === "darwin", "macOS (v1 supports macOS only, SCOPE-3)");
+  add("os.macos", onMac(), "macOS (v1 supports macOS only, SCOPE-3)");
   add("node", nodeSupported(), `Node ${process.versions.node}${nodeSupported() ? "" : `: PMX needs 22.12 or later (24 recommended). ${NODE_FIX}`}`);
   // The background job keeps this Node's path, so a version manager switching or removing it stops the job.
   const execPath = d.execPath ?? process.execPath;
@@ -178,13 +179,16 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   // Versions (COMPAT-2, COMPAT-5): too old for the team fails; a newer team or release package warns.
   const current = currentVersion();
   const min = d.team.cli?.min;
-  add("cli.team-minimum", !min || atLeast(current, min), min ? `pmx ${current}; team minimum ${min}${atLeast(current, min) ? "" : ": run `pmx update`"}` : `pmx ${current}; no team minimum set (\`pmx vendor --require\` sets one)`);
   // The team package is what teammates and the background job install, so one older than this Mac warns too.
   const vendored = await vendoredVersion(join(repo, VENDORED_CLI), d.exec);
   const drift = vendored ? compareVersions(vendored, current) ?? 0 : 0;
+  // COMPAT-6: updates arrive by themselves unless the team turned that off, and only a package the team's repo carries.
+  const auto = autoUpdateOn(d.team) && (d.team.cli?.autoUpdate === true || !!vendored);
+  const arrives = auto && drift > 0 ? "the background job installs your team's package within the hour, or " : "";
+  add("cli.team-minimum", !min || atLeast(current, min), min ? `pmx ${current}; team minimum ${min}${atLeast(current, min) ? "" : `: ${arrives}run \`pmx update\`${arrives ? " now" : ""}`}` : `pmx ${current}; no team minimum set (\`pmx vendor --require\` sets one)`);
   add("cli.team-package", !vendored || drift === 0,
     !vendored ? `no CLI package in the PMX repo (\`pmx vendor\`)`
-      : drift > 0 ? `team package is pmx ${vendored}, newer than this Mac's ${current}: run \`pmx update\``
+      : drift > 0 ? `team package is pmx ${vendored}, newer than this Mac's ${current}: ${auto ? "the background job installs it within the hour, or " : ""}run \`pmx update\`${auto ? " now" : ""}`
       : drift < 0 ? `team package is pmx ${vendored}, older than this Mac's ${current}: teammates who install or update get ${vendored}. Team lead: run \`pmx vendor --require\` and merge it`
       : `team package is pmx ${vendored}`, "warn");
   // Claude tasks (CLAUDE-1): PMX can't create them, so doctor says which are missing.
@@ -207,15 +211,22 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if ((await checkBoard(d.team)).ok) {
     const b = boardUrl(d.team, d.personal);
     // The board reads Linear only: it needs publishing again only when its page changed (0.36.0).
-    const stale = b?.source === "personal" && boardStale(d.personal.board, current);
+    // This Mac's own board: the one it published, also when the team shares that same board in its settings (as
+    // src/claude/pages.ts counts it, so the line after an update names it too). A board a teammate shared is theirs.
+    const mine = !!b && !!d.personal.board?.url && (b.source === "personal" || b.url === d.personal.board.url);
+    const stale = mine && boardStale(d.personal.board, current);
+    // 0.41.0: a board published with its own republish capability takes the newer page itself, once its owner opens it.
+    const waits = mine && boardWaits(d.personal.board, current);
     const how = (await appSkillInstalled(BOARD_SKILL)) ? "type /pmx-board in the Claude app" : "run `pmx board --install-skill`, then type /pmx-board in the Claude app";
-    add("claude.board", !!b && !stale, b ? `team board ${b.url}${stale ? `: published with an older pmx, and its page changed since; ${how} to update it` : ""}` : `no Claude board yet: ${how}`, "warn");
+    add("claude.board", !!b && !stale && !waits, b
+      ? `team board ${b.url}${stale ? `: published with an older pmx, and its page changed since; ${how} to update it` : waits ? ": its page changed in a PMX update, and it updates itself the next time you open it in the Claude app on this Mac" : ""}`
+      : `no Claude board yet: ${how}`, "warn");
   }
   const st = await loadState();
   // SIG-6: Linear connected and meetings collected, but no task ever proposed on this Mac.
   const never = await neverSynthesized(d.team, d.personal, agentHandle(d.personal), st.lastSynthAt, !!(await d.launchd.installed().catch(() => null)), d.now?.() ?? new Date()).catch(() => null);
   if (never) add("synth.never", false, never, "warn");
-  if (d.team.cli?.autoUpdate) {
+  if (auto) {
     const au = st.autoUpdate;
     const stuck = au && (au.result === "needs-sudo" || au.result === "failed");
     // The job checks hourly while the Mac is awake; days without a check mean it isn't running, whatever the last result said.
@@ -234,7 +245,8 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
     add("team.push", !unshared, unshared ? unshared.text : "every accept on this Mac is in your team's repo", "warn");
   }
   const cloud = st.cloudVersions;
-  if (cloud?.latest) add("cli.latest", (compareVersions(cloud.latest, current) ?? 0) <= 0, `latest release is pmx ${cloud.latest}`, "warn");
+  // The latest release is never a test build (0.41.0-next.2): one named here by mistake is left out, not offered.
+  if (cloud?.latest && !isPrerelease(cloud.latest)) add("cli.latest", (compareVersions(cloud.latest, current) ?? 0) <= 0, `latest release is pmx ${cloud.latest}`, "warn");
 
   // FLOW-3: fake confidential meetings must be held by today's rules and this PM's do-not-read list.
   // BUDGET-2: a cap of 0 or a used-up day stops every run, so it's never silent.
@@ -285,7 +297,16 @@ export async function runDoctor(d: DoctorDeps): Promise<DoctorCheck[]> {
   if (d.personal.digest.slackDmUserId) add("secrets.slack", have.has("slack-token"), "Slack token in the keychain, for the digest DM");
   // Linear is checked the way this Mac reaches it (LINEAR-1, LINEAR-2): the relay needs no token, so it can't fail here.
   const access = await linearAccess(d.team, d.keychain);
-  if (access === "key") add("secrets.linear", true, "Linear API key in the keychain");
+  if (access === "key") {
+    add("secrets.linear", true, "Linear API key in the keychain");
+    // LINEAR-2 (0.41.0): how the key is doing, from what PMX's own reads recorded. A key Linear rejects is a failure
+    // said in plain words; doctor asks Linear nothing itself.
+    const h = await directHealth(d.team, d.now?.() ?? new Date(), { waiting: (await readOutbox().catch(() => ({ ops: [] }))).ops.length });
+    add("linear.direct", h.ok, h.detail, h.problem?.kind === "key-rejected" ? "fail" : "warn");
+    // A sync task left in the Claude app from before the key: said, and never a problem.
+    const left = await leftoverTasks(d.team, d.keychain).catch(() => []);
+    if (left.length) add("linear.task-left", true, leftoverWhy(left[0]!), "warn");
+  }
   if (access === "signed-in") add("secrets.linear", true, "signed in to Linear");
   if (access === "relay") {
     const h = await relayHealth(d.team, d.now?.() ?? new Date(), { cron: await syncDueCron(d.personal.taskHours) });

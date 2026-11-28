@@ -6,7 +6,7 @@ import type { Exec } from "../src/core/exec.js";
 import { paths } from "../src/core/paths.js";
 import { loadState } from "../src/core/state.js";
 import { installTeamVersion } from "../src/core/update.js";
-import { currentVersion } from "../src/core/version.js";
+import { compareVersions, currentVersion, isPrerelease } from "../src/core/version.js";
 import { announceOnce, formatNotes, markSeen, markUpdatingFrom, newVersionNotes, notesBetween, pendingNotes, QUIET_COMMANDS, RELEASE_NOTES } from "../src/core/whats-new.js";
 import { freshHome, tmp } from "./helpers.js";
 
@@ -19,11 +19,15 @@ const configExists = async () => {
 describe("0.12.0: every release says what's new (NEW-1)", () => {
   it("has notes for this version, newest first, each with a headline, items and a CHANGELOG section", async () => {
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-    expect(RELEASE_NOTES[0]!.version).toBe(pkg.version);
+    // A test build (0.41.0-next.2) has no entry: it isn't a release. The newest entry is then an older release, and the
+    // CHANGELOG still has its notes under "Unreleased" (scripts/prepare-release.mjs checks both).
+    if (isPrerelease(pkg.version)) expect(compareVersions(RELEASE_NOTES[0]!.version, pkg.version)).toBe(-1);
+    else expect(RELEASE_NOTES[0]!.version).toBe(pkg.version);
     const versions = RELEASE_NOTES.map((n) => n.version);
     expect(new Set(versions).size).toBe(versions.length);
     expect([...versions].sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))).toEqual(versions);
     const changelog = await readFile(join(root, "CHANGELOG.md"), "utf8");
+    if (isPrerelease(pkg.version)) expect(changelog).toMatch(/^## Unreleased$/m);
     for (const n of RELEASE_NOTES) {
       expect(n.headline.length).toBeGreaterThan(5);
       expect(n.items.length).toBeGreaterThan(0);
@@ -50,7 +54,8 @@ describe("0.12.0: telling each Mac once (NEW-1)", () => {
     expect((await pendingNotes()).map((n) => n.version)).toEqual(notesBetween("0.10.1").map((n) => n.version));
     const out: string[] = [];
     await announceOnce((s) => out.push(s));
-    expect(out.join("")).toContain(`What's new in pmx ${currentVersion()}`);
+    // On a test build the newest notes are the newest release's.
+    expect(out.join("")).toContain(`What's new in pmx ${isPrerelease(currentVersion()) ? RELEASE_NOTES[0]!.version : currentVersion()}`);
     expect(out.join("")).toContain("pmx whats-new");
     await announceOnce((s) => out.push(s));
     expect(out).toHaveLength(1);

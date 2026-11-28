@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { access, constants } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Exec } from "./exec.js";
+import type { Plan } from "./config.js";
+import { realSystemGuard, type Exec } from "./exec.js";
 import { cleanEnv } from "./profile.js";
 
 export interface ClaudeBin {
@@ -81,10 +82,40 @@ export async function profileSignedIn(exec: Exec): Promise<{ ok: boolean; detail
     : { ok: false, detail: `PMX's Claude profile isn't signed in, so every agent run fails: ${LOGIN_HINT}` };
 }
 
+/** The model plan a `claude auth status --json` answer names, or null when it names none PMX knows. */
+export function planOf(status: unknown): Plan | null {
+  const j = status as { loggedIn?: unknown; apiProvider?: unknown; subscriptionType?: unknown; authMethod?: unknown } | null;
+  if (!j || typeof j !== "object" || j.loggedIn !== true) return null;
+  const word = (v: unknown) => (typeof v === "string" ? v.toLowerCase() : "");
+  if (word(j.apiProvider) === "bedrock" || word(j.apiProvider) === "vertex") return word(j.apiProvider) as Plan;
+  const sub = word(j.subscriptionType);
+  if (sub === "pro" || sub === "max" || sub === "team" || sub === "enterprise") return sub;
+  return /api.?key|console/.test(word(j.authMethod)) ? "api" : null;
+}
+
+/**
+ * The plan Claude Code is signed in with on this Mac, so `pmx init` doesn't ask: PMX's own profile where it's signed
+ * in (that's what runs use), else the person's usual sign-in. Null when Claude Code is missing or doesn't say.
+ */
+export async function detectPlan(exec: Exec): Promise<Plan | null> {
+  const c = await resolveClaude(exec);
+  if (!c) return null;
+  for (const env of [cleanEnv(), undefined]) {
+    const r = await exec(c.cmd, ["auth", "status", "--json"], { ...(env ? { env } : {}), timeoutMs: 15000 }).catch(() => null);
+    let j: unknown = null;
+    try { j = JSON.parse(r?.stdout ?? ""); } catch { /* an older Claude Code, or none */ }
+    const plan = planOf(j);
+    if (plan) return plan;
+  }
+  return null;
+}
+
 /** `claude auth login` against PMX's profile, in this terminal. Resolves with its exit code. */
 export async function loginProfile(exec: Exec): Promise<number> {
   const c = await resolveClaude(exec);
   if (!c) throw new Error("Claude Code is not installed (https://code.claude.com).");
+  // It opens the browser to sign in: a test passes its own `login`.
+  realSystemGuard("`claude auth login` (it opens the browser)");
   return new Promise((resolve) => {
     const child = spawn(c.cmd, ["auth", "login"], { env: cleanEnv(), stdio: "inherit" });
     child.on("exit", (code) => resolve(code ?? 1));

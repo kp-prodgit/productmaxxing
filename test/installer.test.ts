@@ -299,12 +299,15 @@ describe("PMX Engine only for the product lead (INSTALL-4)", () => {
     expect(new Set(Object.values(pkg.bin)).size).toBe(1);
     expect(pkg.bin.productmaxxing).toBe(pkg.bin.pmx);
     expect(pathLine("/Users/x/.local/bin", "/Users/x")).toBe('export PATH="$HOME/.local/bin:$PATH"');
-    // INSTALL.md's main path is this command, then pmx init; the manual install stays as the fallback, and the product
-    // lead's section has --engine.
+    // INSTALL.md's main path is this command, which goes on to pmx init (INSTALL-3); the manual, verified install stays
+    // as the appendix, and the product lead's section has --engine.
     const guide = await readFile(join(import.meta.dirname, "..", "INSTALL.md"), "utf8");
-    const step2 = guide.indexOf("### Step 2: install PMX");
-    expect(guide.indexOf("npx --yes productmaxxing@latest install", step2)).toBeGreaterThan(step2);
-    expect(guide.indexOf("## Installing by hand")).toBeGreaterThan(step2);
-    expect(guide.slice(guide.indexOf("## For your product lead"), guide.indexOf("## Installing by hand"))).toContain("npx --yes productmaxxing@latest install --engine");
+    const step1 = guide.indexOf("### Step 1: one command in Terminal");
+    expect(step1).toBeGreaterThan(-1);
+    expect(guide.indexOf("npx --yes productmaxxing@latest install", step1)).toBeGreaterThan(step1);
+    const byHand = guide.indexOf("## Appendix: installing by hand, verified");
+    expect(byHand).toBeGreaterThan(step1);
+    expect(guide.slice(byHand)).toContain("shasum -a 256 -c SHA256SUMS --ignore-missing");
+    expect(guide.slice(guide.indexOf("## For your product lead"), byHand)).toContain("npx --yes productmaxxing@latest install --engine");
   });
 });

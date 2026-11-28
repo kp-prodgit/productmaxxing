@@ -22,23 +22,60 @@ export function currentVersion(): string {
   return cached;
 }
 
-const parse = (v: string) => {
-  const m = v.trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+interface Parsed { core: [number, number, number]; pre: string[] | null }
+
+// A test build is a version with a suffix: 0.41.0-next.2 (the `next` channel). Build metadata (+…) never counts.
+// A number written with a leading zero (0.041.0, 0.41.0-next.01) isn't a version: semantic versioning says so, and npm
+// refuses to publish one, so nothing here may take it for the version it resembles. The whole text has to be the
+// version (a leading v and spaces around it aside): 0.41.0.1, 0.41 and "0.41.0 or so" aren't 0.41.0.
+const NUM = "(0|[1-9]\\d*)";
+const WORDS = "[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*";
+const SHAPE = new RegExp(`^v?${NUM}\\.${NUM}\\.${NUM}(?:-(${WORDS}))?(?:\\+${WORDS})?$`);
+const parse = (v: string): Parsed | null => {
+  const m = v.trim().match(SHAPE);
+  if (!m) return null;
+  const pre = m[4] ? m[4].split(".") : null;
+  if (pre?.some((part) => /^0\d+$/.test(part))) return null;
+  return { core: [Number(m[1]), Number(m[2]), Number(m[3])], pre };
 };
 
 export const isVersion = (v: unknown): v is string => typeof v === "string" && parse(v) !== null;
 
-/** -1, 0 or 1 by major, minor, patch; null if either isn't a version. */
+/** A test build of a release that isn't out yet (0.41.0-next.2), never a release itself. */
+export const isPrerelease = (v: unknown): v is string => typeof v === "string" && !!parse(v)?.pre;
+
+/** Two suffixes, as semantic versioning orders them: part by part, numbers by value and before words, the shorter first. */
+function comparePre(a: string[], b: string[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i], y = b[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    if (x === y) continue;
+    const nx = /^\d+$/.test(x), ny = /^\d+$/.test(y);
+    if (nx && ny) return Number(x) < Number(y) ? -1 : 1;
+    if (nx !== ny) return nx ? -1 : 1;
+    return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * -1, 0 or 1 by major, minor, patch, then the suffix; null if either isn't a version. A test build comes before the
+ * release it tests and after every release before that: 0.40.3 < 0.41.0-next.1 < 0.41.0-next.2 < 0.41.0. So a team
+ * minimum of 0.41.0 isn't met by a test build of it, a team package at 0.41.0 replaces one, and an upgrade step
+ * `since: "0.41.0"` is due on a Mac that reaches 0.41.0-next.N from 0.40.3 (and on one that moves between test builds).
+ */
 export function compareVersions(a: string, b: string): number | null {
   const x = parse(a);
   const y = parse(b);
   if (!x || !y) return null;
-  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i]! < y[i]! ? -1 : 1;
-  return 0;
+  for (let i = 0; i < 3; i++) if (x.core[i] !== y.core[i]) return x.core[i]! < y.core[i]! ? -1 : 1;
+  if (!x.pre || !y.pre) return x.pre ? -1 : y.pre ? 1 : 0;
+  return comparePre(x.pre, y.pre);
 }
 
-export const atLeast = (v: string, min: string) => (compareVersions(v, min) ?? 0) >= 0;
+/** Whether `v` meets `min`. A minimum that isn't a version is never met: the team's settings refuse one before this is asked. */
+export const atLeast = (v: string, min: string) => (compareVersions(v, min) ?? -1) >= 0;
 
 export const UPDATE_HINT = "Run `pmx update` to install your team's version.";
 

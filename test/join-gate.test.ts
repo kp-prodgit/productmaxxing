@@ -137,9 +137,10 @@ describe("phase 3 gate (PMX's half)", () => {
     // The bridge's only pmxe commands: its version, doctor, whats-new, its checklist (SETUP-1) and, for the Strategy
     // area (BOARD-11), its status, each as JSON; Engine's own updater for `pmx update` (COMPAT-7), alone, never with
     // `--now`; and the studio, opened as it is or at a place, which the bridge checks against the studio's own places
-    // first (STUDIO_PLACES, in src/flow/strategy.ts, and test/strategy.test.ts).
+    // first (STUDIO_PLACES, in src/flow/strategy.ts, and test/strategy.test.ts). 0.41.0: the background run asks that
+    // updater whether a newer Engine is out, with `--check`, which installs nothing; it never runs the update itself.
     const runs = [...(await readFile(bridge, "utf8")).matchAll(/\[\s*("[^"]+"(?:\s*,\s*"[^"]+")*)(\s*,\s*place)?\s*\]/g)].map((m) => `${m[1]}${m[2] ?? ""}`.replace(/\s+/g, ""));
-    expect(new Set(runs)).toEqual(new Set(['"--version"', '"doctor","--json"', '"whats-new","--json"', '"checklist","--json"', '"status","--json"', '"update"', '"studio"', '"studio","--at",place']));
+    expect(new Set(runs)).toEqual(new Set(['"--version"', '"doctor","--json"', '"whats-new","--json"', '"checklist","--json"', '"status","--json"', '"update"', '"update","--check","--json"', '"studio"', '"studio","--at",place']));
     expect(await readFile(bridge, "utf8")).not.toMatch(/--now/);
     expect(await readFile(bridge, "utf8")).toMatch(/if \(place !== undefined && !isStudioPlace\(place\)\) return false;\n\s*const child = spawn\(/);
     // Only doctor, flow and index (the commands) reach the bridge; they hand Engine's labels to the board by injection.

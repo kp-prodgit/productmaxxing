@@ -1,6 +1,8 @@
 import { mkdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import type { Exec } from "./exec.js";
+import { readJson, writeJson } from "./fsutil.js";
+import { TEAM_CONFIG_FILE } from "./paths.js";
 import { packageRoot } from "./skills.js";
 import { BRIDGE_CLI, OLD, repackAs } from "./rename.js";
 
@@ -18,13 +20,31 @@ export const vendoredFiles = (): string[] => [VENDORED_CLI, BRIDGE_CLI];
  * config too. A team that committed only the package left the bridge out, and Macs on 0.14.0 or older never moved over.
  */
 export function vendorMessage(o: { repo: string; version: string; config?: string | null; autoUpdate?: boolean }): string {
+  // COMPAT-6: on unless the team turned it off, so only an explicit false means teammates update by hand.
+  const auto = o.autoUpdate !== false;
   const files = [...vendoredFiles(), ...(o.config ? [o.config] : [])];
   const list = `${files.slice(0, -1).join(", ")} and ${files.at(-1)}`;
   return [
     `Wrote ${VENDORED_CLI} (productmaxxing ${o.version}) and ${BRIDGE_CLI} (the same build, for teammates' Macs on PMX 0.14.0 or older) in ${o.repo}.`,
-    ...(o.config ? [`Set cli.min to ${o.version} in ${o.config}: older machines keep personal work but stop shared team work until they run \`pmx update\`.${o.autoUpdate ? " Auto-update is on: each machine's background job installs it within the hour." : ""}`] : []),
-    `Commit ${files.length === 2 ? "both" : "all three"} files (${list}) in a PR of its own. Teammates update with \`pmx update\`.`,
+    ...(o.config ? [`Set cli.min to ${o.version} in ${o.config}: older machines keep personal work but stop shared team work until they update.${auto ? " Auto-update is on: each machine's background job installs it within the hour of the merge (--no-auto-update turns that off)." : " Auto-update is off for your team (cli.autoUpdate is false): each teammate runs \`pmx update\` (--auto-update turns it back on)."}`] : []),
+    `Commit ${files.length === 2 ? "both" : "all three"} files (${list}) in a PR of its own. ${auto ? "Once it merges, teammates' Macs install it by themselves within the hour; \`pmx update\` does it at once." : "Teammates update with \`pmx update\`."}`,
   ].join("\n");
+}
+
+/**
+ * `pmx vendor --require` and `pmx vendor --latest`: makes `version` the team's minimum in the repo's pmx.config.json.
+ * `autoUpdate` sets `cli.autoUpdate`; undefined keeps what the file says. Returns whether auto-update is on afterwards
+ * (COMPAT-6: on unless the file says false).
+ */
+export async function setTeamMinimum(repo: string, version: string, autoUpdate?: boolean): Promise<boolean> {
+  const file = join(repo, TEAM_CONFIG_FILE);
+  const raw = (await readJson<Record<string, unknown>>(file)) ?? {};
+  const prev = (raw.cli ?? {}) as { autoUpdate?: boolean };
+  // Written out even when the team never chose: pmx 0.40.x and older update by themselves only when it says true, so a
+  // team that left it unset would otherwise need `pmx update` by hand on every Mac for this one hop.
+  const auto = autoUpdate ?? prev.autoUpdate ?? true;
+  await writeJson(file, { ...raw, cli: { min: version, autoUpdate: auto } }, 0o644);
+  return auto;
 }
 
 export async function cliVersion(): Promise<string> {

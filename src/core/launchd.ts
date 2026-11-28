@@ -1,9 +1,10 @@
+import { spawn } from "node:child_process";
 import { readFile, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { exec as defaultExec, type Exec } from "./exec.js";
+import { exec as defaultExec, realSystemGuard, type Exec } from "./exec.js";
 import { writeText } from "./fsutil.js";
-import { LAUNCHD_LABEL, paths } from "./paths.js";
+import { LAUNCHD_LABEL, paths, pmxHome } from "./paths.js";
 
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -86,6 +87,67 @@ export interface Launchd {
   installed(): Promise<string | null>;
   /** Whether a pass is running right now (UPGRADE-1 doesn't reload the job under it). */
   running?(): Promise<boolean>;
+  /**
+   * UPGRADE-1: installs `p` once the process `pid` has ended and no pass is running, so a pass can ask for its own job
+   * to be reloaded without being stopped by it. Nothing changes until then; if the reload never happens, the job stays
+   * as it was.
+   */
+  reloadAfter?(p: string, pid: number): Promise<void>;
+}
+
+/**
+ * The reload a background pass can't do to its own job (UPGRADE-1). `launchctl bootout` stops the job's process, so a
+ * pass that ran it would be killed before it could load the job again, and the job would be gone. This runs apart from
+ * the pass, in its own session (launchd stops a finished job's own process group only): it waits for the pass that
+ * asked (`$1`) to end and for the job to be idle, and only then puts the new job file in place and reloads it. If it
+ * can't load the new file, it puts the old one back and loads that. It gives up, changing nothing, when the pass is
+ * still running after half an hour. The job counts as busy in any launchd state but "not running", "waiting" or
+ * "exited": right after a start it is "xpcproxy" for a moment, before "running" (rig test of #144). Arguments, in order: pid, launchd domain, label, the new job file, where the job
+ * file lives, the log to say what it did in, and the launchctl to run (tests pass a stand-in).
+ */
+export const RELOAD_SCRIPT = `pid="$1"; domain="$2"; label="$3"; pending="$4"; dest="$5"; log="$6"; ctl="$7"
+say() { printf '%s background job: %s\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$log" 2>/dev/null; }
+n=0
+while kill -0 "$pid" 2>/dev/null; do n=$((n+1)); if [ "$n" -gt 1800 ]; then exit 0; fi; sleep 1; done
+n=0
+busy() { s=$("$ctl" print "$domain/$label" 2>/dev/null | sed -n 's/^[[:space:]]*state = //p' | head -1); case "$s" in ''|'not running'|waiting|exited) return 1;; *) return 0;; esac; }
+while busy; do n=$((n+1)); if [ "$n" -gt 1800 ]; then exit 0; fi; sleep 1; done
+[ -f "$pending" ] || exit 0
+cp "$dest" "$dest.pmx-old" 2>/dev/null
+if ! { cp "$pending" "$dest.pmx-new" && mv "$dest.pmx-new" "$dest"; }; then say "couldn't write its new settings, so it runs as before"; exit 1; fi
+"$ctl" bootout "$domain/$label" >/dev/null 2>&1
+n=0
+until "$ctl" bootstrap "$domain" "$dest" >/dev/null 2>&1; do
+  n=$((n+1))
+  if [ "$n" -ge 5 ]; then
+    if [ -f "$dest.pmx-old" ]; then mv "$dest.pmx-old" "$dest"; "$ctl" bootstrap "$domain" "$dest" >/dev/null 2>&1; fi
+    say "couldn't reload with this pmx, Node and Claude Code, so it runs as before"
+    exit 1
+  fi
+  sleep 2
+done
+rm -f "$pending" "$dest.pmx-old"
+say "reloaded with this pmx, Node and Claude Code"
+`;
+
+export interface ReloadPlan { pid: number; domain: string; label: string; pending: string; dest: string; log: string; launchctl?: string }
+
+/** The command that runs RELOAD_SCRIPT for a plan: `/bin/sh -c <script> <name> <arguments>`. */
+export function reloadCommand(p: ReloadPlan): { cmd: string; args: string[] } {
+  return { cmd: "/bin/sh", args: ["-c", RELOAD_SCRIPT, "pmx-job-reload", String(p.pid), p.domain, p.label, p.pending, p.dest, p.log, p.launchctl ?? "launchctl"] };
+}
+
+/** Where a job file waits until the pass that asked for it has ended. */
+export const pendingJob = () => join(pmxHome(), "launchd", "pending.plist");
+
+/** Starts the reload apart from this process, so it outlives it. */
+function reloadLater(p: ReloadPlan): void {
+  // The script runs launchctl itself, past `exec`: never the real one from a test.
+  if (!p.launchctl) realSystemGuard("launchctl (the background job's reload)");
+  const { cmd, args } = reloadCommand(p);
+  const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+  child.on("error", () => {});
+  child.unref();
 }
 
 export function macLaunchd(exec: Exec = defaultExec): Launchd {
@@ -107,18 +169,28 @@ export function macLaunchd(exec: Exec = defaultExec): Launchd {
     installed: () => readFile(paths.launchAgent(), "utf8").catch(() => null),
     async running() {
       const r = await exec("launchctl", ["print", `${domain}/${LAUNCHD_LABEL}`]);
-      return r.code === 0 && /^\s*state = running$/m.test(r.stdout);
+      // Busy in any state but idle: right after a start launchd says "xpcproxy" before "running" (rig test of #144).
+      const state = r.stdout.match(/^\s*state = (.+)$/m)?.[1]?.trim();
+      return r.code === 0 && !!state && !["not running", "waiting", "exited"].includes(state);
+    },
+    async reloadAfter(p, pid) {
+      await writeText(pendingJob(), p);
+      reloadLater({ pid, domain, label: LAUNCHD_LABEL, pending: pendingJob(), dest: paths.launchAgent(), log: join(paths.logs(), "tick.log") });
     },
   };
 }
 
-export function fakeLaunchd(): Launchd & { plist: string | null } {
+export function fakeLaunchd(): Launchd & { plist: string | null; later: string | null; finishRun(): void } {
   const f = {
     plist: null as string | null,
+    /** The job file a pass asked for (`reloadAfter`), until `finishRun` stands in for that pass ending. */
+    later: null as string | null,
     async install(p: string) { f.plist = p; },
     async uninstall() { f.plist = null; },
     async isLoaded() { return f.plist !== null; },
     async installed() { return f.plist; },
+    async reloadAfter(p: string) { f.later = p; },
+    finishRun() { if (f.later !== null) { f.plist = f.later; f.later = null; } },
   };
   return f;
 }

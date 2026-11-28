@@ -7,11 +7,12 @@ import { unsharedWork } from "../core/host.js";
 import { tickHealth } from "./tick.js";
 import { budget, usageLine } from "../budget/provider.js";
 import { linearAccess } from "../linear/access.js";
-import { relayHealth } from "../tracker/relay.js";
+import { readOutbox, relayHealth } from "../tracker/relay.js";
+import { directHealth } from "../linear/direct.js";
 import { syncDueCron } from "../claude/tasks.js";
 import { join } from "node:path";
 import { VENDORED_CLI } from "../core/vendor.js";
-import { compareVersions, currentVersion, vendoredVersion } from "../core/version.js";
+import { compareVersions, currentVersion, isPrerelease, vendoredVersion } from "../core/version.js";
 import { readHistory } from "../setup/checklist.js";
 import { practiceUntil } from "../setup/gather.js";
 import { loadPipeline } from "../flow/pipeline-load.js";
@@ -62,7 +63,11 @@ export async function runStatus(ctx: Ctx, extra: string[] = [], o: { engine?: En
   if (access === "relay") {
     const h = await relayHealth(team, ctx.now(), { cron: await syncDueCron(ctx.personal.taskHours) }).catch(() => null);
     if (h) lines.push(`Linear: ${h.ok ? "" : "✘ "}${h.detail.replace(/^Linear through Claude: /, "through Claude, ")}`);
-  } else if (access !== "none") lines.push(`Linear: direct (${access === "key" ? "API key" : access})`);
+  } else if (access === "key") {
+    // LINEAR-2 (0.41.0): how the key is doing, from PMX's own record of its reads. A key Linear rejects is said here.
+    const h = await directHealth(team, ctx.now(), { waiting: (await readOutbox().catch(() => ({ ops: [] }))).ops.length }).catch(() => null);
+    lines.push(h ? `Linear: ${h.ok ? "" : "✘ "}${h.detail.replace(/^Linear with your API key: /, "with your API key, ")}` : "Linear: direct (API key)");
+  } else if (access !== "none") lines.push(`Linear: direct (${access})`);
 
   // PULL-9 (#14): the first week only says what an agent would take.
   const practice = practiceUntil(personal, ctx.now());
@@ -71,7 +76,10 @@ export async function runStatus(ctx: Ctx, extra: string[] = [], o: { engine?: En
   if (team.tracker.kind !== "none") lines.push(startsNow(team) ? "Approving: Start now is on (pmx proposals start makes a task Ready for agents; approve sends it to the backlog)" : "Approving: Start now is off for your team: approved tasks wait in the backlog until a teammate moves them to Todo in Linear");
   // COMPAT-2 (#19): what teammates install from the team repo, when it isn't this Mac's version.
   const vendored = await vendoredVersion(join(personal.repoPath, VENDORED_CLI), ctx.exec).catch(() => null);
-  if (vendored && vendored !== currentVersion()) lines.push(`Team package: pmx ${vendored} in the team repo, this Mac runs ${currentVersion()}${(compareVersions(vendored, currentVersion()) ?? 0) < 0 ? ": teammates who run pmx update get the older one (team lead: pmx vendor --require)" : ": run pmx update"}`);
+  if (vendored && vendored !== currentVersion()) lines.push(`Team package: pmx ${vendored} in the team repo, this Mac runs ${currentVersion()}${(compareVersions(vendored, currentVersion()) ?? 0) >= 0 ? ": run pmx update"
+    // A test build is never shared with a team: its repo carries releases.
+    : isPrerelease(currentVersion()) ? ", a test build: your team's repo carries releases, so there is nothing to share"
+    : ": teammates who run pmx update get the older one (team lead: pmx vendor --require)"}`);
   const store = new RunLogStore(ctx);
   if (await store.exists()) {
     const entries = (await store.entries()).filter((e) => e.agent === ctx.agent);

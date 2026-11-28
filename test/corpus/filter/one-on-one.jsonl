@@ -1,0 +1,12 @@
+{"family": "one-on-one", "text": "Let's cover it in our 1:1.", "expect": "cut", "topic": "one-on-one", "why": "A 1:1 is a private meeting between two people."}
+{"family": "one-on-one", "text": "My skip-level is on Friday.", "expect": "cut", "topic": "one-on-one", "why": "A skip-level."}
+{"family": "one-on-one", "text": "Export the hero image at 1:1 for the feed.", "expect": "cut", "topic": "one-on-one", "why": "A 1:1 ratio.", "known_gap": {"want": "kept", "why": "An aspect ratio, not a meeting: the rule spares \"1:1\" only beside a word like ratio, crop or square."}}
+{"family": "one-on-one", "text": "We need 16:9 and 1:1 versions of the ad.", "expect": "kept", "topic": null, "why": "Aspect ratios."}
+{"family": "one-on-one", "text": "It was a career chat more than a status update.", "expect": "cut", "topic": "one-on-one", "why": "A career chat."}
+{"family": "one-on-one", "text": "Let's cover it in our 1:1.", "expect": "kept", "topic": null, "why": "The PM's own to-dos may read a 1:1.", "context": {"scope": "own"}}
+{"family": "one-on-one", "text": "My 1:1 with Sam moved to Thursday.", "expect": "cut", "topic": "one-on-one", "why": "1:1s: the calendar kind, never a ratio."}
+{"family": "one-on-one", "text": "Can we cover this in our 1:1s instead?", "expect": "cut", "topic": "one-on-one", "why": "1:1s: the calendar kind, never a ratio."}
+{"family": "one-on-one", "text": "Let's take it to a 1-on-1.", "expect": "cut", "topic": "one-on-one", "why": "1:1s: the calendar kind, never a ratio."}
+{"family": "one-on-one", "text": "Export the hero image in a 1:1 aspect ratio.", "expect": "kept", "topic": null, "why": "1:1s: the calendar kind, never a ratio."}
+{"family": "one-on-one", "text": "The 1:1 square crop cuts off the logo.", "expect": "kept", "topic": null, "why": "1:1s: the calendar kind, never a ratio."}
+{"family": "one-on-one", "text": "Thumbnails are cropped to 1:1 now.", "expect": "kept", "topic": null, "why": "1:1s: the calendar kind, never a ratio."}

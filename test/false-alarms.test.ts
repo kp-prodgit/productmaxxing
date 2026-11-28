@@ -23,7 +23,7 @@ async function setUp(asks: Record<string, string | boolean> = {}) {
   const repo = join(root, "pmx");
   const keychain = memoryKeychain();
   const launchd = fakeLaunchd();
-  const personal = await runInit({
+  const personal = await runInit({ askAll: true,
     ask: scriptedAsker({ "PMX repo checkout": repo, "Team name": "acme", handle: "ana", "Linear team key": "", transcripts: join(root, "t"), "email domains": "acme.com", ...asks }),
     keychain, launchd, exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x/cli.js",
   });
@@ -65,6 +65,27 @@ describe("0.9.1: no false alarms on a supported setup", () => {
     expect(c!.detail).toContain("pmx vendor --require");
   });
 
+  it("says updates arrive by themselves unless the team turned that off, and only for a package its repo carries (COMPAT-6)", async () => {
+    const { personal, team, keychain, launchd } = await setUp();
+    const tar = (version: string | null): Exec => async (cmd, args, o) =>
+      cmd === "tar" && args[0] === "-xOzf" ? (version ? { stdout: JSON.stringify({ version }), stderr: "", code: 0 } : { stdout: "", stderr: "no file", code: 1 }) : withClaude(cmd, args, o);
+    const find = async (t: TeamConfig, exec: Exec, id: string) => (await runDoctor({ personal, team: t, keychain, launchd, exec })).find((c) => c.id === id);
+
+    // The team never chose, and its repo carries a newer package: this Mac installs it without being asked.
+    expect(await find(team, tar("99.0.0"), "cli.auto-update")).toMatchObject({ ok: true, detail: "auto-update on; the background job hasn't checked yet" });
+    expect((await find(team, tar("99.0.0"), "cli.team-package"))!.detail).toBe(`team package is pmx 99.0.0, newer than this Mac's ${currentVersion()}: the background job installs it within the hour, or run \`pmx update\` now`);
+    expect((await find({ ...team, cli: { min: "99.0.0" } }, tar("99.0.0"), "cli.team-minimum"))!.detail).toBe(`pmx ${currentVersion()}; team minimum 99.0.0: the background job installs your team's package within the hour, or run \`pmx update\` now`);
+
+    // Turned off: each Mac updates by hand, as before.
+    const off = { ...team, cli: { min: "99.0.0", autoUpdate: false } };
+    expect(await find(off, tar("99.0.0"), "cli.auto-update")).toBeUndefined();
+    expect((await find(off, tar("99.0.0"), "cli.team-package"))!.detail).toBe(`team package is pmx 99.0.0, newer than this Mac's ${currentVersion()}: run \`pmx update\``);
+    expect((await find(off, tar("99.0.0"), "cli.team-minimum"))!.detail).toBe(`pmx ${currentVersion()}; team minimum 99.0.0: run \`pmx update\``);
+
+    // No package in the repo and nothing chosen: nothing would be installed, so nothing is promised.
+    expect(await find(team, tar(null), "cli.auto-update")).toBeUndefined();
+  });
+
   it("adds always-allow rules for PMX's own command and folder, keeping the PM's settings", async () => {
     expect(await missingAllowRules()).toEqual([...ALLOW_RULES]);
     await mkdir(join(claudeSettingsFile(), ".."), { recursive: true });
@@ -89,14 +110,17 @@ describe("0.9.1: no false alarms on a supported setup", () => {
     expect(await missingAllowRules()).toEqual([]);
   });
 
-  it("init no longer asks for a Linear key or points at Linear sign-in", async () => {
+  // LINEAR-2 (Founder 2026-11-27): a personal Linear API key is the default again, so init asks for one, once, in its
+  // own no-echo prompt. It still never points at the Linear sign-in, which isn't offered.
+  it("init asks once for a Linear API key, in its secret prompt, and never points at Linear sign-in", async () => {
     const asked: string[] = [];
     const root = await tmp();
     const answers = scriptedAsker({ "PMX repo checkout": join(root, "pmx"), "Linear team key": "PMX", "PMX project ID": "proj-1", transcripts: join(root, "t") });
     const ask = { ...answers, text: (q: string, d?: string) => (asked.push(q), answers.text(q, d)), secret: (q: string) => (asked.push(q), answers.secret(q)) };
-    await runInit({ ask, keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x" });
+    await runInit({ askAll: true, ask, keychain: memoryKeychain(), launchd: fakeLaunchd(), exec: withClaude, out: quietOut(), now: () => new Date(), cliPath: "/x" });
     expect(asked.some((q) => /Linear team key/.test(q))).toBe(true);
-    expect(asked.join("\n")).not.toMatch(/Linear API key|linear login/);
+    expect(asked.filter((q) => /Linear API key/.test(q))).toEqual(["Linear API key (Return to use the Claude app instead)"]);
+    expect(asked.join("\n")).not.toMatch(/linear login/);
   });
 
   it("keeps the background job's logs under the cap", async () => {
